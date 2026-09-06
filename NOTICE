@@ -1,0 +1,16 @@
+Flare
+Copyright 2026 Flare contributors
+
+This product includes software developed by the Kotlin, JetBrains Compose Multiplatform,
+Android Open Source Project, Koin, Ktor, kotlinx.coroutines, kotlinx.serialization, Room,
+Vico, and Kaptos projects. Those components remain subject to their
+respective licenses.
+
+This product bundles Inter 4.1 Regular, Medium, and SemiBold font files.
+Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter).
+Inter is distributed under the SIL Open Font License 1.1; see third_party/inter/OFL.txt.
+
+Decibel names and protocol documentation are owned by their respective holders. Flare is an
+independent open-source client and is not represented as an official Decibel application.
+
+No Apple SF Pro font files are distributed with this project.

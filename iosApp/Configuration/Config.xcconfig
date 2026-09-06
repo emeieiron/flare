@@ -1,0 +1,10 @@
+TEAM_ID=
+
+PRODUCT_NAME=flare
+PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.flare$(TEAM_ID)
+
+CURRENT_PROJECT_VERSION=1
+MARKETING_VERSION=1.0
+
+// Override this build setting with the deployed HTTPS Worker URL for release builds.
+FLARE_WORKER_URL=http:/$()/127.0.0.1:8787
