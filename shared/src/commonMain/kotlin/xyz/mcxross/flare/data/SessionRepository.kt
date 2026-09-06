@@ -265,5 +265,5 @@ private fun String.toSessionRole(): SessionRole =
 private fun ByteArray.toLowerHex(): String =
   joinToString(separator = "") { byte -> byte.toUByte().toString(16).padStart(2, '0') }
 
-private fun String.sameAptosAddress(other: String): Boolean =
+internal fun String.sameAptosAddress(other: String): Boolean =
   AccountAddress.fromString(this) == AccountAddress.fromString(other)

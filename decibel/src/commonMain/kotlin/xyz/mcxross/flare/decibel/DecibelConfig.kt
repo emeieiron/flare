@@ -29,7 +29,7 @@ data class DecibelDeployment(
       DecibelDeployment(
         network = DecibelNetwork.TESTNET,
         packageAddress = "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f",
-        usdcMetadataAddress = "0xbdabb88aa9a875f3a2ebe0974e24f3ae5e57cfd17c6abdfef8a8111f43681b7e",
+        usdcMetadataAddress = "0x5428acf5c112826d0c74ae1cd2de9030f53d1d01235e6c2621d967bf914ee1c8",
         chainId = 2u,
         upstreamRestUrl = "https://api.testnet.aptoslabs.com/decibel",
         upstreamWebSocketUrl = "wss://api.testnet.aptoslabs.com/decibel/ws",

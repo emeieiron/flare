@@ -6,7 +6,6 @@ import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -272,12 +271,6 @@ class OnboardingViewModel(
   }
 
   private fun createApiWallet() = launchAction {
-    wallets.createApiWallet(
-      VaultPrompt(
-        title = "Create API wallet",
-        subtitle = "Confirm your identity to protect the independent trading key.",
-      )
-    )
     delegateApiAndFinish()
   }
 
@@ -335,46 +328,13 @@ class OnboardingViewModel(
   }
 
   private suspend fun delegateApiAndFinish() {
-    val result =
-      accounts.delegateApiWallet(
-        VaultPrompt(
-          title = "Delegate API trading wallet",
-          subtitle = "Confirm the owner transaction that grants Decibel trading access.",
-        )
+    accounts.prepareTradingWallet(
+      VaultPrompt(
+        title = "Prepare API trading wallet",
+        subtitle = "Authorize the owner to configure an independent trading wallet.",
       )
-    require(result is TransactionState.Committed) { result.failureMessage() }
-    val subaccount =
-      accounts.snapshot.value.account ?: error("The selected Decibel subaccount is unavailable")
-    verifyDelegationWithBackoff(subaccount)
-    finishSetupInternal()
-  }
-
-  private suspend fun verifyDelegationWithBackoff(subaccount: String) {
-    var lastError: Throwable? = null
-    repeat(DELEGATION_VERIFICATION_ATTEMPTS) { attempt ->
-      try {
-        accounts.connectApi(
-          subaccount = subaccount,
-          prompt =
-            VaultPrompt(
-              title = "Verify API wallet delegation",
-              subtitle = "Authorize the API key so Decibel can verify the new delegation.",
-            ),
-        )
-        return
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (error: Throwable) {
-        lastError = error
-        if (attempt < DELEGATION_VERIFICATION_ATTEMPTS - 1) {
-          delay((1L shl attempt.coerceAtMost(2)) * 1_000L)
-        }
-      }
-    }
-    throw IllegalStateException(
-      "The delegation committed, but Decibel has not indexed it yet. Try connecting the API wallet again.",
-      lastError,
     )
+    finishSetupInternal()
   }
 
   private fun showBackup(backup: OwnerBackup) {
@@ -416,10 +376,6 @@ class OnboardingViewModel(
         local.value = local.value.copy(busy = false)
       }
     }
-  }
-
-  private companion object {
-    const val DELEGATION_VERIFICATION_ATTEMPTS = 5
   }
 }
 

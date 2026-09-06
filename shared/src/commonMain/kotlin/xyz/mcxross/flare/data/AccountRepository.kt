@@ -86,6 +86,8 @@ interface AccountRepository {
 
   suspend fun delegateApiWallet(prompt: VaultPrompt): TransactionState
 
+  suspend fun prepareTradingWallet(prompt: VaultPrompt)
+
   fun depositUsdc(
     amount: String,
     prompt: VaultPrompt,
@@ -121,6 +123,7 @@ class DefaultAccountRepository(
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
   private val refreshMutex = Mutex()
   private val historyMutex = Mutex()
+  private val tradingWalletSetup = TradingWalletSetup()
   private var streamJob: Job? = null
   private var streamingAccount: String? = null
   override val snapshot: StateFlow<AccountSnapshot> = mutableSnapshot.asStateFlow()
@@ -155,6 +158,7 @@ class DefaultAccountRepository(
   }
 
   override suspend fun createSubaccount(prompt: VaultPrompt): TransactionState {
+    sessions.authenticateOwner(null, prompt.copy(requireFreshAuthorization = true))
     var terminal: TransactionState = TransactionState.Failed("Subaccount transaction did not start")
     trading
       .execute(
@@ -174,6 +178,7 @@ class DefaultAccountRepository(
       preferences.values.first().selectedSubaccount
         ?: error("Select a Decibel subaccount before delegating an API wallet")
     val apiAddress = profile.apiWalletAddress ?: error("Create or import an API wallet first")
+    sessions.authenticateOwner(subaccount, prompt.copy(requireFreshAuthorization = true))
     var terminal: TransactionState = TransactionState.Failed("Delegation transaction did not start")
     trading
       .execute(
@@ -183,6 +188,44 @@ class DefaultAccountRepository(
       )
       .collect { state -> terminal = state }
     return terminal
+  }
+
+  override suspend fun prepareTradingWallet(prompt: VaultPrompt) {
+    val subaccount =
+      preferences.values.first().selectedSubaccount
+        ?: error("Select a Decibel subaccount before preparing trading")
+    tradingWalletSetup.prepare(
+      object : TradingWalletSetupActions {
+        override suspend fun authorizeOwner() {
+          sessions.authenticateOwner(subaccount, prompt.copy(requireFreshAuthorization = true))
+        }
+
+        override suspend fun existingWallet() = wallets.profile.first().apiWalletAddress
+
+        override suspend fun createWallet() = wallets.createApiWallet(prompt)
+
+        override suspend fun isDelegated(address: String): Boolean =
+          client.accounts.delegations(subaccount).any {
+            it.delegate.sameAptosAddress(address) &&
+              it.canTradeAllPerpMarkets &&
+              (it.expirationTimeSeconds?.let { expiry ->
+                expiry == 0L || expiry > Clock.System.now().epochSeconds
+              } ?: true)
+          }
+
+        override suspend fun requireNoPendingTransactions() {
+          trading.reconcilePending()
+          check(trading.pendingTransactions.first().isEmpty()) {
+            "Resolve pending transactions before submitting another delegation"
+          }
+        }
+
+        override suspend fun delegate() = delegateApiWallet(prompt)
+
+        override suspend fun connectApi() =
+          this@DefaultAccountRepository.connectApi(subaccount, prompt)
+      }
+    )
   }
 
   override fun depositUsdc(

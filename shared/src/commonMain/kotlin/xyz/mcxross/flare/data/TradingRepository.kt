@@ -193,7 +193,12 @@ class DefaultTradingRepository(
       throw cancelled
     } catch (error: Throwable) {
       preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
-      emit(TransactionState.Failed(error.message ?: "Transaction authorization failed"))
+      emit(
+        TransactionState.Failed(
+          error.message ?: "Transaction authorization failed",
+          hash = preparedHash,
+        )
+      )
     } finally {
       submissionMutex.unlock()
     }
@@ -270,6 +275,10 @@ class DefaultTradingRepository(
             return@withOwnerAccount
           }
           is AptosResult.Success -> {
+            if (result.value.size != 1) {
+              emit(TransactionState.Failed("Expected exactly one transaction simulation result"))
+              return@withOwnerAccount
+            }
             val failed = result.value.firstOrNull { !it.success }
             if (failed != null) {
               emit(TransactionState.Failed(failed.vmStatus))
@@ -352,7 +361,7 @@ class DefaultTradingRepository(
           }
           is AptosResult.Success -> {
             val response = result.value as? UserTransactionResponse
-            if (response == null) {
+            if (response == null || !response.hash.equals(hash, ignoreCase = true)) {
               hash.updateState(JournalState.RECONCILE_REQUIRED)
               emit(TransactionState.Failed("Unexpected top-up transaction response", hash = hash))
             } else {
@@ -423,7 +432,10 @@ class DefaultTradingRepository(
       ) {
         is AptosResult.Success -> {
           val response = result.value
-          if (response is UserTransactionResponse) {
+          if (
+            response is UserTransactionResponse &&
+              response.hash.equals(transactionHash, ignoreCase = true)
+          ) {
             journal.remove(transactionHash)
             finalized += 1
           } else {
