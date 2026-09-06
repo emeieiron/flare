@@ -1,0 +1,183 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "04a81c686e9db362785cbbcbae7ee3e5",
+    "entities": [
+      {
+        "tableName": "markets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`marketAddress` TEXT NOT NULL, `payloadJson` TEXT NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`marketAddress`))",
+        "fields": [
+          {
+            "fieldPath": "marketAddress",
+            "columnName": "marketAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payloadJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "marketAddress"
+          ]
+        }
+      },
+      {
+        "tableName": "candles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`marketAddress` TEXT NOT NULL, `interval` TEXT NOT NULL, `openTimeMs` INTEGER NOT NULL, `closeTimeMs` INTEGER NOT NULL, `open` REAL NOT NULL, `high` REAL NOT NULL, `low` REAL NOT NULL, `close` REAL NOT NULL, `volume` REAL NOT NULL, PRIMARY KEY(`marketAddress`, `interval`, `openTimeMs`))",
+        "fields": [
+          {
+            "fieldPath": "marketAddress",
+            "columnName": "marketAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "interval",
+            "columnName": "interval",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openTimeMs",
+            "columnName": "openTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closeTimeMs",
+            "columnName": "closeTimeMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "open",
+            "columnName": "open",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "high",
+            "columnName": "high",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "low",
+            "columnName": "low",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "close",
+            "columnName": "close",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "volume",
+            "columnName": "volume",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "marketAddress",
+            "interval",
+            "openTimeMs"
+          ]
+        }
+      },
+      {
+        "tableName": "selected_markets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`marketAddress` TEXT NOT NULL, `selectedAtMs` INTEGER NOT NULL, PRIMARY KEY(`marketAddress`))",
+        "fields": [
+          {
+            "fieldPath": "marketAddress",
+            "columnName": "marketAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedAtMs",
+            "columnName": "selectedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "marketAddress"
+          ]
+        }
+      },
+      {
+        "tableName": "pending_transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`hash` TEXT NOT NULL, `network` TEXT NOT NULL, `operation` TEXT NOT NULL, `state` TEXT NOT NULL, `createdAtMs` INTEGER NOT NULL, `updatedAtMs` INTEGER NOT NULL, PRIMARY KEY(`hash`))",
+        "fields": [
+          {
+            "fieldPath": "hash",
+            "columnName": "hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "network",
+            "columnName": "network",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "createdAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updatedAtMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "hash"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '04a81c686e9db362785cbbcbae7ee3e5')"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>FlareWorkerURL</key>
+	<string>$(FLARE_WORKER_URL)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Flare uses Face ID to unlock wallet signing keys.</string>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+</dict>
+</plist>
