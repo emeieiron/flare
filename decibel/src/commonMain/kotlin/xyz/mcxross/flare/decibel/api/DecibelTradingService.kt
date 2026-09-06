@@ -15,6 +15,7 @@ import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 import xyz.mcxross.kaptos.model.TransactionPayload
 import xyz.mcxross.kaptos.model.UnsignedTransaction
 import xyz.mcxross.kaptos.model.UserTransactionResponse
+import xyz.mcxross.kaptos.model.WaitForTransactionOptions
 import xyz.mcxross.kaptos.move.MoveArgument
 
 sealed interface DecibelCommand {
@@ -151,7 +152,7 @@ internal class DefaultDecibelTradingService(
           )
       }
       is DecibelCommand.DelegateTrading -> {
-        function = "$packageAddress::dex_accounts_entry::delegate_all_trading_to_for_subaccount"
+        function = "$packageAddress::dex_accounts_entry::delegate_perp_trading_to_for_subaccount"
         arguments =
           listOf(
             address(command.subaccount),
@@ -295,6 +296,10 @@ internal class DefaultDecibelTradingService(
         return@flow
       }
       is AptosResult.Success -> {
+        if (simulation.value.size != 1) {
+          emit(TransactionState.Failed("Expected exactly one transaction simulation result"))
+          return@flow
+        }
         val failed = simulation.value.firstOrNull { !it.success }
         if (failed != null) {
           emit(TransactionState.Failed(failed.vmStatus))
@@ -396,6 +401,7 @@ internal class DefaultDecibelTradingService(
             emit(
               TransactionState.Failed(
                 message = result.error.toString(),
+                hash = preparedReference,
                 selfPayEstimateOctas = selfPayEstimateOctas.takeIf { safeForSelfPay },
                 definitelyNotSubmitted = safeForSelfPay,
               )
@@ -415,14 +421,15 @@ internal class DefaultDecibelTradingService(
           ) {
             is AptosResult.Success -> result.value
             is AptosResult.Failure -> {
-              emit(TransactionState.Failed(result.error.toString()))
+              emit(TransactionState.Failed(result.error.toString(), hash = preparedReference))
               return@flow
             }
           }
         if (!pending.hash.equals(preparedReference, ignoreCase = true)) {
           emit(
             TransactionState.Failed(
-              "Aptos returned a transaction hash that does not match the signed bytes"
+              "Aptos returned a transaction hash that does not match the signed bytes",
+              hash = preparedReference,
             )
           )
           return@flow
@@ -430,17 +437,33 @@ internal class DefaultDecibelTradingService(
         pending.hash
       }
     if (!submittedHash.matches(Regex("^0x[0-9a-fA-F]{64}$"))) {
-      emit(TransactionState.Failed("The transaction submitter returned an invalid hash"))
+      emit(
+        TransactionState.Failed(
+          "The transaction submitter returned an invalid hash",
+          hash = preparedReference,
+        )
+      )
       return@flow
     }
     emit(TransactionState.Pending(submittedHash))
 
-    when (val committed = aptos.transactions.waitForTransaction(submittedHash)) {
+    when (
+      val committed =
+        aptos.transactions.waitForTransaction(
+          submittedHash,
+          WaitForTransactionOptions(checkSuccess = false),
+        )
+    ) {
       is AptosResult.Failure ->
         emit(TransactionState.Failed(committed.error.toString(), hash = submittedHash))
       is AptosResult.Success -> {
         val response = committed.value
-        if (response is UserTransactionResponse && !response.success) {
+        if (
+          response !is UserTransactionResponse ||
+            !response.hash.equals(submittedHash, ignoreCase = true)
+        ) {
+          emit(TransactionState.Failed("Unexpected transaction confirmation", hash = submittedHash))
+        } else if (!response.success) {
           emit(
             TransactionState.Failed(
               message = response.vmStatus,

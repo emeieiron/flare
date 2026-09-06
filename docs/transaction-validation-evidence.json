@@ -1,0 +1,240 @@
+{
+  "network": "testnet",
+  "chain_id": 2,
+  "verified_on": "2026-09-06",
+  "transactions": [
+    {
+      "operation": "CreateSubaccount",
+      "hash": "0x65e6b441174513cdc0dddc50b22ff0eaa2725296d809f57bfa665888d9fa2aa8",
+      "version": "11040572634",
+      "success": true,
+      "timestamp_us": "1788679949928252",
+      "order_events": []
+    },
+    {
+      "operation": "MINT_TEST_USDC",
+      "hash": "0xbe8be67c2d48f543e633d4728d340179c89f764e855e0499c1c8d6a9e8ffc927",
+      "version": "11040600225",
+      "success": true,
+      "timestamp_us": "1788680079776490",
+      "order_events": []
+    },
+    {
+      "operation": "Deposit",
+      "hash": "0xffcbcab86404c54d43d7cdfcd025c2490e670816708cf8657fc60b07ef7d013d",
+      "version": "11040645827",
+      "success": true,
+      "timestamp_us": "1788680295492325",
+      "order_events": []
+    },
+    {
+      "operation": "DelegateTrading",
+      "hash": "0xbb840bc334c667330986a911e3c592daebfc4effd033fbe3416feaf0095315dd",
+      "version": "11040646350",
+      "success": true,
+      "timestamp_us": "1788680297663999",
+      "order_events": []
+    },
+    {
+      "operation": "TOP_UP_API_WALLET",
+      "hash": "0x4969053592f1a1fdb80b3bda27adc32ba5331de105571f8e22d55869f99fe72b",
+      "version": "11040646759",
+      "success": true,
+      "timestamp_us": "1788680299371352",
+      "order_events": []
+    },
+    {
+      "operation": "DelegateTrading",
+      "hash": "0x9a6133d96e9e70b1d3a5bf8e1dcf430fd1e95f2b1f5f4a20d00ab2f828979b64",
+      "version": "11046637259",
+      "success": true,
+      "timestamp_us": "1788708695917282",
+      "order_events": []
+    },
+    {
+      "operation": "ConfigureMarket",
+      "hash": "0xd92b6a47192ebda5a949bdb77be2ee0a4a08b157e1318fff8150760906139680",
+      "version": "11046639290",
+      "success": true,
+      "timestamp_us": "1788708703493665",
+      "order_events": []
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0x8291d204bc7479fbdb6bc115e856a1c584444baaa8cbc65e1c49ccbba3c65dd2",
+      "version": "11046640067",
+      "success": true,
+      "timestamp_us": "1788708707376137",
+      "order_events": [
+        {
+          "order_id": "170145171489257552401766771447174266880",
+          "status": "ACKNOWLEDGED",
+          "remaining_size": "20000"
+        },
+        {
+          "order_id": "170145171489257552401766771447174266880",
+          "status": "OPEN",
+          "remaining_size": "20000"
+        }
+      ]
+    },
+    {
+      "operation": "CancelOrder",
+      "hash": "0x1368fcb9aadaaf40ddd66d656b461fde4dab131172f0f38dc19300e5e373204b",
+      "version": "11046641446",
+      "success": true,
+      "timestamp_us": "1788708712447317",
+      "order_events": [
+        {
+          "order_id": "170145171489257552401766771447174266880",
+          "status": "CANCELLED",
+          "remaining_size": "0"
+        }
+      ]
+    },
+    {
+      "operation": "ConfigureMarket",
+      "hash": "0x4594a4107a5e2ef1c47802fcbd5c4848d8f30a5aa8fef14dadeb41cc015590f3",
+      "version": "11046672925",
+      "success": true,
+      "timestamp_us": "1788708857343674",
+      "order_events": []
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0x48d2bb46e2a241f31ac669a8d5ba6146aeae2fde28e8bedffecb90bfc1dd696a",
+      "version": "11046673611",
+      "success": true,
+      "timestamp_us": "1788708860454478",
+      "order_events": [
+        {
+          "order_id": "170145163883353950482420750741957246976",
+          "status": "ACKNOWLEDGED",
+          "remaining_size": "20000"
+        }
+      ]
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0xf2113a63ab1096f43bafc7ea110f53814d508c8fb9d1e213022de35daa859265",
+      "version": "11046674851",
+      "success": true,
+      "timestamp_us": "1788708865186338",
+      "order_events": [
+        {
+          "order_id": "170145171489257551002113432600323293184",
+          "status": "ACKNOWLEDGED",
+          "remaining_size": "20000"
+        }
+      ]
+    },
+    {
+      "operation": "RevokeDelegation",
+      "hash": "0x787a6a8164f2d3d54caa5017319091d9b2b5756478b0437fac70f080759f10fc",
+      "version": "11046675532",
+      "success": true,
+      "timestamp_us": "1788708870661986",
+      "order_events": []
+    },
+    {
+      "operation": "Withdraw",
+      "hash": "0xa63c79d979d84b1cedc0dba4f86620536d36b82344506c46eda481a52b64b974",
+      "version": "11046676442",
+      "success": true,
+      "timestamp_us": "1788708876826812",
+      "order_events": []
+    },
+    {
+      "operation": "Deposit",
+      "hash": "0xbbd6f6de295fc355d61017a3a33a7dbe20accf1ea487869c36fbcc96dd62d52e",
+      "version": "11046717199",
+      "success": true,
+      "timestamp_us": "1788709064395785",
+      "order_events": []
+    },
+    {
+      "operation": "DelegateTrading",
+      "hash": "0x7c6437d98e78201b94986639bbda16a7492cab312786c5c158b67e11d2e1af52",
+      "version": "11046718069",
+      "success": true,
+      "timestamp_us": "1788709067914977",
+      "order_events": []
+    },
+    {
+      "operation": "ConfigureMarket",
+      "hash": "0x62334428f16c882f83e856f6b36a9b3ed469b028f2e21873ba21da2335269331",
+      "version": "11046719598",
+      "success": true,
+      "timestamp_us": "1788709073925102",
+      "order_events": []
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0xfd70bb2bb61886b220d0b1c07f745f5231c047893a8b323a9a6436869b99de79",
+      "version": "11046720478",
+      "success": true,
+      "timestamp_us": "1788709078191991",
+      "order_events": [
+        {
+          "order_id": "170145163883353952779801590813822025728",
+          "status": "ACKNOWLEDGED",
+          "remaining_size": "20000"
+        }
+      ]
+    },
+    {
+      "operation": "SetPositionTpSl",
+      "hash": "0xdd2a6d528ae9953d52b3de55ddaf1ad212473e66a4ea2b0162a7f547e27bdc2b",
+      "version": "11046771475",
+      "success": true,
+      "timestamp_us": "1788709318360070",
+      "order_events": []
+    },
+    {
+      "operation": "CancelPositionTpSl",
+      "hash": "0x1a5a2270148fd0d3b6d675bf7c32d9c50cbfbbe58dfaf447124bcb9c466af025",
+      "version": "11046772641",
+      "success": true,
+      "timestamp_us": "1788709323053209",
+      "order_events": []
+    },
+    {
+      "operation": "CancelPositionTpSl",
+      "hash": "0xdb025c27a4817fb0c9109d3d3bafd7d754d08c0f2c2efe16eff77b5bc32335d5",
+      "version": "11046773285",
+      "success": true,
+      "timestamp_us": "1788709324946008",
+      "order_events": []
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0x504c28b1bc4e5f0d40afb512d917996c85ab0bcf66ea342e7c4d7704f38dc4eb",
+      "version": "11046774830",
+      "success": true,
+      "timestamp_us": "1788709331588706",
+      "order_events": [
+        {
+          "order_id": "170145171489257551040369503726603337728",
+          "status": "ACKNOWLEDGED",
+          "remaining_size": "20000"
+        }
+      ]
+    },
+    {
+      "operation": "RevokeDelegation",
+      "hash": "0xabba61f2eed700ba8b60839dcc94829f05e42a71b5699108c678bbf72e113fb5",
+      "version": "11046776531",
+      "success": true,
+      "timestamp_us": "1788709344412665",
+      "order_events": []
+    },
+    {
+      "operation": "Withdraw",
+      "hash": "0x76314ca98cfd875d25c96deee30269833572afa34b886a1d49eeaa435c7c9d64",
+      "version": "11046778556",
+      "success": true,
+      "timestamp_us": "1788709353588262",
+      "order_events": []
+    }
+  ]
+}
