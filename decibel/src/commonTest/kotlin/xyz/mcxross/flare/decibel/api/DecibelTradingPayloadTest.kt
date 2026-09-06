@@ -31,7 +31,7 @@ class DecibelTradingPayloadTest {
           DecibelCommand.Deposit(SUBACCOUNT, ASSET, 1uL) to "deposit_to_subaccount_at",
           DecibelCommand.Withdraw(SUBACCOUNT, ASSET, 1uL) to "withdraw_from_cross_collateral",
           DecibelCommand.DelegateTrading(SUBACCOUNT, DELEGATE, 100uL) to
-            "delegate_all_trading_to_for_subaccount",
+            "delegate_perp_trading_to_for_subaccount",
           DecibelCommand.RevokeDelegation(SUBACCOUNT, DELEGATE) to "revoke_delegation",
           DecibelCommand.ConfigureMarket(
             SUBACCOUNT,
@@ -259,7 +259,7 @@ private const val ASSET = "0x33"
 private const val DELEGATE = "0x44"
 private const val MAX_U128 = "340282366920938463463374607431768211455"
 
-private val DECIBEL_ENTRY_ABI =
+internal val DECIBEL_ENTRY_ABI =
   MoveModuleBytecode(
     bytecode = "0x",
     abi =
@@ -283,7 +283,7 @@ private val DECIBEL_ENTRY_ABI =
               "u64",
             ),
             function(
-              "delegate_all_trading_to_for_subaccount",
+              "delegate_perp_trading_to_for_subaccount",
               "address",
               "address",
               "0x1::option::Option<u64>",

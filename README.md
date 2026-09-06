@@ -126,6 +126,8 @@ The application contains no Decibel node or Gas Station credential. The Worker e
 
 Read [THREAT_MODEL.md](THREAT_MODEL.md) before changing authentication, signing, sponsorship, storage, or transaction reconciliation. Report vulnerabilities through the process in [SECURITY.md](SECURITY.md).
 
+Transaction-path testnet findings, reproducible commands, and remaining gaps are recorded in [transaction validation](docs/transaction-validation.md).
+
 Release evidence is tracked with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md); mainnet remains a manual, value-capped gate.
 
 ## Contributing and license
