@@ -109,6 +109,7 @@ class LocalWorkerTransactionTest {
           aptos,
           DecibelConfig(restBaseUrl = "$base/decibel", accessToken = { token }),
         )
+      val sponsoredTransactions = mutableListOf<Pair<String, String>>()
       suspend fun execute(command: DecibelCommand, signer: Ed25519Account = owner): String {
         val states =
           client.trading
@@ -147,21 +148,46 @@ class LocalWorkerTransactionTest {
                           }
                         )
                       }
-                    if (response.status.isSuccess())
-                      AptosResult.Success(
+                    if (response.status.isSuccess()) {
+                      val hash =
                         response
                           .body<JsonObject>()
                           .getValue("transactionHash")
                           .jsonPrimitive
                           .content
+                      val recovered =
+                        http
+                          .get("$base/gas/sponsor/status/${request.fingerprint}") {
+                            bearerAuth(token)
+                            header(HttpHeaders.Origin, "flare://mobile")
+                          }
+                          .body<JsonObject>()
+                      assertEquals(
+                        hash,
+                        recovered.getValue("transactionHash").jsonPrimitive.content,
                       )
-                    else
+                      println("Sponsorship fingerprint resolved to $hash")
+                      AptosResult.Success(hash)
+                    } else {
+                      val body = runCatching { response.body<JsonObject>() }.getOrNull()
+                      val code = body?.get("code")?.jsonPrimitive?.content
                       AptosResult.Failure(
                         AptosError.Api(
-                          "Sponsorship rejected: ${response.status.value}",
-                          errorCode = "gas_station_http_${response.status.value}",
+                          "Sponsorship rejected: ${response.status.value}, code=${code ?: "unspecified"}",
+                          errorCode =
+                            if (
+                              response.status.value == 503 &&
+                                code in
+                                  setOf(
+                                    "gas_station_not_configured",
+                                    "gas_station_credentials_rejected",
+                                  )
+                            )
+                              checkNotNull(code)
+                            else "gas_station_http_${response.status.value}",
                         )
                       )
+                    }
                   },
               onPrepared = { hash ->
                 println("Prepared ${command::class.simpleName}: $hash")
@@ -175,7 +201,11 @@ class LocalWorkerTransactionTest {
             )
             .toList()
         states.forEach { println("${command::class.simpleName}: $it") }
-        return assertIs<TransactionState.Committed>(states.last()).hash
+        val hash = assertIs<TransactionState.Committed>(states.last()).hash
+        if (System.getenv("FLARE_TEST_SELF_PAY") != "true") {
+          sponsoredTransactions += hash to signer.accountAddress.toStringLong()
+        }
+        return hash
       }
       if (System.getenv("FLARE_TEST_ACTION") == "create") {
         check(client.accounts.subaccounts(owner.accountAddress.toStringLong()).isEmpty()) {
@@ -245,6 +275,7 @@ class LocalWorkerTransactionTest {
             "lifecycle",
             "trade",
             "positions",
+            "leverage",
             "cleanup",
             "protections",
             "resume-protections",
@@ -320,7 +351,7 @@ class LocalWorkerTransactionTest {
             .value
         if (
           walletBalance < collateral &&
-            System.getenv("FLARE_TEST_ACTION") in setOf("lifecycle", "protections")
+            System.getenv("FLARE_TEST_ACTION") in setOf("lifecycle", "protections", "leverage")
         ) {
           val mint =
             assertIs<AptosResult.Success<TransactionPayload.EntryFunction>>(
@@ -339,7 +370,7 @@ class LocalWorkerTransactionTest {
           )
         }
         val initialCollateral = client.accounts.overview(subaccount).equityBalance
-        if (System.getenv("FLARE_TEST_ACTION") in setOf("lifecycle", "protections")) {
+        if (System.getenv("FLARE_TEST_ACTION") in setOf("lifecycle", "protections", "leverage")) {
           check(initialCollateral == 0.0) { "Lifecycle requires an empty collateral account" }
           execute(DecibelCommand.Deposit(subaccount, deployment.usdcMetadataAddress, collateral))
         } else if (System.getenv("FLARE_TEST_ACTION") == "resume-protections") {
@@ -395,7 +426,7 @@ class LocalWorkerTransactionTest {
             )
           delay(2_000)
           assertEquals("api", authenticate(subaccount, api))
-          if (System.getenv("FLARE_TEST_ACTION") != "resume-protections")
+          if (System.getenv("FLARE_TEST_ACTION") !in setOf("resume-protections", "cleanup"))
             execute(
               DecibelCommand.ConfigureMarket(subaccount, market.address, MarginMode.CROSS, 1u),
               api,
@@ -452,7 +483,7 @@ class LocalWorkerTransactionTest {
           }
           if (
             System.getenv("FLARE_TEST_ACTION") in
-              setOf("positions", "protections", "resume-protections")
+              setOf("positions", "protections", "resume-protections", "leverage")
           ) {
             suspend fun marketOrder(
               side: OrderSide,
@@ -498,6 +529,34 @@ class LocalWorkerTransactionTest {
             val opened =
               checkNotNull(position) { "Market entry not indexed; inspect before retrying" }
             println("Observed market position: ${opened.size} BTC")
+            if (System.getenv("FLARE_TEST_ACTION") == "leverage") {
+              assertTrue(market.maxLeverage >= 2)
+              val states =
+                client.trading
+                  .execute(
+                    api,
+                    DecibelCommand.ConfigureMarket(
+                      subaccount,
+                      market.address,
+                      MarginMode.CROSS,
+                      2u,
+                    ),
+                    onPrepared = {
+                      error("Unsupported leverage change must fail before signing or journaling")
+                    },
+                  )
+                  .toList()
+              val failure = assertIs<TransactionState.Failed>(states.last())
+              assertTrue(
+                failure.message.contains("ECANNOT_MODIFY_SETTINGS_WHILE_HOLDING_POSITION"),
+                failure.message,
+              )
+              println("Open-position leverage change rejected in simulation: ${failure.message}")
+              assertEquals(
+                opened.size,
+                client.accounts.positions(subaccount, market.address).first { !it.isDeleted }.size,
+              )
+            }
             if (System.getenv("FLARE_TEST_ACTION") in setOf("protections", "resume-protections")) {
               check(
                 opened.absoluteSize.toBigDecimal() ==
@@ -612,6 +671,18 @@ class LocalWorkerTransactionTest {
         } finally {
           api.clearPrivateKey()
         }
+      }
+      // Inspect fee-payer receipts after cleanup, so a diagnostic read cannot strand a test order.
+      for ((hash, sender) in sponsoredTransactions) {
+        val transaction =
+          http
+            .get("$base/aptos/v1/transactions/by_hash/$hash") { bearerAuth(token) }
+            .body<JsonObject>()
+        val signature = transaction.getValue("signature").jsonObject
+        assertEquals("fee_payer_signature", signature.getValue("type").jsonPrimitive.content)
+        val feePayer = signature.getValue("fee_payer_address").jsonPrimitive.content
+        assertNotEquals(sender, feePayer)
+        println("Confirmed external fee payer for $hash: $feePayer")
       }
       for (sub in subaccounts) {
         println("Subaccount: $sub")

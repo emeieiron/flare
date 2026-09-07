@@ -2,14 +2,18 @@ package xyz.mcxross.flare.decibel.api
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.coroutineContext
 import kotlin.test.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -126,7 +130,7 @@ class DecibelTradingExecutionTest {
 
   @Test
   fun explicitSponsorRejectionsAllowSelfPayButAmbiguousFailuresDoNot() = runTest {
-    for (code in listOf(400, 401, 403, 404, 422, 429, 500, 502, 504)) {
+    for (code in listOf(400, 401, 403, 404, 422, 429, 500, 502, 503, 504)) {
       fixture { f ->
         val states =
           f.execute(
@@ -141,6 +145,38 @@ class DecibelTradingExecutionTest {
         assertFalse("submit" in f.events)
         assertFalse("confirm" in f.events)
       }
+    }
+  }
+
+  @Test
+  fun unavailableSponsorCredentialsAreSafeForExplicitSelfPay() = runTest {
+    for (code in listOf("gas_station_not_configured", "gas_station_credentials_rejected")) {
+      fixture { f ->
+        val failed =
+          assertIs<TransactionState.Failed>(
+            f.execute(
+                ExternalFeePayerSubmitter {
+                  AptosResult.Failure(AptosError.Api("unavailable", errorCode = code))
+                }
+              )
+              .last()
+          )
+        assertTrue(failed.definitelyNotSubmitted)
+        assertEquals(200uL, failed.selfPayEstimateOctas)
+        assertFalse("submit" in f.events)
+        assertFalse("confirm" in f.events)
+      }
+    }
+  }
+
+  @Test
+  fun sponsorConfirmationToleratesAFullnodeThatHasNotObservedTheHashYet() = runTest {
+    fixture { f ->
+      f.missingConfirmations = 2
+      val states = f.execute(ExternalFeePayerSubmitter { AptosResult.Success(OTHER_HASH) })
+      assertEquals(TransactionState.Committed(OTHER_HASH), states.last())
+      assertEquals(3, f.events.count { it == "confirm" })
+      assertFalse("submit" in f.events)
     }
   }
 
@@ -243,7 +279,7 @@ class DecibelTradingExecutionTest {
   }
 
   private suspend fun fixture(block: suspend (ExecutionFixture) -> Unit) {
-    val f = ExecutionFixture()
+    val f = ExecutionFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try {
       assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_ENTRY_ABI))
       block(f)
@@ -254,37 +290,51 @@ class DecibelTradingExecutionTest {
   }
 }
 
-private class ExecutionFixture {
+private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
   val events = mutableListOf<String>()
   var hash = ""
   var submitHash: String? = null
   var simulation = "[${userResponse()}]"
+  var missingConfirmations = 0
   var confirmation: (String) -> String = { userResponse(it) }
   val http =
     HttpClient(
-      MockEngine { request ->
-        val path = request.url.encodedPath
-        val body =
-          when {
-            path.endsWith("/estimate_gas_price") -> """{"gas_estimate":100}"""
-            path.contains("/accounts/") -> """{"sequence_number":"0","authentication_key":"0x1"}"""
-            path.endsWith("/transactions/simulate") -> {
-              events += "simulate"
-              simulation
-            }
-            path.endsWith("/transactions") -> {
-              events += "submit"
-              assertTrue(hash.isNotBlank(), "Signed hash must be journaled before submission")
-              pendingResponse(submitHash ?: hash)
-            }
-            path.contains("/transactions/by_hash/") -> {
-              events += "confirm"
-              confirmation(path.substringAfterLast('/'))
-            }
-            else -> error("Unexpected HTTP request: $path")
+      MockEngine(
+        MockEngineConfig().apply {
+          this.dispatcher = dispatcher
+          addHandler { request ->
+            val path = request.url.encodedPath
+            val body =
+              when {
+                path.endsWith("/estimate_gas_price") -> """{"gas_estimate":100}"""
+                path.contains("/accounts/") ->
+                  """{"sequence_number":"0","authentication_key":"0x1"}"""
+                path.endsWith("/transactions/simulate") -> {
+                  events += "simulate"
+                  simulation
+                }
+                path.endsWith("/transactions") -> {
+                  events += "submit"
+                  assertTrue(hash.isNotBlank(), "Signed hash must be journaled before submission")
+                  pendingResponse(submitHash ?: hash)
+                }
+                path.contains("/transactions/by_hash/") -> {
+                  events += "confirm"
+                  if (missingConfirmations-- > 0) {
+                    return@addHandler respond(
+                      """{"message":"not observed yet","error_code":"transaction_not_found"}""",
+                      HttpStatusCode.NotFound,
+                      headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                  }
+                  confirmation(path.substringAfterLast('/'))
+                }
+                else -> error("Unexpected HTTP request: $path")
+              }
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
           }
-        respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-      }
+        }
+      )
     ) {
       install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
