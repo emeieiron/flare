@@ -493,6 +493,8 @@ private fun AptosError.safeForSelfPay(): Boolean =
   this is AptosError.Api &&
     errorCode in
       setOf(
+        "gas_station_not_configured",
+        "gas_station_credentials_rejected",
         "gas_station_http_400",
         "gas_station_http_401",
         "gas_station_http_403",

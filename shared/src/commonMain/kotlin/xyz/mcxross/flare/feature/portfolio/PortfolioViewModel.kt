@@ -26,7 +26,6 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.DecimalInput
-import xyz.mcxross.flare.decibel.model.MarginMode
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
@@ -87,8 +86,6 @@ sealed interface PortfolioIntent {
   data object DismissPositionManagement : PortfolioIntent
 
   data object ClosePosition : PortfolioIntent
-
-  data class SetLeverage(val leverage: Int) : PortfolioIntent
 
   data class ChangeTakeProfit(val value: String) : PortfolioIntent
 
@@ -183,7 +180,6 @@ class PortfolioViewModel(
           )
         }
       PortfolioIntent.ClosePosition -> closePosition(FeePayment.SPONSORED)
-      is PortfolioIntent.SetLeverage -> setLeverage(intent.leverage, FeePayment.SPONSORED)
       is PortfolioIntent.ChangeTakeProfit ->
         local.update {
           it.copy(takeProfitInput = decimalCharacters(intent.value), positionTransaction = null)
@@ -222,24 +218,6 @@ class PortfolioViewModel(
     val subaccount = checkNotNull(uiState.value.account.account)
     executePositionCommandInternal(
       DecibelCommand.PlaceOrder(subaccount, validated),
-      feePayment,
-    )
-  }
-
-  private fun setLeverage(leverage: Int, feePayment: FeePayment) = launchAction {
-    val position = managedPosition()
-    val quote = marketQuote(position.market)
-    require(leverage in 1..quote.market.maxLeverage) {
-      "Leverage must be between 1 and ${quote.market.maxLeverage}"
-    }
-    val subaccount = checkNotNull(uiState.value.account.account)
-    executePositionCommandInternal(
-      DecibelCommand.ConfigureMarket(
-        subaccount = subaccount,
-        market = position.market,
-        marginMode = if (position.isIsolated) MarginMode.ISOLATED else MarginMode.CROSS,
-        leverage = leverage.toUByte(),
-      ),
       feePayment,
     )
   }

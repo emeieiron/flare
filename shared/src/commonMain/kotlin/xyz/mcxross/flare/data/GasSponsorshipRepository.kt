@@ -59,10 +59,27 @@ class WorkerGasSponsorshipRepository(
           )
         }
       if (!response.status.isSuccess()) {
+        // Only these explicit pre-submission errors make a 503 safe for self-pay.
+        // Generic 503s can mean a submitted transaction failed to reach the journal.
+        val unavailable =
+          if (response.status.value == 503) {
+            try {
+              response.body<GasStationError>().code?.takeIf {
+                it == "gas_station_not_configured" || it == "gas_station_credentials_rejected"
+              }
+            } catch (cancelled: CancellationException) {
+              throw cancelled
+            } catch (_: Throwable) {
+              null
+            }
+          } else null
         AptosResult.Failure(
           AptosError.Api(
-            message = "Gas sponsorship was not accepted",
-            errorCode = "gas_station_http_${response.status.value}",
+            message =
+              if (unavailable != null)
+                "Gas sponsorship is unavailable. You can choose to pay gas with APT."
+              else "Gas sponsorship was not accepted",
+            errorCode = unavailable ?: "gas_station_http_${response.status.value}",
           )
         )
       } else {
@@ -134,3 +151,6 @@ private data class GasStationStatusResponse(
 )
 
 private fun ByteArray.toUnsignedInts(): List<Int> = map { it.toInt() and 0xff }
+
+@Serializable
+private data class GasStationError(val code: String? = null, val error: String? = null)
