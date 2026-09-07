@@ -1,0 +1,146 @@
+{
+  "network": "testnet",
+  "verified_at": "2026-09-07T08:56:37.741224+00:00",
+  "transactions": [
+    {
+      "command": "Deposit",
+      "hash": "0xaa451f55352d8ff954080c438c8ce6d3c78fd6ded9a83607058cf9396f1ce42f",
+      "version": "11054687970",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "768",
+      "sender": "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::deposit_to_subaccount_at",
+      "event_types": [
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0x5d5948c9a786d2913a9acf6875c994874c2892614f55c7c23f8a79f215365761::handler_events::Deposited",
+        "0x1::fungible_asset::Deposit",
+        "0xdd830c71531268031ef64dbabc31f129e67fd6c602e922e63ac253eae8797c33::events::Mint",
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0x1::fungible_asset::Deposit",
+        "0xc78bf218170e7da1db4155cfc540eb5491c28d82593fef3fb78b1195e84486d0::events::Wrapped",
+        "0xe9040c98cf80a78fa3b2574972de58a0fbe0d59a8e1328c3bf69a3917098281f::events::Minted",
+        "0x5d5948c9a786d2913a9acf6875c994874c2892614f55c7c23f8a79f215365761::handler_events::StablecoinWithdrawn",
+        "0xa1cceeaf3afc53b1ae74827f39db481812e64aca290b4fd739ff8d6ec7edc7df::stablecoin_gateway_events::Swap",
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::collateral_balance_sheet::CollateralBalanceChangeEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "DelegateTrading",
+      "hash": "0x0b067243b9e8196a6c95c4225280397eb6286845c1f65fd42c461a04fc84ac84",
+      "version": "11059824765",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "73",
+      "sender": "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::delegate_perp_trading_to_for_subaccount",
+      "event_types": [
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts::DelegationChangedEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "ConfigureMarket",
+      "hash": "0x9fedb55db9bc3b4758ed31f66fef7c94a01a0730031c60f153d8591baa40a806",
+      "version": "11059826346",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "239",
+      "sender": "0x22cb34e89cef550a8b6c128d2114bd589b0c8ced5503274dfc44b59a8e533e6d",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::configure_user_settings_for_market",
+      "event_types": [
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "PlaceOrder",
+      "hash": "0xf5d963b14ae88729e42856a693452e3bc47c307d6e54ac087e698f6aeec49ad4",
+      "version": "11059826684",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "535",
+      "sender": "0x22cb34e89cef550a8b6c128d2114bd589b0c8ced5503274dfc44b59a8e533e6d",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::place_order_to_subaccount",
+      "event_types": [
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::market_types::OrderEvent",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::market_types::OrderEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "CancelOrder",
+      "hash": "0x942152ee8f08686062ed2d1b3d1bb1959a791bc5245aae217b33a2fe43533921",
+      "version": "11059827140",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "413",
+      "sender": "0x22cb34e89cef550a8b6c128d2114bd589b0c8ced5503274dfc44b59a8e533e6d",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::cancel_order_to_subaccount",
+      "event_types": [
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::market_types::OrderEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "RevokeDelegation",
+      "hash": "0x9a6970c7f83e3c324d91963bf34edb3646886e9948a7ce4f68f9b8add74060ff",
+      "version": "11059855340",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "53",
+      "sender": "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::revoke_delegation",
+      "event_types": [
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts::DelegationChangedEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    },
+    {
+      "command": "Withdraw",
+      "hash": "0x80e10bdb1e1bf3d165a10f19629744a6527ed20515bd80212109b8b40391abf8",
+      "version": "11059859026",
+      "success": true,
+      "vm_status": "Executed successfully",
+      "gas_used": "453",
+      "sender": "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+      "fee_payer": "0x4eb85b9ce0031295c922e394a1a932462e163438e8e4678f53c3b563fff69e90",
+      "function": "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::dex_accounts_entry::withdraw_from_cross_collateral",
+      "event_types": [
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::async_withdraw_queue::WithdrawQueuedEvent",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::collateral_balance_sheet::ReservedCollateralChangedEvent",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::collateral_balance_sheet::ReservedCollateralChangedEvent",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::collateral_balance_sheet::CollateralBalanceChangeEvent",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::collateral_balance_sheet::PairedCollateralWithdrawalEvent",
+        "0x1::fungible_asset::Withdraw",
+        "0x1::fungible_asset::Deposit",
+        "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f::async_withdraw_queue::WithdrawProcessedEvent",
+        "0x1::transaction_fee::FeeStatement"
+      ]
+    }
+  ],
+  "cleanup": {
+    "open_orders": 0,
+    "positions": 0,
+    "delegation_revoked": true,
+    "collateral_withdrawn": true
+  },
+  "notes": [
+    "Transactions span recovery runs after a confirmation polling defect and a diagnostic receipt timeout. State was reconciled before resuming.",
+    "Cleanup was checked through the local worker; each transaction receipt was independently verified against the Aptos fullnode."
+  ]
+}

@@ -294,20 +294,17 @@ fun PortfolioScreen(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.labelMedium,
       )
-      Text("Leverage", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.labelMedium)
-      Row(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        listOf(2, 5, 10, 20).forEach { leverage ->
-          FlareChip(
-            text = "${leverage}×",
-            selected = position.leverage == leverage,
-            onClick = { onIntent(PortfolioIntent.SetLeverage(leverage)) },
-            modifier = Modifier.weight(1f),
-          )
-        }
-      }
+      Text(
+        "Leverage · ${position.leverage}×",
+        Modifier.padding(top = 16.dp),
+        style = MaterialTheme.typography.labelMedium,
+      )
+      Text(
+        "Decibel requires this market’s position to be closed before changing leverage or margin mode.",
+        Modifier.padding(top = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+      )
       OutlinedTextField(
         value = state.takeProfitInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeTakeProfit(it)) },

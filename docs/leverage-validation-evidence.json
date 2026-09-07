@@ -1,0 +1,64 @@
+{
+  "network": "testnet",
+  "chain_id": 2,
+  "verified_on": "2026-09-07",
+  "attempted_leverage_change": {
+    "from_leverage": 1,
+    "to_leverage": 2,
+    "margin_mode": "cross",
+    "outcome": "simulation_rejected_before_signing",
+    "abort": "ECANNOT_MODIFY_SETTINGS_WHILE_HOLDING_POSITION"
+  },
+  "cleanup": "no open orders or position; delegation revoked; collateral withdrawn",
+  "transactions": [
+    {
+      "operation": "Deposit",
+      "hash": "0xbcbc71d1a1a2f96d707394ca41952ff2b14592538978c2352f1fbb9ed9f54ff0",
+      "version": "11051166574",
+      "success": true,
+      "timestamp_us": "1788730017038301"
+    },
+    {
+      "operation": "DelegateTrading",
+      "hash": "0xd42e595ba33f332c7751b2c39044b9cb1ab5ddb8bf21dc404d12eb513d2be7f4",
+      "version": "11051167091",
+      "success": true,
+      "timestamp_us": "1788730019684659"
+    },
+    {
+      "operation": "ConfigureMarket",
+      "hash": "0xf8ff3c995e83651fb11ea0c1a480495820c59a960850f226365706f88489946c",
+      "version": "11051168331",
+      "success": true,
+      "timestamp_us": "1788730025136318"
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0x6a6e25fdb427cb80c48277997a9e9304196afe1e6d5e78ee28f6696ea646c666",
+      "version": "11051169171",
+      "success": true,
+      "timestamp_us": "1788730028059514"
+    },
+    {
+      "operation": "PlaceOrder",
+      "hash": "0x4585b9cdaadd0d826644c4518a047ad3ea44402fba730ac00fd0110b0e135315",
+      "version": "11051170755",
+      "success": true,
+      "timestamp_us": "1788730034967300"
+    },
+    {
+      "operation": "RevokeDelegation",
+      "hash": "0xa6f310b9e7e751e0ad5ae02c8da74b18c48e9e908ed6e082b82c558783996ef8",
+      "version": "11051172104",
+      "success": true,
+      "timestamp_us": "1788730040252173"
+    },
+    {
+      "operation": "Withdraw",
+      "hash": "0x600bc6be179b1c3b97bc8de3ccb723b546f7317944534fa633867a933d6e55a0",
+      "version": "11051173914",
+      "success": true,
+      "timestamp_us": "1788730047586616"
+    }
+  ]
+}

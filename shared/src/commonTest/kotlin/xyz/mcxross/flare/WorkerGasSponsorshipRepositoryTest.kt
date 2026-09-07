@@ -23,7 +23,57 @@ import xyz.mcxross.flare.data.WorkerGasSponsorshipRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.kaptos.model.AptosResult
 
-class WorkerGasSponsorshipRepositoryIosTest {
+class WorkerGasSponsorshipRepositoryTest {
+  @Test
+  fun onlyExplicitCredentialErrorsMakeServiceUnavailableSafeForSelfPay() = runTest {
+    val cases =
+      listOf(
+        """{"code":"gas_station_not_configured","error":"unavailable"}""" to
+          "gas_station_not_configured",
+        """{"code":"gas_station_credentials_rejected","error":"unavailable"}""" to
+          "gas_station_credentials_rejected",
+        """{"code":"unknown","error":"unavailable"}""" to "gas_station_http_503",
+        """{"error":"Unable to journal sponsored transaction"}""" to "gas_station_http_503",
+        "upstream unavailable" to "gas_station_http_503",
+      )
+    for ((body, expected) in cases) {
+      val client =
+        HttpClient(
+          MockEngine { request ->
+            assertEquals("/gas/sponsor/owner", request.url.encodedPath)
+            assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+            respond(
+              body,
+              HttpStatusCode.ServiceUnavailable,
+              headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+          }
+        ) {
+          install(ContentNegotiation) { json() }
+        }
+      try {
+        val repository =
+          WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), TestSessionRepository)
+        val result =
+          repository.submit(
+            xyz.mcxross.kaptos.model.ExternalFeePayerRequest(
+              byteArrayOf(1),
+              byteArrayOf(2),
+              fingerprint = "0x" + "11".repeat(32),
+            ),
+            ownerOnly = true,
+          )
+        val failure = assertIs<AptosResult.Failure>(result)
+        assertEquals(
+          expected,
+          assertIs<xyz.mcxross.kaptos.model.AptosError.Api>(failure.error).errorCode,
+        )
+      } finally {
+        client.close()
+      }
+    }
+  }
+
   @Test
   fun resolvesSubmittedFingerprintToOnChainHash() = runTest {
     val fingerprint = "0x" + "11".repeat(32)

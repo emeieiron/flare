@@ -1,5 +1,7 @@
 # Transaction validation — 2026-09-06
 
+For subsequent sponsorship fixes and the live open-position leverage test, see [the September 7 follow-up](sponsorship-and-leverage-validation.md).
+
 The self-paid testnet account and trading lifecycle passed through Flare's Decibel service, Kaptos, and the local Worker. Successful Gas Station submission is **not verified**: the local sponsorship endpoint returned HTTP 401. This is transaction-layer evidence, not a certification of every mobile UI or secure-storage interaction.
 
 ## Environment
