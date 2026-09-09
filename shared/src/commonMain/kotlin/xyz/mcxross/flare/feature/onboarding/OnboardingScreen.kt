@@ -28,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -197,13 +196,6 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
       !state.busy,
       FlareButtonStyle.OUTLINE,
     )
-  }
-  TextButton(
-    { onIntent(OnboardingIntent.ExploreAnonymously) },
-    Modifier.fillMaxWidth().padding(top = 8.dp),
-    enabled = !state.busy,
-  ) {
-    Text("Explore markets first", color = FlareColors.TextSecondary)
   }
 }
 

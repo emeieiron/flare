@@ -17,7 +17,6 @@ import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
-import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
@@ -53,8 +52,6 @@ data class OnboardingUiState(
 )
 
 sealed interface OnboardingIntent {
-  data object ExploreAnonymously : OnboardingIntent
-
   data object CreateOwner : OnboardingIntent
 
   data object ShowImport : OnboardingIntent
@@ -106,7 +103,6 @@ sealed interface OnboardingEffect {
 
 class OnboardingViewModel(
   private val wallets: WalletRepository,
-  private val sessions: SessionRepository,
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
 ) : ViewModel() {
@@ -125,7 +121,6 @@ class OnboardingViewModel(
 
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
-      OnboardingIntent.ExploreAnonymously -> completeAnonymously()
       OnboardingIntent.CreateOwner -> createOwner()
       OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
       OnboardingIntent.ImportCredential ->
@@ -357,18 +352,7 @@ class OnboardingViewModel(
 
   private fun finishSetup() = launchAction { finishSetupInternal() }
 
-  private fun completeAnonymously() = launchAction { finishSetupInternal() }
-
   private suspend fun finishSetupInternal() {
-    if (sessions.status.value == null) {
-      try {
-        sessions.useAnonymous()
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (_: Throwable) {
-        /* Markets exposes an offline state with retry. */
-      }
-    }
     preferences.setOnboardingComplete(true)
     clearSensitiveState()
     effectChannel.send(OnboardingEffect.Completed)
