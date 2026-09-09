@@ -32,6 +32,8 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
+import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.data.assetKey
 
 @Composable
 fun MarketsRoute(
@@ -160,8 +162,11 @@ fun MarketsScreen(
         }
         items(state.quotes, key = { it.market.address }) { quote ->
           MarketListRow(
-            symbol = quote.market.symbol,
-            name = quote.market.name,
+            asset = resolveAssetIdentity(
+              quote.market.symbol,
+              quote.market.name,
+              state.assets[assetKey(quote.market.symbol)],
+            ),
             price = formatPrice(quote.markPrice),
             delta = formatPercent(quote.changePercent24h),
             positive = quote.changePercent24h >= 0,

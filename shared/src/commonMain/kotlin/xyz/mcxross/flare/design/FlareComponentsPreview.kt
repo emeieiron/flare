@@ -19,7 +19,12 @@ private fun FlareActionsPreview() {
       modifier = Modifier.fillMaxWidth().background(FlareColors.Canvas).padding(20.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      AssetHeader("BTC", "Bitcoin perpetual", "$62,500.25", "1.25%", positive = true)
+      AssetHeader(
+        AssetIdentity("BTC", "Bitcoin", "crypto"),
+        "$62,500.25",
+        "1.25%",
+        positive = true,
+      )
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FlareChip("Cross", selected = true, onClick = {})
         IndicatorChip("RSI", selected = false, color = FlareColors.IndicatorCyan, onClick = {})
@@ -44,8 +49,7 @@ private fun FlareMarketRowPreview() {
     Column(Modifier.fillMaxWidth().background(FlareColors.Canvas).padding(horizontal = 20.dp)) {
       FlareTopBar(title = "Markets", subtitle = "Decibel perpetuals")
       MarketListRow(
-        symbol = "ETH",
-        name = "Ethereum perpetual",
+        asset = AssetIdentity("ETH", "Ethereum", "crypto"),
         price = "$4,318.42",
         delta = "2.08%",
         positive = false,

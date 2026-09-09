@@ -15,8 +15,10 @@ import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.DefaultAccountRepository
+import xyz.mcxross.flare.data.DefaultAssetCatalogRepository
 import xyz.mcxross.flare.data.DefaultChartRepository
 import xyz.mcxross.flare.data.DefaultMarketDetailsRepository
 import xyz.mcxross.flare.data.DefaultMarketsRepository
@@ -72,6 +74,7 @@ fun flareModule(
   }
   single { buildFlareDatabase(databaseBuilder) }
   single { get<FlareDatabase>().marketCacheDao() }
+  single { get<FlareDatabase>().assetCatalogDao() }
   single { preferences }
   single { walletVault }
   singleOf(::AppPreferences)
@@ -112,6 +115,7 @@ fun flareModule(
     )
   }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
+  singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }
   singleOf(::WorkerGasSponsorshipRepository) { bind<GasSponsorshipRepository>() }
