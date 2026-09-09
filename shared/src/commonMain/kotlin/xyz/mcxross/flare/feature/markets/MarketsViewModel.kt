@@ -9,8 +9,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.MarketQuote
+import xyz.mcxross.flare.data.AssetCatalogRepository
+import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.MarketsRepository
-import xyz.mcxross.flare.design.assetDisplayName
 
 data class MarketsUiState(
   val loading: Boolean = true,
@@ -19,6 +20,7 @@ data class MarketsUiState(
   val quotes: List<MarketQuote> = emptyList(),
   val stale: Boolean = true,
   val error: String? = null,
+  val assets: Map<String, xyz.mcxross.flare.data.AssetMetadata> = emptyMap(),
 )
 
 sealed interface MarketsIntent {
@@ -31,12 +33,15 @@ sealed interface MarketsIntent {
   data object Refresh : MarketsIntent
 }
 
-class MarketsViewModel(private val repository: MarketsRepository) : ViewModel() {
+class MarketsViewModel(
+  private val repository: MarketsRepository,
+  private val assetCatalog: AssetCatalogRepository,
+) : ViewModel() {
   private val query = MutableStateFlow("")
   private val favoritesOnly = MutableStateFlow(false)
 
   val uiState: StateFlow<MarketsUiState> =
-    combine(repository.catalog, query, favoritesOnly) { catalog, search, onlyFavorites ->
+    combine(repository.catalog, assetCatalog.assets, query, favoritesOnly) { catalog, assets, search, onlyFavorites ->
         val normalized = search.trim().lowercase()
         MarketsUiState(
           loading = catalog.loading,
@@ -48,12 +53,13 @@ class MarketsViewModel(private val repository: MarketsRepository) : ViewModel() 
                 (normalized.isEmpty() ||
                   it.market.symbol.lowercase().contains(normalized) ||
                   it.market.name.lowercase().contains(normalized) ||
-                  assetDisplayName(it.market.symbol, it.market.name)
-                    .lowercase()
-                    .contains(normalized))
+                  assets[assetKey(it.market.symbol)]?.let { asset ->
+                    asset.name.lowercase().contains(normalized) || asset.kind.lowercase().contains(normalized)
+                  } == true)
             },
           stale = catalog.stale,
           error = catalog.error,
+          assets = assets,
         )
       }
       .stateIn(
@@ -64,6 +70,7 @@ class MarketsViewModel(private val repository: MarketsRepository) : ViewModel() 
 
   init {
     refresh()
+    viewModelScope.launch { runCatching { assetCatalog.refresh() } }
     viewModelScope.launch { repository.connectLive() }
   }
 

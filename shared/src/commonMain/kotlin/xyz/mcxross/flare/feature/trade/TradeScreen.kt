@@ -31,6 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
+import xyz.mcxross.flare.data.AssetCatalogRepository
+import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.ChartRange
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPercent
@@ -38,6 +41,7 @@ import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.design.AssetHeader
+import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
@@ -57,14 +61,17 @@ fun TradeRoute(
   viewModel: TradeViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val assetCatalog: AssetCatalogRepository = koinInject()
+  val assets by assetCatalog.assets.collectAsStateWithLifecycle()
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
-  TradeScreen(state, viewModel::onIntent, modifier, onBack, onOpenSetup)
+  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup)
 }
 
 @Composable
 fun TradeScreen(
   state: TradeUiState,
   onIntent: (TradeIntent) -> Unit,
+  assets: Map<String, xyz.mcxross.flare.data.AssetMetadata> = emptyMap(),
   modifier: Modifier = Modifier,
   onBack: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
@@ -94,8 +101,11 @@ fun TradeScreen(
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
       Spacer(Modifier.height(16.dp))
       AssetHeader(
-        quote.market.symbol,
-        quote.market.name,
+        resolveAssetIdentity(
+          quote.market.symbol,
+          quote.market.name,
+          assets[assetKey(quote.market.symbol)],
+        ),
         formatPrice(quote.markPrice),
         formatPercent(quote.changePercent24h),
         quote.changePercent24h >= 0,

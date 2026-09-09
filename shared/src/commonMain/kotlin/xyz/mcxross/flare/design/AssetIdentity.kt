@@ -1,41 +1,27 @@
 package xyz.mcxross.flare.design
 
-/** Display metadata only. Protocol symbols and addresses remain unchanged. */
-fun assetDisplayName(symbol: String, fallback: String): String =
-  when (symbol.uppercase()) {
-    "BTC" -> "Bitcoin"
-    "ETH" -> "Ethereum"
-    "SOL" -> "Solana"
-    "APT" -> "Aptos"
-    "SUI" -> "Sui"
-    "DOGE" -> "Dogecoin"
-    "AVAX" -> "Avalanche"
-    "LINK" -> "Chainlink"
-    "AAVE" -> "Aave"
-    "ADA" -> "Cardano"
-    "AAPL" -> "Apple"
-    "AMD" -> "Advanced Micro Devices"
-    "AMZN" -> "Amazon"
-    "ARM" -> "Arm"
-    "ASML" -> "ASML"
-    "GOOG",
-    "GOOGL" -> "Alphabet"
-    "META" -> "Meta"
-    "MSFT" -> "Microsoft"
-    "NFLX" -> "Netflix"
-    "NVDA" -> "Nvidia"
-    "TSLA" -> "Tesla"
-    "XRP" -> "XRP"
-    "LTC" -> "Litecoin"
-    "BCH" -> "Bitcoin Cash"
-    "DOT" -> "Polkadot"
-    "UNI" -> "Uniswap"
-    else -> fallback
-  }
+import xyz.mcxross.flare.data.AssetMetadata
 
-fun assetMonogram(symbol: String): String =
-  when (symbol.uppercase()) {
-    "BTC" -> "₿"
-    "ETH" -> "Ξ"
-    else -> symbol.take(1)
-  }
+/** Display metadata only. Protocol symbols and addresses remain unchanged. */
+data class AssetIdentity(
+  val symbol: String,
+  val name: String,
+  val kind: String? = null,
+  val iconUrl: String? = null,
+)
+
+fun resolveAssetIdentity(
+  symbol: String,
+  fallbackName: String,
+  metadata: AssetMetadata?,
+): AssetIdentity =
+  AssetIdentity(
+    symbol = metadata?.symbol ?: symbol,
+    name = metadata?.name ?: fallbackName,
+    kind = metadata?.kind,
+    iconUrl = metadata?.iconUrl,
+  )
+
+fun assetMonogram(symbol: String): String = symbol.trim().firstOrNull()?.uppercase() ?: "?"
+
+fun AssetIdentity.detailLabel(): String = kind?.replaceFirstChar(Char::titlecase)?.let { "$name · $it" } ?: name
