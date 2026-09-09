@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.design
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,24 +16,33 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,9 +67,15 @@ fun FlareSearchField(
   OutlinedTextField(
     value = value,
     onValueChange = onValueChange,
-    modifier = modifier.heightIn(min = 48.dp),
+    modifier = modifier.heightIn(min = 52.dp),
     placeholder = { Text(placeholder) },
     leadingIcon = { Icon(leadingIcon, contentDescription = null) },
+    trailingIcon = {
+      if (value.isNotEmpty())
+        IconButton(onClick = { onValueChange("") }) {
+          Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+        }
+    },
     singleLine = true,
     shape = MaterialTheme.shapes.small,
     colors =
@@ -98,7 +114,7 @@ fun FlareButton(
   if (style == FlareButtonStyle.PRIMARY) {
     Button(
       onClick = onClick,
-      modifier = modifier.heightIn(min = 48.dp),
+      modifier = modifier.heightIn(min = 52.dp),
       enabled = enabled,
       shape = shape,
       colors =
@@ -120,7 +136,7 @@ fun FlareButton(
       }
     OutlinedButton(
       onClick = onClick,
-      modifier = modifier.heightIn(min = 48.dp),
+      modifier = modifier.heightIn(min = 52.dp),
       enabled = enabled,
       shape = shape,
       border = BorderStroke(1.dp, if (enabled) colors.borderDefault else colors.borderSubtle),
@@ -142,19 +158,22 @@ fun FlareChip(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   semanticColor: Color? = null,
+  enabled: Boolean = true,
 ) {
-  val colors = LocalFlareTradingColors.current
   val shape = CircleShape
-  val background = if (selected) colors.positive else Color.Transparent
-  val foreground = if (selected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
-  val borderColor = semanticColor ?: colors.borderDefault
+  val background by animateColorAsState(if (selected) FlareColors.Elevated else Color.Transparent)
+  val foreground by
+    animateColorAsState(
+      if (!enabled) FlareColors.TextDisabled
+      else if (selected) semanticColor ?: FlareColors.TextPrimary else FlareColors.TextSecondary
+    )
   Box(
     modifier =
       modifier
         .heightIn(min = 44.dp)
-        .background(background, shape)
-        .border(if (selected) 0.dp else 1.dp, borderColor, shape)
-        .clickable(role = Role.Button, onClick = onClick)
+        .clip(shape)
+        .background(background)
+        .selectable(selected = selected, enabled = enabled, role = Role.Tab, onClick = onClick)
         .padding(horizontal = 12.dp),
     contentAlignment = Alignment.Center,
   ) {
@@ -162,7 +181,7 @@ fun FlareChip(
       text = text,
       color = foreground,
       style = MaterialTheme.typography.labelMedium,
-      fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+      fontWeight = FontWeight.Medium,
     )
   }
 }
@@ -186,13 +205,29 @@ fun <T> TimeRangeSelector(
   onSelected: (T) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+  Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
     values.forEach { value ->
-      FlareChip(
-        text = label(value),
-        selected = value == selected,
-        onClick = { onSelected(value) },
-      )
+      val active = value == selected
+      Box(
+        Modifier.heightIn(min = 48.dp).weight(1f).clip(MaterialTheme.shapes.small).selectable(
+          active,
+          role = Role.Tab,
+        ) {
+          onSelected(value)
+        },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          label(value),
+          Modifier.background(
+              if (active) FlareColors.Positive else Color.Transparent,
+              MaterialTheme.shapes.extraSmall,
+            )
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+          color = if (active) FlareColors.Canvas else FlareColors.TextSecondary,
+          style = MaterialTheme.typography.labelSmall,
+        )
+      }
     }
   }
 }
@@ -234,7 +269,7 @@ fun QuantitySelector(
 ) {
   OutlinedButton(
     onClick = onClick,
-    modifier = modifier.heightIn(min = 48.dp),
+    modifier = modifier.heightIn(min = 52.dp),
     enabled = enabled,
     shape = CircleShape,
     border = BorderStroke(1.dp, FlareColors.BorderDefault),
@@ -269,11 +304,11 @@ fun FlareTopBar(
   action: (@Composable () -> Unit)? = null,
 ) {
   Row(
-    modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
+    modifier = modifier.fillMaxWidth().padding(top = 12.dp, bottom = 24.dp).heightIn(min = 52.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Column(modifier = Modifier.weight(1f)) {
-      Text(title, style = MaterialTheme.typography.titleLarge)
+      Text(title, style = MaterialTheme.typography.headlineLarge)
       subtitle?.let {
         Text(
           it,
@@ -296,10 +331,20 @@ fun AssetHeader(
   modifier: Modifier = Modifier,
 ) {
   Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Text(symbol.uppercase(), style = MaterialTheme.typography.labelSmall)
-    Text(name, style = MaterialTheme.typography.headlineLarge)
+    Text(assetDisplayName(symbol, name), style = MaterialTheme.typography.titleLarge)
+    Spacer(Modifier.height(8.dp))
     PriceDisplay(price)
-    DeltaLabel(delta, positive)
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      DeltaLabel(delta, positive)
+      Text(
+        "Past 24 hours",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelMedium,
+      )
+    }
   }
 }
 
@@ -325,16 +370,16 @@ fun MarketListRow(
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Box(
-      modifier = Modifier.size(36.dp).background(FlareColors.Elevated, CircleShape),
+      modifier = Modifier.size(40.dp).background(FlareColors.Elevated, CircleShape),
       contentAlignment = Alignment.Center,
     ) {
-      Text(symbol.take(1), style = MaterialTheme.typography.labelLarge)
+      Text(assetMonogram(symbol), style = MaterialTheme.typography.titleLarge)
     }
     Spacer(Modifier.width(12.dp))
     Column(modifier = Modifier.weight(1f)) {
       Text(symbol, style = MaterialTheme.typography.labelLarge)
       Text(
-        name,
+        assetDisplayName(symbol, name),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -346,16 +391,15 @@ fun MarketListRow(
       DeltaLabel(delta, positive)
     }
     Spacer(Modifier.width(8.dp))
-    Text(
-      text = if (favorite) "★" else "☆",
-      color = if (favorite) colors.warning else colors.textTertiary,
-      modifier =
-        Modifier.size(48.dp)
-          .clickable(role = Role.Button, onClick = onFavorite)
-          .semantics { contentDescription = if (favorite) "Remove favorite" else "Add favorite" }
-          .padding(12.dp),
-      textAlign = TextAlign.Center,
-    )
+    IconButton(onClick = onFavorite) {
+      Icon(
+        if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+        contentDescription =
+          if (favorite) "Remove $symbol from watchlist" else "Add $symbol to watchlist",
+        tint = if (favorite) colors.positive else colors.textTertiary,
+        modifier = Modifier.size(20.dp),
+      )
+    }
   }
 }
 
@@ -399,7 +443,7 @@ fun FlareBottomNavigation(
   modifier: Modifier = Modifier,
 ) {
   Row(
-    modifier = modifier.fillMaxWidth().height(64.dp).background(FlareColors.Canvas),
+    modifier = modifier.fillMaxWidth().height(72.dp).background(FlareColors.Canvas),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     items.forEachIndexed { index, item ->
@@ -407,14 +451,17 @@ fun FlareBottomNavigation(
       val color = if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary
       Column(
         modifier =
-          Modifier.weight(1f)
-            .heightIn(min = 48.dp)
-            .clickable(role = Role.Tab) { onSelected(index) }
-            .semantics { role = Role.Tab },
+          Modifier.weight(1f).heightIn(min = 52.dp).selectable(
+            selected = selected,
+            role = Role.Tab,
+          ) {
+            onSelected(index)
+          },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
       ) {
         Icon(item.icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(5.dp))
         Text(item.label, color = color, style = MaterialTheme.typography.labelSmall)
       }
     }

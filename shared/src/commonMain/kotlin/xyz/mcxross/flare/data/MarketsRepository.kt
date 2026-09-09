@@ -387,7 +387,7 @@ private fun CandleInterval.durationMs(): Long =
 fun formatPrice(value: Double): String =
   when {
     !value.isFinite() || value <= 0.0 -> "—"
-    value >= 1_000.0 -> "\$${fixed(value, 2)}"
+    value >= 1_000.0 -> "\$${groupDigits(fixed(value, 2))}"
     value >= 1.0 -> "\$${fixed(value, 3)}"
     else -> "\$${fixed(value, 5)}"
   }
@@ -410,11 +410,33 @@ private fun fixed(value: Double, decimals: Int): String {
   val scaled = (value * factor).roundToLong()
   val whole = scaled / factor
   val fraction = abs(scaled % factor).toString().padStart(decimals, '0')
-  return if (decimals == 0) whole.toString() else "$whole.$fraction"
+  val sign = if (scaled < 0 && whole == 0L) "-" else ""
+  return sign + if (decimals == 0) whole.toString() else "$whole.$fraction"
 }
 
 private fun pow10(exponent: Int): Long {
   var result = 1L
   repeat(exponent) { result *= 10L }
   return result
+}
+
+/** Account balances include zero and losses, unlike market quotes that require a positive price. */
+fun formatBalance(value: Double): String =
+  if (!value.isFinite()) "—"
+  else if (value != 0.0 && abs(value) < 0.005) {
+    (if (value < 0) "−" else "") + "<\$0.01"
+  } else (if (value < 0) "−" else "") + "\$" + groupDigits(fixed(abs(value), 2))
+
+/** Display only. Transaction inputs continue to use exact decimal strings and chain units. */
+fun formatQuantity(value: Double, decimals: Int = 8): String {
+  if (!value.isFinite()) return "—"
+  val precision = decimals.coerceIn(0, 12)
+  val formatted = fixed(value, precision)
+  return if (precision == 0) formatted else formatted.trimEnd('0').trimEnd('.')
+}
+
+private fun groupDigits(number: String): String {
+  val parts = number.split('.')
+  val whole = parts.first().reversed().chunked(3).joinToString(",").reversed()
+  return whole + if (parts.size > 1) "." + parts[1] else ""
 }

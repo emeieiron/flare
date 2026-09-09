@@ -1,9 +1,6 @@
 package xyz.mcxross.flare.feature.trade
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,36 +14,44 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.CartesianDrawingContext
+import com.patrykandpatrick.vico.compose.cartesian.Scroll
+import com.patrykandpatrick.vico.compose.cartesian.Zoom
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
 import com.patrykandpatrick.vico.compose.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.compose.cartesian.data.CandlestickCartesianLayerModel
+import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModel
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
-import com.patrykandpatrick.vico.compose.cartesian.data.candlestickModel
+import com.patrykandpatrick.vico.compose.cartesian.data.CartesianLayerRangeProvider
+import com.patrykandpatrick.vico.compose.cartesian.data.LineCartesianLayerModel
 import com.patrykandpatrick.vico.compose.cartesian.data.columnModel
 import com.patrykandpatrick.vico.compose.cartesian.data.lineModel
+import com.patrykandpatrick.vico.compose.cartesian.decoration.Decoration
+import com.patrykandpatrick.vico.compose.cartesian.layer.CandlestickCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.ColumnCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.layer.absolute
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberCandlestickCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.marker.rememberDefaultCartesianMarker
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
+import com.patrykandpatrick.vico.compose.cartesian.rememberVicoZoomState
 import com.patrykandpatrick.vico.compose.common.Fill
 import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
-import kotlin.math.roundToInt
-import xyz.mcxross.flare.data.formatPrice
+import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
+import kotlin.math.abs
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.domain.MacdPoint
@@ -60,72 +65,9 @@ fun FlareChartStack(
   showMacd: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  var widthPx by remember { mutableIntStateOf(0) }
-  var selectedIndex by
-    remember(candles) {
-      mutableStateOf(candles.lastIndex.takeIf { it >= 0 })
-    }
-  val inspectModifier =
-    Modifier.onSizeChanged { widthPx = it.width }
-      .pointerInput(candles.size, widthPx) {
-        if (candles.isEmpty() || widthPx == 0) return@pointerInput
-        awaitEachGesture {
-          fun select(x: Float) {
-            val fraction = (x / widthPx).coerceIn(0f, 1f)
-            selectedIndex = (fraction * candles.lastIndex).roundToInt()
-          }
-          val down = awaitFirstDown(requireUnconsumed = false)
-          select(down.position.x)
-          do {
-            val event = awaitPointerEvent()
-            event.changes.firstOrNull()?.let { select(it.position.x) }
-          } while (event.changes.any { it.pressed })
-        }
-      }
-      .semantics {
-        contentDescription =
-          selectedIndex?.let { "Selected candle ${it + 1} of ${candles.size}" } ?: "Market chart"
-      }
-
-  Box(modifier.then(inspectModifier)) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      FlarePriceChart(
-        candles = candles,
-        style = style,
-        modifier = Modifier.fillMaxWidth().height(300.dp),
-      )
-      FlareIndicatorCharts(
-        candles = candles,
-        showRsi = showRsi,
-        showMacd = showMacd,
-        modifier = Modifier.fillMaxWidth(),
-      )
-    }
-    selectedIndex
-      ?.takeIf { it in candles.indices }
-      ?.let { index ->
-        Canvas(Modifier.fillMaxSize()) {
-          val x = if (candles.size == 1) size.width / 2f else size.width * index / candles.lastIndex
-          drawLine(
-            color = FlareColors.BorderStrong,
-            start = androidx.compose.ui.geometry.Offset(x, 0f),
-            end = androidx.compose.ui.geometry.Offset(x, size.height),
-            strokeWidth = 1.dp.toPx(),
-          )
-        }
-        val candle = candles[index]
-        Text(
-          text =
-            "O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}  " +
-              "L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}",
-          modifier =
-            Modifier.align(Alignment.TopCenter)
-              .background(FlareColors.Elevated, MaterialTheme.shapes.extraSmall)
-              .padding(horizontal = 8.dp, vertical = 5.dp),
-          color = MaterialTheme.colorScheme.onSurface,
-          style = MaterialTheme.typography.labelSmall,
-        )
-      }
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlarePriceChart(candles, style, Modifier.fillMaxWidth().height(280.dp))
+    FlareIndicatorCharts(candles, showRsi, showMacd, Modifier.fillMaxWidth())
   }
 }
 
@@ -136,53 +78,133 @@ fun FlarePriceChart(
   modifier: Modifier = Modifier,
 ) {
   if (candles.isEmpty()) {
-    ChartPlaceholder("No candle data", modifier)
+    ChartPlaceholder("Price history is unavailable", modifier)
     return
   }
 
-  val producer = remember { CartesianChartModelProducer() }
-  LaunchedEffect(candles, style) {
-    producer.runTransaction {
-      when (style) {
-        ChartStyle.LINE ->
-          lineModel {
-            series(
+  // Build once per price snapshot. This host also recomputes ranges when the viewport changes,
+  // without waiting for another network update to rescale a panned candle chart.
+  val model =
+    remember(candles, style) {
+      CartesianChartModel(
+        when (style) {
+          ChartStyle.LINE ->
+            LineCartesianLayerModel.build {
+              series(
+                x = candles.indices.toList(),
+                y = candles.map(Candle::close),
+              )
+            }
+          ChartStyle.CANDLESTICK ->
+            CandlestickCartesianLayerModel.build(
               x = candles.indices.toList(),
-              y = candles.map(Candle::close),
+              opening = candles.map(Candle::open),
+              closing = candles.map(Candle::close),
+              low = candles.map(Candle::low),
+              high = candles.map(Candle::high),
             )
-          }
-        ChartStyle.CANDLESTICK ->
-          candlestickModel(
-            x = candles.indices.toList(),
-            opening = candles.map(Candle::open),
-            closing = candles.map(Candle::close),
-            low = candles.map(Candle::low),
-            high = candles.map(Candle::high),
-          )
+        }
+      )
+    }
+
+  var visibleIndices by
+    remember(candles.size, style) {
+      mutableStateOf((candles.size - 60).coerceAtLeast(0)..candles.lastIndex)
+    }
+  val viewportObserver =
+    remember(candles.size, style) {
+      object : Decoration {
+        override fun drawUnderLayers(context: CartesianDrawingContext) {
+          // Use the measured plot, including candle padding, after Vico applies pan and zoom.
+          val spacing = context.layerDimensions.xSpacing
+          if (spacing <= 0f) return
+          val firstX =
+            context.ranges.minX +
+              (abs(context.scroll) - context.layerDimensions.startPadding) / spacing *
+                context.ranges.xStep
+          val lastX = firstX + context.layerBounds.width / spacing * context.ranges.xStep
+          visibleIndices = visibleCandleIndices(firstX, lastX, candles.size)
+        }
       }
     }
-  }
-
+  val bounds =
+    remember(candles, style, visibleIndices) {
+      val visibleCandles = if (style == ChartStyle.LINE) candles else candles.slice(visibleIndices)
+      priceBounds(
+        visibleCandles.flatMap {
+          if (style == ChartStyle.LINE) listOf(it.close) else listOf(it.low, it.high)
+        }
+      )
+    }
+  val rangeProvider =
+    remember(bounds) {
+      CartesianLayerRangeProvider.fixed(minY = bounds.start, maxY = bounds.endInclusive)
+    }
+  val marker =
+    rememberDefaultCartesianMarker(
+      label =
+        rememberTextComponent(
+          style = MaterialTheme.typography.bodySmall.copy(color = FlareColors.TextPrimary)
+        ),
+      guideline = rememberLineComponent(fill = Fill(FlareColors.BorderStrong), thickness = 1.dp),
+    )
   val layer =
     when (style) {
-      ChartStyle.LINE -> flareLineLayer(listOf(FlareColors.Positive))
-      ChartStyle.CANDLESTICK -> rememberCandlestickCartesianLayer()
+      ChartStyle.LINE ->
+        flareLineLayer(
+          listOf(
+            if (candles.last().close >= candles.first().close) FlareColors.Positive
+            else FlareColors.Negative
+          ),
+          rangeProvider,
+        )
+      ChartStyle.CANDLESTICK ->
+        rememberCandlestickCartesianLayer(
+          candleProvider =
+            CandlestickCartesianLayer.CandleProvider.absolute(
+              bullish =
+                CandlestickCartesianLayer.Candle(
+                  rememberLineComponent(Fill(FlareColors.Positive), 6.dp)
+                ),
+              neutral =
+                CandlestickCartesianLayer.Candle(
+                  rememberLineComponent(Fill(FlareColors.TextSecondary), 6.dp)
+                ),
+              bearish =
+                CandlestickCartesianLayer.Candle(
+                  rememberLineComponent(Fill(FlareColors.Negative), 6.dp)
+                ),
+            ),
+          rangeProvider = rangeProvider,
+        )
     }
   CartesianChartHost(
     chart =
       rememberCartesianChart(
         layer,
-        endAxis = compactEndAxis(),
-        bottomAxis = hiddenBottomAxis(),
+        marker = marker,
+        decorations =
+          if (style == ChartStyle.CANDLESTICK) listOf(viewportObserver) else emptyList(),
       ),
-    modelProducer = producer,
+    model = model,
     modifier =
       modifier.fillMaxSize().semantics {
         contentDescription =
           if (style == ChartStyle.LINE) "Market price line chart" else "Market candlestick chart"
       },
-    scrollState = rememberVicoScrollState(scrollEnabled = false),
-    initialAnimationSpec = null,
+    scrollState =
+      rememberVicoScrollState(
+        scrollEnabled = style == ChartStyle.CANDLESTICK,
+        initialScroll = Scroll.Absolute.End,
+      ),
+    zoomState =
+      rememberVicoZoomState(
+        zoomEnabled = style == ChartStyle.CANDLESTICK,
+        initialZoom =
+          if (style == ChartStyle.LINE) Zoom.Content else Zoom.max(Zoom.Content, Zoom.x(60.0)),
+        minZoom = Zoom.Content,
+        maxZoom = Zoom.max(Zoom.Content, Zoom.x(12.0)),
+      ),
   )
 }
 
@@ -326,14 +348,18 @@ private fun MacdIndicatorChart(
 }
 
 @Composable
-private fun flareLineLayer(colors: List<Color>) =
+private fun flareLineLayer(
+  colors: List<Color>,
+  rangeProvider: CartesianLayerRangeProvider = CartesianLayerRangeProvider.Intrinsic,
+) =
   rememberLineCartesianLayer(
+    rangeProvider = rangeProvider,
     lineProvider =
       LineCartesianLayer.LineProvider.series(
         colors.map { color ->
           LineCartesianLayer.Line(fill = LineCartesianLayer.LineFill.single(Fill(color)))
         }
-      )
+      ),
   )
 
 @Composable

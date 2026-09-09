@@ -28,6 +28,9 @@ dependencies {
 
   implementation(libs.compose.uiToolingPreview)
   debugImplementation(libs.compose.uiTooling)
+  debugImplementation(project(":decibel"))
+  debugImplementation(libs.compose.material3)
+  debugImplementation(libs.compose.foundation)
 }
 
 android {

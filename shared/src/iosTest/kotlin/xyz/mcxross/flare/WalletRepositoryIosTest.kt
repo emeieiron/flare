@@ -59,6 +59,24 @@ class WalletRepositoryIosTest {
   }
 
   @Test
+  fun rawOwnerKeyIsStoredCanonicallyAndCanSignAfterReopening() = runTest {
+    val prompt = VaultPrompt("Test", "Test authorization")
+    val vault = IosTestMemoryVault()
+    val preferences = testPreferences()
+    val repository = DefaultWalletRepository(vault, preferences)
+    val rawKey = "ab".repeat(32)
+    val address = repository.importOwner(rawKey, prompt)
+    val reopened = DefaultWalletRepository(vault, preferences)
+    assertEquals("ed25519-priv-0x$rawKey", reopened.exportOwnerMnemonic(prompt))
+    reopened.withOwnerAccount(prompt) { assertEquals(address, it.accountAddress.toString()) }
+    assertTrue(reopened.profile.first().ownerBackupConfirmed)
+    assertEquals(1, vault.entries.size)
+    reopened.removeOwner(prompt)
+    assertTrue(vault.entries.isEmpty())
+    assertEquals(null, reopened.profile.first().ownerAddress)
+  }
+
+  @Test
   fun lockClearsThePlatformAuthorizationSession() = runTest {
     val vault = IosTestMemoryVault()
     val repository = DefaultWalletRepository(vault, testPreferences())

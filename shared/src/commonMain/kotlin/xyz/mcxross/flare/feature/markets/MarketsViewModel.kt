@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.design.assetDisplayName
 
 data class MarketsUiState(
   val loading: Boolean = true,
@@ -46,7 +47,10 @@ class MarketsViewModel(private val repository: MarketsRepository) : ViewModel() 
               (!onlyFavorites || it.favorite) &&
                 (normalized.isEmpty() ||
                   it.market.symbol.lowercase().contains(normalized) ||
-                  it.market.name.lowercase().contains(normalized))
+                  it.market.name.lowercase().contains(normalized) ||
+                  assetDisplayName(it.market.symbol, it.market.name)
+                    .lowercase()
+                    .contains(normalized))
             },
           stale = catalog.stale,
           error = catalog.error,

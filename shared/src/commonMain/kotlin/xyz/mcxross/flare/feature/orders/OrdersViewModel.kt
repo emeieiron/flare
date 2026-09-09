@@ -16,6 +16,7 @@ import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.TradingSigner
@@ -35,6 +36,7 @@ enum class OrdersSection(val label: String) {
 
 data class OrdersUiState(
   val profile: WalletProfile = WalletProfile(),
+  val marketSymbols: Map<String, String> = emptyMap(),
   val account: AccountSnapshot = AccountSnapshot(),
   val history: AccountHistorySnapshot = AccountHistorySnapshot(),
   val section: OrdersSection = OrdersSection.OPEN,
@@ -72,6 +74,7 @@ class OrdersViewModel(
   private val sessions: SessionRepository,
   private val trading: TradingRepository,
   private val preferences: AppPreferences,
+  private val markets: MarketsRepository,
 ) : ViewModel() {
   private val local = MutableStateFlow(OrdersUiState())
   val uiState: StateFlow<OrdersUiState> =
@@ -87,6 +90,11 @@ class OrdersViewModel(
           account = account,
           history = history,
           sessionWalletAddress = session?.walletAddress,
+        )
+      }
+      .combine(markets.catalog) { state, catalog ->
+        state.copy(
+          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol }
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrdersUiState())

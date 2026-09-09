@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.design
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
@@ -24,19 +25,19 @@ import org.jetbrains.compose.resources.Font
 
 object FlareColors {
   val Canvas = Color(0xFF000000)
-  val Surface = Color(0xFF0D0D0D)
-  val Elevated = Color(0xFF171717)
+  val Surface = Color(0xFF101210)
+  val Elevated = Color(0xFF191C19)
   val Hover = Color(0xFF202020)
   val BorderSubtle = Color(0xFF242424)
   val BorderDefault = Color(0xFF343434)
   val BorderStrong = Color(0xFF4A4A4A)
   val TextPrimary = Color(0xFFF5F5F5)
   val TextSecondary = Color(0xFFA3A3A3)
-  val TextTertiary = Color(0xFF686868)
+  val TextTertiary = Color(0xFF8B8D89)
   val TextDisabled = Color(0xFF4F4F4F)
-  val Positive = Color(0xFF00C805)
-  val PositiveMuted = Color(0xFF063B08)
-  val Negative = Color(0xFFFF4D00)
+  val Positive = Color(0xFFC4F564)
+  val PositiveMuted = Color(0xFF202B14)
+  val Negative = Color(0xFFFF766B)
   val NegativeMuted = Color(0xFF431409)
   val Warning = Color(0xFFF5B700)
   val Info = Color(0xFF0A84FF)
@@ -153,13 +154,21 @@ private fun flareTypography(): Typography {
       Font(Res.font.inter_semibold, FontWeight.SemiBold),
     )
   return Typography(
-    displaySmall = textStyle(32, 36, FontWeight.Medium, inter),
-    headlineLarge = textStyle(28, 32, FontWeight.Medium, inter),
-    titleLarge = textStyle(20, 24, FontWeight.Medium, inter),
-    bodyMedium = textStyle(14, 20, FontWeight.Normal, inter),
-    labelLarge = textStyle(14, 16, FontWeight.SemiBold, inter),
-    labelMedium = textStyle(12, 16, FontWeight.SemiBold, inter),
-    labelSmall = textStyle(11, 14, FontWeight.Medium, inter),
+    displayLarge = textStyle(56, 60, FontWeight.Medium, inter),
+    displayMedium = textStyle(48, 54, FontWeight.Medium, inter),
+    displaySmall = textStyle(40, 46, FontWeight.Medium, inter),
+    headlineLarge = textStyle(32, 38, FontWeight.Medium, inter),
+    headlineMedium = textStyle(28, 34, FontWeight.Medium, inter),
+    headlineSmall = textStyle(24, 30, FontWeight.Medium, inter),
+    titleLarge = textStyle(22, 28, FontWeight.Medium, inter),
+    titleMedium = textStyle(16, 22, FontWeight.Medium, inter),
+    titleSmall = textStyle(14, 20, FontWeight.Medium, inter),
+    bodyLarge = textStyle(16, 24, FontWeight.Normal, inter),
+    bodyMedium = textStyle(14, 22, FontWeight.Normal, inter),
+    bodySmall = textStyle(12, 18, FontWeight.Normal, inter),
+    labelLarge = textStyle(15, 20, FontWeight.SemiBold, inter),
+    labelMedium = textStyle(13, 18, FontWeight.Medium, inter),
+    labelSmall = textStyle(11, 16, FontWeight.Medium, inter),
   )
 }
 
@@ -184,7 +193,12 @@ fun FlareTheme(content: @Composable () -> Unit) {
       colorScheme = FlareColorScheme,
       typography = flareTypography(),
       shapes = FlareShapes,
-      content = content,
+      content = {
+        CompositionLocalProvider(
+          LocalContentColor provides FlareColors.TextPrimary,
+          content = content,
+        )
+      },
     )
   }
 }

@@ -8,15 +8,17 @@ Flare is an open-source, native-mobile-first client for [Decibel](https://docs.d
 ## Current scope
 
 - Anonymous perpetual-market discovery, search, favorites, order books, trades, and Vico charts.
-- Local Aptos owner-wallet creation/import with 12-word BIP-39 backup confirmation.
-- Independent AIP-80 API trading wallets, subaccount discovery/creation, and delegation.
+- Local Aptos account creation with BIP-39 backup confirmation, plus one import field for recovery phrases, raw Ed25519 private keys, and AIP-80 keys.
+- Independent AIP-80 API trading wallets, subaccount discovery/creation, and verified delegation.
 - Aptos-USDC deposits and withdrawals.
 - Live account overview, positions, open orders, and order/trade/funding history.
-- Market and limit orders, leverage, cancel, full close, and position TP/SL.
+- Market and limit orders with leverage selection, attached TP/SL, and a profit/loss review; cancellation, full close, and position TP/SL management.
 - Sponsored transactions with explicit self-pay fallback and owner-signed API-wallet APT top-up.
 - Durable pending-transaction journaling and restart reconciliation.
 
 Encrypted order submission, external wallets, cross-chain bridging, spot, vaults, rewards, referrals, bulk orders, and TWAP are intentionally outside the first release.
+
+See [DESIGN.md](DESIGN.md) for the mobile navigation, reusable components, and offline debug preview, and [native validation](docs/mobile-ui-validation.md) for testnet results and screenshots.
 
 ## Architecture
 

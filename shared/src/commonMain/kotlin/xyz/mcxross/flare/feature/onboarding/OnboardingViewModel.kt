@@ -27,22 +27,24 @@ import xyz.mcxross.flare.store.AppPreferences
 
 enum class OnboardingStep {
   WELCOME,
-  IMPORT_OWNER,
+  IMPORT,
+  SHOW_BACKUP,
   CONFIRM_BACKUP,
   SUBACCOUNT,
   FUNDING,
   API_WALLET,
-  IMPORT_API,
 }
 
 data class OnboardingUiState(
   val step: OnboardingStep = OnboardingStep.WELCOME,
   val profile: WalletProfile = WalletProfile(),
   val input: String = "",
+  val apiImport: Boolean = false,
   val backupWords: List<String> = emptyList(),
   val confirmationIndices: List<Int> = emptyList(),
   val confirmations: Map<Int, String> = emptyMap(),
   val subaccounts: List<Subaccount> = emptyList(),
+  val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
   val fundingAmount: String = "",
   val fundingTransaction: TransactionState? = null,
@@ -55,9 +57,13 @@ sealed interface OnboardingIntent {
 
   data object CreateOwner : OnboardingIntent
 
-  data object ShowOwnerImport : OnboardingIntent
+  data object ShowImport : OnboardingIntent
 
-  data object ImportOwner : OnboardingIntent
+  data object ImportCredential : OnboardingIntent
+
+  data class SetApiImport(val enabled: Boolean) : OnboardingIntent
+
+  data object ReviewBackup : OnboardingIntent
 
   data object ConfirmBackup : OnboardingIntent
 
@@ -82,8 +88,6 @@ sealed interface OnboardingIntent {
   data object ShowApiSetup : OnboardingIntent
 
   data object ShowApiImport : OnboardingIntent
-
-  data object ImportApiWallet : OnboardingIntent
 
   data object SkipApiWallet : OnboardingIntent
 
@@ -123,8 +127,13 @@ class OnboardingViewModel(
     when (intent) {
       OnboardingIntent.ExploreAnonymously -> completeAnonymously()
       OnboardingIntent.CreateOwner -> createOwner()
-      OnboardingIntent.ShowOwnerImport -> show(OnboardingStep.IMPORT_OWNER)
-      OnboardingIntent.ImportOwner -> importOwner()
+      OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
+      OnboardingIntent.ImportCredential ->
+        if (local.value.apiImport) importApiWallet() else importOwner()
+      is OnboardingIntent.SetApiImport ->
+        local.value = local.value.copy(apiImport = intent.enabled, error = null)
+      OnboardingIntent.ReviewBackup ->
+        local.value = local.value.copy(step = OnboardingStep.CONFIRM_BACKUP)
       OnboardingIntent.ConfirmBackup -> confirmBackup()
       OnboardingIntent.DiscoverSubaccounts -> discoverSubaccounts()
       OnboardingIntent.CreateSubaccount -> createSubaccount()
@@ -143,15 +152,26 @@ class OnboardingViewModel(
       OnboardingIntent.SkipFunding -> show(OnboardingStep.API_WALLET)
       OnboardingIntent.CreateApiWallet -> createApiWallet()
       OnboardingIntent.ShowApiSetup -> prepareOwnerAccount()
-      OnboardingIntent.ShowApiImport -> show(OnboardingStep.IMPORT_API)
-      OnboardingIntent.ImportApiWallet -> importApiWallet()
+      OnboardingIntent.ShowApiImport -> {
+        show(OnboardingStep.IMPORT)
+        local.value = local.value.copy(apiImport = true)
+      }
       OnboardingIntent.SkipApiWallet -> finishSetup()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
         clearSensitiveState()
       }
-      OnboardingIntent.Back -> show(OnboardingStep.WELCOME)
+      OnboardingIntent.Back -> {
+        if (local.value.step == OnboardingStep.CONFIRM_BACKUP) {
+          local.value =
+            local.value.copy(
+              step = OnboardingStep.SHOW_BACKUP,
+              confirmations = emptyMap(),
+              error = null,
+            )
+        } else show(OnboardingStep.WELCOME)
+      }
       is OnboardingIntent.ChangeInput ->
         local.value = local.value.copy(input = intent.value, error = null)
       is OnboardingIntent.ChangeConfirmation ->
@@ -180,9 +200,10 @@ class OnboardingViewModel(
       prompt =
         VaultPrompt(
           title = "Import owner wallet",
-          subtitle = "Confirm your identity to encrypt this recovery phrase.",
+          subtitle = "Confirm your identity to protect your account on this device.",
         ),
     )
+    local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
     discoverSubaccountsInternal()
   }
 
@@ -204,7 +225,20 @@ class OnboardingViewModel(
     discoverSubaccountsInternal()
   }
 
-  private fun prepareOwnerAccount() = launchAction { discoverSubaccountsInternal() }
+  private fun prepareOwnerAccount() = launchAction {
+    val profile = wallets.profile.first()
+    when {
+      profile.apiOnly -> show(OnboardingStep.SUBACCOUNT)
+      profile.ownerAddress != null && !profile.ownerBackupConfirmed -> {
+        val phrase =
+          wallets.exportOwnerMnemonic(
+            VaultPrompt("Back up your account", "Authorize access to your recovery phrase.")
+          )
+        showBackup(OwnerBackup(profile.ownerAddress, phrase.split(' ')))
+      }
+      else -> discoverSubaccountsInternal()
+    }
+  }
 
   private fun discoverSubaccounts() = launchAction { discoverSubaccountsInternal() }
 
@@ -222,11 +256,15 @@ class OnboardingViewModel(
         step = OnboardingStep.SUBACCOUNT,
         input = selected.orEmpty(),
         subaccounts = subaccounts,
+        subaccountsLoaded = true,
         selectedSubaccount = selected,
       )
   }
 
   private fun createSubaccount() = launchAction {
+    check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
+      "Check for existing Decibel accounts before creating one."
+    }
     val result =
       accounts.createSubaccount(
         VaultPrompt(
@@ -309,6 +347,7 @@ class OnboardingViewModel(
           subtitle = "Confirm your identity to protect this AIP-80 trading key.",
         ),
     )
+    local.value = local.value.copy(input = "")
     if (wallets.profile.first().ownerAddress == null) {
       local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT, input = "")
     } else {
@@ -321,7 +360,15 @@ class OnboardingViewModel(
   private fun completeAnonymously() = launchAction { finishSetupInternal() }
 
   private suspend fun finishSetupInternal() {
-    if (sessions.status.value == null) sessions.useAnonymous()
+    if (sessions.status.value == null) {
+      try {
+        sessions.useAnonymous()
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (_: Throwable) {
+        /* Markets exposes an offline state with retry. */
+      }
+    }
     preferences.setOnboardingComplete(true)
     clearSensitiveState()
     effectChannel.send(OnboardingEffect.Completed)
@@ -340,7 +387,7 @@ class OnboardingViewModel(
   private fun showBackup(backup: OwnerBackup) {
     local.value =
       local.value.copy(
-        step = OnboardingStep.CONFIRM_BACKUP,
+        step = OnboardingStep.SHOW_BACKUP,
         input = "",
         backupWords = backup.words,
         confirmationIndices = (backup.words.indices).shuffled(Random.Default).take(3).sorted(),
