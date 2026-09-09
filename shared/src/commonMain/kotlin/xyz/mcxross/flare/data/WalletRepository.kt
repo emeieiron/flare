@@ -79,10 +79,10 @@ class DefaultWalletRepository(
   }
 
   override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String {
-    val mnemonic = MnemonicPhrase.parse(phrase)
-    val account = Ed25519Account.fromMnemonic(mnemonic)
+    val credential = WalletCredential.normalize(phrase)
+    val account = ownerAccount(credential)
     return try {
-      storeText(WalletSecretSlot.OWNER_MNEMONIC, mnemonic.reveal(), prompt)
+      storeText(WalletSecretSlot.OWNER_MNEMONIC, credential, prompt)
       account.accountAddress.toString().also {
         preferences.setOwnerWallet(it, backupConfirmed = true)
       }
@@ -105,7 +105,7 @@ class DefaultWalletRepository(
   }
 
   override suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String {
-    val validated = Aip80PrivateKey.parse(aip80)
+    val validated = Aip80PrivateKey.parse(WalletCredential.normalize(aip80))
     val privateKey = Ed25519PrivateKey.fromAip80(validated)
     val account = Ed25519Account(privateKey)
     return try {
@@ -121,7 +121,7 @@ class DefaultWalletRepository(
         WalletSecretSlot.OWNER_MNEMONIC,
         prompt.copy(requireFreshAuthorization = true),
       )
-      .also(MnemonicPhrase::parse)
+      .also { WalletCredential.normalize(it) }
 
   override suspend fun exportApiWallet(prompt: VaultPrompt): String =
     readText(
@@ -153,7 +153,7 @@ class DefaultWalletRepository(
     block: suspend (Ed25519Account) -> T,
   ): T {
     val phrase = readText(WalletSecretSlot.OWNER_MNEMONIC, prompt)
-    val account = Ed25519Account.fromMnemonic(MnemonicPhrase.parse(phrase))
+    val account = ownerAccount(phrase)
     return try {
       block(account)
     } finally {
@@ -192,3 +192,10 @@ class DefaultWalletRepository(
     }
   }
 }
+
+private fun ownerAccount(credential: String): Ed25519Account =
+  if (credential.startsWith("ed25519-priv-")) {
+    Ed25519Account(Ed25519PrivateKey.fromAip80(credential))
+  } else {
+    Ed25519Account.fromMnemonic(MnemonicPhrase.parse(credential))
+  }

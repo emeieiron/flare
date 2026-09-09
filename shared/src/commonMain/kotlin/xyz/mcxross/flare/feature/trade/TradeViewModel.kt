@@ -25,12 +25,9 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.Candle
-import xyz.mcxross.flare.decibel.model.DecimalInput
-import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
-import xyz.mcxross.flare.decibel.model.SlippageBps
 import xyz.mcxross.flare.decibel.model.validate
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -43,7 +40,7 @@ enum class ChartStyle {
 data class TradeUiState(
   val quote: MarketQuote? = null,
   val range: ChartRange = ChartRange.DAY,
-  val chartStyle: ChartStyle = ChartStyle.CANDLESTICK,
+  val chartStyle: ChartStyle = ChartStyle.LINE,
   val showRsi: Boolean = false,
   val showMacd: Boolean = false,
   val candles: List<Candle> = emptyList(),
@@ -55,6 +52,12 @@ data class TradeUiState(
   val orderType: OrderType = OrderType.MARKET,
   val sizeInput: String = "",
   val limitPriceInput: String = "",
+  val takeProfitInput: String = "",
+  val stopLossInput: String = "",
+  val leverage: Int = 1,
+  val positionLeverage: Int? = null,
+  val positionIsolated: Boolean? = null,
+  val leverageTransaction: TransactionState? = null,
   val slippageBps: Int = 50,
   val orderBusy: Boolean = false,
   val orderError: String? = null,
@@ -86,9 +89,17 @@ sealed interface TradeIntent {
 
   data class SetLimitPrice(val value: String) : TradeIntent
 
+  data class SetTakeProfit(val value: String) : TradeIntent
+
+  data class SetStopLoss(val value: String) : TradeIntent
+
+  data class SetLeverage(val value: Int) : TradeIntent
+
   data class Submit(val side: OrderSide) : TradeIntent
 
   data object Unlock : TradeIntent
+
+  data object DismissOrderReceipt : TradeIntent
 
   data object ConfirmSelfPay : TradeIntent
 
@@ -125,8 +136,10 @@ class TradeViewModel(
             quote = quote,
             stale = catalog.stale,
             error = if (quote == null) catalog.error else it.error,
+            leverage = if (changed) 1 else it.leverage,
           )
         }
+        syncPositionLeverage()
         if (changed && quote != null) loadCandles(quote, mutableUiState.value.range)
         if (changed && quote != null) loadMarketDetails(quote.market.address)
       }
@@ -163,7 +176,7 @@ class TradeViewModel(
         val range =
           ChartRange.entries.firstOrNull { it.name == values.chartRange } ?: ChartRange.DAY
         val chartStyle =
-          ChartStyle.entries.firstOrNull { it.name == values.chartStyle } ?: ChartStyle.CANDLESTICK
+          ChartStyle.entries.firstOrNull { it.name == values.chartStyle } ?: ChartStyle.LINE
         val rangeChanged = range != mutableUiState.value.range
         mutableUiState.update {
           it.copy(
@@ -187,6 +200,23 @@ class TradeViewModel(
         }
       }
     }
+    viewModelScope.launch {
+      accounts.snapshot.collect { syncPositionLeverage() }
+    }
+  }
+
+  private fun syncPositionLeverage() {
+    mutableUiState.update { state ->
+      val position =
+        accounts.snapshot.value.positions.firstOrNull { it.market == state.quote?.market?.address }
+      state.copy(
+        positionLeverage = position?.leverage,
+        positionIsolated = position?.isIsolated,
+        leverage =
+          position?.leverage
+            ?: state.leverage.coerceIn(1, state.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1),
+      )
+    }
   }
 
   fun onIntent(intent: TradeIntent) {
@@ -200,6 +230,7 @@ class TradeViewModel(
               markets.catalog.value.quotes.firstOrNull { it.market.address == address }
             } ?: markets.catalog.value.quotes.firstOrNull()
           mutableUiState.update { it.copy(quote = quote) }
+          syncPositionLeverage()
           preferences.setSelectedMarket(quote?.market?.address)
           if (quote != null) loadCandles(quote, mutableUiState.value.range)
           if (quote != null) loadMarketDetails(quote.market.address)
@@ -252,10 +283,42 @@ class TradeViewModel(
           it.copy(limitPriceInput = decimalCharacters(intent.value), orderError = null)
         }
       is TradeIntent.Submit -> submitOrder(intent.side, FeePayment.SPONSORED)
+      is TradeIntent.SetLeverage ->
+        mutableUiState.update {
+          if (it.orderBusy || it.positionLeverage != null) it
+          else
+            it.copy(
+              leverage =
+                intent.value.coerceIn(1, it.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1),
+              orderError = null,
+            )
+        }
+      is TradeIntent.SetTakeProfit ->
+        mutableUiState.update {
+          it.copy(takeProfitInput = decimalCharacters(intent.value), orderError = null)
+        }
+      is TradeIntent.SetStopLoss ->
+        mutableUiState.update {
+          it.copy(stopLossInput = decimalCharacters(intent.value), orderError = null)
+        }
       TradeIntent.ConfirmSelfPay ->
         mutableUiState.value.lastSide?.let { submitOrder(it, FeePayment.SELF_PAY) }
       TradeIntent.TopUpApiWallet -> topUpApiWallet()
       TradeIntent.Unlock -> unlockTrading()
+      TradeIntent.DismissOrderReceipt ->
+        mutableUiState.update {
+          if (it.orderBusy || it.transaction !is TransactionState.Committed) it
+          else
+            it.copy(
+              sizeInput = "",
+              limitPriceInput = "",
+              takeProfitInput = "",
+              stopLossInput = "",
+              leverageTransaction = null,
+              transaction = null,
+              orderError = null,
+            )
+        }
     }
   }
 
@@ -302,6 +365,8 @@ class TradeViewModel(
 
   private fun submitOrder(side: OrderSide, feePayment: FeePayment) {
     if (mutableUiState.value.orderBusy) return
+    val selfPayLeverage =
+      feePayment == FeePayment.SELF_PAY && mutableUiState.value.transaction == null
     viewModelScope.launch {
       mutableUiState.update {
         it.copy(
@@ -311,6 +376,7 @@ class TradeViewModel(
           lastSide = side,
           apiWalletNeedsTopUp = false,
           suggestedTopUpOctas = null,
+          leverageTransaction = null,
         )
       }
       runSuspendCatching {
@@ -321,15 +387,7 @@ class TradeViewModel(
         if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
           error("A live order book is required for a market order")
         }
-        val draft =
-          OrderDraft(
-            marketAddress = market.address,
-            side = side,
-            type = state.orderType,
-            size = DecimalInput(state.sizeInput),
-            limitPrice = state.limitPriceInput.takeIf(String::isNotBlank)?.let(::DecimalInput),
-            slippage = SlippageBps(state.slippageBps.toUInt()),
-          )
+        val draft = state.orderDraft(side)
         val validation = draft.validate(market, state.marketDetails.orderBook)
         val validated =
           validation.value
@@ -339,21 +397,50 @@ class TradeViewModel(
         val profile = wallets.profile.first()
         val signer =
           if (profile.apiWalletAddress != null) TradingSigner.API else TradingSigner.OWNER
-        trading
-          .execute(
-            command = DecibelCommand.PlaceOrder(subaccount, validated),
-            signer = signer,
-            prompt =
-              VaultPrompt(
-                title = "Authorize ${if (side == OrderSide.BUY) "buy" else "sell"} order",
-                subtitle = "Review and authorize the simulated Decibel transaction.",
-              ),
-            feePayment = feePayment,
+        val reconciliation = trading.reconcilePending()
+        require(reconciliation.unresolved == 0) {
+          "An earlier transaction is still pending. Check Activity before placing another order."
+        }
+        accounts.refresh()
+        val snapshot = accounts.snapshot.value
+        require(!snapshot.stale && snapshot.account == subaccount) {
+          "Refresh your account before placing an order"
+        }
+        val position = snapshot.positions.firstOrNull { it.market == market.address }
+        val terminal =
+          placeConfiguredOrder(
+            configuration = state.leverageCommand(subaccount, position),
+            entry = DecibelCommand.PlaceOrder(subaccount, validated),
+            execute = { command ->
+              trading.execute(
+                command,
+                signer,
+                VaultPrompt(
+                  title =
+                    if (command is DecibelCommand.ConfigureMarket)
+                      "Apply ${state.leverage}× leverage"
+                    else "Authorize ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                  subtitle =
+                    if (command is DecibelCommand.ConfigureMarket)
+                      "Set leverage before placing your reviewed order."
+                    else "Review and authorize the simulated Decibel transaction.",
+                ),
+                if (
+                  feePayment == FeePayment.SELF_PAY &&
+                    (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
+                )
+                  FeePayment.SELF_PAY
+                else FeePayment.SPONSORED,
+              )
+            },
+            onState = { stage, transaction ->
+              mutableUiState.update {
+                if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
+                else it.copy(transaction = transaction)
+              }
+            },
           )
-          .collect { transaction ->
-            mutableUiState.update { it.copy(transaction = transaction) }
-          }
-        when (val transaction = mutableUiState.value.transaction) {
+        when (val transaction = terminal) {
           is TransactionState.Committed -> accounts.refresh()
           is TransactionState.Failed -> {
             val estimate = transaction.selfPayEstimateOctas
@@ -477,7 +564,7 @@ private fun decimalCharacters(value: String): String =
       else filtered.take(firstDot + 1) + filtered.drop(firstDot + 1).replace(".", "")
     }
 
-private fun OrderValidationError.message(): String =
+internal fun OrderValidationError.message(): String =
   when (this) {
     is OrderValidationError.InvalidDecimal -> "$field: $reason"
     is OrderValidationError.InvalidMarketAddress -> "$field: $reason"

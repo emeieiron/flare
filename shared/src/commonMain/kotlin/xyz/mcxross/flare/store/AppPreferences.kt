@@ -18,7 +18,7 @@ import xyz.mcxross.flare.decibel.DecibelNetwork
 data class FlarePreferences(
   val network: DecibelNetwork = DecibelNetwork.TESTNET,
   val chartRange: String = "DAY",
-  val chartStyle: String = "CANDLESTICK",
+  val chartStyle: String = "LINE",
   val showRsi: Boolean = false,
   val showMacd: Boolean = false,
   val slippageBps: Int = 50,
@@ -45,7 +45,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             DecibelNetwork.entries.firstOrNull { it.name == value }
           } ?: DecibelNetwork.TESTNET,
         chartRange = preferences[ChartRangeKey] ?: "DAY",
-        chartStyle = preferences[ChartStyleKey] ?: "CANDLESTICK",
+        chartStyle = preferences[ChartStyleKey] ?: "LINE",
         showRsi = preferences[ShowRsiKey] ?: false,
         showMacd = preferences[ShowMacdKey] ?: false,
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),

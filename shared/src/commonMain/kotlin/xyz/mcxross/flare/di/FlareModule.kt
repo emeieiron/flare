@@ -82,6 +82,7 @@ fun flareModule(
     Aptos(
       AptosConfig(
         network = Network.CUSTOM,
+        transactionDefaults = runtime.transactionDefaults,
         endpoints = AptosEndpoints(fullNode = runtime.aptosFullnodeUrl),
         fullNode =
           AptosEndpointConfig(

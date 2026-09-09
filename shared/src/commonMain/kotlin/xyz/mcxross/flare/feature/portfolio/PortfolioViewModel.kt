@@ -44,6 +44,7 @@ enum class FundingMode {
 
 data class PortfolioUiState(
   val profile: WalletProfile = WalletProfile(),
+  val marketSymbols: Map<String, String> = emptyMap(),
   val account: AccountSnapshot = AccountSnapshot(),
   val sessionRole: SessionRole? = null,
   val pendingTransactions: List<PendingTransaction> = emptyList(),
@@ -123,6 +124,11 @@ class PortfolioViewModel(
           account = account,
           sessionRole = session?.role,
           pendingTransactions = pending,
+        )
+      }
+      .combine(markets.catalog) { state, catalog ->
+        state.copy(
+          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol }
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PortfolioUiState())

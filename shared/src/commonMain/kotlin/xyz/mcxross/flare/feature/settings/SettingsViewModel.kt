@@ -78,10 +78,10 @@ class SettingsViewModel(
       is SettingsIntent.SetSlippage ->
         launchAction { preferences.setSlippageBps(intent.basisPoints) }
       SettingsIntent.ExportOwner ->
-        reveal("Owner recovery phrase") {
+        reveal("Account recovery details") {
           wallets.exportOwnerMnemonic(
             VaultPrompt(
-              "Export owner recovery phrase",
+              "Show account recovery details",
               "This secret controls funding and delegation. Keep it offline.",
             )
           )
@@ -101,7 +101,7 @@ class SettingsViewModel(
           wallets.removeOwner(
             VaultPrompt(
               "Remove owner wallet",
-              "Confirm removal from this device. Your recovery phrase is required to restore it.",
+              "Confirm removal from this device. Your recovery phrase or private key is required to restore it.",
             )
           )
           accounts.disconnect()

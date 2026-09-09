@@ -2,7 +2,7 @@
 
 ## Assets
 
-- Owner mnemonic and Ed25519 private key.
+- Owner mnemonic or imported Ed25519 private key.
 - Independent API-wallet private key.
 - Short-lived Worker session tokens and authentication signatures.
 - Decibel node and Aptos Gas Station credentials.
@@ -22,7 +22,7 @@ Decibel, Aptos fullnodes, and the Gas Station are external systems. Their respon
 | Threat | Control | Residual risk |
 | --- | --- | --- |
 | Device theft or local extraction | Android authenticated Keystore wrapping; iOS passcode-bound, user-presence Keychain; five-minute signing sessions; step-up for owner actions and export | A compromised unlocked OS or accessibility stack may capture displayed/reconstructed secrets |
-| Mnemonic/API-key confusion | Separate generation and storage; owner uses BIP-39/BIP-44; API wallet uses AIP-80 | Users can still disclose exported material outside Flare |
+| Mnemonic/API-key confusion | Separate owner/API storage and independent generation; owner supports BIP-39/BIP-44 or imported Ed25519; keys use canonical AIP-80. A unified input detects encoding, while API role is explicitly selected and delegation remains verified | Users can still disclose exported material outside Flare |
 | Worker credential extraction | Credentials exist only as Worker secrets; fixed routes; no unrestricted proxy; redacted logging | A compromised Worker account can abuse upstream service quotas and sponsorship |
 | Challenge replay | Domain-separated `FLARE_AUTH_V1`; 32-byte nonce; five-minute expiry; Durable Object atomic consumption | Durable Object or platform compromise defeats this control |
 | Session privilege escalation | Claims bind network, wallet, optional subaccount, and role; owner routes reject API role; active delegation verified before API session issuance | Upstream delegation indexing can lag, causing temporary denial or stale authorization until session expiry |
@@ -44,3 +44,7 @@ Decibel, Aptos fullnodes, and the Gas Station are external systems. Their respon
 - An encrypted-order failure is never retried as plaintext without explicit user approval.
 
 Review this document whenever a route, authenticator, wallet store, transaction format, network capability, or telemetry behavior changes.
+
+## Credential import compatibility
+
+The encrypted `OWNER_MNEMONIC` slot retains its legacy storage key so existing accounts remain readable. Its value is either a validated BIP-39 phrase or a canonical `ed25519-priv-0x…` owner key. Owner signing dispatches on the validated encoding; export and removal retain fresh authorization. Raw 32-byte hex imports are normalized locally and are never stored in preferences or sent to the Worker. An AIP-80 prefix identifies an algorithm, not a delegated role. API-only profiles continue to store their key separately and cannot perform owner operations.
