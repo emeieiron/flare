@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -48,6 +50,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.SubcomposeAsyncImageContent
 
 enum class FlareButtonStyle {
   PRIMARY,
@@ -323,15 +327,28 @@ fun FlareTopBar(
 
 @Composable
 fun AssetHeader(
-  symbol: String,
-  name: String,
+  asset: AssetIdentity,
   price: String,
   delta: String,
   positive: Boolean,
   modifier: Modifier = Modifier,
 ) {
-  Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Text(assetDisplayName(symbol, name), style = MaterialTheme.typography.titleLarge)
+  Row(
+    modifier = modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    AssetIcon(asset, Modifier.size(48.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Text(asset.name, style = MaterialTheme.typography.titleLarge)
+      Text(
+        asset.kind?.replaceFirstChar(Char::titlecase) ?: asset.symbol,
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelMedium,
+      )
+    }
+  }
+  Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
     Spacer(Modifier.height(8.dp))
     PriceDisplay(price)
     Row(
@@ -350,8 +367,7 @@ fun AssetHeader(
 
 @Composable
 fun MarketListRow(
-  symbol: String,
-  name: String,
+  asset: AssetIdentity,
   price: String,
   delta: String,
   positive: Boolean,
@@ -373,13 +389,13 @@ fun MarketListRow(
       modifier = Modifier.size(40.dp).background(FlareColors.Elevated, CircleShape),
       contentAlignment = Alignment.Center,
     ) {
-      Text(assetMonogram(symbol), style = MaterialTheme.typography.titleLarge)
+      AssetIcon(asset, Modifier.size(40.dp))
     }
     Spacer(Modifier.width(12.dp))
     Column(modifier = Modifier.weight(1f)) {
-      Text(symbol, style = MaterialTheme.typography.labelLarge)
+      Text(asset.symbol, style = MaterialTheme.typography.labelLarge)
       Text(
-        assetDisplayName(symbol, name),
+        asset.detailLabel(),
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -395,9 +411,32 @@ fun MarketListRow(
       Icon(
         if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
         contentDescription =
-          if (favorite) "Remove $symbol from watchlist" else "Add $symbol to watchlist",
+          if (favorite) "Remove ${asset.symbol} from watchlist"
+          else "Add ${asset.symbol} to watchlist",
         tint = if (favorite) colors.positive else colors.textTertiary,
         modifier = Modifier.size(20.dp),
+      )
+    }
+  }
+}
+
+@Composable
+private fun AssetIcon(asset: AssetIdentity, modifier: Modifier = Modifier) {
+  Box(
+    modifier = modifier.clip(CircleShape).background(FlareColors.Elevated),
+    contentAlignment = Alignment.Center,
+  ) {
+    if (asset.iconUrl == null) {
+      Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge)
+    } else {
+      SubcomposeAsyncImage(
+        model = asset.iconUrl,
+        contentDescription = "${asset.name} icon",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+        loading = { Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge) },
+        error = { Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge) },
+        success = { SubcomposeAsyncImageContent() },
       )
     }
   }

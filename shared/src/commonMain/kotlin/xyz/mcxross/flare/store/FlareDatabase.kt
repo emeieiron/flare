@@ -8,7 +8,10 @@ import androidx.room3.PrimaryKey
 import androidx.room3.Query
 import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
+import androidx.room3.Transaction
+import androidx.room3.migration.Migration
 import androidx.room3.Upsert
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -48,6 +51,29 @@ data class PendingTransactionEntity(
   val createdAtMs: Long,
   val updatedAtMs: Long,
 )
+
+@Entity(tableName = "asset_metadata")
+data class AssetMetadataEntity(
+  @PrimaryKey val symbolKey: String,
+  val symbol: String,
+  val name: String,
+  val kind: String,
+  val iconUrl: String?,
+  val sha256: String?,
+  val revision: String,
+  val updatedAtMs: Long,
+)
+
+@Entity(tableName = "asset_catalog_sync")
+data class AssetCatalogSyncEntity(
+  @PrimaryKey val id: Int = CURRENT_CATALOG_ID,
+  val revision: String,
+  val refreshedAtMs: Long,
+) {
+  companion object {
+    const val CURRENT_CATALOG_ID = 1
+  }
+}
 
 @Dao
 interface MarketCacheDao {
@@ -109,6 +135,28 @@ interface TransactionJournalDao {
   @Query("DELETE FROM pending_transactions WHERE hash = :hash") suspend fun remove(hash: String)
 }
 
+@Dao
+interface AssetCatalogDao {
+  @Query("SELECT * FROM asset_metadata ORDER BY symbolKey")
+  fun observeAssets(): Flow<List<AssetMetadataEntity>>
+
+  @Query("SELECT revision FROM asset_catalog_sync WHERE id = :id LIMIT 1")
+  suspend fun revision(id: Int = AssetCatalogSyncEntity.CURRENT_CATALOG_ID): String?
+
+  @Query("DELETE FROM asset_metadata") suspend fun clearAssets()
+
+  @Upsert suspend fun upsertAssets(assets: List<AssetMetadataEntity>)
+
+  @Upsert suspend fun upsertSync(sync: AssetCatalogSyncEntity)
+
+  @Transaction
+  suspend fun replaceCatalog(assets: List<AssetMetadataEntity>, sync: AssetCatalogSyncEntity) {
+    clearAssets()
+    upsertAssets(assets)
+    upsertSync(sync)
+  }
+}
+
 @Database(
   entities =
     [
@@ -116,8 +164,10 @@ interface TransactionJournalDao {
       CandleEntity::class,
       SelectedMarketEntity::class,
       PendingTransactionEntity::class,
+      AssetMetadataEntity::class,
+      AssetCatalogSyncEntity::class,
     ],
-  version = 1,
+  version = 2,
   exportSchema = true,
 )
 @ConstructedBy(FlareDatabaseConstructor::class)
@@ -125,6 +175,8 @@ abstract class FlareDatabase : RoomDatabase() {
   abstract fun marketCacheDao(): MarketCacheDao
 
   abstract fun transactionJournalDao(): TransactionJournalDao
+
+  abstract fun assetCatalogDao(): AssetCatalogDao
 }
 
 @Suppress("NO_ACTUAL_FOR_EXPECT")
@@ -133,4 +185,26 @@ expect object FlareDatabaseConstructor : RoomDatabaseConstructor<FlareDatabase> 
 }
 
 fun buildFlareDatabase(builder: RoomDatabase.Builder<FlareDatabase>): FlareDatabase =
-  builder.setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()
+  builder
+    .addMigrations(FlareDatabaseMigration1To2)
+    .setDriver(BundledSQLiteDriver())
+    .setQueryCoroutineContext(Dispatchers.Default)
+    .build()
+
+private object FlareDatabaseMigration1To2 : Migration(1, 2) {
+  override suspend fun migrate(connection: SQLiteConnection) {
+    connection.execute(
+      "CREATE TABLE IF NOT EXISTS asset_metadata (" +
+        "symbolKey TEXT NOT NULL PRIMARY KEY, symbol TEXT NOT NULL, name TEXT NOT NULL, " +
+        "kind TEXT NOT NULL, iconUrl TEXT, sha256 TEXT, revision TEXT NOT NULL, updatedAtMs INTEGER NOT NULL)",
+    )
+    connection.execute(
+      "CREATE TABLE IF NOT EXISTS asset_catalog_sync (" +
+        "id INTEGER NOT NULL PRIMARY KEY, revision TEXT NOT NULL, refreshedAtMs INTEGER NOT NULL)",
+    )
+  }
+}
+
+private fun SQLiteConnection.execute(sql: String) {
+  prepare(sql).use { statement -> statement.step() }
+}
