@@ -80,10 +80,6 @@ private fun PreviewScreens(initialScreen: String) {
                   is OnboardingIntent.ChangeInput -> onboarding.copy(input = intent.value)
                   is OnboardingIntent.SetApiImport -> onboarding.copy(apiImport = intent.enabled)
                   OnboardingIntent.Back -> OnboardingUiState()
-                  OnboardingIntent.ExploreAnonymously -> {
-                    screen = "markets"
-                    onboarding
-                  }
                   else ->
                     onboarding.copy(
                       error = "Preview only. Account creation and import are disabled."

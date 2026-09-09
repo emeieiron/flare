@@ -48,8 +48,8 @@ import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareNavigationItem
@@ -96,9 +96,10 @@ fun App(
 @Composable
 private fun FlareAppFlow() {
   val appPreferences: AppPreferences = koinInject()
-  val sessions: SessionRepository = koinInject()
   val trading: TradingRepository = koinInject()
+  val wallets: WalletRepository = koinInject()
   val persisted by appPreferences.values.collectAsStateWithLifecycle(initialValue = null)
+  val walletProfile by wallets.profile.collectAsStateWithLifecycle(initialValue = null)
   var forceSetup by rememberSaveable { mutableStateOf(false) }
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
@@ -106,13 +107,6 @@ private fun FlareAppFlow() {
     onBackCompleted = { forceSetup = false },
   )
   LaunchedEffect(Unit) {
-    try {
-      sessions.useAnonymous()
-    } catch (cancelled: CancellationException) {
-      throw cancelled
-    } catch (_: Throwable) {
-      // Public repositories surface their own offline state.
-    }
     try {
       trading.reconcilePending()
     } catch (cancelled: CancellationException) {
@@ -122,14 +116,18 @@ private fun FlareAppFlow() {
     }
   }
   val savedScreens = rememberSaveableStateHolder()
-  if (persisted == null) {
+  if (persisted == null || walletProfile == null) {
     Box(
       Modifier.fillMaxSize().background(FlareColors.Canvas),
       contentAlignment = Alignment.Center,
     ) {
       CircularProgressIndicator()
     }
-  } else if (persisted?.onboardingComplete != true || forceSetup) {
+  } else if (
+    persisted?.onboardingComplete != true ||
+      (walletProfile?.ownerAddress == null && walletProfile?.apiWalletAddress == null) ||
+      forceSetup
+  ) {
     OnboardingRoute(onCompleted = { forceSetup = false })
   } else {
     savedScreens.SaveableStateProvider("shell") { FlareShell(onOpenSetup = { forceSetup = true }) }
