@@ -56,11 +56,13 @@ fun MarketsScreen(
   modifier: Modifier = Modifier,
 ) {
   Column(
-    modifier = modifier.fillMaxSize().background(FlareColors.Canvas).padding(horizontal = 20.dp)
+    modifier = modifier.fillMaxSize().background(FlareColors.Canvas).padding(horizontal = 24.dp)
   ) {
     FlareTopBar(
       title = "Markets",
-      subtitle = if (state.stale) "Offline snapshot" else "Decibel perpetuals",
+      subtitle =
+        if (state.stale && state.quotes.isNotEmpty()) "Prices may be out of date"
+        else "Perpetuals, at a glance",
       action = {
         IconButton(onClick = { onIntent(MarketsIntent.Refresh) }) {
           Icon(Icons.Outlined.Refresh, contentDescription = "Refresh markets")
@@ -71,7 +73,7 @@ fun MarketsScreen(
       value = state.query,
       onValueChange = { onIntent(MarketsIntent.Search(it)) },
       modifier = Modifier.fillMaxWidth(),
-      placeholder = "Search perpetuals",
+      placeholder = "Search markets",
       leadingIcon = Icons.Outlined.Search,
     )
     Row(
@@ -84,7 +86,7 @@ fun MarketsScreen(
         onClick = { onIntent(MarketsIntent.SetFavoritesOnly(false)) },
       )
       FlareChip(
-        text = "Favorites",
+        text = "Watchlist",
         selected = state.favoritesOnly,
         onClick = { onIntent(MarketsIntent.SetFavoritesOnly(true)) },
       )
@@ -97,26 +99,52 @@ fun MarketsScreen(
       ) {
         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         Text(
-          "Connecting to Flare proxy…",
+          "Loading markets…",
           modifier = Modifier.padding(top = 12.dp),
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
     } else if (state.quotes.isEmpty()) {
       EmptyState(
-        title = if (state.error == null) "No markets found" else "Markets unavailable",
+        title =
+          when {
+            state.error != null -> "Markets unavailable"
+            state.query.isNotBlank() -> "No matching markets"
+            state.favoritesOnly -> "Your watchlist starts here"
+            else -> "No markets found"
+          },
         message =
-          state.error
-            ?: if (state.favoritesOnly) {
-              "Favorite a market to keep it at hand."
-            } else {
-              "Try a different symbol or market name."
-            },
+          if (state.error != null) "We couldn’t connect to the markets. Try again in a moment."
+          else if (state.favoritesOnly && state.query.isBlank()) {
+            "Tap the star beside a market to follow it here."
+          } else {
+            "Try a different symbol or market name."
+          },
         actionLabel = if (state.error != null) "Retry" else null,
         onAction = { onIntent(MarketsIntent.Refresh) },
       )
     } else {
       LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+          Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Text(
+              when {
+                state.query.isNotBlank() -> "Search results"
+                state.favoritesOnly -> "Your watchlist"
+                else -> "All markets"
+              },
+              style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+              "Price / 24h",
+              style = MaterialTheme.typography.bodySmall,
+              color = FlareColors.TextSecondary,
+            )
+          }
+        }
         if (state.stale) {
           item {
             Text(
