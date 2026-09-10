@@ -12,10 +12,36 @@ import kotlin.random.Random
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
 import xyz.mcxross.flare.decibel.DecibelNetwork
 
+@Serializable
+data class WithdrawalContinuation(
+  val subaccount: String,
+  val destination: String,
+  val amount: String,
+  val withdrawalReference: String? = null,
+  val withdrawalCommitted: Boolean = false,
+  val transferReference: String? = null,
+)
+
+@Serializable
+data class AccountProfile(
+  val id: String,
+  val withdrawal: WithdrawalContinuation? = null,
+  val creationReference: String? = null,
+  val ownerAddress: String? = null,
+  val apiWalletAddress: String? = null,
+  val ownerBackupConfirmed: Boolean = false,
+  val selectedSubaccount: String? = null,
+  val onboardingComplete: Boolean = false,
+)
+
 data class FlarePreferences(
+  val activeProfileId: String = "legacy",
+  val profiles: List<AccountProfile> = emptyList(),
   val network: DecibelNetwork = DecibelNetwork.TESTNET,
   val chartRange: String = "DAY",
   val chartStyle: String = "LINE",
@@ -40,6 +66,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   val values: Flow<FlarePreferences> =
     dataStore.data.map { preferences ->
       FlarePreferences(
+        activeProfileId = preferences[ActiveProfileKey] ?: "legacy",
+        profiles = profiles(preferences),
         network =
           preferences[NetworkKey]?.let { value ->
             DecibelNetwork.entries.firstOrNull { it.name == value }
@@ -88,7 +116,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   }
 
   suspend fun setOnboardingComplete(complete: Boolean) {
-    dataStore.edit { it[OnboardingCompleteKey] = complete }
+    dataStore.edit {
+      it[OnboardingCompleteKey] = complete
+      saveActiveProfile(it)
+    }
   }
 
   suspend fun setSelectedMarket(marketAddress: String?) {
@@ -123,17 +154,22 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
       if (address == null) preferences.remove(OwnerAddressKey)
       else preferences[OwnerAddressKey] = address
       preferences[OwnerBackupConfirmedKey] = address != null && backupConfirmed
+      saveActiveProfile(preferences)
     }
   }
 
   suspend fun setOwnerBackupConfirmed(confirmed: Boolean) {
-    dataStore.edit { it[OwnerBackupConfirmedKey] = confirmed }
+    dataStore.edit {
+      it[OwnerBackupConfirmedKey] = confirmed
+      saveActiveProfile(it)
+    }
   }
 
   suspend fun setApiWallet(address: String?) {
     dataStore.edit { preferences ->
       if (address == null) preferences.remove(ApiWalletAddressKey)
       else preferences[ApiWalletAddressKey] = address
+      saveActiveProfile(preferences)
     }
   }
 
@@ -141,10 +177,104 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     dataStore.edit { preferences ->
       if (address == null) preferences.remove(SelectedSubaccountKey)
       else preferences[SelectedSubaccountKey] = address
+      saveActiveProfile(preferences)
     }
   }
 
+  suspend fun setCreationReference(profileId: String, reference: String?) {
+    dataStore.edit { preferences ->
+      preferences[ProfilesKey] =
+        Json.encodeToString(
+          profiles(preferences).map {
+            if (it.id == profileId) it.copy(creationReference = reference) else it
+          }
+        )
+    }
+  }
+
+  suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) {
+    dataStore.edit { preferences ->
+      val updated =
+        profiles(preferences).map {
+          if (it.id == profileId) it.copy(withdrawal = withdrawal) else it
+        }
+      preferences[ProfilesKey] = Json.encodeToString(updated)
+    }
+  }
+
+  suspend fun activateProfile(id: String) {
+    dataStore.edit { preferences ->
+      saveActiveProfile(preferences)
+      val profile = profiles(preferences).first { it.id == id }
+      applyProfile(preferences, profile)
+    }
+  }
+
+  suspend fun registerProfile(profile: AccountProfile) {
+    dataStore.edit { preferences ->
+      saveActiveProfile(preferences)
+      val existing = profiles(preferences)
+      val resolved = existing.firstOrNull { it.id == profile.id } ?: profile
+      preferences[ProfilesKey] =
+        Json.encodeToString(
+          if (existing.any { it.id == resolved.id }) existing else existing + resolved
+        )
+      applyProfile(preferences, resolved)
+    }
+  }
+
+  private fun profiles(preferences: Preferences): List<AccountProfile> =
+    preferences[ProfilesKey]?.let { Json.decodeFromString<List<AccountProfile>>(it) }
+      ?: listOfNotNull(
+        snapshotProfile(preferences).takeIf {
+          it.ownerAddress != null || it.apiWalletAddress != null
+        }
+      )
+
+  private fun snapshotProfile(preferences: Preferences) =
+    AccountProfile(
+      id = preferences[ActiveProfileKey] ?: "legacy",
+      ownerAddress = preferences[OwnerAddressKey],
+      apiWalletAddress = preferences[ApiWalletAddressKey],
+      ownerBackupConfirmed = preferences[OwnerBackupConfirmedKey] ?: false,
+      selectedSubaccount = preferences[SelectedSubaccountKey],
+      onboardingComplete = preferences[OnboardingCompleteKey] ?: false,
+    )
+
+  private fun saveActiveProfile(
+    preferences: androidx.datastore.preferences.core.MutablePreferences
+  ) {
+    val snapshot = snapshotProfile(preferences)
+    val prior = profiles(preferences).firstOrNull { it.id == snapshot.id }
+    val current =
+      snapshot.copy(withdrawal = prior?.withdrawal, creationReference = prior?.creationReference)
+    val existing = profiles(preferences)
+    val valid = current.ownerAddress != null || current.apiWalletAddress != null
+    val updated =
+      if (existing.any { it.id == current.id }) {
+        existing.mapNotNull { if (it.id == current.id) current.takeIf { valid } else it }
+      } else existing + listOfNotNull(current.takeIf { valid })
+    preferences[ProfilesKey] = Json.encodeToString(updated)
+  }
+
+  private fun applyProfile(
+    preferences: androidx.datastore.preferences.core.MutablePreferences,
+    profile: AccountProfile,
+  ) {
+    preferences[ActiveProfileKey] = profile.id
+    if (profile.ownerAddress == null) preferences.remove(OwnerAddressKey)
+    else preferences[OwnerAddressKey] = profile.ownerAddress
+    if (profile.apiWalletAddress == null) preferences.remove(ApiWalletAddressKey)
+    else preferences[ApiWalletAddressKey] = profile.apiWalletAddress
+    if (profile.selectedSubaccount == null) preferences.remove(SelectedSubaccountKey)
+    else preferences[SelectedSubaccountKey] = profile.selectedSubaccount
+    preferences[OwnerBackupConfirmedKey] = profile.ownerBackupConfirmed
+    preferences[OnboardingCompleteKey] = profile.onboardingComplete
+  }
+
   private companion object {
+    val ProfilesKey = stringPreferencesKey("account_profiles_v1")
+    val ActiveProfileKey = stringPreferencesKey("active_profile_id")
     val NetworkKey = stringPreferencesKey("network")
     val ChartRangeKey = stringPreferencesKey("chart_range")
     val ChartStyleKey = stringPreferencesKey("chart_style")

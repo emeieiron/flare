@@ -27,6 +27,13 @@ sealed interface DecibelCommand {
   data class Withdraw(val subaccount: String, val assetMetadata: String, val amount: ULong) :
     DecibelCommand
 
+  data class TransferCollateral(
+    val subaccount: String,
+    val assetMetadata: String,
+    val destination: String,
+    val amount: ULong,
+  ) : DecibelCommand
+
   data class DelegateTrading(
     val subaccount: String,
     val delegate: String,
@@ -47,11 +54,8 @@ sealed interface DecibelCommand {
   data class CancelOrder(val subaccount: String, val market: String, val orderId: String) :
     DecibelCommand
 
-  data class CancelPositionTpSl(
-    val subaccount: String,
-    val market: String,
-    val orderId: String,
-  ) : DecibelCommand
+  data class CancelPositionTpSl(val subaccount: String, val market: String, val orderId: String) :
+    DecibelCommand
 
   data class SetPositionTpSl(
     val subaccount: String,
@@ -98,6 +102,7 @@ interface DecibelTradingService {
     feePayer: TransactionSigner? = null,
     externalFeePayer: ExternalFeePayerSubmitter? = null,
     onPrepared: suspend (hash: String) -> Unit = {},
+    beforeSign: suspend () -> Unit = {},
   ): Flow<TransactionState>
 }
 
@@ -108,6 +113,22 @@ internal class DefaultDecibelTradingService(
   override suspend fun payload(
     command: DecibelCommand
   ): AptosResult<TransactionPayload.EntryFunction> {
+    if (command is DecibelCommand.TransferCollateral) {
+      require(command.amount > 0uL) { "Transfer amount must be positive" }
+      return AptosResult.Success(
+        TransactionPayload.entryFunction(
+          function = "0x1::primary_fungible_store::transfer",
+          typeArguments =
+            listOf(xyz.mcxross.kaptos.model.TypeTag.fromString("0x1::fungible_asset::Metadata")),
+          arguments =
+            listOf(
+              address(command.assetMetadata),
+              address(command.destination),
+              MoveArgument.U64(command.amount),
+            ),
+        )
+      )
+    }
     val call =
       try {
         buildCall(command)
@@ -127,6 +148,7 @@ internal class DefaultDecibelTradingService(
     val function: String
     val arguments: List<MoveArgument>
     when (command) {
+      is DecibelCommand.TransferCollateral -> error("Transfer payload is built directly")
       DecibelCommand.CreateSubaccount -> {
         function = "$packageAddress::dex_accounts_entry::create_new_subaccount"
         arguments = emptyList()
@@ -165,9 +187,7 @@ internal class DefaultDecibelTradingService(
         arguments = listOf(address(command.subaccount), address(command.delegate))
       }
       is DecibelCommand.ConfigureMarket -> {
-        require(command.leverage.toInt() in 1..100) {
-          "Leverage must be between 1 and 100"
-        }
+        require(command.leverage.toInt() in 1..100) { "Leverage must be between 1 and 100" }
         function = "$packageAddress::dex_accounts_entry::configure_user_settings_for_market"
         arguments =
           listOf(
@@ -248,6 +268,7 @@ internal class DefaultDecibelTradingService(
     feePayer: TransactionSigner?,
     externalFeePayer: ExternalFeePayerSubmitter?,
     onPrepared: suspend (hash: String) -> Unit,
+    beforeSign: suspend () -> Unit,
   ): Flow<TransactionState> = flow {
     if (feePayer != null && externalFeePayer != null) {
       emit(TransactionState.Failed("Choose either a local fee payer or an external Gas Station"))
@@ -322,6 +343,7 @@ internal class DefaultDecibelTradingService(
     }
 
     emit(TransactionState.AwaitingAuthorization)
+    beforeSign()
     val senderAuthenticator =
       when (val result = aptos.transactions.sign(signer, unsigned)) {
         is AptosResult.Success -> result.value
@@ -330,15 +352,16 @@ internal class DefaultDecibelTradingService(
           return@flow
         }
       }
-    val feePayerAuthenticator = feePayer?.let {
-      when (val result = aptos.transactions.sign(it, unsigned)) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(TransactionState.Failed(result.error.toString()))
-          return@flow
+    val feePayerAuthenticator =
+      feePayer?.let {
+        when (val result = aptos.transactions.sign(it, unsigned)) {
+          is AptosResult.Success -> result.value
+          is AptosResult.Failure -> {
+            emit(TransactionState.Failed(result.error.toString()))
+            return@flow
+          }
         }
       }
-    }
     val preparedReference: String
     val externalRequest =
       if (externalFeePayer == null) {
@@ -391,6 +414,7 @@ internal class DefaultDecibelTradingService(
       return@flow
     }
 
+    beforeSign()
     emit(TransactionState.Submitting)
     val submittedHash =
       if (externalRequest != null) {
@@ -483,10 +507,7 @@ internal class DefaultDecibelTradingService(
 
   private fun option(value: MoveArgument?): MoveArgument.Option = MoveArgument.Option(value)
 
-  private data class EntryFunctionCall(
-    val function: String,
-    val arguments: List<MoveArgument>,
-  )
+  private data class EntryFunctionCall(val function: String, val arguments: List<MoveArgument>)
 }
 
 private fun AptosError.safeForSelfPay(): Boolean =

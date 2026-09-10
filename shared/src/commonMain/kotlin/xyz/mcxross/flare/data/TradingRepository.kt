@@ -3,6 +3,8 @@ package xyz.mcxross.flare.data
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -44,10 +46,7 @@ data class PendingTransaction(
   val updatedAtMs: Long,
 )
 
-data class ReconciliationResult(
-  val finalized: Int,
-  val unresolved: Int,
-)
+data class ReconciliationResult(val finalized: Int, val unresolved: Int)
 
 interface TradingRepository {
   val pendingTransactions: Flow<List<PendingTransaction>>
@@ -57,14 +56,15 @@ interface TradingRepository {
     signer: TradingSigner,
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
+    onPrepared: suspend (String) -> Unit = {},
   ): Flow<TransactionState>
+
+  suspend fun transactionStatus(reference: String): TransactionState =
+    error("Transaction lookup unavailable")
 
   suspend fun apiWalletAptBalance(): ULong
 
-  fun topUpApiWallet(
-    amountOctas: ULong,
-    prompt: VaultPrompt,
-  ): Flow<TransactionState>
+  fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState>
 
   suspend fun reconcilePending(): ReconciliationResult
 }
@@ -77,29 +77,25 @@ class DefaultTradingRepository(
   private val sessions: SessionRepository,
   private val gasSponsorship: GasSponsorshipRepository,
   private val runtime: FlareRuntimeConfig,
+  private val preferences: xyz.mcxross.flare.store.AppPreferences,
 ) : TradingRepository {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = Mutex()
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
-    journal.observePending().map { entries -> entries.map(PendingTransactionEntity::toDomain) }
+    journal.observePending().combine(preferences.values) { entries, saved ->
+      entries
+        .filter { it.operation.substringAfter('|', "legacy") == saved.activeProfileId }
+        .map(PendingTransactionEntity::toDomain)
+    }
 
   override fun execute(
     command: DecibelCommand,
     signer: TradingSigner,
     prompt: VaultPrompt,
     feePayment: FeePayment,
+    onPrepared: suspend (String) -> Unit,
   ): Flow<TransactionState> = flow {
-    val activeSession = sessions.status.value
-    val now = Clock.System.now().toEpochMilliseconds()
-    if (
-      activeSession == null ||
-        activeSession.role == SessionRole.ANONYMOUS ||
-        activeSession.expiresAt - now < MINIMUM_SESSION_REMAINING_MS
-    ) {
-      emit(TransactionState.Failed("Unlock an authenticated wallet session before submitting"))
-      return@flow
-    }
     if (signer == TradingSigner.API && command.requiresOwner()) {
       emit(TransactionState.Failed("This operation requires the owner wallet"))
       return@flow
@@ -111,83 +107,141 @@ class DefaultTradingRepository(
 
     var preparedHash: String? = null
     try {
-      withSigner(signer, prompt) { account ->
-        check(
-          activeSession.walletAddress?.equals(
-            account.accountAddress.toString(),
-            ignoreCase = true,
-          ) == true
-        ) {
-          "The authenticated Worker session does not match the selected signing wallet"
+      val selected = preferences.values.first()
+      val generation = wallets.authorizationGeneration
+      wallets.requireAuthorization(generation)
+      val resolvedSigner = if (command.requiresOwner()) TradingSigner.OWNER else TradingSigner.API
+      val subaccount = command.subaccountAddress()
+      require(
+        subaccount == null || selected.selectedSubaccount?.sameAptosAddress(subaccount) == true
+      ) {
+        "The selected account changed. Review the action again."
+      }
+      val activeSession =
+        if (resolvedSigner == TradingSigner.API) {
+          sessions.ensureTrading(
+            checkNotNull(subaccount),
+            prompt.copy(requireFreshAuthorization = false),
+          )
+        } else {
+          sessions.authenticateOwner(subaccount, prompt)
         }
-        client.trading
-          .execute(
-            signer = account,
-            command = command,
-            externalFeePayer =
-              if (feePayment == FeePayment.SPONSORED) {
-                ExternalFeePayerSubmitter { request ->
-                  gasSponsorship.submit(
-                    request = request,
-                    ownerOnly = command.requiresOwner(),
+      emitAll(
+        sessions.bind(
+          activeSession,
+          flow {
+            reconcilePending()
+            check(pendingTransactions.first().none { it.operation == command.journalName() }) {
+              "An earlier transaction is pending. Check Activity before trying again."
+            }
+            withSigner(resolvedSigner, prompt.copy(requireFreshAuthorization = false)) { account ->
+              check(
+                activeSession.walletAddress?.equals(
+                  account.accountAddress.toString(),
+                  ignoreCase = true,
+                ) == true
+              ) {
+                "The authenticated Worker session does not match the selected signing wallet"
+              }
+              client.trading
+                .execute(
+                  signer = account,
+                  command = command,
+                  externalFeePayer =
+                    if (feePayment == FeePayment.SPONSORED) {
+                      ExternalFeePayerSubmitter { request ->
+                        gasSponsorship.submit(
+                          request = request,
+                          ownerOnly = command.requiresOwner(),
+                        )
+                      }
+                    } else {
+                      null
+                    },
+                  beforeSign = {
+                    wallets.requireAuthorization(generation)
+                    val current = preferences.values.first()
+                    check(
+                      current.activeProfileId == selected.activeProfileId &&
+                        current.selectedSubaccount == selected.selectedSubaccount
+                    ) {
+                      "The selected account changed. Review the action again."
+                    }
+                  },
+                  onPrepared = { hash ->
+                    check(journal.find(hash) == null) {
+                      "This signed transaction is already pending reconciliation"
+                    }
+                    val now = Clock.System.now().toEpochMilliseconds()
+                    journal.upsert(
+                      PendingTransactionEntity(
+                        hash = hash,
+                        network = runtime.network.name,
+                        operation = command.journalName() + "|" + selected.activeProfileId,
+                        state = JournalState.PREPARED,
+                        createdAtMs = now,
+                        updatedAtMs = now,
+                      )
+                    )
+                    preparedHash = hash
+                    onPrepared(hash)
+                  },
+                )
+                .collect { state ->
+                  val hash = preparedHash
+                  when (state) {
+                    TransactionState.Submitting -> hash?.updateState(JournalState.SUBMITTING)
+                    is TransactionState.Pending -> {
+                      if (hash != null && !hash.equals(state.hash, ignoreCase = true)) {
+                        check(
+                          journal.replaceHash(
+                            oldHash = hash,
+                            newHash = state.hash,
+                            state = JournalState.PENDING,
+                            updatedAtMs = Clock.System.now().toEpochMilliseconds(),
+                          ) == 1
+                        ) {
+                          "The pending transaction journal entry is unavailable"
+                        }
+                        preparedHash = state.hash
+                      } else {
+                        hash?.updateState(JournalState.PENDING)
+                      }
+                    }
+                    is TransactionState.Committed -> hash?.let { journal.remove(it) }
+                    is TransactionState.Failed -> {
+                      if (state.committed || state.definitelyNotSubmitted) {
+                        hash?.let { journal.remove(it) }
+                      } else {
+                        hash?.updateState(JournalState.RECONCILE_REQUIRED)
+                      }
+                    }
+                    TransactionState.Simulating,
+                    TransactionState.AwaitingAuthorization -> Unit
+                  }
+                  val eligible =
+                    (state as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+                      when (
+                        val balance =
+                          aptos.accounts.getBalance(
+                            account.accountAddress,
+                            AccountAsset.coin(APTOS_COIN),
+                          )
+                      ) {
+                        is AptosResult.Success -> balance.value >= estimate
+                        is AptosResult.Failure -> false
+                      }
+                    }
+                  emit(
+                    if (state is TransactionState.Failed && eligible == false)
+                      state.copy(selfPayEstimateOctas = null)
+                    else state
                   )
                 }
-              } else {
-                null
-              },
-            onPrepared = { hash ->
-              check(journal.find(hash) == null) {
-                "This signed transaction is already pending reconciliation"
-              }
-              val now = Clock.System.now().toEpochMilliseconds()
-              journal.upsert(
-                PendingTransactionEntity(
-                  hash = hash,
-                  network = runtime.network.name,
-                  operation = command.journalName(),
-                  state = JournalState.PREPARED,
-                  createdAtMs = now,
-                  updatedAtMs = now,
-                )
-              )
-              preparedHash = hash
-            },
-          )
-          .collect { state ->
-            val hash = preparedHash
-            when (state) {
-              TransactionState.Submitting -> hash?.updateState(JournalState.SUBMITTING)
-              is TransactionState.Pending -> {
-                if (hash != null && !hash.equals(state.hash, ignoreCase = true)) {
-                  check(
-                    journal.replaceHash(
-                      oldHash = hash,
-                      newHash = state.hash,
-                      state = JournalState.PENDING,
-                      updatedAtMs = Clock.System.now().toEpochMilliseconds(),
-                    ) == 1
-                  ) {
-                    "The pending transaction journal entry is unavailable"
-                  }
-                  preparedHash = state.hash
-                } else {
-                  hash?.updateState(JournalState.PENDING)
-                }
-              }
-              is TransactionState.Committed -> hash?.let { journal.remove(it) }
-              is TransactionState.Failed -> {
-                if (state.committed || state.definitelyNotSubmitted) {
-                  hash?.let { journal.remove(it) }
-                } else {
-                  hash?.updateState(JournalState.RECONCILE_REQUIRED)
-                }
-              }
-              TransactionState.Simulating,
-              TransactionState.AwaitingAuthorization -> Unit
             }
-            emit(state)
-          }
-      }
+          },
+        )
+      )
     } catch (cancelled: CancellationException) {
       preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
       throw cancelled
@@ -200,7 +254,56 @@ class DefaultTradingRepository(
         )
       )
     } finally {
-      submissionMutex.unlock()
+      if (command.requiresOwner()) {
+        try {
+          wallets.requireAuthorization(wallets.authorizationGeneration)
+          val saved = preferences.values.first()
+          if (saved.apiWalletAddress != null && saved.selectedSubaccount != null) {
+            sessions.ensureTrading(
+              saved.selectedSubaccount,
+              prompt.copy(requireFreshAuthorization = false),
+            )
+          }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          /* Retry session renewal with the next action. */
+        } finally {
+          submissionMutex.unlock()
+        }
+      } else submissionMutex.unlock()
+    }
+  }
+
+  override suspend fun transactionStatus(reference: String): TransactionState {
+    val hash =
+      if (reference.startsWith(SPONSOR_REFERENCE_PREFIX)) {
+        when (
+          val result = gasSponsorship.resolve(reference.removePrefix(SPONSOR_REFERENCE_PREFIX))
+        ) {
+          is AptosResult.Success -> result.value ?: return TransactionState.Pending(reference)
+          is AptosResult.Failure -> return TransactionState.Pending(reference)
+        }
+      } else reference
+    return when (
+      val result =
+        aptos.transactions.waitForTransaction(
+          hash,
+          WaitForTransactionOptions(timeoutSecs = 2, checkSuccess = false),
+        )
+    ) {
+      is AptosResult.Failure -> TransactionState.Pending(reference)
+      is AptosResult.Success -> {
+        val response = result.value as? UserTransactionResponse
+        if (response == null || !response.hash.equals(hash, true))
+          TransactionState.Pending(reference)
+        else {
+          journal.remove(reference)
+          if (hash != reference) journal.remove(hash)
+          if (response.success) TransactionState.Committed(hash)
+          else TransactionState.Failed(response.vmStatus, hash, committed = true)
+        }
+      }
     }
   }
 
@@ -209,196 +312,203 @@ class DefaultTradingRepository(
       wallets.profile.first().apiWalletAddress ?: error("An API wallet is not configured")
     return when (
       val result =
-        aptos.accounts.getBalance(
-          AccountAddress.fromString(address),
-          AccountAsset.coin(APTOS_COIN),
-        )
+        aptos.accounts.getBalance(AccountAddress.fromString(address), AccountAsset.coin(APTOS_COIN))
     ) {
       is AptosResult.Success -> result.value
       is AptosResult.Failure -> error(result.error.toString())
     }
   }
 
-  override fun topUpApiWallet(
-    amountOctas: ULong,
-    prompt: VaultPrompt,
-  ): Flow<TransactionState> = flow {
-    require(amountOctas > 0uL) { "APT top-up amount must be greater than zero" }
-    val session = sessions.status.value
-    if (session?.role != SessionRole.OWNER) {
-      emit(
-        TransactionState.Failed("Fresh owner authorization is required for an API-wallet top-up")
-      )
-      return@flow
-    }
-    if (!submissionMutex.tryLock()) {
-      emit(TransactionState.Failed("Another transaction is already being authorized"))
-      return@flow
-    }
+  override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
+    flow {
+      require(amountOctas > 0uL) { "APT top-up amount must be greater than zero" }
+      val session =
+        sessions.authenticateOwner(
+          preferences.values.first().selectedSubaccount,
+          prompt.copy(requireFreshAuthorization = true),
+        )
+      if (session.role != SessionRole.OWNER) {
+        emit(
+          TransactionState.Failed("Fresh owner authorization is required for an API-wallet top-up")
+        )
+        return@flow
+      }
+      if (!submissionMutex.tryLock()) {
+        emit(TransactionState.Failed("Another transaction is already being authorized"))
+        return@flow
+      }
 
-    var preparedHash: String? = null
-    try {
-      val recipient =
-        wallets.profile.first().apiWalletAddress ?: error("An API wallet is not configured")
-      wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = true)) { owner ->
-        check(
-          session.walletAddress?.equals(owner.accountAddress.toString(), ignoreCase = true) == true
-        ) {
-          "The owner session does not match the owner signing wallet"
-        }
-        emit(TransactionState.Simulating)
-        val transaction =
+      var preparedHash: String? = null
+      try {
+        val recipient =
+          wallets.profile.first().apiWalletAddress ?: error("An API wallet is not configured")
+        wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { owner ->
+          check(
+            session.walletAddress?.equals(owner.accountAddress.toString(), ignoreCase = true) ==
+              true
+          ) {
+            "The owner session does not match the owner signing wallet"
+          }
+          emit(TransactionState.Simulating)
+          val transaction =
+            when (
+              val result =
+                aptos.coins.buildTransfer(
+                  sender = owner.accountAddress,
+                  recipient = AccountAddress.fromString(recipient),
+                  amount = amountOctas,
+                )
+            ) {
+              is AptosResult.Success -> result.value
+              is AptosResult.Failure -> {
+                emit(TransactionState.Failed(result.error.toString()))
+                return@withOwnerAccount
+              }
+            }
           when (
             val result =
-              aptos.coins.buildTransfer(
-                sender = owner.accountAddress,
-                recipient = AccountAddress.fromString(recipient),
-                amount = amountOctas,
+              aptos.transactions.simulate(
+                transaction = transaction,
+                senderPublicKey = owner.publicKey,
+                options = SimulationOptions(estimateGasUnitPrice = true),
               )
           ) {
-            is AptosResult.Success -> result.value
             is AptosResult.Failure -> {
               emit(TransactionState.Failed(result.error.toString()))
               return@withOwnerAccount
             }
+            is AptosResult.Success -> {
+              if (result.value.size != 1) {
+                emit(TransactionState.Failed("Expected exactly one transaction simulation result"))
+                return@withOwnerAccount
+              }
+              val failed = result.value.firstOrNull { !it.success }
+              if (failed != null) {
+                emit(TransactionState.Failed(failed.vmStatus))
+                return@withOwnerAccount
+              }
+            }
           }
-        when (
-          val result =
-            aptos.transactions.simulate(
-              transaction = transaction,
-              senderPublicKey = owner.publicKey,
-              options = SimulationOptions(estimateGasUnitPrice = true),
+
+          emit(TransactionState.AwaitingAuthorization)
+          val authenticator =
+            when (val result = aptos.transactions.sign(owner, transaction)) {
+              is AptosResult.Success -> result.value
+              is AptosResult.Failure -> {
+                emit(TransactionState.Failed(result.error.toString()))
+                return@withOwnerAccount
+              }
+            }
+          val hash =
+            when (
+              val result =
+                aptos.transactions.userTransactionHash(
+                  transaction = transaction,
+                  senderAuthenticator = authenticator,
+                )
+            ) {
+              is AptosResult.Success -> result.value
+              is AptosResult.Failure -> {
+                emit(TransactionState.Failed(result.error.toString()))
+                return@withOwnerAccount
+              }
+            }
+          val now = Clock.System.now().toEpochMilliseconds()
+          check(journal.find(hash) == null) { "This APT top-up is already pending reconciliation" }
+          journal.upsert(
+            PendingTransactionEntity(
+              hash = hash,
+              network = runtime.network.name,
+              operation = "TOP_UP_API_WALLET|" + preferences.values.first().activeProfileId,
+              state = JournalState.PREPARED,
+              createdAtMs = now,
+              updatedAtMs = now,
             )
-        ) {
-          is AptosResult.Failure -> {
-            emit(TransactionState.Failed(result.error.toString()))
+          )
+          preparedHash = hash
+
+          emit(TransactionState.Submitting)
+          hash.updateState(JournalState.SUBMITTING)
+          val pending =
+            when (
+              val result =
+                aptos.transactions.submit(
+                  transaction = transaction,
+                  senderAuthenticator = authenticator,
+                )
+            ) {
+              is AptosResult.Success -> result.value
+              is AptosResult.Failure -> {
+                hash.updateState(JournalState.RECONCILE_REQUIRED)
+                emit(TransactionState.Failed(result.error.toString(), hash = hash))
+                return@withOwnerAccount
+              }
+            }
+          if (!pending.hash.equals(hash, ignoreCase = true)) {
+            hash.updateState(JournalState.RECONCILE_REQUIRED)
+            emit(
+              TransactionState.Failed("Aptos returned a mismatched top-up transaction hash", hash)
+            )
             return@withOwnerAccount
           }
-          is AptosResult.Success -> {
-            if (result.value.size != 1) {
-              emit(TransactionState.Failed("Expected exactly one transaction simulation result"))
-              return@withOwnerAccount
-            }
-            val failed = result.value.firstOrNull { !it.success }
-            if (failed != null) {
-              emit(TransactionState.Failed(failed.vmStatus))
-              return@withOwnerAccount
-            }
-          }
-        }
-
-        emit(TransactionState.AwaitingAuthorization)
-        val authenticator =
-          when (val result = aptos.transactions.sign(owner, transaction)) {
-            is AptosResult.Success -> result.value
-            is AptosResult.Failure -> {
-              emit(TransactionState.Failed(result.error.toString()))
-              return@withOwnerAccount
-            }
-          }
-        val hash =
+          hash.updateState(JournalState.PENDING)
+          emit(TransactionState.Pending(hash))
           when (
             val result =
-              aptos.transactions.userTransactionHash(
-                transaction = transaction,
-                senderAuthenticator = authenticator,
+              aptos.transactions.waitForTransaction(
+                hash,
+                WaitForTransactionOptions(checkSuccess = false),
               )
           ) {
-            is AptosResult.Success -> result.value
-            is AptosResult.Failure -> {
-              emit(TransactionState.Failed(result.error.toString()))
-              return@withOwnerAccount
-            }
-          }
-        val now = Clock.System.now().toEpochMilliseconds()
-        check(journal.find(hash) == null) { "This APT top-up is already pending reconciliation" }
-        journal.upsert(
-          PendingTransactionEntity(
-            hash = hash,
-            network = runtime.network.name,
-            operation = "TOP_UP_API_WALLET",
-            state = JournalState.PREPARED,
-            createdAtMs = now,
-            updatedAtMs = now,
-          )
-        )
-        preparedHash = hash
-
-        emit(TransactionState.Submitting)
-        hash.updateState(JournalState.SUBMITTING)
-        val pending =
-          when (
-            val result =
-              aptos.transactions.submit(
-                transaction = transaction,
-                senderAuthenticator = authenticator,
-              )
-          ) {
-            is AptosResult.Success -> result.value
             is AptosResult.Failure -> {
               hash.updateState(JournalState.RECONCILE_REQUIRED)
               emit(TransactionState.Failed(result.error.toString(), hash = hash))
-              return@withOwnerAccount
             }
-          }
-        if (!pending.hash.equals(hash, ignoreCase = true)) {
-          hash.updateState(JournalState.RECONCILE_REQUIRED)
-          emit(TransactionState.Failed("Aptos returned a mismatched top-up transaction hash", hash))
-          return@withOwnerAccount
-        }
-        hash.updateState(JournalState.PENDING)
-        emit(TransactionState.Pending(hash))
-        when (
-          val result =
-            aptos.transactions.waitForTransaction(
-              hash,
-              WaitForTransactionOptions(checkSuccess = false),
-            )
-        ) {
-          is AptosResult.Failure -> {
-            hash.updateState(JournalState.RECONCILE_REQUIRED)
-            emit(TransactionState.Failed(result.error.toString(), hash = hash))
-          }
-          is AptosResult.Success -> {
-            val response = result.value as? UserTransactionResponse
-            if (response == null || !response.hash.equals(hash, ignoreCase = true)) {
-              hash.updateState(JournalState.RECONCILE_REQUIRED)
-              emit(TransactionState.Failed("Unexpected top-up transaction response", hash = hash))
-            } else {
-              journal.remove(hash)
-              if (response.success) {
-                emit(TransactionState.Committed(hash))
+            is AptosResult.Success -> {
+              val response = result.value as? UserTransactionResponse
+              if (response == null || !response.hash.equals(hash, ignoreCase = true)) {
+                hash.updateState(JournalState.RECONCILE_REQUIRED)
+                emit(TransactionState.Failed("Unexpected top-up transaction response", hash = hash))
               } else {
-                emit(
-                  TransactionState.Failed(
-                    message = response.vmStatus,
-                    hash = hash,
-                    committed = true,
+                journal.remove(hash)
+                if (response.success) {
+                  emit(TransactionState.Committed(hash))
+                } else {
+                  emit(
+                    TransactionState.Failed(
+                      message = response.vmStatus,
+                      hash = hash,
+                      committed = true,
+                    )
                   )
-                )
+                }
               }
             }
           }
         }
+      } catch (cancelled: CancellationException) {
+        preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
+        throw cancelled
+      } catch (error: Throwable) {
+        preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
+        emit(
+          TransactionState.Failed(error.message ?: "API-wallet top-up failed", hash = preparedHash)
+        )
+      } finally {
+        submissionMutex.unlock()
       }
-    } catch (cancelled: CancellationException) {
-      preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
-      throw cancelled
-    } catch (error: Throwable) {
-      preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
-      emit(
-        TransactionState.Failed(error.message ?: "API-wallet top-up failed", hash = preparedHash)
-      )
-    } finally {
-      submissionMutex.unlock()
     }
-  }
 
   override suspend fun reconcilePending(): ReconciliationResult {
     var finalized = 0
     var unresolved = 0
     journal.pending().forEach { entry ->
-      if (entry.network != runtime.network.name) return@forEach
+      if (
+        entry.network != runtime.network.name ||
+          entry.operation.substringAfter('|', "legacy") !=
+            preferences.values.first().activeProfileId
+      )
+        return@forEach
       val transactionHash =
         if (entry.hash.startsWith(SPONSOR_REFERENCE_PREFIX)) {
           when (
@@ -465,10 +575,7 @@ class DefaultTradingRepository(
   private suspend fun String.updateState(state: String) {
     val current = journal.find(this) ?: return
     journal.upsert(
-      current.copy(
-        state = state,
-        updatedAtMs = Clock.System.now().toEpochMilliseconds(),
-      )
+      current.copy(state = state, updatedAtMs = Clock.System.now().toEpochMilliseconds())
     )
   }
 
@@ -491,6 +598,7 @@ private fun DecibelCommand.requiresOwner(): Boolean =
     DecibelCommand.CreateSubaccount,
     is DecibelCommand.Deposit,
     is DecibelCommand.Withdraw,
+    is DecibelCommand.TransferCollateral,
     is DecibelCommand.DelegateTrading,
     is DecibelCommand.RevokeDelegation -> true
     is DecibelCommand.ConfigureMarket,
@@ -505,6 +613,7 @@ private fun DecibelCommand.journalName(): String =
     DecibelCommand.CreateSubaccount -> "CREATE_SUBACCOUNT"
     is DecibelCommand.Deposit -> "DEPOSIT"
     is DecibelCommand.Withdraw -> "WITHDRAW"
+    is DecibelCommand.TransferCollateral -> "TRANSFER_COLLATERAL"
     is DecibelCommand.DelegateTrading -> "DELEGATE_TRADING"
     is DecibelCommand.RevokeDelegation -> "REVOKE_DELEGATION"
     is DecibelCommand.ConfigureMarket -> "CONFIGURE_MARKET"
@@ -518,8 +627,23 @@ private fun PendingTransactionEntity.toDomain(): PendingTransaction =
   PendingTransaction(
     hash = hash,
     network = network,
-    operation = operation,
+    operation = operation.substringBefore('|'),
     state = state,
     createdAtMs = createdAtMs,
     updatedAtMs = updatedAtMs,
   )
+
+internal fun DecibelCommand.subaccountAddress(): String? =
+  when (this) {
+    DecibelCommand.CreateSubaccount -> null
+    is DecibelCommand.Deposit -> subaccount
+    is DecibelCommand.Withdraw -> subaccount
+    is DecibelCommand.TransferCollateral -> subaccount
+    is DecibelCommand.DelegateTrading -> subaccount
+    is DecibelCommand.RevokeDelegation -> subaccount
+    is DecibelCommand.ConfigureMarket -> subaccount
+    is DecibelCommand.PlaceOrder -> subaccount
+    is DecibelCommand.CancelOrder -> subaccount
+    is DecibelCommand.CancelPositionTpSl -> subaccount
+    is DecibelCommand.SetPositionTpSl -> subaccount
+  }

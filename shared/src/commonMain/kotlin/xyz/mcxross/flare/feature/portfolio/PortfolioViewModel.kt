@@ -50,6 +50,8 @@ data class PortfolioUiState(
   val pendingTransactions: List<PendingTransaction> = emptyList(),
   val fundingMode: FundingMode? = null,
   val fundingAmount: String = "",
+  val withdrawalDestination: String = "",
+  val pendingWithdrawal: xyz.mcxross.flare.store.WithdrawalContinuation? = null,
   val fundingTransaction: TransactionState? = null,
   val managedPositionMarket: String? = null,
   val takeProfitInput: String = "",
@@ -66,13 +68,11 @@ data class PortfolioUiState(
 }
 
 sealed interface PortfolioIntent {
-  data object Unlock : PortfolioIntent
-
   data object Refresh : PortfolioIntent
 
-  data object Lock : PortfolioIntent
-
   data class OpenFunding(val mode: FundingMode) : PortfolioIntent
+
+  data class ChangeWithdrawalDestination(val value: String) : PortfolioIntent
 
   data class ChangeFundingAmount(val value: String) : PortfolioIntent
 
@@ -126,6 +126,12 @@ class PortfolioViewModel(
           pendingTransactions = pending,
         )
       }
+      .combine(preferences.values) { state, saved ->
+        state.copy(
+          pendingWithdrawal =
+            saved.profiles.firstOrNull { it.id == saved.activeProfileId }?.withdrawal
+        )
+      }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
           marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol }
@@ -135,22 +141,26 @@ class PortfolioViewModel(
 
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
-      PortfolioIntent.Unlock -> unlock()
       PortfolioIntent.Refresh ->
         launchAction {
           trading.reconcilePending()
-          accounts.refresh()
+          accounts.restoreTrading()
         }
-      PortfolioIntent.Lock -> launchAction { accounts.disconnect() }
-      is PortfolioIntent.OpenFunding ->
+      is PortfolioIntent.ChangeWithdrawalDestination ->
+        local.update { it.copy(withdrawalDestination = intent.value, fundingTransaction = null) }
+      is PortfolioIntent.OpenFunding -> {
+        val pending = uiState.value.pendingWithdrawal.takeIf { intent.mode == FundingMode.WITHDRAW }
         local.update {
           it.copy(
             fundingMode = intent.mode,
-            fundingAmount = "",
+            fundingAmount = pending?.amount.orEmpty(),
+            withdrawalDestination = pending?.destination.orEmpty(),
             fundingTransaction = null,
             actionError = null,
           )
         }
+        viewModelScope.launch { runSuspendCatching { accounts.restoreTrading() } }
+      }
       is PortfolioIntent.ChangeFundingAmount ->
         local.update {
           it.copy(
@@ -163,9 +173,7 @@ class PortfolioViewModel(
       PortfolioIntent.SubmitFunding -> submitFunding(FeePayment.SPONSORED)
       PortfolioIntent.ConfirmSelfPay -> submitFunding(FeePayment.SELF_PAY)
       PortfolioIntent.CloseFunding ->
-        local.update {
-          it.copy(fundingMode = null, fundingAmount = "", fundingTransaction = null)
-        }
+        local.update { it.copy(fundingMode = null, fundingAmount = "", fundingTransaction = null) }
       is PortfolioIntent.ManagePosition ->
         local.update {
           it.copy(
@@ -222,10 +230,7 @@ class PortfolioViewModel(
         .validate(quote.market, details.orderBook)
         .value ?: error("The exact position size cannot be aligned to the current market precision")
     val subaccount = checkNotNull(uiState.value.account.account)
-    executePositionCommandInternal(
-      DecibelCommand.PlaceOrder(subaccount, validated),
-      feePayment,
-    )
+    executePositionCommandInternal(DecibelCommand.PlaceOrder(subaccount, validated), feePayment)
   }
 
   private fun setTpSl(feePayment: FeePayment) = launchAction {
@@ -288,10 +293,7 @@ class PortfolioViewModel(
           val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
           if (balance != null && balance < estimate) {
             local.update {
-              it.copy(
-                apiWalletNeedsTopUp = true,
-                suggestedTopUpOctas = suggestedApiTopUp(estimate),
-              )
+              it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = suggestedApiTopUp(estimate))
             }
           }
         }
@@ -302,16 +304,6 @@ class PortfolioViewModel(
 
   private fun topUpApiWallet() = launchAction {
     val amount = local.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Set up a Decibel subaccount first")
-    accounts.connectOwner(
-      subaccount,
-      VaultPrompt(
-        "Authorize API-wallet top-up",
-        "Confirm the owner wallet before transferring APT to the API wallet.",
-        requireFreshAuthorization = true,
-      ),
-    )
     trading
       .topUpApiWallet(
         amount,
@@ -331,23 +323,7 @@ class PortfolioViewModel(
   }
 
   private suspend fun ensureTradingSession() {
-    val profile = wallets.profile.first()
-    val expected =
-      profile.apiWalletAddress ?: profile.ownerAddress ?: error("Set up a wallet first")
-    if (sessions.status.value?.walletAddress?.equals(expected, ignoreCase = true) == true) return
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Set up a Decibel subaccount first")
-    if (profile.apiWalletAddress != null) {
-      accounts.connectApi(
-        subaccount,
-        VaultPrompt("Unlock trading wallet", "Authorize position management."),
-      )
-    } else {
-      accounts.connectOwner(
-        subaccount,
-        VaultPrompt("Unlock owner wallet", "Authorize position management."),
-      )
-    }
+    accounts.restoreTrading()
   }
 
   private suspend fun marketQuote(market: String) =
@@ -378,11 +354,9 @@ class PortfolioViewModel(
       if (mode == FundingMode.DEPOSIT) {
         accounts.depositUsdc(state.fundingAmount, prompt, feePayment)
       } else {
-        accounts.withdrawUsdc(state.fundingAmount, prompt, feePayment)
+        accounts.withdrawTo(state.fundingAmount, state.withdrawalDestination, prompt, feePayment)
       }
-    flow.collect { transaction ->
-      local.update { it.copy(fundingTransaction = transaction) }
-    }
+    flow.collect { transaction -> local.update { it.copy(fundingTransaction = transaction) } }
     when (val terminal = local.value.fundingTransaction) {
       is TransactionState.Committed -> {
         accounts.refresh()
@@ -395,40 +369,18 @@ class PortfolioViewModel(
     }
   }
 
-  private fun unlock() = launchAction {
-    val state = uiState.value
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Set up a Decibel subaccount first")
-    if (state.profile.apiWalletAddress != null) {
-      accounts.connectApi(
-        subaccount,
-        VaultPrompt(
-          title = "Unlock trading account",
-          subtitle = "Authorize the delegated API wallet for five minutes.",
-        ),
-      )
-    } else {
-      accounts.connectOwner(
-        subaccount,
-        VaultPrompt(
-          title = "Unlock owner account",
-          subtitle = "Authorize live account data for five minutes.",
-        ),
-      )
-    }
-  }
-
   private fun launchAction(block: suspend () -> Unit) {
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, actionError = null) }
-      runSuspendCatching { block() }
-        .onFailure { error ->
-          local.update {
-            it.copy(actionError = error.message ?: "The account action failed")
+      try {
+        runSuspendCatching { block() }
+          .onFailure { error ->
+            local.update { it.copy(actionError = error.message ?: "The account action failed") }
           }
-        }
-      local.update { it.copy(busy = false) }
+      } finally {
+        local.update { it.copy(busy = false) }
+      }
     }
   }
 }

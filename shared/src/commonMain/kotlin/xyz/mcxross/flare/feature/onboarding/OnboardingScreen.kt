@@ -20,10 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -63,9 +60,7 @@ fun OnboardingRoute(
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   LaunchedEffect(viewModel) {
-    viewModel.effects.collect { effect ->
-      if (effect == OnboardingEffect.Completed) onCompleted()
-    }
+    viewModel.effects.collect { effect -> if (effect == OnboardingEffect.Completed) onCompleted() }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     viewModel.onIntent(OnboardingIntent.ClearSensitiveState)
@@ -104,10 +99,21 @@ fun OnboardingScreen(
           OnboardingStep.SHOW_BACKUP -> BackupStep(state, onIntent)
           OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
           OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
-          OnboardingStep.FUNDING -> FundingStep(state, onIntent)
           OnboardingStep.API_WALLET -> ApiWalletStep(state, onIntent)
           OnboardingStep.WELCOME -> Unit
         }
+      }
+      (state.setupTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+        Text(
+          "Network fee: approximately ${estimate.toDecimalString(8)} APT",
+          Modifier.padding(top = 16.dp),
+        )
+        FlareButton(
+          "Confirm network fee",
+          { onIntent(OnboardingIntent.ConfirmSetupSelfPay) },
+          Modifier.fillMaxWidth().padding(top = 12.dp),
+          enabled = !state.busy,
+        )
       }
       state.error?.let {
         Text(
@@ -171,6 +177,17 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
   )
   if (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
     WalletSummary(state)
+  state.profiles
+    .filter { it.id != state.activeProfileId }
+    .forEach { profile ->
+      FlareButton(
+        "Use " + shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
+        { onIntent(OnboardingIntent.SelectProfile(profile.id)) },
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        !state.busy,
+        FlareButtonStyle.OUTLINE,
+      )
+    }
   Spacer(Modifier.weight(1f))
   Spacer(Modifier.height(32.dp))
   FlareButton(
@@ -188,11 +205,18 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
     enabled = !state.busy,
   )
   Spacer(Modifier.height(12.dp))
-  if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null) {
+  FlareButton(
+    "Import account",
+    { onIntent(OnboardingIntent.ShowImport) },
+    Modifier.fillMaxWidth(),
+    !state.busy,
+    FlareButtonStyle.OUTLINE,
+  )
+  if (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null) {
     FlareButton(
-      "Import account",
-      { onIntent(OnboardingIntent.ShowImport) },
-      Modifier.fillMaxWidth(),
+      "Create another account",
+      { onIntent(OnboardingIntent.CreateOwner) },
+      Modifier.fillMaxWidth().padding(top = 12.dp),
       !state.busy,
       FlareButtonStyle.OUTLINE,
     )
@@ -236,27 +260,26 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
       Modifier.fillMaxWidth().padding(top = 16.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Column(Modifier.weight(1f)) {
-        Text("Decibel API wallet", style = MaterialTheme.typography.bodyLarge)
-        Text(
-          "Trading access to a delegated account",
-          style = MaterialTheme.typography.bodySmall,
-          color = FlareColors.TextSecondary,
-        )
-      }
+      Text(
+        if (state.apiImport) "Trading key" else "Owner key",
+        Modifier.weight(1f),
+        style = MaterialTheme.typography.bodyLarge,
+      )
       Switch(
         state.apiImport,
         { onIntent(OnboardingIntent.SetApiImport(it)) },
-        enabled = !state.busy && state.profile.ownerAddress == null,
+        enabled = !state.busy,
       )
     }
   }
-  Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-    Icon(Icons.Outlined.Lock, null, Modifier.size(16.dp), tint = FlareColors.TextSecondary)
-    Text(
-      "Encrypted on this device. Your key stays with you.",
-      style = MaterialTheme.typography.bodySmall,
-      color = FlareColors.TextSecondary,
+  if (state.apiImport) {
+    OutlinedTextField(
+      state.tradingAccountInput,
+      { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
+      Modifier.fillMaxWidth().padding(top = 16.dp),
+      label = { Text("Trading-account address") },
+      singleLine = true,
+      enabled = !state.busy,
     )
   }
   FlareButton(
@@ -288,10 +311,7 @@ private fun WalletSummary(state: OnboardingUiState) {
 @Composable
 private fun AddressRow(label: String, address: String) {
   Text(label, style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
-  Text(
-    address.take(10) + "…" + address.takeLast(6),
-    style = MaterialTheme.typography.labelMedium,
-  )
+  Text(address.take(10) + "…" + address.takeLast(6), style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable
@@ -372,10 +392,9 @@ private fun ConfirmBackupStep(state: OnboardingUiState, onIntent: (OnboardingInt
 private fun ApiWalletStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   Text("Enable trading", style = MaterialTheme.typography.headlineLarge)
   Text(
-    "Create a separate trading key for this account. Your main wallet stays in control of deposits and withdrawals.",
-    modifier = Modifier.padding(top = 12.dp),
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    style = MaterialTheme.typography.bodyMedium,
+    "Allow this device to trade for ${state.selectedSubaccount?.let(::shortAddress).orEmpty()}.",
+    Modifier.padding(top = 12.dp),
+    color = FlareColors.TextSecondary,
   )
   Spacer(Modifier.height(28.dp))
   FlareButton(
@@ -383,84 +402,6 @@ private fun ApiWalletStep(state: OnboardingUiState, onIntent: (OnboardingIntent)
     onClick = { onIntent(OnboardingIntent.CreateApiWallet) },
     modifier = Modifier.fillMaxWidth(),
     enabled = !state.busy,
-  )
-  Spacer(Modifier.height(10.dp))
-  FlareButton(
-    text = "Use an existing trading key",
-    onClick = { onIntent(OnboardingIntent.ShowApiImport) },
-    modifier = Modifier.fillMaxWidth(),
-    enabled = !state.busy && state.profile.apiWalletAddress == null,
-    style = FlareButtonStyle.OUTLINE,
-  )
-  Spacer(Modifier.height(10.dp))
-  FlareButton(
-    text = "Set up later",
-    onClick = { onIntent(OnboardingIntent.SkipApiWallet) },
-    modifier = Modifier.fillMaxWidth(),
-    enabled = !state.busy,
-    style = FlareButtonStyle.OUTLINE,
-  )
-}
-
-@Composable
-private fun FundingStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  Text("Add funds", style = MaterialTheme.typography.headlineLarge)
-  Text(
-    "Deposit USDC on Aptos to start trading. You can also do this later from Portfolio.",
-    modifier = Modifier.padding(top = 12.dp),
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    style = MaterialTheme.typography.bodyMedium,
-  )
-  OutlinedTextField(
-    value = state.fundingAmount,
-    onValueChange = { onIntent(OnboardingIntent.ChangeFundingAmount(it)) },
-    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-    label = { Text("Aptos USDC amount") },
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-    singleLine = true,
-    enabled = !state.busy,
-  )
-  state.fundingTransaction?.let { transaction ->
-    Text(
-      transaction.onboardingLabel(),
-      modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-      color =
-        if (transaction is TransactionState.Failed) {
-          MaterialTheme.colorScheme.error
-        } else {
-          MaterialTheme.colorScheme.onSurfaceVariant
-        },
-      style = MaterialTheme.typography.labelMedium,
-    )
-    if (transaction is TransactionState.Failed)
-      transaction.selfPayEstimateOctas?.let { estimate ->
-        Text(
-          "Sponsorship was rejected. Estimated self-pay cost: ${estimate.toDecimalString(8)} APT.",
-          modifier = Modifier.padding(top = 8.dp),
-          color = MaterialTheme.colorScheme.tertiary,
-          style = MaterialTheme.typography.bodyMedium,
-        )
-        FlareButton(
-          text = "Confirm and self-pay",
-          onClick = { onIntent(OnboardingIntent.ConfirmFundingSelfPay) },
-          modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-          enabled = !state.busy,
-          style = FlareButtonStyle.OUTLINE,
-        )
-      }
-  }
-  FlareButton(
-    text = "Deposit Aptos USDC",
-    onClick = { onIntent(OnboardingIntent.DepositUsdc) },
-    modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-    enabled = !state.busy && state.fundingAmount.isNotBlank(),
-  )
-  FlareButton(
-    text = "Do this later",
-    onClick = { onIntent(OnboardingIntent.SkipFunding) },
-    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-    enabled = !state.busy,
-    style = FlareButtonStyle.OUTLINE,
   )
 }
 
@@ -517,7 +458,7 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
     )
   } else if (state.subaccountsLoaded) {
     Text(
-      "Create a Decibel trading account to continue. You’ll approve this with your wallet.",
+      "Create a trading account and allow this device to trade. You’ll approve two transactions.",
       modifier = Modifier.padding(top = 20.dp),
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       style = MaterialTheme.typography.bodyMedium,
@@ -535,7 +476,7 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
   if (ownerMode && state.subaccounts.isEmpty()) {
     if (state.subaccountsLoaded)
       FlareButton(
-        text = "Create trading account",
+        text = "Create account and enable trading",
         onClick = { onIntent(OnboardingIntent.CreateSubaccount) },
         modifier = Modifier.fillMaxWidth(),
         enabled = !state.busy,
@@ -560,13 +501,3 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
 
 private fun shortAddress(address: String): String =
   if (address.length <= 18) address else address.take(10) + "…" + address.takeLast(6)
-
-private fun TransactionState.onboardingLabel(): String =
-  when (this) {
-    TransactionState.Simulating -> "Simulating deposit"
-    TransactionState.AwaitingAuthorization -> "Awaiting owner authorization"
-    TransactionState.Submitting -> "Submitting deposit"
-    is TransactionState.Pending -> "Deposit pending · ${hash.take(12)}…"
-    is TransactionState.Committed -> "Deposit committed · ${hash.take(12)}…"
-    is TransactionState.Failed -> message
-  }

@@ -31,7 +31,7 @@ class AndroidWalletVault(private val activity: FragmentActivity) : WalletVault {
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) {
     try {
       val key = getOrCreateKey()
-      authorize(prompt, force = true)
+      authorize(prompt, force = prompt.requireFreshAuthorization)
       val cipher = Cipher.getInstance(TRANSFORMATION)
       cipher.init(Cipher.ENCRYPT_MODE, key)
       val ciphertext = cipher.doFinal(secret)
@@ -76,7 +76,7 @@ class AndroidWalletVault(private val activity: FragmentActivity) : WalletVault {
   }
 
   override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) {
-    authorize(prompt, force = true)
+    authorize(prompt, force = prompt.requireFreshAuthorization)
     val committed = preferences.edit().remove(ivKey(slot)).remove(dataKey(slot)).commit()
     check(committed) { "Unable to remove encrypted wallet material" }
   }

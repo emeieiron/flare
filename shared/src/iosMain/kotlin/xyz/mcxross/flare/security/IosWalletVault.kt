@@ -50,10 +50,9 @@ import platform.Security.kSecValueData
 
 class IosWalletVault : WalletVault {
   private var authorizedContext: LAContext? = null
-  private var authorizedUntilMs: Long = 0L
 
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) {
-    val context = authorize(prompt, force = true)
+    val context = authorize(prompt, force = prompt.requireFreshAuthorization)
     val accessControl =
       SecAccessControlCreateWithFlags(
         null,
@@ -70,10 +69,7 @@ class IosWalletVault : WalletVault {
           kSecUseAuthenticationContext to context,
         )
       val attributes =
-        dictionaryOf(
-          kSecAttrAccessControl to accessControl,
-          kSecValueData to secret.toNSData(),
-        )
+        dictionaryOf(kSecAttrAccessControl to accessControl, kSecValueData to secret.toNSData())
       val updateStatus =
         withCFDictionary(lookup) { query ->
           withCFDictionary(attributes) { values -> SecItemUpdate(query, values) }
@@ -133,28 +129,23 @@ class IosWalletVault : WalletVault {
   }
 
   override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) {
-    authorize(prompt, force = true)
+    authorize(prompt, force = prompt.requireFreshAuthorization)
     delete(slot)
   }
 
   override fun lock() {
     authorizedContext?.invalidate()
     authorizedContext = null
-    authorizedUntilMs = 0L
   }
 
   private suspend fun authorize(prompt: VaultPrompt, force: Boolean): LAContext {
-    val now = monotonicMilliseconds()
-    if (!force && now < authorizedUntilMs) {
+    if (!force) {
       authorizedContext?.let {
         return it
       }
     }
     if (force) lock()
-    return authorizeWithDevice(prompt).also { context ->
-      authorizedContext = context
-      authorizedUntilMs = monotonicMilliseconds() + AUTHORIZATION_MILLIS
-    }
+    return authorizeWithDevice(prompt).also { context -> authorizedContext = context }
   }
 
   private fun monotonicMilliseconds(): Long =
@@ -197,7 +188,6 @@ class IosWalletVault : WalletVault {
 
   private companion object {
     const val SERVICE = "xyz.mcxross.flare.wallet"
-    const val AUTHORIZATION_MILLIS = 5 * 60 * 1_000L
   }
 }
 

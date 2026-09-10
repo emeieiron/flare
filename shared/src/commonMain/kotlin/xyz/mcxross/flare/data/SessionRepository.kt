@@ -8,10 +8,16 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Clock
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -36,6 +42,8 @@ data class SessionStatus(
 )
 
 interface SessionRepository {
+  fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
+
   val status: StateFlow<SessionStatus?>
 
   suspend fun accessToken(): String
@@ -43,6 +51,20 @@ interface SessionRepository {
   suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus
 
   suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus
+
+  suspend fun verifyApiCredential(account: Ed25519Account, subaccount: String): SessionStatus =
+    error("API verification is unavailable")
+
+  suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+    val current = status.value
+    if (
+      current?.role == SessionRole.API &&
+        current.subaccount?.sameAptosAddress(subaccount) == true &&
+        current.expiresAt > Clock.System.now().toEpochMilliseconds() + 60_000L
+    )
+      return current
+    return authenticateApi(subaccount, prompt)
+  }
 
   suspend fun useAnonymous(): SessionStatus
 
@@ -61,48 +83,106 @@ class WorkerSessionRepository(
 ) : SessionRepository {
   private val mutex = Mutex()
   private var session: WorkerSession? = null
+  private val authenticatedSessions =
+    MutableStateFlow<Map<SessionStatus, WorkerSession>>(emptyMap())
   private val mutableStatus = MutableStateFlow<SessionStatus?>(null)
   override val status: StateFlow<SessionStatus?> = mutableStatus.asStateFlow()
 
-  override suspend fun accessToken(): String = mutex.withLock {
-    val now = Clock.System.now().toEpochMilliseconds()
-    session
-      ?.takeIf {
-        if (it.role.toSessionRole() == SessionRole.ANONYMOUS) {
-          it.expiresAt - REFRESH_WINDOW_MS > now
-        } else {
-          it.expiresAt > now
+  override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> {
+    val bound = authenticatedSessions.value[status] ?: error("Session renewal is required")
+    return operation.flowOn(SessionBearer(bound.token, bound.expiresAt))
+  }
+
+  override suspend fun accessToken(): String {
+    currentCoroutineContext()[SessionBearer]?.let {
+      check(it.expiresAt > Clock.System.now().toEpochMilliseconds()) {
+        "Session expired; try again"
+      }
+      return it.token
+    }
+    return mutex.withLock {
+      val now = Clock.System.now().toEpochMilliseconds()
+      session
+        ?.takeIf {
+          if (it.role.toSessionRole() == SessionRole.ANONYMOUS) {
+            it.expiresAt - REFRESH_WINDOW_MS > now
+          } else {
+            it.expiresAt > now
+          }
+        }
+        ?.token
+        ?.let {
+          return it
+        }
+      val previous = session
+      if (previous != null && previous.role.toSessionRole() != SessionRole.ANONYMOUS) {
+        val saved = preferences.values.first()
+        val profile = wallets.profile.first()
+        val address =
+          if (previous.role.toSessionRole() == SessionRole.API) profile.apiWalletAddress
+          else profile.ownerAddress
+        if (address != null && previous.walletAddress?.sameAptosAddress(address) == true) {
+          try {
+            wallets.requireAuthorization(wallets.authorizationGeneration)
+            val prompt = VaultPrompt("Open Flare", "Confirm your identity")
+            if (
+              previous.role.toSessionRole() == SessionRole.API && saved.selectedSubaccount != null
+            ) {
+              wallets.withApiAccount(prompt) {
+                authenticate(it, saved.selectedSubaccount, SessionRole.API)
+              }
+            } else {
+              wallets.withOwnerAccount(prompt) {
+                authenticate(it, previous.subaccount, SessionRole.OWNER)
+              }
+            }
+            return@withLock session!!.token
+          } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+          } catch (_: Exception) {
+            /* A locked visit may continue using anonymous market data. */
+          }
         }
       }
-      ?.token
-      ?.let {
-        return it
+      createAnonymousSession(now).token
+    }
+  }
+
+  override suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus =
+    mutex.withLock {
+      wallets.withOwnerAccount(prompt) { account ->
+        authenticate(account, subaccount, SessionRole.OWNER)
       }
-    createAnonymousSession(now).token
-  }
-
-  override suspend fun authenticateOwner(
-    subaccount: String?,
-    prompt: VaultPrompt,
-  ): SessionStatus = mutex.withLock {
-    wallets.withOwnerAccount(prompt) { account ->
-      authenticate(account, subaccount, SessionRole.OWNER)
     }
-  }
 
-  override suspend fun authenticateApi(
+  override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
+    mutex.withLock {
+      require(subaccount.isNotBlank()) { "An API wallet session must be bound to a subaccount" }
+      wallets.withApiAccount(prompt) { account ->
+        authenticate(account, subaccount, SessionRole.API)
+      }
+    }
+
+  override suspend fun verifyApiCredential(
+    account: Ed25519Account,
     subaccount: String,
-    prompt: VaultPrompt,
-  ): SessionStatus = mutex.withLock {
-    require(subaccount.isNotBlank()) { "An API wallet session must be bound to a subaccount" }
-    wallets.withApiAccount(prompt) { account ->
-      authenticate(account, subaccount, SessionRole.API)
-    }
+  ): SessionStatus = mutex.withLock { authenticate(account, subaccount, SessionRole.API) }
+
+  override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+    val address = wallets.profile.first().apiWalletAddress ?: error("Complete trading setup")
+    val current = status.value
+    if (
+      current?.role == SessionRole.API &&
+        current.walletAddress?.sameAptosAddress(address) == true &&
+        current.subaccount?.sameAptosAddress(subaccount) == true &&
+        current.expiresAt > Clock.System.now().toEpochMilliseconds() + 60_000L
+    )
+      return current
+    return authenticateApi(subaccount, prompt)
   }
 
-  override suspend fun useAnonymous(): SessionStatus = mutex.withLock {
-    createAnonymousSession(Clock.System.now().toEpochMilliseconds()).toStatus()
-  }
+  override suspend fun useAnonymous(): SessionStatus =
+    mutex.withLock { createAnonymousSession(Clock.System.now().toEpochMilliseconds()).toStatus() }
 
   override suspend fun invalidate() {
     mutex.withLock {
@@ -115,6 +195,7 @@ class WorkerSessionRepository(
         }
       } finally {
         session = null
+        authenticatedSessions.value = emptyMap()
         mutableStatus.value = null
       }
     }
@@ -125,6 +206,7 @@ class WorkerSessionRepository(
     subaccount: String?,
     expectedRole: SessionRole,
   ): SessionStatus {
+    val generation = wallets.authorizationGeneration
     val address = account.accountAddress.toString()
     val challenge =
       client
@@ -149,6 +231,7 @@ class WorkerSessionRepository(
     val publicKey = account.publicKey.toByteArray()
     val signature =
       try {
+        wallets.requireAuthorization(generation)
         account.sign(HexInput.fromByteArray(challengeBytes)).toByteArray()
       } finally {
         challengeBytes.fill(0)
@@ -190,7 +273,12 @@ class WorkerSessionRepository(
       "The Flare Worker session is bound to a different subaccount"
     }
     session = response
-    return session!!.toStatus().also { mutableStatus.value = it }
+    val status = response.toStatus()
+    authenticatedSessions.value =
+      authenticatedSessions.value.entries.toList().takeLast(31).associate { it.toPair() } +
+        (status to response)
+    mutableStatus.value = status
+    return status
   }
 
   private suspend fun createAnonymousSession(now: Long): WorkerSession {
@@ -267,3 +355,8 @@ private fun ByteArray.toLowerHex(): String =
 
 internal fun String.sameAptosAddress(other: String): Boolean =
   AccountAddress.fromString(this) == AccountAddress.fromString(other)
+
+private class SessionBearer(val token: String, val expiresAt: Long) :
+  AbstractCoroutineContextElement(Key) {
+  companion object Key : CoroutineContext.Key<SessionBearer>
+}

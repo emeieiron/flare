@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
+import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
@@ -30,28 +31,36 @@ enum class OnboardingStep {
   SHOW_BACKUP,
   CONFIRM_BACKUP,
   SUBACCOUNT,
-  FUNDING,
   API_WALLET,
 }
 
 data class OnboardingUiState(
   val step: OnboardingStep = OnboardingStep.WELCOME,
   val profile: WalletProfile = WalletProfile(),
+  val profiles: List<xyz.mcxross.flare.store.AccountProfile> = emptyList(),
+  val activeProfileId: String = "legacy",
   val input: String = "",
   val apiImport: Boolean = false,
+  val tradingAccountInput: String = "",
   val backupWords: List<String> = emptyList(),
   val confirmationIndices: List<Int> = emptyList(),
   val confirmations: Map<Int, String> = emptyMap(),
   val subaccounts: List<Subaccount> = emptyList(),
   val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
-  val fundingAmount: String = "",
-  val fundingTransaction: TransactionState? = null,
+  val setupTransaction: TransactionState? = null,
+  val setupOperation: String? = null,
   val busy: Boolean = false,
   val error: String? = null,
 )
 
 sealed interface OnboardingIntent {
+  data class ChangeTradingAccount(val value: String) : OnboardingIntent
+
+  data class SelectProfile(val id: String) : OnboardingIntent
+
+  data object ConfirmSetupSelfPay : OnboardingIntent
+
   data object CreateOwner : OnboardingIntent
 
   data object ShowImport : OnboardingIntent
@@ -72,21 +81,9 @@ sealed interface OnboardingIntent {
 
   data object ContinueSubaccount : OnboardingIntent
 
-  data class ChangeFundingAmount(val value: String) : OnboardingIntent
-
-  data object DepositUsdc : OnboardingIntent
-
-  data object ConfirmFundingSelfPay : OnboardingIntent
-
-  data object SkipFunding : OnboardingIntent
-
   data object CreateApiWallet : OnboardingIntent
 
   data object ShowApiSetup : OnboardingIntent
-
-  data object ShowApiImport : OnboardingIntent
-
-  data object SkipApiWallet : OnboardingIntent
 
   data object ClearSensitiveState : OnboardingIntent
 
@@ -112,7 +109,13 @@ class OnboardingViewModel(
   val effects = effectChannel.receiveAsFlow()
 
   val uiState: StateFlow<OnboardingUiState> =
-    combine(local, wallets.profile) { state, profile -> state.copy(profile = profile) }
+    combine(local, wallets.profile, preferences.values) { state, profile, saved ->
+        state.copy(
+          profile = profile,
+          profiles = saved.profiles,
+          activeProfileId = saved.activeProfileId,
+        )
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -121,6 +124,19 @@ class OnboardingViewModel(
 
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
+      is OnboardingIntent.SelectProfile ->
+        launchAction {
+          clearSensitiveState()
+          preferences.activateProfile(intent.id)
+          if (preferences.values.first().onboardingComplete)
+            effectChannel.send(OnboardingEffect.Completed)
+        }
+      is OnboardingIntent.ChangeTradingAccount ->
+        local.value = local.value.copy(tradingAccountInput = intent.value, error = null)
+      OnboardingIntent.ConfirmSetupSelfPay -> {
+        if (local.value.setupOperation == "create") createSubaccount(FeePayment.SELF_PAY)
+        else createApiWallet(FeePayment.SELF_PAY)
+      }
       OnboardingIntent.CreateOwner -> createOwner()
       OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
       OnboardingIntent.ImportCredential ->
@@ -135,23 +151,8 @@ class OnboardingViewModel(
       is OnboardingIntent.SelectSubaccount ->
         local.value = local.value.copy(selectedSubaccount = intent.address, input = intent.address)
       OnboardingIntent.ContinueSubaccount -> continueSubaccount()
-      is OnboardingIntent.ChangeFundingAmount ->
-        local.value =
-          local.value.copy(
-            fundingAmount = decimalCharacters(intent.value),
-            fundingTransaction = null,
-            error = null,
-          )
-      OnboardingIntent.DepositUsdc -> depositUsdc(FeePayment.SPONSORED)
-      OnboardingIntent.ConfirmFundingSelfPay -> depositUsdc(FeePayment.SELF_PAY)
-      OnboardingIntent.SkipFunding -> show(OnboardingStep.API_WALLET)
       OnboardingIntent.CreateApiWallet -> createApiWallet()
       OnboardingIntent.ShowApiSetup -> prepareOwnerAccount()
-      OnboardingIntent.ShowApiImport -> {
-        show(OnboardingStep.IMPORT)
-        local.value = local.value.copy(apiImport = true)
-      }
-      OnboardingIntent.SkipApiWallet -> finishSetup()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
@@ -180,12 +181,7 @@ class OnboardingViewModel(
 
   private fun createOwner() = launchAction {
     val backup =
-      wallets.createOwner(
-        VaultPrompt(
-          title = "Protect owner wallet",
-          subtitle = "Confirm your identity to encrypt the recovery phrase on this device.",
-        )
-      )
+      wallets.createOwner(VaultPrompt(title = "Create account", subtitle = "Confirm your identity"))
     showBackup(backup)
   }
 
@@ -194,7 +190,7 @@ class OnboardingViewModel(
       phrase = local.value.input.trim(),
       prompt =
         VaultPrompt(
-          title = "Import owner wallet",
+          title = "Import account",
           subtitle = "Confirm your identity to protect your account on this device.",
         ),
     )
@@ -254,21 +250,44 @@ class OnboardingViewModel(
         subaccountsLoaded = true,
         selectedSubaccount = selected,
       )
+    if (subaccounts.size == 1) {
+      accounts.connectOwner(selected!!, VaultPrompt("Continue setup", "Confirm your identity"))
+      local.value = local.value.copy(step = OnboardingStep.API_WALLET)
+      if (wallets.profile.first().apiWalletAddress != null) {
+        // Verification failures leave the profile and key intact for a retry.
+        try {
+          accounts.connectApi(selected, VaultPrompt("Continue setup", "Confirm your identity"))
+          finishSetupInternal()
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          /* Keep the setup review available. */
+        }
+      }
+    }
   }
 
-  private fun createSubaccount() = launchAction {
+  private fun createSubaccount(feePayment: FeePayment = FeePayment.SPONSORED) = launchAction {
+    local.value = local.value.copy(setupOperation = "create", setupTransaction = null)
     check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
       "Check for existing Decibel accounts before creating one."
     }
     val result =
       accounts.createSubaccount(
-        VaultPrompt(
-          title = "Create Decibel subaccount",
-          subtitle = "Confirm the owner transaction before it is submitted.",
-        )
+        VaultPrompt(title = "Create Decibel subaccount", subtitle = "Confirm account creation"),
+        feePayment = feePayment,
       )
-    require(result is TransactionState.Committed) { result.failureMessage() }
+    local.value = local.value.copy(setupTransaction = result)
+    if (result !is TransactionState.Committed) {
+      if ((result as? TransactionState.Failed)?.selfPayEstimateOctas == null)
+        error("Account creation failed")
+      return@launchAction
+    }
     discoverSubaccountsInternal()
+    if (local.value.selectedSubaccount != null) {
+      local.value = local.value.copy(setupOperation = "delegate")
+      delegateApiAndFinish()
+    }
   }
 
   private fun continueSubaccount() = launchAction {
@@ -283,13 +302,7 @@ class OnboardingViewModel(
             subtitle = "Authorize live account data for this Decibel subaccount.",
           ),
       )
-      local.value =
-        local.value.copy(
-          step = OnboardingStep.FUNDING,
-          input = "",
-          fundingAmount = "",
-          fundingTransaction = null,
-        )
+      local.value = local.value.copy(step = OnboardingStep.API_WALLET, input = "")
     } else {
       accounts.connectApi(
         subaccount = address,
@@ -303,54 +316,19 @@ class OnboardingViewModel(
     }
   }
 
-  private fun createApiWallet() = launchAction {
-    delegateApiAndFinish()
-  }
-
-  private fun depositUsdc(feePayment: FeePayment) = launchAction {
-    val amount = local.value.fundingAmount
-    require(amount.isNotBlank()) { "Enter an Aptos USDC amount" }
-    local.value = local.value.copy(fundingTransaction = null)
-    accounts
-      .depositUsdc(
-        amount = amount,
-        prompt =
-          VaultPrompt(
-            title = "Deposit Aptos USDC",
-            subtitle = "Confirm owner authorization before moving collateral into Decibel.",
-          ),
-        feePayment = feePayment,
-      )
-      .collect { transaction ->
-        local.value = local.value.copy(fundingTransaction = transaction)
-      }
-    when (val terminal = local.value.fundingTransaction) {
-      is TransactionState.Committed -> show(OnboardingStep.API_WALLET)
-      is TransactionState.Failed -> {
-        if (terminal.selfPayEstimateOctas == null) error(terminal.message)
-      }
-      else -> error("The deposit did not reach a final transaction state")
-    }
+  private fun createApiWallet(feePayment: FeePayment = FeePayment.SPONSORED) = launchAction {
+    local.value = local.value.copy(setupOperation = "delegate", setupTransaction = null)
+    delegateApiAndFinish(feePayment)
   }
 
   private fun importApiWallet() = launchAction {
-    wallets.importApiWallet(
-      aip80 = local.value.input.trim(),
-      prompt =
-        VaultPrompt(
-          title = "Import API wallet",
-          subtitle = "Confirm your identity to protect this AIP-80 trading key.",
-        ),
+    accounts.importTradingKey(
+      local.value.input.trim(),
+      local.value.tradingAccountInput.trim(),
+      VaultPrompt("Import trading account", "Confirm your identity"),
     )
-    local.value = local.value.copy(input = "")
-    if (wallets.profile.first().ownerAddress == null) {
-      local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT, input = "")
-    } else {
-      delegateApiAndFinish()
-    }
+    finishSetupInternal()
   }
-
-  private fun finishSetup() = launchAction { finishSetupInternal() }
 
   private suspend fun finishSetupInternal() {
     preferences.setOnboardingComplete(true)
@@ -358,12 +336,10 @@ class OnboardingViewModel(
     effectChannel.send(OnboardingEffect.Completed)
   }
 
-  private suspend fun delegateApiAndFinish() {
+  private suspend fun delegateApiAndFinish(feePayment: FeePayment = FeePayment.SPONSORED) {
     accounts.prepareTradingWallet(
-      VaultPrompt(
-        title = "Prepare API trading wallet",
-        subtitle = "Authorize the owner to configure an independent trading wallet.",
-      )
+      VaultPrompt(title = "Enable trading", subtitle = "Allow trading on this device"),
+      feePayment = feePayment,
     )
     finishSetupInternal()
   }
@@ -385,46 +361,27 @@ class OnboardingViewModel(
 
   private fun clearSensitiveState(step: OnboardingStep = OnboardingStep.WELCOME) {
     local.value =
-      OnboardingUiState(
-        step = step,
-        profile = local.value.profile,
-        busy = local.value.busy,
-      )
+      OnboardingUiState(step = step, profile = local.value.profile, busy = local.value.busy)
   }
 
   private fun launchAction(block: suspend () -> Unit) {
     if (local.value.busy) return
-    actionJob = viewModelScope.launch {
-      local.value = local.value.copy(busy = true, error = null)
-      try {
-        block()
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (error: Throwable) {
-        local.value =
-          local.value.copy(error = error.message ?: "The wallet operation could not be completed")
-      } finally {
-        local.value = local.value.copy(busy = false)
+    actionJob =
+      viewModelScope.launch {
+        local.value = local.value.copy(busy = true, error = null)
+        try {
+          block()
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: SetupTransactionException) {
+          local.value =
+            local.value.copy(setupTransaction = error.transaction, error = "Delegation failed")
+        } catch (error: Throwable) {
+          local.value =
+            local.value.copy(error = error.message ?: "The wallet operation could not be completed")
+        } finally {
+          local.value = local.value.copy(busy = false)
+        }
       }
-    }
   }
 }
-
-private fun TransactionState.failureMessage(): String =
-  when (this) {
-    is TransactionState.Failed -> message
-    TransactionState.Simulating -> "Transaction simulation did not complete"
-    TransactionState.AwaitingAuthorization -> "Transaction authorization did not complete"
-    TransactionState.Submitting -> "Transaction submission did not complete"
-    is TransactionState.Pending -> "Transaction is still pending: $hash"
-    is TransactionState.Committed -> ""
-  }
-
-private fun decimalCharacters(value: String): String =
-  value
-    .filter { it.isDigit() || it == '.' }
-    .let { filtered ->
-      val firstDot = filtered.indexOf('.')
-      if (firstDot < 0) filtered
-      else filtered.take(firstDot + 1) + filtered.drop(firstDot + 1).replace(".", "")
-    }

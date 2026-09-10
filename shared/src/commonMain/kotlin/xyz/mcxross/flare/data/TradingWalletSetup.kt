@@ -10,36 +10,32 @@ import xyz.mcxross.flare.decibel.api.TransactionState
 internal class TradingWalletSetup {
   private val mutex = Mutex()
 
-  suspend fun prepare(actions: TradingWalletSetupActions) = mutex.withLock {
-    actions.authorizeOwner()
-    val address = actions.existingWallet() ?: actions.createWallet()
-    if (!actions.isDelegated(address)) {
-      actions.requireNoPendingTransactions()
-      val result = actions.delegate()
-      check(result is TransactionState.Committed) {
-        (result as? TransactionState.Failed)?.let {
-          listOfNotNull(it.message, it.hash?.let { hash -> "Transaction: $hash" })
-            .joinToString(". ")
-        } ?: "Delegation did not reach a confirmed state"
+  suspend fun prepare(actions: TradingWalletSetupActions) =
+    mutex.withLock {
+      val address = actions.existingWallet() ?: actions.createWallet()
+      if (!actions.isDelegated(address)) {
+        actions.requireNoPendingTransactions()
+        actions.authorizeOwner()
+        val result = actions.delegate()
+        if (result !is TransactionState.Committed) throw SetupTransactionException(result)
       }
-    }
-    var lastError: Exception? = null
-    repeat(5) { attempt ->
-      try {
-        actions.connectApi()
-        return@withLock
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (error: Exception) {
-        lastError = error
-        if (attempt < 4) delay((1L shl attempt.coerceAtMost(2)) * 1_000L)
+      var lastError: Exception? = null
+      repeat(5) { attempt ->
+        try {
+          actions.connectApi()
+          return@withLock
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: Exception) {
+          lastError = error
+          if (attempt < 4) delay((1L shl attempt.coerceAtMost(2)) * 1_000L)
+        }
       }
+      throw IllegalStateException(
+        "Delegation is configured, but verification is not available yet. Retry setup to reconnect the same API wallet.",
+        lastError,
+      )
     }
-    throw IllegalStateException(
-      "Delegation is configured, but verification is not available yet. Retry setup to reconnect the same API wallet.",
-      lastError,
-    )
-  }
 }
 
 internal interface TradingWalletSetupActions {
@@ -57,3 +53,10 @@ internal interface TradingWalletSetupActions {
 
   suspend fun connectApi()
 }
+
+internal class SetupTransactionException(val transaction: TransactionState) :
+  IllegalStateException(
+    (transaction as? TransactionState.Failed)?.let { failure ->
+      "Delegation failed" + (failure.hash?.let { ". Transaction: $it" } ?: "")
+    } ?: "Delegation is pending"
+  )

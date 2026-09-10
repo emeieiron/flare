@@ -11,7 +11,7 @@ class TradingWalletSetupTest {
     val actions = SetupActions()
     TradingWalletSetup().prepare(actions)
     assertEquals(
-      listOf("owner", "create", "delegations", "pending", "delegate", "connect"),
+      listOf("create", "delegations", "pending", "owner", "delegate", "connect"),
       actions.events,
     )
   }
@@ -24,7 +24,19 @@ class TradingWalletSetupTest {
         delegated = true
       }
     TradingWalletSetup().prepare(actions)
-    assertEquals(listOf("owner", "delegations", "connect"), actions.events)
+    assertEquals(listOf("delegations", "connect"), actions.events)
+  }
+
+  @Test
+  fun unavailableDelegationCheckNeverCreatesReplacementOrRequestsOwner() = runTest {
+    val actions =
+      SetupActions().apply {
+        address = "api"
+        verificationFails = true
+      }
+    assertFailsWith<IllegalStateException> { TradingWalletSetup().prepare(actions) }
+    assertEquals(listOf("delegations"), actions.events)
+    assertEquals("api", actions.address)
   }
 
   @Test
@@ -81,6 +93,7 @@ private class SetupActions : TradingWalletSetupActions {
   val events = mutableListOf<String>()
   var address: String? = null
   var delegated = false
+  var verificationFails = false
   var pending = false
   var cancel = false
   var connectionFailures = 0
@@ -100,6 +113,7 @@ private class SetupActions : TradingWalletSetupActions {
 
   override suspend fun isDelegated(address: String): Boolean {
     events += "delegations"
+    if (verificationFails) error("Unavailable")
     return delegated
   }
 

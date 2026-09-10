@@ -14,6 +14,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -71,6 +73,10 @@ class WorkerSessionRepositoryIosTest {
             """{"token":"owner-token","expiresAt":${now + 55 * 60_000},"role":"owner","walletAddress":"$address"}"""
           )
         }
+        "/v1/session/anonymous" ->
+          respondJson(
+            """{"token":"anonymous-token","expiresAt":${now + 55 * 60_000},"role":"anonymous"}"""
+          )
         "/v1/session/revoke" -> {
           assertEquals("Bearer owner-token", request.headers[HttpHeaders.Authorization])
           sessionRevoked = true
@@ -95,6 +101,20 @@ class WorkerSessionRepositoryIosTest {
     assertEquals(address, status.walletAddress?.canonicalAddress())
     assertEquals("owner-token", repository.accessToken())
     assertEquals(SessionRole.OWNER, repository.status.value?.role)
+
+    val pinnedToken =
+      repository
+        .bind(
+          status,
+          flow {
+            repository.useAnonymous()
+            emit(repository.accessToken())
+          },
+        )
+        .single()
+    assertEquals("owner-token", pinnedToken)
+    assertEquals(SessionRole.ANONYMOUS, repository.status.value?.role)
+    repository.authenticateOwner(null, prompt)
 
     repository.invalidate()
 

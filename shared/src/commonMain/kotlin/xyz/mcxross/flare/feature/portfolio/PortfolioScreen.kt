@@ -61,7 +61,7 @@ fun PortfolioScreen(
         when {
           state.isLive -> "Your account at a glance"
           state.profile.apiOnly -> "Trading account · locked"
-          state.profile.ownerAddress != null -> "Unlock to see your balance"
+          state.profile.ownerAddress != null -> "Balance unavailable"
           else -> "Your trading, in one place"
         },
     )
@@ -131,8 +131,8 @@ fun PortfolioScreen(
         (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
     ) {
       FlareButton(
-        text = if (state.busy) "Unlocking…" else "Unlock account",
-        onClick = { onIntent(PortfolioIntent.Unlock) },
+        text = if (state.busy) "Refreshing…" else "Try again",
+        onClick = { onIntent(PortfolioIntent.Refresh) },
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         enabled = !state.busy,
         style = FlareButtonStyle.OUTLINE,
@@ -214,7 +214,7 @@ fun PortfolioScreen(
       else ->
         EmptyState(
           title = "Your account is locked",
-          message = "Unlock your account to see current positions.",
+          message = "Positions are unavailable. Try again.",
         )
     }
   }

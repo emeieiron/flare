@@ -68,6 +68,13 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
           enabled = !state.orderBusy,
         )
       } else if (reviewing) {
+        state.tradingAccountAddress?.let { account ->
+          Text(
+            "Account ${account.take(10)}…${account.takeLast(6)}",
+            Modifier.padding(bottom = 12.dp),
+            color = FlareColors.TextSecondary,
+          )
+        }
         OrderReview(state, side)
         inputError?.let {
           Text(it, color = FlareColors.Negative, modifier = Modifier.padding(bottom = 12.dp))
@@ -98,24 +105,6 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
               enabled = !state.orderBusy,
             )
           }
-        }
-        if (
-          state.expectedSignerAddress != null &&
-            !state.expectedSignerAddress.equals(state.sessionSignerAddress, ignoreCase = true)
-        ) {
-          Text(
-            "Unlock the selected trading wallet before submitting.",
-            Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-          )
-          FlareButton(
-            "Unlock trading wallet",
-            { onIntent(TradeIntent.Unlock) },
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            enabled = !state.orderBusy,
-            style = FlareButtonStyle.OUTLINE,
-          )
         }
         Row(
           modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -219,7 +208,7 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
                   state.suggestedTopUpOctas?.let { amount ->
                     Text(
                       "The API wallet does not have enough APT for this fallback. " +
-                        "Transfer ${amount.toDecimalString(8)} APT from the owner wallet, then unlock the API wallet again.",
+                        "Transfer ${amount.toDecimalString(8)} APT from the owner wallet, then continue trading.",
                       Modifier.padding(top = 12.dp),
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
                       style = MaterialTheme.typography.bodyMedium,
@@ -258,7 +247,7 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
 
         if (!state.tradingEnabled && !state.orderBusy) {
           Text(
-            "Trading requires an unlocked account and a live market connection.",
+            "Live market data is unavailable. Try again.",
             Modifier.padding(top = 16.dp),
             color = FlareColors.TextSecondary,
             style = MaterialTheme.typography.bodySmall,

@@ -3,6 +3,7 @@ package xyz.mcxross.flare
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
@@ -45,7 +46,8 @@ class WalletRepositoryIosTest {
     source.createApiWallet(prompt)
     val aip80 = source.exportApiWallet(prompt)
 
-    val target = DefaultWalletRepository(IosTestMemoryVault(), testPreferences())
+    val targetPreferences = testPreferences()
+    val target = DefaultWalletRepository(IosTestMemoryVault(), targetPreferences)
     val phrase =
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     val ownerAddress = target.importOwner(phrase, prompt)
@@ -53,8 +55,12 @@ class WalletRepositoryIosTest {
 
     assertTrue(ownerAddress.startsWith("0x"))
     assertNotEquals(ownerAddress, apiAddress)
-    assertEquals(phrase, target.exportOwnerMnemonic(prompt))
+    assertTrue(target.profile.first().apiOnly)
     assertEquals(aip80, target.exportApiWallet(prompt))
+    targetPreferences.activateProfile(
+      targetPreferences.values.first().profiles.first { it.ownerAddress == ownerAddress }.id
+    )
+    assertEquals(phrase, target.exportOwnerMnemonic(prompt))
     assertTrue(target.profile.first().ownerBackupConfirmed)
   }
 
@@ -74,6 +80,44 @@ class WalletRepositoryIosTest {
     reopened.removeOwner(prompt)
     assertTrue(vault.entries.isEmpty())
     assertEquals(null, reopened.profile.first().ownerAddress)
+  }
+
+  @Test
+  fun multipleOwnersKeepIndependentKeysAndReuseEachDeviceKey() = runTest {
+    val vault = IosTestMemoryVault()
+    val preferences = testPreferences()
+    val repository = DefaultWalletRepository(vault, preferences)
+    val prompt = VaultPrompt("Test", "Test")
+    val first = repository.importOwner("ab".repeat(32), prompt)
+    val firstProfile = preferences.values.first().activeProfileId
+    val firstApi = repository.createApiWallet(prompt)
+    val second = repository.importOwner("cd".repeat(32), prompt)
+    val secondApi = repository.createApiWallet(prompt)
+    assertNotEquals(first, second)
+    assertNotEquals(firstApi, secondApi)
+    assertEquals(4, vault.entries.size)
+    preferences.activateProfile(firstProfile)
+    assertEquals(firstApi, repository.createApiWallet(prompt))
+    repository.withOwnerAccount(prompt) { assertEquals(first, it.accountAddress.toString()) }
+    repository.withApiAccount(prompt) { assertEquals(firstApi, it.accountAddress.toString()) }
+    assertEquals(4, vault.entries.size)
+  }
+
+  @Test
+  fun invalidApiImportDoesNotReplaceAnExistingProfile() = runTest {
+    val vault = IosTestMemoryVault()
+    val preferences = testPreferences()
+    val repository = DefaultWalletRepository(vault, preferences)
+    val prompt = VaultPrompt("Test", "Test")
+    repository.importOwner("ab".repeat(32), prompt)
+    val api = repository.createApiWallet(prompt)
+    val id = preferences.values.first().activeProfileId
+    assertFailsWith<IllegalStateException> {
+      repository.importVerifiedApi("cd".repeat(32), prompt) { error("Not delegated") }
+    }
+    assertEquals(id, preferences.values.first().activeProfileId)
+    assertEquals(api, repository.profile.first().apiWalletAddress)
+    assertEquals(2, vault.entries.size)
   }
 
   @Test
