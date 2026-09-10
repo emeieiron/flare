@@ -110,7 +110,7 @@ fun OrdersScreen(
               state.suggestedTopUpOctas?.let { amount ->
                 Text(
                   "The API wallet needs APT for self-payment. Transfer " +
-                    "${amount.toDecimalString(8)} APT from the owner wallet, then unlock the API wallet again.",
+                    "${amount.toDecimalString(8)} APT from the owner wallet, then continue trading.",
                   Modifier.padding(bottom = 8.dp),
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   style = MaterialTheme.typography.bodyMedium,
@@ -136,19 +136,6 @@ fun OrdersScreen(
             MaterialTheme.colorScheme.onSurfaceVariant
           },
         style = MaterialTheme.typography.labelMedium,
-      )
-    }
-    val expectedSigner = state.profile.apiWalletAddress ?: state.profile.ownerAddress
-    if (
-      expectedSigner != null &&
-        !expectedSigner.equals(state.sessionWalletAddress, ignoreCase = true)
-    ) {
-      FlareButton(
-        "Unlock trading wallet",
-        { onIntent(OrdersIntent.Unlock) },
-        Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        enabled = !state.busy,
-        style = FlareButtonStyle.OUTLINE,
       )
     }
     when (state.section) {
@@ -183,13 +170,7 @@ fun OrdersScreen(
                 FlareButton(
                   text = if (order.isTpSl) "Cancel TP/SL" else "Cancel order",
                   onClick = {
-                    onIntent(
-                      OrdersIntent.Cancel(
-                        order.market,
-                        order.orderId,
-                        order.isTpSl,
-                      )
-                    )
+                    onIntent(OrdersIntent.Cancel(order.market, order.orderId, order.isTpSl))
                   },
                   modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                   enabled = !state.busy,
@@ -203,12 +184,12 @@ fun OrdersScreen(
               title = if (state.account.stale) "Account is locked" else "No open orders",
               message =
                 if (state.account.stale) {
-                  "Unlock your account to see current orders."
+                  "Orders are unavailable. Try again."
                 } else {
                   "Working orders will appear here after submission."
                 },
-              actionLabel = if (state.account.stale) "Unlock account" else null,
-              onAction = { onIntent(OrdersIntent.Unlock) },
+              actionLabel = if (state.account.stale) "Try again" else null,
+              onAction = { onIntent(OrdersIntent.Refresh) },
             )
           else ->
             EmptyState(
@@ -344,21 +325,17 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun HistoryEmpty(
-  stale: Boolean,
-  title: String,
-  onIntent: (OrdersIntent) -> Unit,
-) {
+private fun HistoryEmpty(stale: Boolean, title: String, onIntent: (OrdersIntent) -> Unit) {
   EmptyState(
     title = if (stale) "Account history is locked" else title,
     message =
       if (stale) {
-        "Unlock the wallet to load private Decibel history."
+        "History is unavailable. Try again."
       } else {
         "Completed account activity will appear here."
       },
-    actionLabel = if (stale) "Unlock account" else null,
-    onAction = { onIntent(OrdersIntent.Unlock) },
+    actionLabel = if (stale) "Try again" else null,
+    onAction = { onIntent(OrdersIntent.Refresh) },
   )
 }
 

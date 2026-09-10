@@ -1,10 +1,12 @@
 package xyz.mcxross.flare.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
+import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.core.crypto.Aip80PrivateKey
@@ -24,6 +26,11 @@ data class WalletProfile(
 data class OwnerBackup(val address: String, val words: List<String>)
 
 interface WalletRepository {
+  val authorizationGeneration: Long
+    get() = 0L
+
+  fun requireAuthorization(generation: Long) {}
+
   val profile: Flow<WalletProfile>
 
   suspend fun createOwner(prompt: VaultPrompt): OwnerBackup
@@ -35,6 +42,12 @@ interface WalletRepository {
   suspend fun createApiWallet(prompt: VaultPrompt): String
 
   suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String
+
+  suspend fun importVerifiedApi(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (Ed25519Account) -> Unit,
+  ): String = error("Verified import unavailable")
 
   suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String
 
@@ -55,6 +68,13 @@ class DefaultWalletRepository(
   private val vault: WalletVault,
   private val preferences: AppPreferences,
 ) : WalletRepository {
+  override val authorizationGeneration: Long
+    get() = (vault as? xyz.mcxross.flare.security.ForegroundWalletVault)?.generation ?: 0L
+
+  override fun requireAuthorization(generation: Long) {
+    (vault as? xyz.mcxross.flare.security.ForegroundWalletVault)?.requireVisit(generation)
+  }
+
   override val profile: Flow<WalletProfile> =
     preferences.values.map {
       WalletProfile(
@@ -69,8 +89,10 @@ class DefaultWalletRepository(
     val phrase = mnemonic.reveal()
     val account = Ed25519Account.fromMnemonic(mnemonic)
     return try {
-      storeText(WalletSecretSlot.OWNER_MNEMONIC, phrase, prompt)
       val address = account.accountAddress.toString()
+      val id = "owner_$address"
+      storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), phrase, prompt, scoped = true)
+      preferences.registerProfile(AccountProfile(id, ownerAddress = address))
       preferences.setOwnerWallet(address, backupConfirmed = false)
       OwnerBackup(address, phrase.split(' '))
     } finally {
@@ -82,7 +104,11 @@ class DefaultWalletRepository(
     val credential = WalletCredential.normalize(phrase)
     val account = ownerAccount(credential)
     return try {
-      storeText(WalletSecretSlot.OWNER_MNEMONIC, credential, prompt)
+      val address = account.accountAddress.toString()
+      val saved = preferences.values.first().profiles.firstOrNull { it.ownerAddress == address }
+      val id = saved?.id ?: "owner_$address"
+      storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), credential, prompt, scoped = true)
+      preferences.registerProfile(saved ?: AccountProfile(id, ownerAddress = address))
       account.accountAddress.toString().also {
         preferences.setOwnerWallet(it, backupConfirmed = true)
       }
@@ -94,6 +120,9 @@ class DefaultWalletRepository(
   override suspend fun confirmOwnerBackup() = preferences.setOwnerBackupConfirmed(true)
 
   override suspend fun createApiWallet(prompt: VaultPrompt): String {
+    profile.first().apiWalletAddress?.let {
+      return it
+    }
     val privateKey = Ed25519PrivateKey.generate()
     val account = Ed25519Account(privateKey)
     return try {
@@ -104,12 +133,42 @@ class DefaultWalletRepository(
     }
   }
 
-  override suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String {
+  override suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String =
+    importVerifiedApi(aip80, prompt) {}
+
+  override suspend fun importVerifiedApi(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (Ed25519Account) -> Unit,
+  ): String {
+    val aip80 = key
     val validated = Aip80PrivateKey.parse(WalletCredential.normalize(aip80))
     val privateKey = Ed25519PrivateKey.fromAip80(validated)
     val account = Ed25519Account(privateKey)
     return try {
-      storeText(WalletSecretSlot.API_PRIVATE_KEY, validated.value, prompt)
+      val address = account.accountAddress.toString()
+      val saved =
+        preferences.values.first().profiles.firstOrNull {
+          it.ownerAddress == null && it.apiWalletAddress == address
+        }
+      val id = saved?.id ?: "api_$address"
+      storeText(
+        WalletSecretSlot.API_PRIVATE_KEY.forProfile(id),
+        validated.value,
+        prompt,
+        scoped = true,
+      )
+      try {
+        verify(account)
+      } catch (error: Throwable) {
+        if (saved == null)
+          vault.remove(
+            WalletSecretSlot.API_PRIVATE_KEY.forProfile(id),
+            prompt.copy(requireFreshAuthorization = false),
+          )
+        throw error
+      }
+      preferences.registerProfile(saved ?: AccountProfile(id, apiWalletAddress = address))
       account.accountAddress.toString().also { preferences.setApiWallet(it) }
     } finally {
       account.close()
@@ -117,33 +176,43 @@ class DefaultWalletRepository(
   }
 
   override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String =
-    readText(
-        WalletSecretSlot.OWNER_MNEMONIC,
-        prompt.copy(requireFreshAuthorization = true),
-      )
-      .also { WalletCredential.normalize(it) }
+    readText(WalletSecretSlot.OWNER_MNEMONIC, prompt.copy(requireFreshAuthorization = true)).also {
+      WalletCredential.normalize(it)
+    }
 
   override suspend fun exportApiWallet(prompt: VaultPrompt): String =
-    readText(
-        WalletSecretSlot.API_PRIVATE_KEY,
-        prompt.copy(requireFreshAuthorization = true),
-      )
+    readText(WalletSecretSlot.API_PRIVATE_KEY, prompt.copy(requireFreshAuthorization = true))
       .also(Aip80PrivateKey::parse)
 
   override suspend fun removeOwner(prompt: VaultPrompt) {
     vault.remove(
-      WalletSecretSlot.OWNER_MNEMONIC,
+      slot(WalletSecretSlot.OWNER_MNEMONIC),
       prompt.copy(requireFreshAuthorization = true),
     )
     preferences.setOwnerWallet(null, backupConfirmed = false)
+    selectRemainingProfileIfEmpty()
   }
 
   override suspend fun removeApiWallet(prompt: VaultPrompt) {
     vault.remove(
-      WalletSecretSlot.API_PRIVATE_KEY,
+      slot(WalletSecretSlot.API_PRIVATE_KEY),
       prompt.copy(requireFreshAuthorization = true),
     )
     preferences.setApiWallet(null)
+    preferences.setOnboardingComplete(false)
+    selectRemainingProfileIfEmpty()
+  }
+
+  private suspend fun selectRemainingProfileIfEmpty() {
+    val saved = preferences.values.first()
+    if (saved.ownerAddress == null && saved.apiWalletAddress == null) {
+      val next = saved.profiles.firstOrNull()
+      if (next != null) preferences.activateProfile(next.id)
+      else {
+        preferences.setSelectedSubaccount(null)
+        preferences.setOnboardingComplete(false)
+      }
+    }
   }
 
   override fun lock() = vault.lock()
@@ -152,10 +221,13 @@ class DefaultWalletRepository(
     prompt: VaultPrompt,
     block: suspend (Ed25519Account) -> T,
   ): T {
+    val generation = authorizationGeneration
     val phrase = readText(WalletSecretSlot.OWNER_MNEMONIC, prompt)
     val account = ownerAccount(phrase)
     return try {
-      block(account)
+      val foreground = vault as? xyz.mcxross.flare.security.ForegroundWalletVault
+      if (foreground != null) foreground.whileAuthorized(generation) { block(account) }
+      else block(account)
     } finally {
       account.close()
     }
@@ -165,26 +237,37 @@ class DefaultWalletRepository(
     prompt: VaultPrompt,
     block: suspend (Ed25519Account) -> T,
   ): T {
+    val generation = authorizationGeneration
     val aip80 = readText(WalletSecretSlot.API_PRIVATE_KEY, prompt)
     val account = Ed25519Account(Ed25519PrivateKey.fromAip80(aip80))
     return try {
-      block(account)
+      val foreground = vault as? xyz.mcxross.flare.security.ForegroundWalletVault
+      if (foreground != null) foreground.whileAuthorized(generation) { block(account) }
+      else block(account)
     } finally {
       account.close()
     }
   }
 
-  private suspend fun storeText(slot: WalletSecretSlot, value: String, prompt: VaultPrompt) {
+  private suspend fun storeText(
+    slot: WalletSecretSlot,
+    value: String,
+    prompt: VaultPrompt,
+    scoped: Boolean = false,
+  ) {
     val bytes = value.encodeToByteArray()
     try {
-      vault.store(slot, bytes, prompt)
+      vault.store(if (scoped) slot else slot(slot), bytes, prompt)
     } finally {
       bytes.fill(0)
     }
   }
 
+  private suspend fun slot(slot: WalletSecretSlot) =
+    slot.forProfile(preferences.values.first().activeProfileId)
+
   private suspend fun readText(slot: WalletSecretSlot, prompt: VaultPrompt): String {
-    val bytes = vault.read(slot, prompt)
+    val bytes = vault.read(slot(slot), prompt)
     return try {
       bytes.decodeToString()
     } finally {

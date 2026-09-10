@@ -38,7 +38,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     if (committed != null) {
       TransactionReceipt(
         if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading account."
-        else "Your USDC has been returned to your owner wallet.",
+        else "Your USDC has been sent to the reviewed destination.",
         committed.hash,
         { onIntent(PortfolioIntent.CloseFunding) },
         enabled = !state.busy,
@@ -53,7 +53,39 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         style = MaterialTheme.typography.bodyMedium,
         color = FlareColors.TextSecondary,
       )
+      DetailRow(
+        "Account",
+        state.account.account?.let { it.take(10) + "…" + it.takeLast(6) }.orEmpty(),
+      )
       if (mode == FundingMode.WITHDRAW) {
+        val destination =
+          state.withdrawalDestination.ifBlank { state.profile.ownerAddress.orEmpty() }
+        Text(destination, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(
+          state.withdrawalDestination,
+          { onIntent(PortfolioIntent.ChangeWithdrawalDestination(it)) },
+          label = { Text("Different address (optional)") },
+          placeholder = { Text("Owner wallet") },
+          singleLine = true,
+          enabled = !state.busy && state.pendingWithdrawal == null,
+          modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+        if (
+          state.withdrawalDestination.isNotBlank() &&
+            state.withdrawalDestination != state.profile.ownerAddress
+        ) {
+          Text(
+            "Withdraw to your owner wallet, then transfer to this address. Two transactions; sponsored where available. Any network fee requires your approval.",
+            Modifier.padding(top = 12.dp),
+            style = MaterialTheme.typography.bodySmall,
+          )
+        }
+        if (state.pendingWithdrawal?.withdrawalCommitted == true) {
+          Text(
+            "Withdrawal confirmed. Continue the transfer to finish.",
+            Modifier.padding(top = 12.dp),
+          )
+        }
         state.account.overview?.let {
           DetailRow(
             if (state.account.stale) "Last available balance" else "Available to withdraw",
@@ -67,7 +99,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         label = { Text("Amount in USDC") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        enabled = !state.busy,
+        enabled = !state.busy && state.pendingWithdrawal == null,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
       )
       state.fundingTransaction?.let { transaction ->
@@ -102,7 +134,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       }
       FlareButton(
         if (state.busy) "Authorizing…"
-        else if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Withdraw USDC",
+        else if (state.pendingWithdrawal?.withdrawalCommitted == true) "Continue transfer"
+        else if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Confirm withdrawal",
         { onIntent(PortfolioIntent.SubmitFunding) },
         Modifier.fillMaxWidth().padding(top = 12.dp),
         enabled = !state.busy && state.fundingAmount.isNotBlank(),

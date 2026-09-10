@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -53,8 +52,6 @@ data class OrdersUiState(
 )
 
 sealed interface OrdersIntent {
-  data object Unlock : OrdersIntent
-
   data object Refresh : OrdersIntent
 
   data class SelectSection(val section: OrdersSection) : OrdersIntent
@@ -78,13 +75,12 @@ class OrdersViewModel(
 ) : ViewModel() {
   private val local = MutableStateFlow(OrdersUiState())
   val uiState: StateFlow<OrdersUiState> =
-    combine(
-        local,
-        wallets.profile,
-        accounts.snapshot,
-        accounts.history,
-        sessions.status,
-      ) { state, profile, account, history, session ->
+    combine(local, wallets.profile, accounts.snapshot, accounts.history, sessions.status) {
+        state,
+        profile,
+        account,
+        history,
+        session ->
         state.copy(
           profile = profile,
           account = account,
@@ -101,7 +97,6 @@ class OrdersViewModel(
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
-      OrdersIntent.Unlock -> unlock()
       OrdersIntent.Refresh ->
         launchAction {
           accounts.refresh()
@@ -137,93 +132,64 @@ class OrdersViewModel(
     accounts.loadMoreHistory(kind)
   }
 
-  private fun unlock() = launchAction {
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Set up a Decibel subaccount first")
-    if (uiState.value.profile.apiWalletAddress != null) {
-      accounts.connectApi(
-        subaccount,
-        VaultPrompt("Unlock trading", "Authorize the delegated API wallet for five minutes."),
-      )
-    } else {
-      accounts.connectOwner(
-        subaccount,
-        VaultPrompt("Unlock trading", "Authorize the owner wallet for five minutes."),
-      )
-    }
-  }
-
-  private fun cancel(
-    market: String,
-    orderId: String,
-    isTpSl: Boolean,
-    feePayment: FeePayment,
-  ) = launchAction {
-    check(sessions.status.value?.subaccount != null) { "Unlock the trading account first" }
-    val subaccount = checkNotNull(uiState.value.account.account)
-    val signer =
-      if (uiState.value.profile.apiWalletAddress != null) TradingSigner.API else TradingSigner.OWNER
-    local.update {
-      it.copy(
-        lastCancelMarket = market,
-        lastCancelOrderId = orderId,
-        lastCancelIsTpSl = isTpSl,
-        apiWalletNeedsTopUp = false,
-        suggestedTopUpOctas = null,
-      )
-    }
-    trading
-      .execute(
-        if (isTpSl) {
-          DecibelCommand.CancelPositionTpSl(subaccount, market, orderId)
-        } else {
-          DecibelCommand.CancelOrder(subaccount, market, orderId)
-        },
-        signer,
-        VaultPrompt(
-          if (isTpSl) "Cancel TP/SL" else "Cancel order",
-          "Confirm the Decibel cancel transaction.",
-        ),
-        feePayment,
-      )
-      .collect { state -> local.update { it.copy(transaction = state) } }
-    when (val state = local.value.transaction) {
-      is TransactionState.Committed -> {
-        accounts.refresh()
-        accounts.refreshHistory()
+  private fun cancel(market: String, orderId: String, isTpSl: Boolean, feePayment: FeePayment) =
+    launchAction {
+      accounts.restoreTrading()
+      val subaccount = checkNotNull(uiState.value.account.account)
+      val signer =
+        if (uiState.value.profile.apiWalletAddress != null) TradingSigner.API
+        else TradingSigner.OWNER
+      local.update {
+        it.copy(
+          lastCancelMarket = market,
+          lastCancelOrderId = orderId,
+          lastCancelIsTpSl = isTpSl,
+          apiWalletNeedsTopUp = false,
+          suggestedTopUpOctas = null,
+        )
       }
-      is TransactionState.Failed -> {
-        val estimate = state.selfPayEstimateOctas
-        if (estimate == null) {
-          error(state.message)
-        } else if (signer == TradingSigner.API && uiState.value.profile.ownerAddress != null) {
-          val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
-          if (balance != null && balance < estimate) {
-            local.update {
-              it.copy(
-                apiWalletNeedsTopUp = true,
-                suggestedTopUpOctas = suggestedApiTopUp(estimate),
-              )
+      trading
+        .execute(
+          if (isTpSl) {
+            DecibelCommand.CancelPositionTpSl(subaccount, market, orderId)
+          } else {
+            DecibelCommand.CancelOrder(subaccount, market, orderId)
+          },
+          signer,
+          VaultPrompt(
+            if (isTpSl) "Cancel TP/SL" else "Cancel order",
+            "Confirm the Decibel cancel transaction.",
+          ),
+          feePayment,
+        )
+        .collect { state -> local.update { it.copy(transaction = state) } }
+      when (val state = local.value.transaction) {
+        is TransactionState.Committed -> {
+          accounts.refresh()
+          accounts.refreshHistory()
+        }
+        is TransactionState.Failed -> {
+          val estimate = state.selfPayEstimateOctas
+          if (estimate == null) {
+            error(state.message)
+          } else if (signer == TradingSigner.API && uiState.value.profile.ownerAddress != null) {
+            val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
+            if (balance != null && balance < estimate) {
+              local.update {
+                it.copy(
+                  apiWalletNeedsTopUp = true,
+                  suggestedTopUpOctas = suggestedApiTopUp(estimate),
+                )
+              }
             }
           }
         }
+        else -> Unit
       }
-      else -> Unit
     }
-  }
 
   private fun topUpApiWallet() = launchAction {
     val amount = local.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Set up a Decibel subaccount first")
-    accounts.connectOwner(
-      subaccount,
-      VaultPrompt(
-        "Authorize API-wallet top-up",
-        "Confirm the owner wallet before transferring APT to the API wallet.",
-        requireFreshAuthorization = true,
-      ),
-    )
     trading
       .topUpApiWallet(
         amount,
@@ -246,11 +212,14 @@ class OrdersViewModel(
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, error = null) }
-      runSuspendCatching { block() }
-        .onFailure { error ->
-          local.update { it.copy(error = error.message ?: "The order action failed") }
-        }
-      local.update { it.copy(busy = false) }
+      try {
+        runSuspendCatching { block() }
+          .onFailure { error ->
+            local.update { it.copy(error = error.message ?: "The order action failed") }
+          }
+      } finally {
+        local.update { it.copy(busy = false) }
+      }
     }
   }
 }

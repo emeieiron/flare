@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,9 +45,7 @@ fun SettingsRoute(
   viewModel: SettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
-  LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-    viewModel.onIntent(SettingsIntent.HideSecret)
-  }
+  LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
   SettingsScreen(state, viewModel::onIntent, onOpenSetup, modifier)
 }
@@ -60,6 +57,8 @@ fun SettingsScreen(
   onOpenSetup: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
+  var showAccess by remember { mutableStateOf(false) }
+  var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
   var showConnection by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
@@ -99,6 +98,18 @@ fun SettingsScreen(
         Modifier.fillMaxWidth().padding(top = 24.dp),
       )
     }
+    if (state.preferences.profiles.size > 1) {
+      SectionLabel("Accounts")
+      state.preferences.profiles.forEachIndexed { index, profile ->
+        ActionRow(
+          "Account ${index + 1}" +
+            if (profile.id == state.preferences.activeProfileId) " · Selected" else "",
+          (profile.ownerAddress ?: profile.apiWalletAddress).orEmpty().let(::shortAddress),
+          enabled = !state.busy && profile.id != state.preferences.activeProfileId,
+          onClick = { onIntent(SettingsIntent.SelectProfile(profile.id)) },
+        )
+      }
+    }
     SectionLabel("Preferences")
     DetailRow("Network", "Decibel ${state.preferences.network.name.lowercase()}")
     Text(
@@ -127,9 +138,18 @@ fun SettingsScreen(
     }
     if (connected) {
       SectionLabel("Wallet")
+      if (state.profile.ownerAddress != null)
+        ActionRow(
+          "Trading access",
+          "Manage authorized devices and keys",
+          onClick = {
+            showAccess = true
+            onIntent(SettingsIntent.LoadDelegations)
+          },
+        )
       ActionRow(
         "Account setup",
-        "Manage your Decibel connection",
+        "Add an account or finish setup",
         Icons.Outlined.AccountBalanceWallet,
         onClick = onOpenSetup,
       )
@@ -138,13 +158,6 @@ fun SettingsScreen(
         "Back up keys and manage this device",
         Icons.Outlined.Key,
         onClick = { showSecurity = true },
-      )
-      ActionRow(
-        "Lock account",
-        "Require authorization to access your wallet",
-        Icons.Outlined.Lock,
-        enabled = !state.busy,
-        onClick = { onIntent(SettingsIntent.Lock) },
       )
     }
     SectionLabel("About")
@@ -164,6 +177,42 @@ fun SettingsScreen(
       Text(it, Modifier.padding(bottom = 24.dp), color = MaterialTheme.colorScheme.error)
     }
   }
+  if (showAccess)
+    FlareSheet("Trading access", { showAccess = false }) {
+      state.delegations.forEach { delegation ->
+        ActionRow(
+          if (delegation.delegate == state.profile.apiWalletAddress) "This device"
+          else shortAddress(delegation.delegate),
+          delegation.delegate,
+          enabled = !state.busy,
+          onClick = { revokeAddress = delegation.delegate },
+        )
+      }
+      if (state.delegationsLoaded && state.delegations.isEmpty()) Text("No trading access granted")
+      if (state.busy) Text("Updating…")
+      state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+      TextButton(onClick = { onIntent(SettingsIntent.LoadDelegations) }, enabled = !state.busy) {
+        Text("Refresh")
+      }
+    }
+  revokeAddress?.let { address ->
+    AlertDialog(
+      onDismissRequest = { revokeAddress = null },
+      title = { Text("Revoke trading access?") },
+      text = { Text("$address will no longer be able to trade for this account.") },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            revokeAddress = null
+            onIntent(SettingsIntent.RevokeDelegate(address))
+          }
+        ) {
+          Text("Revoke")
+        }
+      },
+      dismissButton = { TextButton(onClick = { revokeAddress = null }) { Text("Cancel") } },
+    )
+  }
   if (showConnection)
     FlareSheet("Connection", { showConnection = false }) {
       DetailRow("Network", state.preferences.network.name.lowercase())
@@ -173,7 +222,6 @@ fun SettingsScreen(
         Modifier.padding(vertical = 12.dp),
         style = MaterialTheme.typography.bodyMedium,
       )
-      DetailRow("Account", if (state.sessionRole == null) "Locked" else "Connected")
     }
   if (showSecurity && state.revealedSecret == null)
     FlareSheet("Security & recovery", { showSecurity = false }) {
@@ -187,12 +235,12 @@ fun SettingsScreen(
       }
       if (state.profile.apiWalletAddress != null) {
         ActionRow(
-          "Show API wallet key",
+          "Show trading key",
           enabled = !state.busy,
           onClick = { onIntent(SettingsIntent.ExportApi) },
         )
         ActionRow(
-          "Remove API wallet",
+          "Remove trading key",
           "Remove this key from this device",
           enabled = !state.busy,
           onClick = { removal = SettingsIntent.RemoveApi },
@@ -200,7 +248,7 @@ fun SettingsScreen(
       }
       if (state.profile.ownerAddress != null) {
         ActionRow(
-          "Remove account",
+          "Remove owner key",
           "Remove this wallet from this device",
           enabled = !state.busy,
           onClick = { removal = SettingsIntent.RemoveOwner },

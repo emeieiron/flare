@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -17,9 +18,12 @@ import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,6 +52,7 @@ import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
@@ -61,6 +66,9 @@ import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
+import xyz.mcxross.flare.security.ForegroundWalletVault
+import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
@@ -82,11 +90,11 @@ fun App(
   walletVault: WalletVault,
   runtimeConfig: FlareRuntimeConfig = remember { FlareRuntimeConfig() },
 ) {
-  LifecycleEventEffect(Lifecycle.Event.ON_STOP) { walletVault.lock() }
+  val foregroundVault = remember(walletVault) { ForegroundWalletVault(walletVault) }
   KoinApplication(
     configuration =
       koinConfiguration {
-        modules(flareModule(runtimeConfig, databaseBuilder, preferences, walletVault))
+        modules(flareModule(runtimeConfig, databaseBuilder, preferences, foregroundVault))
       }
   ) {
     FlareTheme { FlareAppFlow() }
@@ -96,11 +104,58 @@ fun App(
 @Composable
 private fun FlareAppFlow() {
   val appPreferences: AppPreferences = koinInject()
+  val vault = koinInject<WalletVault>() as ForegroundWalletVault
+  val accounts: AccountRepository = koinInject()
+  val unlocked by vault.unlocked.collectAsStateWithLifecycle()
+  var foreground by remember { mutableStateOf(true) }
+  var retry by remember { mutableStateOf(0) }
+  var unlockError by remember { mutableStateOf<String?>(null) }
+  LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+    foreground = false
+    vault.lock()
+  }
+  LifecycleEventEffect(Lifecycle.Event.ON_START) { foreground = true }
   val trading: TradingRepository = koinInject()
   val wallets: WalletRepository = koinInject()
   val persisted by appPreferences.values.collectAsStateWithLifecycle(initialValue = null)
   val walletProfile by wallets.profile.collectAsStateWithLifecycle(initialValue = null)
   var forceSetup by rememberSaveable { mutableStateOf(false) }
+  val hasCredentials = persisted?.profiles?.isNotEmpty() == true
+  LaunchedEffect(foreground, hasCredentials, retry) {
+    if (foreground && hasCredentials && !vault.unlocked.value) {
+      unlockError = null
+      try {
+        val slots =
+          persisted!!.profiles.flatMap { profile ->
+            listOfNotNull(
+              WalletSecretSlot.OWNER_MNEMONIC.forProfile(profile.id).takeIf {
+                profile.ownerAddress != null
+              },
+              WalletSecretSlot.API_PRIVATE_KEY.forProfile(profile.id).takeIf {
+                profile.apiWalletAddress != null
+              },
+            )
+          }
+        vault.unlock(slots, VaultPrompt("Open Flare", "Confirm your identity"))
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (_: Exception) {
+        unlockError = "Authentication required"
+      }
+    }
+  }
+  LaunchedEffect(unlocked, persisted?.activeProfileId, persisted?.selectedSubaccount) {
+    if (unlocked) {
+      try {
+        accounts.restoreTrading()
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (_: Exception) {
+        /* Action submission retries a temporary connection failure. */
+      }
+    }
+  }
+
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = forceSetup,
@@ -123,6 +178,17 @@ private fun FlareAppFlow() {
     ) {
       CircularProgressIndicator()
     }
+  } else if (hasCredentials && !unlocked) {
+    Box(
+      Modifier.fillMaxSize().background(FlareColors.Canvas),
+      contentAlignment = Alignment.Center,
+    ) {
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Flare")
+        if (unlockError == null) CircularProgressIndicator()
+        else TextButton(onClick = { retry++ }) { Text("Try again") }
+      }
+    }
   } else if (
     persisted?.onboardingComplete != true ||
       (walletProfile?.ownerAddress == null && walletProfile?.apiWalletAddress == null) ||
@@ -130,7 +196,13 @@ private fun FlareAppFlow() {
   ) {
     OnboardingRoute(onCompleted = { forceSetup = false })
   } else {
-    savedScreens.SaveableStateProvider("shell") { FlareShell(onOpenSetup = { forceSetup = true }) }
+    key(persisted?.activeProfileId, persisted?.selectedSubaccount) {
+      savedScreens.SaveableStateProvider(
+        "shell:${persisted?.activeProfileId}:${persisted?.selectedSubaccount}"
+      ) {
+        FlareShell(onOpenSetup = { forceSetup = true })
+      }
+    }
   }
 }
 
@@ -196,9 +268,7 @@ private fun FlareShell(onOpenSetup: () -> Unit) {
       composable<MarketsDestination> {
         MarketsRoute(
           onMarketClick = { marketAddress ->
-            navController.navigate(TradeDestination(marketAddress)) {
-              launchSingleTop = true
-            }
+            navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
           }
         )
       }

@@ -29,11 +29,19 @@ data class SettingsUiState(
   val proxyUrl: String = "",
   val revealedSecretLabel: String? = null,
   val revealedSecret: String? = null,
+  val delegations: List<xyz.mcxross.flare.decibel.model.Delegation> = emptyList(),
+  val delegationsLoaded: Boolean = false,
   val busy: Boolean = false,
   val error: String? = null,
 )
 
 sealed interface SettingsIntent {
+  data object LoadDelegations : SettingsIntent
+
+  data class RevokeDelegate(val address: String) : SettingsIntent
+
+  data class SelectProfile(val id: String) : SettingsIntent
+
   data class SetSlippage(val basisPoints: Int) : SettingsIntent
 
   data object ExportOwner : SettingsIntent
@@ -45,8 +53,6 @@ sealed interface SettingsIntent {
   data object RemoveOwner : SettingsIntent
 
   data object RemoveApi : SettingsIntent
-
-  data object Lock : SettingsIntent
 }
 
 class SettingsViewModel(
@@ -65,35 +71,48 @@ class SettingsViewModel(
         persisted,
         profile,
         session ->
-        state.copy(
-          preferences = persisted,
-          profile = profile,
-          sessionRole = session?.role,
-        )
+        state.copy(preferences = persisted, profile = profile, sessionRole = session?.role)
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      SettingsIntent.LoadDelegations ->
+        launchAction {
+          local.update { it.copy(delegations = emptyList(), delegationsLoaded = false) }
+          val delegates = accounts.delegations()
+          local.update { it.copy(delegations = delegates, delegationsLoaded = true) }
+        }
+      is SettingsIntent.RevokeDelegate ->
+        launchAction {
+          val result =
+            accounts.revokeDelegation(
+              intent.address,
+              VaultPrompt("Revoke trading access", "Confirm your identity"),
+            )
+          check(result is xyz.mcxross.flare.decibel.api.TransactionState.Committed) {
+            "Revocation failed. Try again."
+          }
+          val delegates = accounts.delegations()
+          local.update { it.copy(delegations = delegates) }
+        }
+      is SettingsIntent.SelectProfile ->
+        launchAction {
+          hideSecret()
+          preferences.activateProfile(intent.id)
+          accounts.restoreTrading()
+        }
       is SettingsIntent.SetSlippage ->
         launchAction { preferences.setSlippageBps(intent.basisPoints) }
       SettingsIntent.ExportOwner ->
         reveal("Account recovery details") {
           wallets.exportOwnerMnemonic(
-            VaultPrompt(
-              "Show account recovery details",
-              "This secret controls funding and delegation. Keep it offline.",
-            )
+            VaultPrompt("Show account recovery details", "Confirm your identity")
           )
         }
       SettingsIntent.ExportApi ->
         reveal("API wallet private key") {
-          wallets.exportApiWallet(
-            VaultPrompt(
-              "Export API wallet",
-              "This AIP-80 key can trade for its delegated subaccount.",
-            )
-          )
+          wallets.exportApiWallet(VaultPrompt("Export API wallet", "Confirm your identity"))
         }
       SettingsIntent.HideSecret -> hideSecret()
       SettingsIntent.RemoveOwner ->
@@ -104,7 +123,8 @@ class SettingsViewModel(
               "Confirm removal from this device. Your recovery phrase or private key is required to restore it.",
             )
           )
-          accounts.disconnect()
+          sessions.invalidate()
+          accounts.restoreTrading()
         }
       SettingsIntent.RemoveApi ->
         launchAction {
@@ -114,9 +134,9 @@ class SettingsViewModel(
               "Confirm removal of the delegated trading key from this device.",
             )
           )
-          accounts.disconnect()
+          sessions.invalidate()
+          accounts.restoreTrading()
         }
-      SettingsIntent.Lock -> launchAction { accounts.disconnect() }
     }
   }
 
@@ -124,10 +144,11 @@ class SettingsViewModel(
     val value = read()
     local.update { it.copy(revealedSecretLabel = label, revealedSecret = value) }
     secretClearJob?.cancel()
-    secretClearJob = viewModelScope.launch {
-      delay(SECRET_REVEAL_MS)
-      hideSecret()
-    }
+    secretClearJob =
+      viewModelScope.launch {
+        delay(SECRET_REVEAL_MS)
+        hideSecret()
+      }
   }
 
   private fun hideSecret() {
@@ -139,11 +160,14 @@ class SettingsViewModel(
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, error = null) }
-      runSuspendCatching { block() }
-        .onFailure { error ->
-          local.update { it.copy(error = error.message ?: "The settings action failed") }
-        }
-      local.update { it.copy(busy = false) }
+      try {
+        runSuspendCatching { block() }
+          .onFailure { error ->
+            local.update { it.copy(error = error.message ?: "The settings action failed") }
+          }
+      } finally {
+        local.update { it.copy(busy = false) }
+      }
     }
   }
 
