@@ -64,6 +64,7 @@ data class TradeUiState(
   val transaction: TransactionState? = null,
   val expectedSignerAddress: String? = null,
   val sessionSignerAddress: String? = null,
+  val tradingAccountAddress: String? = null,
   val lastSide: OrderSide? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
@@ -96,8 +97,6 @@ sealed interface TradeIntent {
   data class SetLeverage(val value: Int) : TradeIntent
 
   data class Submit(val side: OrderSide) : TradeIntent
-
-  data object Unlock : TradeIntent
 
   data object DismissOrderReceipt : TradeIntent
 
@@ -146,7 +145,7 @@ class TradeViewModel(
     }
     viewModelScope.launch {
       wallets.profile.collect { profile ->
-        val expected = profile.apiWalletAddress ?: profile.ownerAddress
+        val expected = profile.apiWalletAddress
         mutableUiState.update { state ->
           state.copy(
             expectedSignerAddress = expected,
@@ -163,10 +162,7 @@ class TradeViewModel(
             tradingEnabled =
               state
                 .copy(marketDetails = details)
-                .canTrade(
-                  state.expectedSignerAddress,
-                  sessions.status.value?.walletAddress,
-                ),
+                .canTrade(state.expectedSignerAddress, sessions.status.value?.walletAddress),
           )
         }
       }
@@ -185,6 +181,7 @@ class TradeViewModel(
             showRsi = values.showRsi,
             showMacd = values.showMacd,
             slippageBps = values.slippageBps,
+            tradingAccountAddress = values.selectedSubaccount,
           )
         }
         if (rangeChanged) mutableUiState.value.quote?.let { loadCandles(it, range) }
@@ -200,9 +197,7 @@ class TradeViewModel(
         }
       }
     }
-    viewModelScope.launch {
-      accounts.snapshot.collect { syncPositionLeverage() }
-    }
+    viewModelScope.launch { accounts.snapshot.collect { syncPositionLeverage() } }
   }
 
   private fun syncPositionLeverage() {
@@ -268,10 +263,7 @@ class TradeViewModel(
             tradingEnabled =
               it
                 .copy(orderType = intent.type)
-                .canTrade(
-                  it.expectedSignerAddress,
-                  sessions.status.value?.walletAddress,
-                ),
+                .canTrade(it.expectedSignerAddress, sessions.status.value?.walletAddress),
           )
         }
       is TradeIntent.SetSize ->
@@ -304,7 +296,6 @@ class TradeViewModel(
       TradeIntent.ConfirmSelfPay ->
         mutableUiState.value.lastSide?.let { submitOrder(it, FeePayment.SELF_PAY) }
       TradeIntent.TopUpApiWallet -> topUpApiWallet()
-      TradeIntent.Unlock -> unlockTrading()
       TradeIntent.DismissOrderReceipt ->
         mutableUiState.update {
           if (it.orderBusy || it.transaction !is TransactionState.Committed) it
@@ -322,45 +313,13 @@ class TradeViewModel(
     }
   }
 
-  private fun unlockTrading() {
-    if (mutableUiState.value.orderBusy) return
-    viewModelScope.launch {
-      mutableUiState.update { it.copy(orderBusy = true, orderError = null) }
-      runSuspendCatching {
-        val subaccount =
-          preferences.values.first().selectedSubaccount
-            ?: error("Set up a Decibel subaccount first")
-        val profile = wallets.profile.first()
-        if (profile.apiWalletAddress != null) {
-          accounts.connectApi(
-            subaccount,
-            VaultPrompt(
-              "Unlock trading wallet",
-              "Authorize the delegated API wallet for five minutes.",
-            ),
-          )
-        } else {
-          accounts.connectOwner(
-            subaccount,
-            VaultPrompt("Unlock owner wallet", "Authorize Decibel trading for five minutes."),
-          )
-        }
-      }
-        .onFailure { error ->
-          mutableUiState.update {
-            it.copy(orderError = error.message ?: "Unable to unlock trading")
-          }
-        }
-      mutableUiState.update { it.copy(orderBusy = false) }
-    }
-  }
-
   private fun loadMarketDetails(market: String) {
     marketDetailsJob?.cancel()
-    marketDetailsJob = viewModelScope.launch {
-      marketDetails.refresh(market)
-      marketDetails.connectLive(market)
-    }
+    marketDetailsJob =
+      viewModelScope.launch {
+        marketDetails.refresh(market)
+        marketDetails.connectLive(market)
+      }
   }
 
   private fun submitOrder(side: OrderSide, feePayment: FeePayment) {
@@ -380,87 +339,87 @@ class TradeViewModel(
         )
       }
       runSuspendCatching {
-        val state = mutableUiState.value
-        val market = state.quote?.market ?: error("Select a market first")
-        val subaccount =
-          sessions.status.value?.subaccount ?: error("Unlock a wallet session before trading")
-        if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
-          error("A live order book is required for a market order")
-        }
-        val draft = state.orderDraft(side)
-        val validation = draft.validate(market, state.marketDetails.orderBook)
-        val validated =
-          validation.value
-            ?: error(
-              validation.errors.joinToString("\n", transform = OrderValidationError::message)
-            )
-        val profile = wallets.profile.first()
-        val signer =
-          if (profile.apiWalletAddress != null) TradingSigner.API else TradingSigner.OWNER
-        val reconciliation = trading.reconcilePending()
-        require(reconciliation.unresolved == 0) {
-          "An earlier transaction is still pending. Check Activity before placing another order."
-        }
-        accounts.refresh()
-        val snapshot = accounts.snapshot.value
-        require(!snapshot.stale && snapshot.account == subaccount) {
-          "Refresh your account before placing an order"
-        }
-        val position = snapshot.positions.firstOrNull { it.market == market.address }
-        val terminal =
-          placeConfiguredOrder(
-            configuration = state.leverageCommand(subaccount, position),
-            entry = DecibelCommand.PlaceOrder(subaccount, validated),
-            execute = { command ->
-              trading.execute(
-                command,
-                signer,
-                VaultPrompt(
-                  title =
-                    if (command is DecibelCommand.ConfigureMarket)
-                      "Apply ${state.leverage}× leverage"
-                    else "Authorize ${if (side == OrderSide.BUY) "buy" else "sell"} order",
-                  subtitle =
-                    if (command is DecibelCommand.ConfigureMarket)
-                      "Set leverage before placing your reviewed order."
-                    else "Review and authorize the simulated Decibel transaction.",
-                ),
-                if (
-                  feePayment == FeePayment.SELF_PAY &&
-                    (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
-                )
-                  FeePayment.SELF_PAY
-                else FeePayment.SPONSORED,
+          val state = mutableUiState.value
+          val market = state.quote?.market ?: error("Select a market first")
+          val subaccount =
+            preferences.values.first().selectedSubaccount ?: error("Complete account setup")
+          if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
+            error("A live order book is required for a market order")
+          }
+          val draft = state.orderDraft(side)
+          val validation = draft.validate(market, state.marketDetails.orderBook)
+          val validated =
+            validation.value
+              ?: error(
+                validation.errors.joinToString("\n", transform = OrderValidationError::message)
               )
-            },
-            onState = { stage, transaction ->
-              mutableUiState.update {
-                if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
-                else it.copy(transaction = transaction)
-              }
-            },
-          )
-        when (val transaction = terminal) {
-          is TransactionState.Committed -> accounts.refresh()
-          is TransactionState.Failed -> {
-            val estimate = transaction.selfPayEstimateOctas
-            if (estimate == null) {
-              error(transaction.message)
-            } else if (signer == TradingSigner.API && profile.ownerAddress != null) {
-              val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
-              if (balance != null && balance < estimate) {
-                mutableUiState.update {
-                  it.copy(
-                    apiWalletNeedsTopUp = true,
-                    suggestedTopUpOctas = suggestedApiTopUp(estimate),
+          val profile = wallets.profile.first()
+          val signer =
+            if (profile.apiWalletAddress != null) TradingSigner.API else TradingSigner.OWNER
+          val reconciliation = trading.reconcilePending()
+          require(reconciliation.unresolved == 0) {
+            "An earlier transaction is still pending. Check Activity before placing another order."
+          }
+          accounts.restoreTrading()
+          val snapshot = accounts.snapshot.value
+          require(!snapshot.stale && snapshot.account == subaccount) {
+            "Refresh your account before placing an order"
+          }
+          val position = snapshot.positions.firstOrNull { it.market == market.address }
+          val terminal =
+            placeConfiguredOrder(
+              configuration = state.leverageCommand(subaccount, position),
+              entry = DecibelCommand.PlaceOrder(subaccount, validated),
+              execute = { command ->
+                trading.execute(
+                  command,
+                  signer,
+                  VaultPrompt(
+                    title =
+                      if (command is DecibelCommand.ConfigureMarket)
+                        "Apply ${state.leverage}× leverage"
+                      else "Authorize ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                    subtitle =
+                      if (command is DecibelCommand.ConfigureMarket)
+                        "Set leverage before placing your reviewed order."
+                      else "Review and authorize the simulated Decibel transaction.",
+                  ),
+                  if (
+                    feePayment == FeePayment.SELF_PAY &&
+                      (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
                   )
+                    FeePayment.SELF_PAY
+                  else FeePayment.SPONSORED,
+                )
+              },
+              onState = { stage, transaction ->
+                mutableUiState.update {
+                  if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
+                  else it.copy(transaction = transaction)
+                }
+              },
+            )
+          when (val transaction = terminal) {
+            is TransactionState.Committed -> accounts.refresh()
+            is TransactionState.Failed -> {
+              val estimate = transaction.selfPayEstimateOctas
+              if (estimate == null) {
+                error(transaction.message)
+              } else if (signer == TradingSigner.API && profile.ownerAddress != null) {
+                val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
+                if (balance != null && balance < estimate) {
+                  mutableUiState.update {
+                    it.copy(
+                      apiWalletNeedsTopUp = true,
+                      suggestedTopUpOctas = suggestedApiTopUp(estimate),
+                    )
+                  }
                 }
               }
             }
+            else -> Unit
           }
-          else -> Unit
         }
-      }
         .onFailure { error ->
           mutableUiState.update {
             it.copy(orderError = error.message ?: "The order could not be submitted")
@@ -477,40 +436,40 @@ class TradeViewModel(
         it.copy(orderBusy = true, orderError = null, topUpTransaction = null)
       }
       runSuspendCatching {
-        val amount =
-          mutableUiState.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
-        val subaccount =
-          preferences.values.first().selectedSubaccount
-            ?: error("Set up a Decibel subaccount first")
-        accounts.connectOwner(
-          subaccount,
-          VaultPrompt(
-            "Authorize API-wallet top-up",
-            "Confirm the owner wallet before transferring APT to the API wallet.",
-            requireFreshAuthorization = true,
-          ),
-        )
-        trading
-          .topUpApiWallet(
-            amount,
+          val amount =
+            mutableUiState.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
+          val subaccount =
+            preferences.values.first().selectedSubaccount
+              ?: error("Set up a Decibel subaccount first")
+          accounts.connectOwner(
+            subaccount,
             VaultPrompt(
-              "Top up API wallet",
-              "Transfer the displayed APT amount from the owner wallet.",
+              "Authorize API-wallet top-up",
+              "Confirm the owner wallet before transferring APT to the API wallet.",
               requireFreshAuthorization = true,
             ),
           )
-          .collect { transaction ->
-            mutableUiState.update { it.copy(topUpTransaction = transaction) }
-          }
-        when (val terminal = mutableUiState.value.topUpTransaction) {
-          is TransactionState.Committed ->
-            mutableUiState.update {
-              it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
+          trading
+            .topUpApiWallet(
+              amount,
+              VaultPrompt(
+                "Top up API wallet",
+                "Transfer the displayed APT amount from the owner wallet.",
+                requireFreshAuthorization = true,
+              ),
+            )
+            .collect { transaction ->
+              mutableUiState.update { it.copy(topUpTransaction = transaction) }
             }
-          is TransactionState.Failed -> error(terminal.message)
-          else -> Unit
+          when (val terminal = mutableUiState.value.topUpTransaction) {
+            is TransactionState.Committed ->
+              mutableUiState.update {
+                it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
+              }
+            is TransactionState.Failed -> error(terminal.message)
+            else -> Unit
+          }
         }
-      }
         .onFailure { error ->
           mutableUiState.update {
             it.copy(orderError = error.message ?: "API-wallet top-up failed")
@@ -522,35 +481,35 @@ class TradeViewModel(
 
   private fun loadCandles(quote: MarketQuote, range: ChartRange) {
     chartJob?.cancel()
-    chartJob = viewModelScope.launch {
-      mutableUiState.update { it.copy(chartLoading = true, error = null) }
-      runSuspendCatching { charts.candles(quote.market.address, range) }
-        .onSuccess { snapshot ->
-          mutableUiState.update {
-            it.copy(
-              candles = snapshot.candles,
-              chartLoading = false,
-              stale = snapshot.stale,
-              error = snapshot.error,
-            )
+    chartJob =
+      viewModelScope.launch {
+        mutableUiState.update { it.copy(chartLoading = true, error = null) }
+        runSuspendCatching { charts.candles(quote.market.address, range) }
+          .onSuccess { snapshot ->
+            mutableUiState.update {
+              it.copy(
+                candles = snapshot.candles,
+                chartLoading = false,
+                stale = snapshot.stale,
+                error = snapshot.error,
+              )
+            }
           }
-        }
-        .onFailure { error ->
-          mutableUiState.update {
-            it.copy(
-              chartLoading = false,
-              stale = true,
-              error = error.message ?: "Chart data is unavailable",
-            )
+          .onFailure { error ->
+            mutableUiState.update {
+              it.copy(
+                chartLoading = false,
+                stale = true,
+                error = error.message ?: "Chart data is unavailable",
+              )
+            }
           }
-        }
-    }
+      }
   }
 }
 
 private fun TradeUiState.canTrade(expectedSigner: String?, sessionSigner: String?): Boolean =
   expectedSigner != null &&
-    expectedSigner.equals(sessionSigner, ignoreCase = true) &&
     !marketDetails.stale &&
     (orderType != OrderType.MARKET ||
       (marketDetails.orderBook?.bestBid != null && marketDetails.orderBook.bestAsk != null))

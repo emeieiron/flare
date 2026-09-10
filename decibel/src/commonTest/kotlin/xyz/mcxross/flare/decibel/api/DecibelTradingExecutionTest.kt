@@ -48,6 +48,22 @@ class DecibelTradingExecutionTest {
   }
 
   @Test
+  fun clearedForegroundAuthorizationPreventsSigningAfterSimulation() = runTest {
+    fixture { f ->
+      assertFailsWith<IllegalStateException> {
+        f.service
+          .execute(
+            f.signer,
+            DecibelCommand.CreateSubaccount,
+            beforeSign = { error("App backgrounded") },
+          )
+          .toList()
+      }
+      assertEquals(listOf("simulate"), f.events)
+    }
+  }
+
+  @Test
   fun emptySimulationNeverSignsOrSubmits() = runTest {
     fixture { f ->
       f.simulation = "[]"
@@ -70,11 +86,7 @@ class DecibelTradingExecutionTest {
     fixture { f ->
       val states =
         f.service
-          .execute(
-            f.signer,
-            DecibelCommand.CreateSubaccount,
-            onPrepared = { error("disk full") },
-          )
+          .execute(f.signer, DecibelCommand.CreateSubaccount, onPrepared = { error("disk full") })
           .toList()
       assertEquals("disk full", assertIs<TransactionState.Failed>(states.last()).message)
       assertEquals(listOf("simulate", "sign"), f.events)

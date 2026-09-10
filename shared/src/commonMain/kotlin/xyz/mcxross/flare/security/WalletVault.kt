@@ -1,9 +1,12 @@
 package xyz.mcxross.flare.security
 
-enum class WalletSecretSlot(val storageKey: String) {
-  // Legacy storage key: contains a BIP-39 phrase or a canonical AIP-80 owner key.
-  OWNER_MNEMONIC("owner_mnemonic"),
-  API_PRIVATE_KEY("api_private_key"),
+data class WalletSecretSlot(val storageKey: String) {
+  fun forProfile(id: String) = if (id == "legacy") this else WalletSecretSlot("${id}_$storageKey")
+
+  companion object {
+    val OWNER_MNEMONIC = WalletSecretSlot("owner_mnemonic")
+    val API_PRIVATE_KEY = WalletSecretSlot("api_private_key")
+  }
 }
 
 data class VaultPrompt(

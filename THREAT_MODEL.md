@@ -21,7 +21,7 @@ Decibel, Aptos fullnodes, and the Gas Station are external systems. Their respon
 
 | Threat | Control | Residual risk |
 | --- | --- | --- |
-| Device theft or local extraction | Android authenticated Keystore wrapping; iOS passcode-bound, user-presence Keychain; five-minute signing sessions; step-up for owner actions and export | A compromised unlocked OS or accessibility stack may capture displayed/reconstructed secrets |
+| Device theft or local extraction | Android authenticated Keystore wrapping; iOS passcode-bound, user-presence Keychain; foreground-only credential cache, cleared on background; fresh approval for owner actions and export | A compromised unlocked OS or accessibility stack may capture displayed/reconstructed secrets |
 | Mnemonic/API-key confusion | Separate owner/API storage and independent generation; owner supports BIP-39/BIP-44 or imported Ed25519; keys use canonical AIP-80. A unified input detects encoding, while API role is explicitly selected and delegation remains verified | Users can still disclose exported material outside Flare |
 | Worker credential extraction | Credentials exist only as Worker secrets; fixed routes; no unrestricted proxy; redacted logging | A compromised Worker account can abuse upstream service quotas and sponsorship |
 | Challenge replay | Domain-separated `FLARE_AUTH_V1`; 32-byte nonce; five-minute expiry; Durable Object atomic consumption | Durable Object or platform compromise defeats this control |
@@ -38,7 +38,7 @@ Decibel, Aptos fullnodes, and the Gas Station are external systems. Their respon
 - UI code never contains deployment package addresses or upstream credentials.
 - ViewModels never sign or submit transactions directly.
 - Mnemonics, private keys, raw account responses, and session tokens are never stored in Room or DataStore.
-- Owner funding, delegation, removal, and secret export always require fresh authorization.
+- Owner funding, delegation, removal, and secret export require fresh authorization. A reviewed create-and-enable operation may share one approval across its two transactions for up to sixty seconds within the same foreground visit; a reviewed withdrawal-and-transfer may share one approval while its foreground visit remains valid. Retry after interruption requires fresh approval.
 - API-only profiles cannot perform owner operations.
 - Self-pay is offered only after an explicit Gas Station rejection that is known not to have submitted the transaction.
 - An encrypted-order failure is never retried as plaintext without explicit user approval.
@@ -48,3 +48,27 @@ Review this document whenever a route, authenticator, wallet store, transaction 
 ## Credential import compatibility
 
 The encrypted `OWNER_MNEMONIC` slot retains its legacy storage key so existing accounts remain readable. Its value is either a validated BIP-39 phrase or a canonical `ed25519-priv-0x…` owner key. Owner signing dispatches on the validated encoding; export and removal retain fresh authorization. Raw 32-byte hex imports are normalized locally and are never stored in preferences or sent to the Worker. An AIP-80 prefix identifies an algorithm, not a delegated role. API-only profiles continue to store their key separately and cannot perform owner operations.
+
+## Foreground authorization and profiles
+
+One device-authentication prompt loads the configured profiles into a memory-only vault cache.
+Ordinary trading does not expire while Flare remains in the foreground. Backgrounding zeros the
+cache and changes the signing generation; transactions check that generation again immediately
+before signing and submission. The Android wrapping key retains its hardware authorization expiry
+for encrypted storage access; it is not the trading-session lifetime. Sensitive reads bypass the
+cache and request fresh platform authentication. Account-switching does not extend owner approval.
+
+Legacy credentials keep their original Keychain/Keystore slot names. New profiles namespace slots
+by locally derived address; preference records contain only public addresses and setup/progress
+metadata. An API import is verified before its profile becomes active. Importing an owner cannot
+recover private keys belonging to other devices' delegates.
+
+Authenticated transaction flows pin their Worker bearer token in coroutine context so background
+read refreshes cannot replace an owner operation's session with a trading session. Withdrawal
+continuations persist the amount, destination, and prepared transaction references before submission;
+unknown outcomes are reconciled without automatically withdrawing or transferring again.
+
+The companion Worker permits destination transfers only through the owner sponsorship route,
+for `0x1::primary_fungible_store::transfer<0x1::fungible_asset::Metadata>` of the configured USDC
+asset, with a bound owner session, valid signature, and positive amount. Trading sessions cannot
+use that sponsorship route. This extension requires deploying the companion Worker separately.
