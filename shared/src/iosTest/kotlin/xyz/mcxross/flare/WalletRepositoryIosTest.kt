@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSTemporaryDirectory
 import xyz.mcxross.flare.data.DefaultWalletRepository
+import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
@@ -21,7 +22,7 @@ class WalletRepositoryIosTest {
   @Test
   fun ownerAndApiWalletsAreIndependentAndSecretsStayInVault() = runTest {
     val vault = IosTestMemoryVault()
-    val repository = DefaultWalletRepository(vault, testPreferences())
+    val repository = DefaultWalletRepository(ForegroundWalletVault(vault), testPreferences())
     val prompt = VaultPrompt("Test", "Test authorization")
 
     val backup = repository.createOwner(prompt)
@@ -42,16 +43,18 @@ class WalletRepositoryIosTest {
   @Test
   fun importsKnownMnemonicAndAip80RoundTrips() = runTest {
     val prompt = VaultPrompt("Test", "Test authorization")
-    val source = DefaultWalletRepository(IosTestMemoryVault(), testPreferences())
+    val source =
+      DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), testPreferences())
     source.createApiWallet(prompt)
     val aip80 = source.exportApiWallet(prompt)
 
     val targetPreferences = testPreferences()
-    val target = DefaultWalletRepository(IosTestMemoryVault(), targetPreferences)
+    val target =
+      DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), targetPreferences)
     val phrase =
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     val ownerAddress = target.importOwner(phrase, prompt)
-    val apiAddress = target.importApiWallet(aip80, prompt)
+    val apiAddress = target.importApiWallet(aip80, prompt) {}
 
     assertTrue(ownerAddress.startsWith("0x"))
     assertNotEquals(ownerAddress, apiAddress)
@@ -67,7 +70,8 @@ class WalletRepositoryIosTest {
   @Test
   fun rawOwnerKeyIsStoredCanonicallyAndCanSignAfterReopening() = runTest {
     val prompt = VaultPrompt("Test", "Test authorization")
-    val vault = IosTestMemoryVault()
+    val platform = IosTestMemoryVault()
+    val vault = ForegroundWalletVault(platform)
     val preferences = testPreferences()
     val repository = DefaultWalletRepository(vault, preferences)
     val rawKey = "ab".repeat(32)
@@ -76,17 +80,17 @@ class WalletRepositoryIosTest {
     assertEquals("ed25519-priv-0x$rawKey", reopened.exportOwnerMnemonic(prompt))
     reopened.withOwnerAccount(prompt) { assertEquals(address, it.accountAddress.toString()) }
     assertTrue(reopened.profile.first().ownerBackupConfirmed)
-    assertEquals(1, vault.entries.size)
+    assertEquals(1, platform.entries.size)
     reopened.removeOwner(prompt)
-    assertTrue(vault.entries.isEmpty())
+    assertTrue(platform.entries.isEmpty())
     assertEquals(null, reopened.profile.first().ownerAddress)
   }
 
   @Test
   fun multipleOwnersKeepIndependentKeysAndReuseEachDeviceKey() = runTest {
-    val vault = IosTestMemoryVault()
+    val platform = IosTestMemoryVault()
     val preferences = testPreferences()
-    val repository = DefaultWalletRepository(vault, preferences)
+    val repository = DefaultWalletRepository(ForegroundWalletVault(platform), preferences)
     val prompt = VaultPrompt("Test", "Test")
     val first = repository.importOwner("ab".repeat(32), prompt)
     val firstProfile = preferences.values.first().activeProfileId
@@ -95,39 +99,39 @@ class WalletRepositoryIosTest {
     val secondApi = repository.createApiWallet(prompt)
     assertNotEquals(first, second)
     assertNotEquals(firstApi, secondApi)
-    assertEquals(4, vault.entries.size)
+    assertEquals(4, platform.entries.size)
     preferences.activateProfile(firstProfile)
     assertEquals(firstApi, repository.createApiWallet(prompt))
     repository.withOwnerAccount(prompt) { assertEquals(first, it.accountAddress.toString()) }
     repository.withApiAccount(prompt) { assertEquals(firstApi, it.accountAddress.toString()) }
-    assertEquals(4, vault.entries.size)
+    assertEquals(4, platform.entries.size)
   }
 
   @Test
   fun invalidApiImportDoesNotReplaceAnExistingProfile() = runTest {
-    val vault = IosTestMemoryVault()
+    val platform = IosTestMemoryVault()
     val preferences = testPreferences()
-    val repository = DefaultWalletRepository(vault, preferences)
+    val repository = DefaultWalletRepository(ForegroundWalletVault(platform), preferences)
     val prompt = VaultPrompt("Test", "Test")
     repository.importOwner("ab".repeat(32), prompt)
     val api = repository.createApiWallet(prompt)
     val id = preferences.values.first().activeProfileId
     assertFailsWith<IllegalStateException> {
-      repository.importVerifiedApi("cd".repeat(32), prompt) { error("Not delegated") }
+      repository.importApiWallet("cd".repeat(32), prompt) { error("Not delegated") }
     }
     assertEquals(id, preferences.values.first().activeProfileId)
     assertEquals(api, repository.profile.first().apiWalletAddress)
-    assertEquals(2, vault.entries.size)
+    assertEquals(2, platform.entries.size)
   }
 
   @Test
   fun lockClearsThePlatformAuthorizationSession() = runTest {
-    val vault = IosTestMemoryVault()
-    val repository = DefaultWalletRepository(vault, testPreferences())
+    val platform = IosTestMemoryVault()
+    val repository = DefaultWalletRepository(ForegroundWalletVault(platform), testPreferences())
 
     repository.lock()
 
-    assertEquals(1, vault.lockCount)
+    assertEquals(1, platform.lockCount)
   }
 }
 

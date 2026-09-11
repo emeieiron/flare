@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -105,6 +106,10 @@ fun PriceDisplay(
   )
 }
 
+/**
+ * [working] turns the button itself into the progress indicator, so an action in flight never needs
+ * a separate status line beside it.
+ */
 @Composable
 fun FlareButton(
   text: String,
@@ -112,6 +117,7 @@ fun FlareButton(
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
   style: FlareButtonStyle = FlareButtonStyle.PRIMARY,
+  working: Boolean = false,
 ) {
   val colors = LocalFlareTradingColors.current
   val shape = CircleShape
@@ -119,7 +125,7 @@ fun FlareButton(
     Button(
       onClick = onClick,
       modifier = modifier.heightIn(min = 52.dp),
-      enabled = enabled,
+      enabled = enabled && !working,
       shape = shape,
       colors =
         ButtonDefaults.buttonColors(
@@ -129,7 +135,7 @@ fun FlareButton(
           disabledContentColor = FlareColors.TextDisabled,
         ),
     ) {
-      Text(text, style = MaterialTheme.typography.labelLarge)
+      ButtonContent(text, working)
     }
   } else {
     val contentColor =
@@ -141,7 +147,7 @@ fun FlareButton(
     OutlinedButton(
       onClick = onClick,
       modifier = modifier.heightIn(min = 52.dp),
-      enabled = enabled,
+      enabled = enabled && !working,
       shape = shape,
       border = BorderStroke(1.dp, if (enabled) colors.borderDefault else colors.borderSubtle),
       colors =
@@ -150,8 +156,58 @@ fun FlareButton(
           disabledContentColor = FlareColors.TextDisabled,
         ),
     ) {
-      Text(text, style = MaterialTheme.typography.labelLarge)
+      ButtonContent(text, working)
     }
+  }
+}
+
+@Composable
+private fun ButtonContent(text: String, working: Boolean) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+    if (working) {
+      CircularProgressIndicator(
+        modifier = Modifier.size(16.dp),
+        color = FlareColors.TextDisabled,
+        strokeWidth = 2.dp,
+      )
+      Spacer(Modifier.width(10.dp))
+    }
+    Text(text, style = MaterialTheme.typography.labelLarge)
+  }
+}
+
+/** Tone of an inline notice; the app speaks in outcomes, never in transaction states. */
+enum class NoticeTone {
+  PROGRESS,
+  INFO,
+  ALERT,
+}
+
+/** One quiet line about what the app is doing, or why an action did not happen. */
+@Composable
+fun ActionNotice(message: String, modifier: Modifier = Modifier, tone: NoticeTone = NoticeTone.INFO) {
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .background(FlareColors.Elevated, RoundedCornerShape(14.dp))
+        .padding(horizontal = 14.dp, vertical = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    if (tone == NoticeTone.PROGRESS) {
+      CircularProgressIndicator(
+        modifier = Modifier.size(14.dp),
+        color = FlareColors.TextSecondary,
+        strokeWidth = 2.dp,
+      )
+    }
+    Text(
+      message,
+      style = MaterialTheme.typography.bodySmall,
+      color =
+        if (tone == NoticeTone.ALERT) MaterialTheme.colorScheme.error else FlareColors.TextSecondary,
+    )
   }
 }
 

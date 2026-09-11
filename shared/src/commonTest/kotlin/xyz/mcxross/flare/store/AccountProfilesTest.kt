@@ -23,17 +23,34 @@ class AccountProfilesTest {
         )
       )
     val preferences = AppPreferences(store)
-    assertEquals("legacy", preferences.values.first().profiles.single().id)
+    assertEquals(LEGACY_PROFILE_ID, preferences.values.first().profiles.single().id)
     preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4"))
-    preferences.activateProfile("legacy")
+    preferences.activateProfile(LEGACY_PROFILE_ID)
     val saved = preferences.values.first()
     assertEquals("0x1", saved.ownerAddress)
     assertEquals("0x2", saved.apiWalletAddress)
     assertEquals("0x3", saved.selectedSubaccount)
     assertEquals(
       WalletSecretSlot.OWNER_MNEMONIC,
-      WalletSecretSlot.OWNER_MNEMONIC.forProfile("legacy"),
+      WalletSecretSlot.OWNER_MNEMONIC.forProfile(LEGACY_PROFILE_ID),
     )
+    assertNull(store.data.value[stringPreferencesKey("owner_address")])
+  }
+
+  @Test
+  fun removingBothKeysForgetsTheProfileAndFallsBackToTheOther() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x2"))
+    preferences.setApiWallet("0xc")
+
+    preferences.setOwnerWallet(null, backupConfirmed = false)
+    preferences.setApiWallet(null)
+
+    val saved = preferences.values.first()
+    assertEquals(listOf("first"), saved.profiles.map(AccountProfile::id))
+    assertEquals("0x1", saved.ownerAddress)
+    assertFailsWith<IllegalArgumentException> { preferences.activateProfile("second") }
   }
 
   @Test

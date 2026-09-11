@@ -15,32 +15,33 @@ internal class TradingWalletSetup {
       val address = actions.existingWallet() ?: actions.createWallet()
       if (!actions.isDelegated(address)) {
         actions.requireNoPendingTransactions()
-        actions.authorizeOwner()
         val result = actions.delegate()
         if (result !is TransactionState.Committed) throw SetupTransactionException(result)
       }
       var lastError: Exception? = null
-      repeat(5) { attempt ->
+      repeat(VERIFICATION_ATTEMPTS) { attempt ->
         try {
-          actions.connectApi()
+          actions.verifyTradingKey()
           return@withLock
         } catch (cancelled: CancellationException) {
           throw cancelled
         } catch (error: Exception) {
           lastError = error
-          if (attempt < 4) delay((1L shl attempt.coerceAtMost(2)) * 1_000L)
+          if (attempt < VERIFICATION_ATTEMPTS - 1) delay((1L shl attempt.coerceAtMost(2)) * 1_000L)
         }
       }
       throw IllegalStateException(
-        "Delegation is configured, but verification is not available yet. Retry setup to reconnect the same API wallet.",
+        "Trading is enabled on-chain, but it is not confirmed yet. Try again to reuse the same key.",
         lastError,
       )
     }
+
+  private companion object {
+    const val VERIFICATION_ATTEMPTS = 5
+  }
 }
 
 internal interface TradingWalletSetupActions {
-  suspend fun authorizeOwner()
-
   suspend fun existingWallet(): String?
 
   suspend fun createWallet(): String
@@ -51,12 +52,12 @@ internal interface TradingWalletSetupActions {
 
   suspend fun delegate(): TransactionState
 
-  suspend fun connectApi()
+  suspend fun verifyTradingKey()
 }
 
 internal class SetupTransactionException(val transaction: TransactionState) :
   IllegalStateException(
     (transaction as? TransactionState.Failed)?.let { failure ->
-      "Delegation failed" + (failure.hash?.let { ". Transaction: $it" } ?: "")
-    } ?: "Delegation is pending"
+      "Enabling trading failed" + (failure.hash?.let { ". Transaction: $it" } ?: "")
+    } ?: "Enabling trading is still pending"
   )

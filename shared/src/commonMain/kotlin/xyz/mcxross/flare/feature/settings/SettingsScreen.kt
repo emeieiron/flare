@@ -1,34 +1,51 @@
 package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
+import xyz.mcxross.flare.data.formatCalendarDate
+import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
@@ -36,7 +53,9 @@ import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
+import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun SettingsRoute(
@@ -62,7 +81,15 @@ fun SettingsScreen(
   var showSecurity by remember { mutableStateOf(false) }
   var showConnection by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
+  var copied by remember { mutableStateOf(false) }
+  val clipboard = LocalClipboardManager.current
   val connected = state.profile.ownerAddress != null || state.profile.apiWalletAddress != null
+  LaunchedEffect(copied) {
+    if (copied) {
+      delay(COPIED_CONFIRMATION_MS)
+      copied = false
+    }
+  }
   Column(
     modifier
       .fillMaxSize()
@@ -70,20 +97,37 @@ fun SettingsScreen(
       .verticalScroll(rememberScrollState())
       .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar("Account", subtitle = "Wallet & preferences")
+    FlareTopBar("Account")
     if (connected) {
+      val address = (state.profile.ownerAddress ?: state.profile.apiWalletAddress).orEmpty()
       Text(
         if (state.profile.apiOnly) "Trading account" else "Your wallet",
         style = MaterialTheme.typography.headlineMedium,
       )
-      Text(
-        (state.profile.ownerAddress ?: state.profile.apiWalletAddress)
-          ?.let(::shortAddress)
-          .orEmpty(),
-        Modifier.padding(top = 8.dp),
-        color = FlareColors.TextSecondary,
-        style = MaterialTheme.typography.bodyLarge,
-      )
+      Row(
+        Modifier.fillMaxWidth()
+          .clickable(role = Role.Button) {
+            clipboard.setText(AnnotatedString(address))
+            copied = true
+          }
+          .padding(top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text(
+          shortAddress(address),
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodyLarge,
+        )
+        Icon(
+          Icons.Outlined.ContentCopy,
+          contentDescription = "Copy your address",
+          tint = FlareColors.TextTertiary,
+          modifier = Modifier.size(16.dp),
+        )
+        if (copied)
+          Text("Copied", color = FlareColors.Positive, style = MaterialTheme.typography.labelSmall)
+      }
     } else {
       Text("Your account,\nyour control.", style = MaterialTheme.typography.headlineLarge)
       Text(
@@ -100,21 +144,46 @@ fun SettingsScreen(
     }
     if (state.preferences.profiles.size > 1) {
       SectionLabel("Accounts")
-      state.preferences.profiles.forEachIndexed { index, profile ->
+      state.preferences.profiles.forEach { profile ->
+        val selected = profile.id == state.preferences.activeProfileId
         ActionRow(
-          "Account ${index + 1}" +
-            if (profile.id == state.preferences.activeProfileId) " · Selected" else "",
-          (profile.ownerAddress ?: profile.apiWalletAddress).orEmpty().let(::shortAddress),
-          enabled = !state.busy && profile.id != state.preferences.activeProfileId,
+          shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
+          if (selected) "Selected"
+          else if (profile.ownerAddress == null) "Trading only" else "Tap to switch",
+          enabled = !state.busy && !selected,
           onClick = { onIntent(SettingsIntent.SelectProfile(profile.id)) },
         )
       }
     }
+    if (connected) {
+      SectionLabel("Manage")
+      if (state.profile.ownerAddress != null)
+        ActionRow(
+          "Trading access",
+          "Devices and keys that can place orders",
+          Icons.Outlined.PhonelinkLock,
+          onClick = {
+            showAccess = true
+            onIntent(SettingsIntent.LoadDelegations)
+          },
+        )
+      ActionRow(
+        "Account setup",
+        "Add an account or finish setup",
+        Icons.Outlined.AccountBalanceWallet,
+        onClick = onOpenSetup,
+      )
+      ActionRow(
+        "Security & recovery",
+        "Back up keys and manage this device",
+        Icons.Outlined.Key,
+        onClick = { showSecurity = true },
+      )
+    }
     SectionLabel("Preferences")
-    DetailRow("Network", "Decibel ${state.preferences.network.name.lowercase()}")
     Text(
       "Maximum slippage",
-      Modifier.padding(top = 20.dp),
+      Modifier.padding(top = 4.dp),
       style = MaterialTheme.typography.bodyLarge,
     )
     Text(
@@ -136,34 +205,11 @@ fun SettingsScreen(
         )
       }
     }
-    if (connected) {
-      SectionLabel("Wallet")
-      if (state.profile.ownerAddress != null)
-        ActionRow(
-          "Trading access",
-          "Manage authorized devices and keys",
-          onClick = {
-            showAccess = true
-            onIntent(SettingsIntent.LoadDelegations)
-          },
-        )
-      ActionRow(
-        "Account setup",
-        "Add an account or finish setup",
-        Icons.Outlined.AccountBalanceWallet,
-        onClick = onOpenSetup,
-      )
-      ActionRow(
-        "Security & recovery",
-        "Back up keys and manage this device",
-        Icons.Outlined.Key,
-        onClick = { showSecurity = true },
-      )
-    }
     SectionLabel("About")
     ActionRow(
       "Connection details",
-      "Network and service information",
+      "Decibel ${state.preferences.network.name.lowercase()}",
+      Icons.Outlined.Info,
       onClick = { showConnection = true },
     )
     Text("Flare", Modifier.padding(top = 32.dp), style = MaterialTheme.typography.titleLarge)
@@ -173,33 +219,47 @@ fun SettingsScreen(
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodySmall,
     )
-    state.error?.let {
-      Text(it, Modifier.padding(bottom = 24.dp), color = MaterialTheme.colorScheme.error)
-    }
+    state.error?.let { ActionNotice(it, Modifier.padding(bottom = 24.dp), NoticeTone.ALERT) }
   }
   if (showAccess)
     FlareSheet("Trading access", { showAccess = false }) {
+      Text(
+        "These keys can place and cancel orders for your trading account. Only your wallet can " +
+          "move funds.",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      Spacer(Modifier.height(12.dp))
       state.delegations.forEach { delegation ->
+        val thisDevice = delegation.delegate == state.profile.apiWalletAddress
         ActionRow(
-          if (delegation.delegate == state.profile.apiWalletAddress) "This device"
-          else shortAddress(delegation.delegate),
-          delegation.delegate,
+          if (thisDevice) "This device" else shortAddress(delegation.delegate),
+          delegationSummary(delegation),
           enabled = !state.busy,
           onClick = { revokeAddress = delegation.delegate },
         )
       }
-      if (state.delegationsLoaded && state.delegations.isEmpty()) Text("No trading access granted")
-      if (state.busy) Text("Updating…")
-      state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-      TextButton(onClick = { onIntent(SettingsIntent.LoadDelegations) }, enabled = !state.busy) {
-        Text("Refresh")
-      }
+      if (state.delegationsLoaded && state.delegations.isEmpty())
+        Text("Nothing can trade for this account yet.")
+      if (!state.delegationsLoaded || state.busy)
+        ActionNotice("Checking authorized keys…", Modifier.padding(top = 12.dp), NoticeTone.PROGRESS)
+      state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
     }
   revokeAddress?.let { address ->
+    val thisDevice = address == state.profile.apiWalletAddress
     AlertDialog(
       onDismissRequest = { revokeAddress = null },
-      title = { Text("Revoke trading access?") },
-      text = { Text("$address will no longer be able to trade for this account.") },
+      title = { Text(if (thisDevice) "Turn off trading here?" else "Revoke trading access?") },
+      text = {
+        Text(
+          if (thisDevice) {
+            "This device will stop placing orders until you enable trading again. Your funds stay " +
+              "in your account."
+          } else {
+            "${shortAddress(address)} will no longer be able to trade for this account."
+          }
+        )
+      },
       confirmButton = {
         TextButton(
           onClick = {
@@ -207,28 +267,23 @@ fun SettingsScreen(
             onIntent(SettingsIntent.RevokeDelegate(address))
           }
         ) {
-          Text("Revoke")
+          Text(if (thisDevice) "Turn off" else "Revoke", color = FlareColors.Negative)
         }
       },
       dismissButton = { TextButton(onClick = { revokeAddress = null }) { Text("Cancel") } },
+      containerColor = FlareColors.Surface,
     )
   }
   if (showConnection)
     FlareSheet("Connection", { showConnection = false }) {
-      DetailRow("Network", state.preferences.network.name.lowercase())
-      Text("Service", style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-      Text(
-        state.proxyUrl,
-        Modifier.padding(vertical = 12.dp),
-        style = MaterialTheme.typography.bodyMedium,
-      )
+      DetailRow("Network", "Decibel ${state.preferences.network.name.lowercase()}")
+      DetailRow("Service", state.proxyUrl)
     }
   if (showSecurity && state.revealedSecret == null)
     FlareSheet("Security & recovery", { showSecurity = false }) {
       if (state.profile.ownerAddress != null) {
         ActionRow(
-          "Show recovery details",
-          "Requires device authorization",
+          "Show recovery phrase",
           enabled = !state.busy,
           onClick = { onIntent(SettingsIntent.ExportOwner) },
         )
@@ -263,9 +318,9 @@ fun SettingsScreen(
         )
     }
   state.revealedSecret?.let { secret ->
-    FlareSheet("Recovery details", { onIntent(SettingsIntent.HideSecret) }) {
+    FlareSheet(state.revealedSecretLabel.orEmpty(), { onIntent(SettingsIntent.HideSecret) }) {
       Text(
-        "Keep this private. Anyone with these details can access your wallet.",
+        "Keep this private. Anyone who has it can use your account.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
@@ -279,11 +334,7 @@ fun SettingsScreen(
     AlertDialog(
       onDismissRequest = { removal = null },
       title = { Text("Remove from this device?") },
-      text = {
-        Text(
-          "Make sure you have saved your recovery phrase or private key. You’ll need it to reconnect."
-        )
-      },
+      text = { Text("Save your recovery phrase or private key first. You’ll need it to return.") },
       confirmButton = {
         TextButton({
           removal = null
@@ -299,5 +350,14 @@ fun SettingsScreen(
   }
 }
 
-private fun shortAddress(address: String): String =
-  if (address.length <= 18) address else address.take(10) + "…" + address.takeLast(6)
+/** What a delegation actually permits, in place of the raw permission type. */
+private fun delegationSummary(delegation: Delegation): String {
+  val scope =
+    if (delegation.canTradeAllPerpMarkets) "Can trade every market"
+    else "Can trade ${delegation.permissionMarket ?: "one market"}"
+  val expiry =
+    delegation.expirationTimeSeconds?.let { " · expires ${formatCalendarDate(it * 1_000L)}" }
+  return scope + expiry.orEmpty()
+}
+
+private const val COPIED_CONFIRMATION_MS = 2_000L
