@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
@@ -47,7 +46,6 @@ import xyz.mcxross.flare.data.formatCalendarDate
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
-import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
@@ -79,7 +77,6 @@ fun SettingsScreen(
   var showAccess by remember { mutableStateOf(false) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
-  var showConnection by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
   var copied by remember { mutableStateOf(false) }
   val clipboard = LocalClipboardManager.current
@@ -205,20 +202,6 @@ fun SettingsScreen(
         )
       }
     }
-    SectionLabel("About")
-    ActionRow(
-      "Connection details",
-      "Decibel ${state.preferences.network.name.lowercase()}",
-      Icons.Outlined.Info,
-      onClick = { showConnection = true },
-    )
-    Text("Flare", Modifier.padding(top = 32.dp), style = MaterialTheme.typography.titleLarge)
-    Text(
-      "An independent, open-source client for Decibel.",
-      Modifier.padding(top = 8.dp, bottom = 32.dp),
-      color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall,
-    )
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 24.dp), NoticeTone.ALERT) }
   }
   if (showAccess)
@@ -274,11 +257,6 @@ fun SettingsScreen(
       containerColor = FlareColors.Surface,
     )
   }
-  if (showConnection)
-    FlareSheet("Connection", { showConnection = false }) {
-      DetailRow("Network", "Decibel ${state.preferences.network.name.lowercase()}")
-      DetailRow("Service", state.proxyUrl)
-    }
   if (showSecurity && state.revealedSecret == null)
     FlareSheet("Security & recovery", { showSecurity = false }) {
       if (state.profile.ownerAddress != null) {
