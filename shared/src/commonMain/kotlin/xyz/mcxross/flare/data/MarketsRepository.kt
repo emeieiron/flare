@@ -427,6 +427,15 @@ fun formatBalance(value: Double): String =
     (if (value < 0) "−" else "") + "<\$0.01"
   } else (if (value < 0) "−" else "") + "\$" + groupDigits(fixed(abs(value), 2))
 
+/** Signed money. A value that rounds away is flat, never a signed "<$0.01". */
+fun formatSignedBalance(value: Double): String =
+  when {
+    !value.isFinite() -> "—"
+    abs(value) < 0.005 -> "\$0.00"
+    value > 0.0 -> "+" + formatBalance(value)
+    else -> formatBalance(value)
+  }
+
 /** Display only. Transaction inputs continue to use exact decimal strings and chain units. */
 fun formatQuantity(value: Double, decimals: Int = 8): String {
   if (!value.isFinite()) return "—"

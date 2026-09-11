@@ -14,11 +14,13 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.UnavailableWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.Aptos
+import xyz.mcxross.kaptos.account.Ed25519Account
 
 class WithdrawalFlowTest {
   private val prompt = VaultPrompt("Confirm withdrawal", "Confirm your identity")
@@ -26,7 +28,7 @@ class WithdrawalFlowTest {
   @Test
   fun ownerDestinationUsesOneTransaction() = runTest {
     fixture { f ->
-      val states = f.accounts.withdrawTo("10", null, prompt).toList()
+      val states = f.accounts.withdrawUsdc("10", null, prompt).toList()
       assertIs<TransactionState.Committed>(states.last())
       assertEquals(1, f.trading.commands.size)
       assertIs<DecibelCommand.Withdraw>(f.trading.commands.single())
@@ -37,7 +39,7 @@ class WithdrawalFlowTest {
   @Test
   fun destinationTransferSharesApprovalAndRecordsBeforeSubmission() = runTest {
     fixture { f ->
-      f.accounts.withdrawTo("10", "0x3", prompt).toList()
+      f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertEquals(listOf(true, false), f.trading.prompts.map { it.requireFreshAuthorization })
       assertIs<DecibelCommand.Withdraw>(f.trading.commands[0])
       val transfer = assertIs<DecibelCommand.TransferCollateral>(f.trading.commands[1])
@@ -52,11 +54,11 @@ class WithdrawalFlowTest {
   fun retryAfterDefiniteTransferFailureDoesNotWithdrawAgain() = runTest {
     fixture { f ->
       f.trading.rejectTransfer = true
-      f.accounts.withdrawTo("10", "0x3", prompt).toList()
+      f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertTrue(f.progress()!!.withdrawalCommitted)
       assertNull(f.progress()!!.transferReference)
       f.trading.rejectTransfer = false
-      f.accounts.withdrawTo("10", "0x3", prompt).toList()
+      f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertEquals(1, f.trading.commands.count { it is DecibelCommand.Withdraw })
       assertEquals(2, f.trading.commands.count { it is DecibelCommand.TransferCollateral })
       assertTrue(f.trading.prompts.last().requireFreshAuthorization)
@@ -68,16 +70,18 @@ class WithdrawalFlowTest {
   fun uncertainWithdrawalReconcilesWithoutResubmissionOrDestinationChange() = runTest {
     fixture { f ->
       f.trading.uncertain = true
-      f.accounts.withdrawTo("10", "0x3", prompt).toList()
+      f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertNotNull(f.progress()!!.withdrawalReference)
-      assertIs<TransactionState.Pending>(f.accounts.withdrawTo("10", "0x3", prompt).toList().last())
+      assertIs<TransactionState.Pending>(
+        f.accounts.withdrawUsdc("10", "0x3", prompt).toList().last()
+      )
       assertEquals(1, f.trading.commands.size)
       assertFailsWith<IllegalArgumentException> {
-        f.accounts.withdrawTo("10", "0x4", prompt).toList()
+        f.accounts.withdrawUsdc("10", "0x4", prompt).toList()
       }
       f.trading.uncertain = false
       f.trading.resolved = true
-      f.accounts.withdrawTo("10", "0x3", prompt).toList()
+      f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertEquals(1, f.trading.commands.count { it is DecibelCommand.Withdraw })
       assertNull(f.progress())
     }
@@ -87,10 +91,21 @@ class WithdrawalFlowTest {
   fun insufficientBalanceDoesNotLeaveAnUnchangeableDraft() = runTest {
     fixture { f ->
       assertFailsWith<IllegalArgumentException> {
-        f.accounts.withdrawTo("101", null, prompt).toList()
+        f.accounts.withdrawUsdc("101", null, prompt).toList()
       }
       assertTrue(f.trading.commands.isEmpty())
       assertNull(f.progress())
+    }
+  }
+
+  @Test
+  fun anOwnerActionHandsTheTradingSessionBackWithoutAnotherPrompt() = runTest {
+    fixture { f ->
+      f.preferences.setApiWallet("0x9")
+
+      f.accounts.withdrawUsdc("10", null, prompt).toList()
+
+      assertEquals(listOf(false), f.sessions.tradingPrompts.map { it.requireFreshAuthorization })
     }
   }
 
@@ -100,7 +115,9 @@ class WithdrawalFlowTest {
       f.preferences.registerProfile(
         AccountProfile("api", apiWalletAddress = "0x4", selectedSubaccount = "0x2")
       )
-      assertFailsWith<IllegalStateException> { f.accounts.withdrawTo("10", null, prompt).toList() }
+      assertFailsWith<IllegalStateException> {
+        f.accounts.withdrawUsdc("10", null, prompt).toList()
+      }
       assertTrue(f.trading.commands.isEmpty())
     }
   }
@@ -130,15 +147,16 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
   val aptos = Aptos()
   try {
     val trading = WithdrawalTrading(preferences)
+    val sessions = WithdrawalSessions()
     val accounts =
       DefaultAccountRepository(
         DecibelClient(http, aptos),
-        WithdrawalSessions(),
+        sessions,
         trading,
-        DefaultWalletRepository(UnavailableWalletVault(), preferences),
+        DefaultWalletRepository(ForegroundWalletVault(UnavailableWalletVault()), preferences),
         preferences,
       )
-    block(WithdrawalFixture(preferences, trading, accounts))
+    block(WithdrawalFixture(preferences, trading, sessions, accounts))
   } finally {
     http.close()
     aptos.close()
@@ -148,14 +166,19 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
 private class WithdrawalFixture(
   val preferences: AppPreferences,
   val trading: WithdrawalTrading,
+  val sessions: WithdrawalSessions,
   val accounts: AccountRepository,
 ) {
   suspend fun progress() = preferences.values.first().profiles.first { it.id == "owner" }.withdrawal
 }
 
 private class WithdrawalSessions : SessionRepository {
+  val tradingPrompts = mutableListOf<VaultPrompt>()
+
   override val status =
     MutableStateFlow<SessionStatus?>(SessionStatus(SessionRole.OWNER, "0x1", "0x2", Long.MAX_VALUE))
+
+  override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
 
   override suspend fun accessToken() = "test"
 
@@ -164,6 +187,16 @@ private class WithdrawalSessions : SessionRepository {
 
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
     error("Refresh unavailable")
+
+  override suspend fun verifyApiCredential(
+    account: Ed25519Account,
+    subaccount: String,
+  ): SessionStatus = error("Not used")
+
+  override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+    tradingPrompts += prompt
+    return SessionStatus(SessionRole.API, "0x9", subaccount, Long.MAX_VALUE)
+  }
 
   override suspend fun useAnonymous(): SessionStatus = error("Not used")
 
@@ -181,7 +214,6 @@ private class WithdrawalTrading(val preferences: AppPreferences) : TradingReposi
 
   override fun execute(
     command: DecibelCommand,
-    signer: TradingSigner,
     prompt: VaultPrompt,
     feePayment: FeePayment,
     onPrepared: suspend (String) -> Unit,

@@ -25,6 +25,7 @@ import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.WorkerSessionRepository
 import xyz.mcxross.flare.decibel.DecibelNetwork
+import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.kaptos.core.crypto.Ed25519PublicKey
 import xyz.mcxross.kaptos.core.crypto.Ed25519Signature
@@ -34,7 +35,7 @@ class WorkerSessionRepositoryIosTest {
   @Test
   fun ownerChallengeIsSignedWithKaptosAndTokenRemainsInMemory() = runTest {
     val preferences = testPreferences()
-    val wallets = DefaultWalletRepository(IosTestMemoryVault(), preferences)
+    val wallets = DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), preferences)
     val prompt = VaultPrompt("Test", "Authorize")
     val phrase =
       "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

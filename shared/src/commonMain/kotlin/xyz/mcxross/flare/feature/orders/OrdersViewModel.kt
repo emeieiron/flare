@@ -16,15 +16,14 @@ import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketsRepository
-import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.TradingSigner
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
-import xyz.mcxross.flare.store.AppPreferences
 
 enum class OrdersSection(val label: String) {
   OPEN("Open"),
@@ -42,7 +41,6 @@ data class OrdersUiState(
   val transaction: TransactionState? = null,
   val busy: Boolean = false,
   val error: String? = null,
-  val sessionWalletAddress: String? = null,
   val lastCancelMarket: String? = null,
   val lastCancelOrderId: String? = null,
   val lastCancelIsTpSl: Boolean = false,
@@ -52,8 +50,6 @@ data class OrdersUiState(
 )
 
 sealed interface OrdersIntent {
-  data object Refresh : OrdersIntent
-
   data class SelectSection(val section: OrdersSection) : OrdersIntent
 
   data object LoadMore : OrdersIntent
@@ -67,26 +63,18 @@ sealed interface OrdersIntent {
 
 class OrdersViewModel(
   private val accounts: AccountRepository,
-  private val wallets: WalletRepository,
-  private val sessions: SessionRepository,
+  wallets: WalletRepository,
   private val trading: TradingRepository,
-  private val preferences: AppPreferences,
   private val markets: MarketsRepository,
 ) : ViewModel() {
   private val local = MutableStateFlow(OrdersUiState())
   val uiState: StateFlow<OrdersUiState> =
-    combine(local, wallets.profile, accounts.snapshot, accounts.history, sessions.status) {
+    combine(local, wallets.profile, accounts.snapshot, accounts.history) {
         state,
         profile,
         account,
-        history,
-        session ->
-        state.copy(
-          profile = profile,
-          account = account,
-          history = history,
-          sessionWalletAddress = session?.walletAddress,
-        )
+        history ->
+        state.copy(profile = profile, account = account, history = history)
       }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
@@ -97,11 +85,6 @@ class OrdersViewModel(
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
-      OrdersIntent.Refresh ->
-        launchAction {
-          accounts.refresh()
-          accounts.refreshHistory()
-        }
       is OrdersIntent.SelectSection -> local.update { it.copy(section = intent.section) }
       OrdersIntent.LoadMore -> loadMore()
       is OrdersIntent.Cancel ->
@@ -121,7 +104,7 @@ class OrdersViewModel(
     }
   }
 
-  private fun loadMore() = launchAction {
+  private fun loadMore() = launchAction("More activity couldn’t be loaded.") {
     val kind =
       when (local.value.section) {
         OrdersSection.OPEN -> return@launchAction
@@ -133,12 +116,9 @@ class OrdersViewModel(
   }
 
   private fun cancel(market: String, orderId: String, isTpSl: Boolean, feePayment: FeePayment) =
-    launchAction {
-      accounts.restoreTrading()
+    launchAction("Your order is still open.") {
+      accounts.refresh()
       val subaccount = checkNotNull(uiState.value.account.account)
-      val signer =
-        if (uiState.value.profile.apiWalletAddress != null) TradingSigner.API
-        else TradingSigner.OWNER
       local.update {
         it.copy(
           lastCancelMarket = market,
@@ -155,11 +135,7 @@ class OrdersViewModel(
           } else {
             DecibelCommand.CancelOrder(subaccount, market, orderId)
           },
-          signer,
-          VaultPrompt(
-            if (isTpSl) "Cancel TP/SL" else "Cancel order",
-            "Confirm the Decibel cancel transaction.",
-          ),
+          VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity"),
           feePayment,
         )
         .collect { state -> local.update { it.copy(transaction = state) } }
@@ -169,35 +145,21 @@ class OrdersViewModel(
           accounts.refreshHistory()
         }
         is TransactionState.Failed -> {
-          val estimate = state.selfPayEstimateOctas
-          if (estimate == null) {
-            error(state.message)
-          } else if (signer == TradingSigner.API && uiState.value.profile.ownerAddress != null) {
-            val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
-            if (balance != null && balance < estimate) {
-              local.update {
-                it.copy(
-                  apiWalletNeedsTopUp = true,
-                  suggestedTopUpOctas = suggestedApiTopUp(estimate),
-                )
-              }
-            }
+          if (state.selfPayEstimateOctas == null) error(state.message)
+          trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
           }
         }
         else -> Unit
       }
     }
 
-  private fun topUpApiWallet() = launchAction {
-    val amount = local.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
+  private fun topUpApiWallet() = launchAction("The network fee wasn’t covered.") {
+    val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
     trading
       .topUpApiWallet(
         amount,
-        VaultPrompt(
-          "Top up API wallet",
-          "Transfer the displayed APT amount from the owner wallet.",
-          requireFreshAuthorization = true,
-        ),
+        VaultPrompt("Cover network fees", "Confirm your identity", requireFreshAuthorization = true),
       )
       .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
     when (val terminal = local.value.topUpTransaction) {
@@ -208,23 +170,19 @@ class OrdersViewModel(
     }
   }
 
-  private fun launchAction(block: suspend () -> Unit) {
+  /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
+  private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, error = null) }
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(error = error.message ?: "The order action failed") }
+            local.update { it.copy(error = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }
       }
     }
   }
-}
-
-private fun suggestedApiTopUp(estimate: ULong): ULong {
-  val buffered = if (estimate <= ULong.MAX_VALUE / 3uL) estimate * 3uL else estimate
-  return maxOf(1_000_000uL, buffered)
 }

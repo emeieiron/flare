@@ -56,9 +56,27 @@ The welcome screen has Create account, Import account, and Explore markets first
 
 A single password-style input recognizes supported BIP-39 recovery phrases, raw 32-byte hex keys, and AIP-80 Ed25519 keys locally. Raw keys are canonicalized to AIP-80 before secure storage. No credential content is persisted in UI saveable state.
 
-Key encoding does **not** establish owner or API permissions. The same input reveals a Decibel API wallet switch when a private key is entered. This choice is necessary for an otherwise ambiguous key; API access still requires a subaccount and verified delegation. Recovery phrases always use the owner path. Importing an existing trading key during owner setup selects API access internally.
+Key encoding does **not** establish owner or trading permissions. A private key therefore reveals one Owner key / Trading key choice, because that distinction cannot be read from the key itself. Recovery phrases always use the owner path. A trading key also asks for the trading account it may act for, and Flare verifies that permission before adopting the key; a rejected key never replaces a working one.
 
 Creation separates recording the recovery phrase from confirming three words. If the app leaves the foreground before confirmation, the words are cleared from UI memory. Resuming setup requires authorization to retrieve the phrase again. Keep recovery operations behind fresh device authorization.
+
+Setup ends when the account can trade, not when it holds funds. Flare finds the owner's trading accounts, offers to create one when none exists, and gives this device its own trading key. Creating the account and enabling trading are two transactions presented as one reviewed step. Retrying reuses the same key and resolves an unknown transaction outcome before sending anything again.
+
+## Authorization
+
+Opening the app is the unlock. An installation with saved credentials authenticates once, and ordinary trading works for the rest of that visit: no session controls, no expiry mid-session, and no prompt for opening an order ticket. Leaving the app clears signing authority; returning asks once more.
+
+The action decides the key, so the interface never asks the user to choose one:
+
+| Action | Key | Prompt |
+| --- | --- | --- |
+| Reading account data | Existing session | None |
+| Placing, cancelling, leverage, TP/SL, closing | Device trading key | None during the visit |
+| Deposit, withdrawal, enabling or revoking trading access, showing a secret | Owner key, or the secret itself | Fresh approval at the final confirmation |
+
+A fresh approval belongs to the action the user just reviewed and completes it; it never doubles as a session step. After an owner action, the trading session returns on its own. An installation that holds only a trading key can trade, but deposits, withdrawals, and delegation are unavailable to it.
+
+Each owner is a separate profile with its own trading accounts and one device trading key. Switching profiles inside an authenticated visit does not prompt again, and screens are keyed by profile and trading account so no state carries across a switch.
 
 ## Charts
 

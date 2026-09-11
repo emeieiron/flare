@@ -41,7 +41,7 @@ import xyz.mcxross.flare.feature.orders.OrdersViewModel
 import xyz.mcxross.flare.feature.portfolio.PortfolioViewModel
 import xyz.mcxross.flare.feature.settings.SettingsViewModel
 import xyz.mcxross.flare.feature.trade.TradeViewModel
-import xyz.mcxross.flare.security.WalletVault
+import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.store.buildFlareDatabase
@@ -56,7 +56,7 @@ fun flareModule(
   runtime: FlareRuntimeConfig,
   databaseBuilder: RoomDatabase.Builder<FlareDatabase>,
   preferences: DataStore<Preferences>,
-  walletVault: WalletVault,
+  walletVault: ForegroundWalletVault,
 ) = module {
   single { runtime }
   single {

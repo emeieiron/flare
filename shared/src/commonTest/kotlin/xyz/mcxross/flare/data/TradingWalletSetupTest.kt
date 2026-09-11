@@ -10,10 +10,7 @@ class TradingWalletSetupTest {
   fun freshSetupCreatesAndDelegatesOnce() = runTest {
     val actions = SetupActions()
     TradingWalletSetup().prepare(actions)
-    assertEquals(
-      listOf("create", "delegations", "pending", "owner", "delegate", "connect"),
-      actions.events,
-    )
+    assertEquals(listOf("create", "delegations", "pending", "delegate", "verify"), actions.events)
   }
 
   @Test
@@ -24,11 +21,11 @@ class TradingWalletSetupTest {
         delegated = true
       }
     TradingWalletSetup().prepare(actions)
-    assertEquals(listOf("delegations", "connect"), actions.events)
+    assertEquals(listOf("delegations", "verify"), actions.events)
   }
 
   @Test
-  fun unavailableDelegationCheckNeverCreatesReplacementOrRequestsOwner() = runTest {
+  fun unavailableDelegationCheckNeverCreatesAReplacementKey() = runTest {
     val actions =
       SetupActions().apply {
         address = "api"
@@ -40,17 +37,17 @@ class TradingWalletSetupTest {
   }
 
   @Test
-  fun delayedIndexingRetriesOnlyConnection() = runTest {
-    val actions = SetupActions().apply { connectionFailures = 3 }
+  fun delayedIndexingRetriesOnlyVerification() = runTest {
+    val actions = SetupActions().apply { verificationFailures = 3 }
     TradingWalletSetup().prepare(actions)
     assertEquals(1, actions.events.count { it == "create" })
     assertEquals(1, actions.events.count { it == "delegate" })
-    assertEquals(4, actions.events.count { it == "connect" })
+    assertEquals(4, actions.events.count { it == "verify" })
   }
 
   @Test
   fun retryAfterIndexingFailureReusesKeyAndDelegation() = runTest {
-    val actions = SetupActions().apply { connectionFailures = 5 }
+    val actions = SetupActions().apply { verificationFailures = 5 }
     val setup = TradingWalletSetup()
     assertFailsWith<IllegalStateException> { setup.prepare(actions) }
     setup.prepare(actions)
@@ -59,7 +56,7 @@ class TradingWalletSetupTest {
   }
 
   @Test
-  fun uncertainDelegationStopsWithoutConnectingOrRetrying() = runTest {
+  fun uncertainDelegationStopsWithoutVerifyingOrRetrying() = runTest {
     val actions =
       SetupActions().apply {
         result = TransactionState.Failed("timeout", hash = "sponsor:reference")
@@ -67,7 +64,7 @@ class TradingWalletSetupTest {
     val error = assertFailsWith<IllegalStateException> { TradingWalletSetup().prepare(actions) }
     assertTrue(error.message.orEmpty().contains("sponsor:reference"))
     assertEquals(1, actions.events.count { it == "delegate" })
-    assertFalse("connect" in actions.events)
+    assertFalse("verify" in actions.events)
     assertEquals("api", actions.address)
   }
 
@@ -96,12 +93,8 @@ private class SetupActions : TradingWalletSetupActions {
   var verificationFails = false
   var pending = false
   var cancel = false
-  var connectionFailures = 0
+  var verificationFailures = 0
   var result: TransactionState = TransactionState.Committed("hash")
-
-  override suspend fun authorizeOwner() {
-    events += "owner"
-  }
 
   override suspend fun existingWallet() = address
 
@@ -128,9 +121,9 @@ private class SetupActions : TradingWalletSetupActions {
     return result
   }
 
-  override suspend fun connectApi() {
-    events += "connect"
+  override suspend fun verifyTradingKey() {
+    events += "verify"
     if (cancel) throw CancellationException()
-    if (connectionFailures-- > 0) error("Indexing")
+    if (verificationFailures-- > 0) error("Indexing")
   }
 }

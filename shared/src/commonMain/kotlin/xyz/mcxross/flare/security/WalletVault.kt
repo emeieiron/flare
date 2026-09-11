@@ -1,7 +1,11 @@
 package xyz.mcxross.flare.security
 
+import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
+
 data class WalletSecretSlot(val storageKey: String) {
-  fun forProfile(id: String) = if (id == "legacy") this else WalletSecretSlot("${id}_$storageKey")
+  /** Secrets of the migrated profile keep their original keys; later profiles namespace theirs. */
+  fun forProfile(id: String) =
+    if (id == LEGACY_PROFILE_ID) this else WalletSecretSlot("${id}_$storageKey")
 
   companion object {
     val OWNER_MNEMONIC = WalletSecretSlot("owner_mnemonic")

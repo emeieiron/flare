@@ -47,10 +47,13 @@ import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.WalletCredential
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun OnboardingRoute(
@@ -99,30 +102,24 @@ fun OnboardingScreen(
           OnboardingStep.SHOW_BACKUP -> BackupStep(state, onIntent)
           OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
           OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
-          OnboardingStep.API_WALLET -> ApiWalletStep(state, onIntent)
+          OnboardingStep.ENABLE_TRADING -> EnableTradingStep(state, onIntent)
           OnboardingStep.WELCOME -> Unit
         }
       }
       (state.setupTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
-        Text(
-          "Network fee: approximately ${estimate.toDecimalString(8)} APT",
+        ActionNotice(
+          "Flare can’t cover the network fee for this step. Your wallet would pay about " +
+            "${estimate.toDecimalString(8)} APT.",
           Modifier.padding(top = 16.dp),
         )
         FlareButton(
-          "Confirm network fee",
+          "Pay the fee and continue",
           { onIntent(OnboardingIntent.ConfirmSetupSelfPay) },
           Modifier.fillMaxWidth().padding(top = 12.dp),
           enabled = !state.busy,
         )
       }
-      state.error?.let {
-        Text(
-          it,
-          Modifier.fillMaxWidth().padding(top = 16.dp),
-          color = MaterialTheme.colorScheme.error,
-          style = MaterialTheme.typography.bodyMedium,
-        )
-      }
+      state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.ALERT) }
       if (state.busy) {
         CircularProgressIndicator(
           Modifier.align(Alignment.CenterHorizontally).padding(top = 20.dp).size(24.dp),
@@ -198,7 +195,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
       onIntent(
         if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null)
           OnboardingIntent.CreateOwner
-        else OnboardingIntent.ShowApiSetup
+        else OnboardingIntent.ContinueSetup
       )
     },
     Modifier.fillMaxWidth(),
@@ -228,7 +225,7 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
   val format = remember(state.input) { WalletCredential.detect(state.input) }
   Text("Welcome back.", style = MaterialTheme.typography.headlineLarge)
   Text(
-    "Paste a recovery phrase, private key, or Decibel API wallet key.",
+    "Paste a recovery phrase or private key.",
     Modifier.padding(top = 12.dp),
     style = MaterialTheme.typography.bodyLarge,
     color = FlareColors.TextSecondary,
@@ -242,9 +239,9 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
       Text(
         when (format) {
           CredentialFormat.RECOVERY_PHRASE ->
-            if (state.apiImport) "API wallets use private keys. Paste your trading key."
+            if (state.apiImport) "A trading key is a private key, not a phrase."
             else "Recovery phrase recognized"
-          CredentialFormat.PRIVATE_KEY -> "Ed25519 private key recognized"
+          CredentialFormat.PRIVATE_KEY -> "Private key recognized"
           CredentialFormat.UNKNOWN -> "12–24 words, hex, or ed25519-priv-…"
         }
       )
@@ -281,6 +278,12 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
       singleLine = true,
       enabled = !state.busy,
     )
+    Text(
+      "A trading key can trade only. Deposits and withdrawals need the owner key.",
+      Modifier.padding(top = 8.dp),
+      style = MaterialTheme.typography.bodySmall,
+      color = FlareColors.TextSecondary,
+    )
   }
   FlareButton(
     "Continue",
@@ -303,15 +306,15 @@ private fun WalletSummary(state: OnboardingUiState) {
         .padding(16.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    state.profile.ownerAddress?.let { AddressRow("Owner", it) }
-    state.profile.apiWalletAddress?.let { AddressRow("API wallet", it) }
+    state.profile.ownerAddress?.let { AddressRow("Account", it) }
+    state.profile.apiWalletAddress?.let { AddressRow("This device", it) }
   }
 }
 
 @Composable
 private fun AddressRow(label: String, address: String) {
   Text(label, style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
-  Text(address.take(10) + "…" + address.takeLast(6), style = MaterialTheme.typography.labelMedium)
+  Text(shortAddress(address), style = MaterialTheme.typography.labelMedium)
 }
 
 @Composable
@@ -389,7 +392,7 @@ private fun ConfirmBackupStep(state: OnboardingUiState, onIntent: (OnboardingInt
 }
 
 @Composable
-private fun ApiWalletStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
+private fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   Text("Enable trading", style = MaterialTheme.typography.headlineLarge)
   Text(
     "Allow this device to trade for ${state.selectedSubaccount?.let(::shortAddress).orEmpty()}.",
@@ -399,7 +402,7 @@ private fun ApiWalletStep(state: OnboardingUiState, onIntent: (OnboardingIntent)
   Spacer(Modifier.height(28.dp))
   FlareButton(
     text = "Enable trading",
-    onClick = { onIntent(OnboardingIntent.CreateApiWallet) },
+    onClick = { onIntent(OnboardingIntent.EnableTrading) },
     modifier = Modifier.fillMaxWidth(),
     enabled = !state.busy,
   )
@@ -409,15 +412,12 @@ private fun ApiWalletStep(state: OnboardingUiState, onIntent: (OnboardingIntent)
 private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val ownerMode = state.profile.ownerAddress != null
   Text(
-    if (ownerMode) "Choose your account" else "Connect your trading account",
+    if (ownerMode) "Choose your account" else "Your trading account",
     style = MaterialTheme.typography.headlineLarge,
   )
   Text(
-    if (ownerMode) {
-      "Choose the Decibel account you want to use with Flare."
-    } else {
-      "Enter the Decibel subaccount linked to this trading key. This connection gives trading access only."
-    },
+    if (ownerMode) "Choose the account you want to trade with."
+    else "Enter the trading account this key is allowed to trade for.",
     modifier = Modifier.padding(top = 12.dp),
     color = MaterialTheme.colorScheme.onSurfaceVariant,
     style = MaterialTheme.typography.bodyMedium,
@@ -452,7 +452,7 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
       value = state.input,
       onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
       modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-      label = { Text("Decibel subaccount address") },
+      label = { Text("Trading-account address") },
       singleLine = true,
       enabled = !state.busy,
     )
@@ -465,8 +465,7 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
     )
   } else {
     Text(
-      if (state.busy) "Looking for your Decibel accounts…"
-      else "Check for existing accounts to continue.",
+      if (state.busy) "Looking for your accounts…" else "Check for existing accounts to continue.",
       Modifier.padding(top = 20.dp),
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
@@ -491,13 +490,10 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
     )
   }
   FlareButton(
-    text = if (ownerMode) "Continue" else "Connect account",
+    text = "Continue",
     onClick = { onIntent(OnboardingIntent.ContinueSubaccount) },
     modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
     enabled =
       !state.busy && (state.selectedSubaccount != null || (!ownerMode && state.input.isNotBlank())),
   )
 }
-
-private fun shortAddress(address: String): String =
-  if (address.length <= 18) address else address.take(10) + "…" + address.takeLast(6)

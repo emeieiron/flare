@@ -52,6 +52,19 @@ data class PendingTransactionEntity(
   val updatedAtMs: Long,
 )
 
+/**
+ * The journal predates account profiles, so `operation` carries both values as `NAME|profileId`.
+ * Rows written before profiles existed belong to [LEGACY_PROFILE_ID]. Read them through
+ * [operationName] and [profileId] rather than parsing the column again elsewhere.
+ */
+fun journalOperation(name: String, profileId: String): String = "$name|$profileId"
+
+val PendingTransactionEntity.operationName: String
+  get() = operation.substringBefore('|')
+
+val PendingTransactionEntity.profileId: String
+  get() = operation.substringAfter('|', LEGACY_PROFILE_ID)
+
 @Entity(tableName = "asset_metadata")
 data class AssetMetadataEntity(
   @PrimaryKey val symbolKey: String,

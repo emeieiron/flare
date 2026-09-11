@@ -10,11 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,8 +23,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareChip
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareTopBar
@@ -62,14 +61,7 @@ fun MarketsScreen(
   ) {
     FlareTopBar(
       title = "Markets",
-      subtitle =
-        if (state.stale && state.quotes.isNotEmpty()) "Prices may be out of date"
-        else "Perpetuals, at a glance",
-      action = {
-        IconButton(onClick = { onIntent(MarketsIntent.Refresh) }) {
-          Icon(Icons.Outlined.Refresh, contentDescription = "Refresh markets")
-        }
-      },
+      subtitle = if (state.stale && state.quotes.isNotEmpty()) "Reconnecting…" else null,
     )
     FlareSearchField(
       value = state.query,
@@ -110,20 +102,18 @@ fun MarketsScreen(
       EmptyState(
         title =
           when {
-            state.error != null -> "Markets unavailable"
+            state.error != null -> "Markets are offline"
             state.query.isNotBlank() -> "No matching markets"
             state.favoritesOnly -> "Your watchlist starts here"
             else -> "No markets found"
           },
         message =
-          if (state.error != null) "We couldn’t connect to the markets. Try again in a moment."
+          if (state.error != null) "Flare is reconnecting. Prices appear as soon as they arrive."
           else if (state.favoritesOnly && state.query.isBlank()) {
             "Tap the star beside a market to follow it here."
           } else {
             "Try a different symbol or market name."
           },
-        actionLabel = if (state.error != null) "Retry" else null,
-        onAction = { onIntent(MarketsIntent.Refresh) },
       )
     } else {
       LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -149,14 +139,9 @@ fun MarketsScreen(
         }
         if (state.stale) {
           item {
-            Text(
-              "Prices may be stale. Trading will remain disabled until the connection is live.",
-              modifier =
-                Modifier.fillMaxWidth()
-                  .background(FlareColors.Surface, MaterialTheme.shapes.small)
-                  .padding(12.dp),
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ActionNotice(
+              "Reconnecting to live prices. Trading resumes automatically.",
+              tone = NoticeTone.PROGRESS,
             )
           }
         }
