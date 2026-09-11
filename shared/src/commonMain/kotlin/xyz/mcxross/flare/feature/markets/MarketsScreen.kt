@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
@@ -70,20 +71,40 @@ fun MarketsScreen(
       placeholder = "Search markets",
       leadingIcon = Icons.Outlined.Search,
     )
-    Row(
+    LazyRow(
       modifier = Modifier.padding(vertical = 12.dp),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      FlareChip(
-        text = "All",
-        selected = !state.favoritesOnly,
-        onClick = { onIntent(MarketsIntent.SetFavoritesOnly(false)) },
-      )
-      FlareChip(
-        text = "Watchlist",
-        selected = state.favoritesOnly,
-        onClick = { onIntent(MarketsIntent.SetFavoritesOnly(true)) },
-      )
+      item {
+        FlareChip(
+          text = "All",
+          selected = !state.favoritesOnly && state.selectedCategory == null,
+          onClick = {
+            onIntent(MarketsIntent.SetFavoritesOnly(false))
+            onIntent(MarketsIntent.SetCategory(null))
+          },
+        )
+      }
+      item {
+        FlareChip(
+          text = "Watchlist",
+          selected = state.favoritesOnly,
+          onClick = {
+            onIntent(MarketsIntent.SetFavoritesOnly(true))
+            onIntent(MarketsIntent.SetCategory(null))
+          },
+        )
+      }
+      items(state.categories, key = { it }) { category ->
+        FlareChip(
+          text = marketCategoryLabel(category),
+          selected = !state.favoritesOnly && state.selectedCategory == category,
+          onClick = {
+            onIntent(MarketsIntent.SetFavoritesOnly(false))
+            onIntent(MarketsIntent.SetCategory(category))
+          },
+        )
+      }
     }
     if (state.loading && state.quotes.isEmpty()) {
       Column(
@@ -166,3 +187,9 @@ fun MarketsScreen(
     }
   }
 }
+
+internal fun marketCategoryLabel(category: String): String =
+  when (category.trim().lowercase()) {
+    "equity" -> "Equities"
+    else -> category.trim().replaceFirstChar(Char::titlecase)
+  }
