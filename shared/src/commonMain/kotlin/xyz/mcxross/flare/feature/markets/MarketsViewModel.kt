@@ -16,9 +16,9 @@ import xyz.mcxross.flare.data.MarketsRepository
 data class MarketsUiState(
   val loading: Boolean = true,
   val query: String = "",
-  val favoritesOnly: Boolean = false,
+  val favoritesOnly: Boolean = true,
   val selectedCategory: String? = null,
-  val categories: List<String> = emptyList(),
+  val categories: List<String> = marketCategoryTabs,
   val quotes: List<MarketQuote> = emptyList(),
   val stale: Boolean = true,
   val error: String? = null,
@@ -40,7 +40,7 @@ class MarketsViewModel(
   private val assetCatalog: AssetCatalogRepository,
 ) : ViewModel() {
   private val query = MutableStateFlow("")
-  private val favoritesOnly = MutableStateFlow(false)
+  private val favoritesOnly = MutableStateFlow(true)
   private val selectedCategory = MutableStateFlow<String?>(null)
 
   val uiState: StateFlow<MarketsUiState> =
@@ -51,18 +51,11 @@ class MarketsViewModel(
         onlyFavorites,
         category ->
         val normalized = search.trim().lowercase()
-        val categories =
-          catalog.quotes.mapNotNull { quote ->
-              assets[assetKey(quote.market.symbol)]?.kind?.normalizedCategory()
-            }
-            .distinct()
-            .sorted()
         MarketsUiState(
           loading = catalog.loading,
           query = search,
           favoritesOnly = onlyFavorites,
           selectedCategory = category,
-          categories = categories,
           quotes =
             catalog.quotes.filter {
               (!onlyFavorites || it.favorite) &&
@@ -105,3 +98,5 @@ class MarketsViewModel(
 }
 
 private fun String.normalizedCategory(): String? = trim().lowercase().takeIf { it.isNotEmpty() }
+
+private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
