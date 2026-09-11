@@ -82,7 +82,9 @@ class DefaultMarketsRepository(
         val prices = async { client.markets.prices() }
         val contextsByMarket = contexts.await().associateBy { it.market }
         val pricesByMarket = prices.await().associateBy { it.market }
-        markets.await().map { market ->
+        val marketList = markets.await()
+        seedDefaultWatchlist(marketList)
+        marketList.map { market ->
           val context = contextsByMarket[market.address] ?: contextsByMarket[market.name]
           val price = pricesByMarket[market.address] ?: pricesByMarket[market.name]
           MarketQuote(
@@ -131,13 +133,14 @@ class DefaultMarketsRepository(
 
   private suspend fun loadCachedMarkets() {
     val rows = cache.markets()
-    val quotes = rows.mapNotNull { row ->
+    val cachedQuotes = rows.mapNotNull { row ->
       runCatching {
         DecibelClient.DefaultJson.decodeFromString<MarketQuote>(row.payloadJson)
-          .copy(favorite = row.marketAddress in favorites)
       }
         .getOrNull()
     }
+    seedDefaultWatchlist(cachedQuotes.map { it.market })
+    val quotes = cachedQuotes.map { quote -> quote.copy(favorite = quote.market.address in favorites) }
     if (quotes.isNotEmpty()) {
       mutableCatalog.value =
         MarketCatalog(
@@ -149,6 +152,17 @@ class DefaultMarketsRepository(
           stale = true,
           updatedAtMs = rows.maxOfOrNull(MarketEntity::updatedAtMs),
         )
+    }
+  }
+
+  private suspend fun seedDefaultWatchlist(markets: List<Market>) {
+    if (markets.any { it.address in favorites }) return
+
+    val seededAddresses =
+      markets.filter { it.symbol in DEFAULT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
+    if (seededAddresses.isNotEmpty()) {
+      favorites += seededAddresses
+      preferences.setFavoriteMarkets(favorites)
     }
   }
 
@@ -230,6 +244,7 @@ class DefaultMarketsRepository(
 
   private companion object {
     const val MALFORMED_RECOVERY_INTERVAL_MS = 30_000L
+    val DEFAULT_WATCHLIST_SYMBOLS = setOf("APT", "BTC", "GOLD", "AAPL")
   }
 }
 

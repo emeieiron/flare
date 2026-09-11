@@ -77,16 +77,6 @@ fun MarketsScreen(
     ) {
       item {
         FlareChip(
-          text = "All",
-          selected = !state.favoritesOnly && state.selectedCategory == null,
-          onClick = {
-            onIntent(MarketsIntent.SetFavoritesOnly(false))
-            onIntent(MarketsIntent.SetCategory(null))
-          },
-        )
-      }
-      item {
-        FlareChip(
           text = "Watchlist",
           selected = state.favoritesOnly,
           onClick = {
