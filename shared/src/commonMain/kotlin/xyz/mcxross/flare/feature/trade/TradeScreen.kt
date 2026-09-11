@@ -40,9 +40,11 @@ import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.model.MarketTrade
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.AssetHeader
 import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.BackBar
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
@@ -90,12 +92,7 @@ fun TradeScreen(
       },
     )
     if (quote == null) {
-      EmptyState(
-        "Market unavailable",
-        state.error ?: "Loading market data…",
-        actionLabel = "Retry",
-        onAction = { onIntent(TradeIntent.Retry) },
-      )
+      EmptyState("Loading market…", "Prices appear as soon as Flare reconnects.")
       return@Column
     }
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
@@ -138,11 +135,10 @@ fun TradeScreen(
         Modifier.fillMaxWidth().padding(top = 12.dp),
       )
       if (state.stale || state.error != null) {
-        Text(
-          state.error ?: "Prices are updating. Trading will resume when connected.",
+        ActionNotice(
+          "Reconnecting to live prices. Trading resumes automatically.",
           Modifier.padding(top = 16.dp),
-          color = FlareColors.TextSecondary,
-          style = MaterialTheme.typography.bodySmall,
+          NoticeTone.PROGRESS,
         )
       }
       SectionLabel("Market stats")
@@ -155,13 +151,11 @@ fun TradeScreen(
       if (showBook) {
         Text(
           if (state.marketDetails.stale) {
-            state.marketDetails.error ?: "Order book snapshot is stale"
+            "Reconnecting to the order book…"
           } else {
             "Live order book · best bid ${state.marketDetails.orderBook?.bestBid ?: "—"} · best ask ${state.marketDetails.orderBook?.bestAsk ?: "—"}"
           },
-          color =
-            if (state.marketDetails.stale) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+          color = FlareColors.TextSecondary,
           style = MaterialTheme.typography.bodyMedium,
         )
         Row(
@@ -201,9 +195,9 @@ fun TradeScreen(
     }
     HorizontalDivider(color = FlareColors.BorderSubtle)
     FlareButton(
-      if (state.expectedSignerAddress == null) "Create or import account"
+      if (state.tradingKeyAddress == null) "Create or import account"
       else "Trade ${quote.market.symbol}",
-      { if (state.expectedSignerAddress == null) onOpenSetup() else showTicket = true },
+      { if (state.tradingKeyAddress == null) onOpenSetup() else showTicket = true },
       Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
     )
   }

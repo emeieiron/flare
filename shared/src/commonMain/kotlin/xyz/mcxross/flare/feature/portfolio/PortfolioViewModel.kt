@@ -17,12 +17,10 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.PendingTransaction
-import xyz.mcxross.flare.data.SessionRepository
-import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.TradingSigner
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.DecimalInput
@@ -34,8 +32,10 @@ import xyz.mcxross.flare.decibel.model.absoluteSize
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.decibel.model.validate
+import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.WithdrawalContinuation
 
 enum class FundingMode {
   DEPOSIT,
@@ -45,13 +45,13 @@ enum class FundingMode {
 data class PortfolioUiState(
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
+  val markPrices: Map<String, Double> = emptyMap(),
   val account: AccountSnapshot = AccountSnapshot(),
-  val sessionRole: SessionRole? = null,
   val pendingTransactions: List<PendingTransaction> = emptyList(),
   val fundingMode: FundingMode? = null,
   val fundingAmount: String = "",
   val withdrawalDestination: String = "",
-  val pendingWithdrawal: xyz.mcxross.flare.store.WithdrawalContinuation? = null,
+  val pendingWithdrawal: WithdrawalContinuation? = null,
   val fundingTransaction: TransactionState? = null,
   val managedPositionMarket: String? = null,
   val takeProfitInput: String = "",
@@ -68,8 +68,6 @@ data class PortfolioUiState(
 }
 
 sealed interface PortfolioIntent {
-  data object Refresh : PortfolioIntent
-
   data class OpenFunding(val mode: FundingMode) : PortfolioIntent
 
   data class ChangeWithdrawalDestination(val value: String) : PortfolioIntent
@@ -102,7 +100,6 @@ sealed interface PortfolioIntent {
 class PortfolioViewModel(
   private val accounts: AccountRepository,
   private val wallets: WalletRepository,
-  private val sessions: SessionRepository,
   private val preferences: AppPreferences,
   private val trading: TradingRepository,
   private val markets: MarketsRepository,
@@ -112,19 +109,12 @@ class PortfolioViewModel(
   private var lastPositionCommand: DecibelCommand? = null
 
   val uiState: StateFlow<PortfolioUiState> =
-    combine(
-        local,
-        wallets.profile,
-        accounts.snapshot,
-        sessions.status,
-        trading.pendingTransactions,
-      ) { state, profile, account, session, pending ->
-        state.copy(
-          profile = profile,
-          account = account,
-          sessionRole = session?.role,
-          pendingTransactions = pending,
-        )
+    combine(local, wallets.profile, accounts.snapshot, trading.pendingTransactions) {
+        state,
+        profile,
+        account,
+        pending ->
+        state.copy(profile = profile, account = account, pendingTransactions = pending)
       }
       .combine(preferences.values) { state, saved ->
         state.copy(
@@ -134,18 +124,14 @@ class PortfolioViewModel(
       }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
-          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol }
+          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
+          markPrices = catalog.quotes.associate { it.market.address to it.markPrice },
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PortfolioUiState())
 
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
-      PortfolioIntent.Refresh ->
-        launchAction {
-          trading.reconcilePending()
-          accounts.restoreTrading()
-        }
       is PortfolioIntent.ChangeWithdrawalDestination ->
         local.update { it.copy(withdrawalDestination = intent.value, fundingTransaction = null) }
       is PortfolioIntent.OpenFunding -> {
@@ -173,7 +159,14 @@ class PortfolioViewModel(
       PortfolioIntent.SubmitFunding -> submitFunding(FeePayment.SPONSORED)
       PortfolioIntent.ConfirmSelfPay -> submitFunding(FeePayment.SELF_PAY)
       PortfolioIntent.CloseFunding ->
-        local.update { it.copy(fundingMode = null, fundingAmount = "", fundingTransaction = null) }
+        local.update {
+          it.copy(
+            fundingMode = null,
+            fundingAmount = "",
+            fundingTransaction = null,
+            actionError = null,
+          )
+        }
       is PortfolioIntent.ManagePosition ->
         local.update {
           it.copy(
@@ -191,6 +184,7 @@ class PortfolioViewModel(
             takeProfitInput = "",
             stopLossInput = "",
             positionTransaction = null,
+            actionError = null,
           )
         }
       PortfolioIntent.ClosePosition -> closePosition(FeePayment.SPONSORED)
@@ -209,7 +203,7 @@ class PortfolioViewModel(
     }
   }
 
-  private fun closePosition(feePayment: FeePayment) = launchAction {
+  private fun closePosition(feePayment: FeePayment) = launchAction("Your position stayed open.") {
     val position = managedPosition()
     val quote = marketQuote(position.market)
     marketDetails.refresh(position.market)
@@ -233,7 +227,7 @@ class PortfolioViewModel(
     executePositionCommandInternal(DecibelCommand.PlaceOrder(subaccount, validated), feePayment)
   }
 
-  private fun setTpSl(feePayment: FeePayment) = launchAction {
+  private fun setTpSl(feePayment: FeePayment) = launchAction("Your exits weren’t changed.") {
     val position = managedPosition()
     val quote = marketQuote(position.market)
     val state = local.value
@@ -262,7 +256,7 @@ class PortfolioViewModel(
   }
 
   private fun executePositionCommand(command: DecibelCommand, feePayment: FeePayment) =
-    launchAction {
+    launchAction("Your position wasn’t updated.") {
       executePositionCommandInternal(command, feePayment)
     }
 
@@ -270,48 +264,34 @@ class PortfolioViewModel(
     command: DecibelCommand,
     feePayment: FeePayment,
   ) {
-    ensureTradingSession()
+    accounts.refresh()
     lastPositionCommand = command
-    val profile = wallets.profile.first()
-    val signer = if (profile.apiWalletAddress != null) TradingSigner.API else TradingSigner.OWNER
     local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
     trading
       .execute(
         command = command,
-        signer = signer,
-        prompt = VaultPrompt("Manage position", "Review and authorize the Decibel transaction."),
+        prompt = VaultPrompt("Manage position", "Confirm your identity"),
         feePayment = feePayment,
       )
       .collect { transaction -> local.update { it.copy(positionTransaction = transaction) } }
     when (val terminal = local.value.positionTransaction) {
       is TransactionState.Committed -> accounts.refresh()
       is TransactionState.Failed -> {
-        val estimate = terminal.selfPayEstimateOctas
-        if (estimate == null) {
-          error(terminal.message)
-        } else if (signer == TradingSigner.API && profile.ownerAddress != null) {
-          val balance = runSuspendCatching { trading.apiWalletAptBalance() }.getOrNull()
-          if (balance != null && balance < estimate) {
-            local.update {
-              it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = suggestedApiTopUp(estimate))
-            }
-          }
+        if (terminal.selfPayEstimateOctas == null) error(terminal.message)
+        trading.apiWalletTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
+          local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
         }
       }
       else -> Unit
     }
   }
 
-  private fun topUpApiWallet() = launchAction {
-    val amount = local.value.suggestedTopUpOctas ?: error("No API-wallet top-up is required")
+  private fun topUpApiWallet() = launchAction("The network fee wasn’t covered.") {
+    val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
     trading
       .topUpApiWallet(
         amount,
-        VaultPrompt(
-          "Top up API wallet",
-          "Transfer the displayed APT amount from the owner wallet.",
-          requireFreshAuthorization = true,
-        ),
+        VaultPrompt("Cover network fees", "Confirm your identity", requireFreshAuthorization = true),
       )
       .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
     when (val terminal = local.value.topUpTransaction) {
@@ -320,10 +300,6 @@ class PortfolioViewModel(
       is TransactionState.Failed -> error(terminal.message)
       else -> Unit
     }
-  }
-
-  private suspend fun ensureTradingSession() {
-    accounts.restoreTrading()
   }
 
   private suspend fun marketQuote(market: String) =
@@ -342,19 +318,27 @@ class PortfolioViewModel(
       DecimalInput(it).toChainUnits("TP/SL price", decimals).getOrThrow()
     }
 
-  private fun submitFunding(feePayment: FeePayment) = launchAction {
+  private fun submitFunding(feePayment: FeePayment) =
+    launchAction(
+      if (local.value.fundingMode == FundingMode.WITHDRAW) "Your withdrawal didn’t go through."
+      else "Your deposit didn’t go through."
+    ) {
+      submitFundingInternal(feePayment)
+    }
+
+  private suspend fun submitFundingInternal(feePayment: FeePayment) {
     val state = local.value
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
     val prompt =
       VaultPrompt(
-        title = if (mode == FundingMode.DEPOSIT) "Deposit Aptos USDC" else "Withdraw Aptos USDC",
-        subtitle = "Owner authorization is required for collateral movement.",
+        title = if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Withdraw USDC",
+        subtitle = "Confirm your identity",
       )
     val flow =
       if (mode == FundingMode.DEPOSIT) {
         accounts.depositUsdc(state.fundingAmount, prompt, feePayment)
       } else {
-        accounts.withdrawTo(state.fundingAmount, state.withdrawalDestination, prompt, feePayment)
+        accounts.withdrawUsdc(state.fundingAmount, state.withdrawalDestination, prompt, feePayment)
       }
     flow.collect { transaction -> local.update { it.copy(fundingTransaction = transaction) } }
     when (val terminal = local.value.fundingTransaction) {
@@ -369,14 +353,15 @@ class PortfolioViewModel(
     }
   }
 
-  private fun launchAction(block: suspend () -> Unit) {
+  /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
+  private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, actionError = null) }
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(actionError = error.message ?: "The account action failed") }
+            local.update { it.copy(actionError = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }
@@ -392,8 +377,3 @@ private fun decimalCharacters(value: String): String =
       val dot = filtered.indexOf('.')
       if (dot < 0) filtered else filtered.take(dot + 1) + filtered.drop(dot + 1).replace(".", "")
     }
-
-private fun suggestedApiTopUp(estimate: ULong): ULong {
-  val buffered = if (estimate <= ULong.MAX_VALUE / 3uL) estimate * 3uL else estimate
-  return maxOf(1_000_000uL, buffered)
-}

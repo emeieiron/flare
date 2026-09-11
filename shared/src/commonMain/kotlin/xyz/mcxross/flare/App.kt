@@ -4,6 +4,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,10 +18,11 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -31,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.Lifecycle
@@ -47,6 +50,8 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.room3.RoomDatabase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.serialization.Serializable
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
@@ -56,9 +61,12 @@ import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
+import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareTheme
+import xyz.mcxross.flare.design.LocalTransactionExplorer
+import xyz.mcxross.flare.design.TransactionExplorer
 import xyz.mcxross.flare.di.flareModule
 import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
@@ -72,6 +80,10 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
+
+/** Reconnection is automatic and unobtrusive: quick at first, then patient. */
+private const val RECONNECT_BASE_DELAY_MS = 2_000L
+private const val RECONNECT_MAX_DELAY_MS = 30_000L
 
 @Serializable data object PortfolioDestination
 
@@ -97,14 +109,20 @@ fun App(
         modules(flareModule(runtimeConfig, databaseBuilder, preferences, foregroundVault))
       }
   ) {
-    FlareTheme { FlareAppFlow() }
+    CompositionLocalProvider(
+      LocalTransactionExplorer provides remember(runtimeConfig) {
+        TransactionExplorer(runtimeConfig.network)
+      }
+    ) {
+      FlareTheme { FlareAppFlow() }
+    }
   }
 }
 
 @Composable
 private fun FlareAppFlow() {
   val appPreferences: AppPreferences = koinInject()
-  val vault = koinInject<WalletVault>() as ForegroundWalletVault
+  val vault: ForegroundWalletVault = koinInject()
   val accounts: AccountRepository = koinInject()
   val unlocked by vault.unlocked.collectAsStateWithLifecycle()
   var foreground by remember { mutableStateOf(true) }
@@ -144,15 +162,24 @@ private fun FlareAppFlow() {
       }
     }
   }
+  // Staying current is the app's job: a failed restore retries on its own until the account is
+  // live again, so nobody has to notice staleness or press refresh.
   LaunchedEffect(unlocked, persisted?.activeProfileId, persisted?.selectedSubaccount) {
-    if (unlocked) {
-      try {
-        accounts.restoreTrading()
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (_: Exception) {
-        /* Action submission retries a temporary connection failure. */
-      }
+    if (!unlocked) return@LaunchedEffect
+    var backoffMs = RECONNECT_BASE_DELAY_MS
+    while (true) {
+      val restored =
+        try {
+          accounts.restoreTrading()
+          true
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          false
+        }
+      if (restored) return@LaunchedEffect
+      delay(backoffMs)
+      backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
     }
   }
 
@@ -161,13 +188,23 @@ private fun FlareAppFlow() {
     isBackEnabled = forceSetup,
     onBackCompleted = { forceSetup = false },
   )
-  LaunchedEffect(Unit) {
-    try {
-      trading.reconcilePending()
-    } catch (cancelled: CancellationException) {
-      throw cancelled
-    } catch (_: Throwable) {
-      // Pending records remain durable and are retried after wallet authentication.
+  // Submitted work settles without supervision: while anything is outstanding the app keeps
+  // checking, and stops the moment the journal is clear.
+  LaunchedEffect(unlocked) {
+    trading.pendingTransactions.collectLatest { pending ->
+      if (pending.isEmpty()) return@collectLatest
+      var backoffMs = RECONNECT_BASE_DELAY_MS
+      while (true) {
+        try {
+          trading.reconcilePending()
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Throwable) {
+          // Pending records stay durable; the next pass retries them.
+        }
+        delay(backoffMs)
+        backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
+      }
     }
   }
   val savedScreens = rememberSaveableStateHolder()
@@ -183,10 +220,21 @@ private fun FlareAppFlow() {
       Modifier.fillMaxSize().background(FlareColors.Canvas),
       contentAlignment = Alignment.Center,
     ) {
-      Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Flare")
-        if (unlockError == null) CircularProgressIndicator()
-        else TextButton(onClick = { retry++ }) { Text("Try again") }
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+      ) {
+        Text("Flare", style = MaterialTheme.typography.headlineLarge)
+        if (unlockError == null) {
+          CircularProgressIndicator()
+        } else {
+          Text(
+            "Confirm it’s you to continue.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+          )
+          FlareButton("Continue", { retry++ })
+        }
       }
     }
   } else if (

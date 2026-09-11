@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.store
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -16,6 +17,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
 import xyz.mcxross.flare.decibel.DecibelNetwork
+
+/**
+ * Identifies the profile migrated from an installation that predates multiple accounts. Its secrets
+ * keep their original vault keys, so this identifier must never change.
+ */
+const val LEGACY_PROFILE_ID = "legacy"
 
 @Serializable
 data class WithdrawalContinuation(
@@ -65,9 +72,11 @@ data class FlarePreferences(
 class AppPreferences(private val dataStore: DataStore<Preferences>) {
   val values: Flow<FlarePreferences> =
     dataStore.data.map { preferences ->
+      val profiles = preferences.profiles()
+      val active = preferences.activeProfile(profiles)
       FlarePreferences(
-        activeProfileId = preferences[ActiveProfileKey] ?: "legacy",
-        profiles = profiles(preferences),
+        activeProfileId = active?.id ?: LEGACY_PROFILE_ID,
+        profiles = profiles,
         network =
           preferences[NetworkKey]?.let { value ->
             DecibelNetwork.entries.firstOrNull { it.name == value }
@@ -77,14 +86,14 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         showRsi = preferences[ShowRsiKey] ?: false,
         showMacd = preferences[ShowMacdKey] ?: false,
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),
-        onboardingComplete = preferences[OnboardingCompleteKey] ?: false,
         selectedMarket = preferences[SelectedMarketKey],
         favoriteMarkets = preferences[FavoriteMarketsKey].orEmpty(),
         installationId = preferences[InstallationIdKey],
-        ownerAddress = preferences[OwnerAddressKey],
-        apiWalletAddress = preferences[ApiWalletAddressKey],
-        ownerBackupConfirmed = preferences[OwnerBackupConfirmedKey] ?: false,
-        selectedSubaccount = preferences[SelectedSubaccountKey],
+        ownerAddress = active?.ownerAddress,
+        apiWalletAddress = active?.apiWalletAddress,
+        ownerBackupConfirmed = active?.ownerBackupConfirmed ?: false,
+        selectedSubaccount = active?.selectedSubaccount,
+        onboardingComplete = active?.onboardingComplete ?: false,
       )
     }
 
@@ -115,20 +124,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     dataStore.edit { it[SlippageBpsKey] = slippageBps }
   }
 
-  suspend fun setOnboardingComplete(complete: Boolean) {
-    dataStore.edit {
-      it[OnboardingCompleteKey] = complete
-      saveActiveProfile(it)
-    }
-  }
-
   suspend fun setSelectedMarket(marketAddress: String?) {
     dataStore.edit { preferences ->
-      if (marketAddress == null) {
-        preferences.remove(SelectedMarketKey)
-      } else {
-        preferences[SelectedMarketKey] = marketAddress
-      }
+      if (marketAddress == null) preferences.remove(SelectedMarketKey)
+      else preferences[SelectedMarketKey] = marketAddress
     }
   }
 
@@ -149,128 +148,108 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     return resolved
   }
 
-  suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) {
-    dataStore.edit { preferences ->
-      if (address == null) preferences.remove(OwnerAddressKey)
-      else preferences[OwnerAddressKey] = address
-      preferences[OwnerBackupConfirmedKey] = address != null && backupConfirmed
-      saveActiveProfile(preferences)
-    }
+  suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) = updateActiveProfile {
+    it.copy(ownerAddress = address, ownerBackupConfirmed = address != null && backupConfirmed)
   }
 
-  suspend fun setOwnerBackupConfirmed(confirmed: Boolean) {
-    dataStore.edit {
-      it[OwnerBackupConfirmedKey] = confirmed
-      saveActiveProfile(it)
-    }
+  suspend fun setOwnerBackupConfirmed(confirmed: Boolean) = updateActiveProfile {
+    it.copy(ownerBackupConfirmed = confirmed)
   }
 
-  suspend fun setApiWallet(address: String?) {
-    dataStore.edit { preferences ->
-      if (address == null) preferences.remove(ApiWalletAddressKey)
-      else preferences[ApiWalletAddressKey] = address
-      saveActiveProfile(preferences)
-    }
+  suspend fun setApiWallet(address: String?) = updateActiveProfile {
+    it.copy(apiWalletAddress = address)
   }
 
-  suspend fun setSelectedSubaccount(address: String?) {
-    dataStore.edit { preferences ->
-      if (address == null) preferences.remove(SelectedSubaccountKey)
-      else preferences[SelectedSubaccountKey] = address
-      saveActiveProfile(preferences)
-    }
+  suspend fun setSelectedSubaccount(address: String?) = updateActiveProfile {
+    it.copy(selectedSubaccount = address)
   }
 
-  suspend fun setCreationReference(profileId: String, reference: String?) {
-    dataStore.edit { preferences ->
-      preferences[ProfilesKey] =
-        Json.encodeToString(
-          profiles(preferences).map {
-            if (it.id == profileId) it.copy(creationReference = reference) else it
-          }
-        )
-    }
+  suspend fun setOnboardingComplete(complete: Boolean) = updateActiveProfile {
+    it.copy(onboardingComplete = complete)
   }
 
-  suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) {
-    dataStore.edit { preferences ->
-      val updated =
-        profiles(preferences).map {
-          if (it.id == profileId) it.copy(withdrawal = withdrawal) else it
-        }
-      preferences[ProfilesKey] = Json.encodeToString(updated)
-    }
-  }
+  suspend fun setCreationReference(profileId: String, reference: String?) =
+    updateProfile(profileId) { it.copy(creationReference = reference) }
 
+  suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) =
+    updateProfile(profileId) { it.copy(withdrawal = withdrawal) }
+
+  /** Switching profiles only changes which stored profile is active; none of them are rewritten. */
   suspend fun activateProfile(id: String) {
     dataStore.edit { preferences ->
-      saveActiveProfile(preferences)
-      val profile = profiles(preferences).first { it.id == id }
-      applyProfile(preferences, profile)
+      val profiles = preferences.profiles()
+      require(profiles.any { it.id == id }) { "Unknown account profile" }
+      preferences.writeProfiles(profiles)
+      preferences[ActiveProfileKey] = id
     }
   }
 
+  /** Adds [profile] when this device does not know it yet, then makes it the active one. */
   suspend fun registerProfile(profile: AccountProfile) {
     dataStore.edit { preferences ->
-      saveActiveProfile(preferences)
-      val existing = profiles(preferences)
-      val resolved = existing.firstOrNull { it.id == profile.id } ?: profile
-      preferences[ProfilesKey] =
-        Json.encodeToString(
-          if (existing.any { it.id == resolved.id }) existing else existing + resolved
-        )
-      applyProfile(preferences, resolved)
+      val profiles = preferences.profiles()
+      preferences.writeProfiles(
+        if (profiles.any { it.id == profile.id }) profiles else profiles + profile
+      )
+      preferences[ActiveProfileKey] = profile.id
     }
   }
 
-  private fun profiles(preferences: Preferences): List<AccountProfile> =
-    preferences[ProfilesKey]?.let { Json.decodeFromString<List<AccountProfile>>(it) }
-      ?: listOfNotNull(
-        snapshotProfile(preferences).takeIf {
-          it.ownerAddress != null || it.apiWalletAddress != null
-        }
-      )
+  private suspend fun updateActiveProfile(transform: (AccountProfile) -> AccountProfile) {
+    dataStore.edit { preferences ->
+      val profiles = preferences.profiles()
+      val active = preferences.activeProfile(profiles) ?: AccountProfile(LEGACY_PROFILE_ID)
+      preferences[ActiveProfileKey] = active.id
+      preferences.writeProfiles(profiles.replacing(transform(active)))
+    }
+  }
 
-  private fun snapshotProfile(preferences: Preferences) =
-    AccountProfile(
-      id = preferences[ActiveProfileKey] ?: "legacy",
-      ownerAddress = preferences[OwnerAddressKey],
-      apiWalletAddress = preferences[ApiWalletAddressKey],
-      ownerBackupConfirmed = preferences[OwnerBackupConfirmedKey] ?: false,
-      selectedSubaccount = preferences[SelectedSubaccountKey],
-      onboardingComplete = preferences[OnboardingCompleteKey] ?: false,
+  private suspend fun updateProfile(id: String, transform: (AccountProfile) -> AccountProfile) {
+    dataStore.edit { preferences ->
+      val profiles = preferences.profiles()
+      val profile = profiles.firstOrNull { it.id == id } ?: return@edit
+      preferences.writeProfiles(profiles.replacing(transform(profile)))
+    }
+  }
+
+  /**
+   * Profiles are the single source of truth. Installations created before profiles existed are
+   * migrated from their flat keys on the first read, and those keys are dropped on the first write.
+   */
+  private fun Preferences.profiles(): List<AccountProfile> =
+    this[ProfilesKey]?.let { Json.decodeFromString<List<AccountProfile>>(it) }
+      ?: listOfNotNull(migratedProfile())
+
+  private fun Preferences.migratedProfile(): AccountProfile? {
+    val owner = this[OwnerAddressKey]
+    val api = this[ApiWalletAddressKey]
+    if (owner == null && api == null) return null
+    return AccountProfile(
+      id = LEGACY_PROFILE_ID,
+      ownerAddress = owner,
+      apiWalletAddress = api,
+      ownerBackupConfirmed = this[OwnerBackupConfirmedKey] ?: false,
+      selectedSubaccount = this[SelectedSubaccountKey],
+      onboardingComplete = this[OnboardingCompleteKey] ?: false,
     )
-
-  private fun saveActiveProfile(
-    preferences: androidx.datastore.preferences.core.MutablePreferences
-  ) {
-    val snapshot = snapshotProfile(preferences)
-    val prior = profiles(preferences).firstOrNull { it.id == snapshot.id }
-    val current =
-      snapshot.copy(withdrawal = prior?.withdrawal, creationReference = prior?.creationReference)
-    val existing = profiles(preferences)
-    val valid = current.ownerAddress != null || current.apiWalletAddress != null
-    val updated =
-      if (existing.any { it.id == current.id }) {
-        existing.mapNotNull { if (it.id == current.id) current.takeIf { valid } else it }
-      } else existing + listOfNotNull(current.takeIf { valid })
-    preferences[ProfilesKey] = Json.encodeToString(updated)
   }
 
-  private fun applyProfile(
-    preferences: androidx.datastore.preferences.core.MutablePreferences,
-    profile: AccountProfile,
-  ) {
-    preferences[ActiveProfileKey] = profile.id
-    if (profile.ownerAddress == null) preferences.remove(OwnerAddressKey)
-    else preferences[OwnerAddressKey] = profile.ownerAddress
-    if (profile.apiWalletAddress == null) preferences.remove(ApiWalletAddressKey)
-    else preferences[ApiWalletAddressKey] = profile.apiWalletAddress
-    if (profile.selectedSubaccount == null) preferences.remove(SelectedSubaccountKey)
-    else preferences[SelectedSubaccountKey] = profile.selectedSubaccount
-    preferences[OwnerBackupConfirmedKey] = profile.ownerBackupConfirmed
-    preferences[OnboardingCompleteKey] = profile.onboardingComplete
+  private fun Preferences.activeProfile(profiles: List<AccountProfile>): AccountProfile? =
+    profiles.firstOrNull { it.id == this[ActiveProfileKey] } ?: profiles.firstOrNull()
+
+  /** A profile without keys holds nothing worth remembering, so removing both removes it. */
+  private fun MutablePreferences.writeProfiles(profiles: List<AccountProfile>) {
+    this[ProfilesKey] =
+      Json.encodeToString(
+        profiles.filter { it.ownerAddress != null || it.apiWalletAddress != null }
+      )
+    listOf(OwnerAddressKey, ApiWalletAddressKey, SelectedSubaccountKey).forEach(::remove)
+    listOf(OwnerBackupConfirmedKey, OnboardingCompleteKey).forEach(::remove)
   }
+
+  private fun List<AccountProfile>.replacing(profile: AccountProfile): List<AccountProfile> =
+    if (any { it.id == profile.id }) map { if (it.id == profile.id) profile else it }
+    else this + profile
 
   private companion object {
     val ProfilesKey = stringPreferencesKey("account_profiles_v1")

@@ -22,7 +22,6 @@ import platform.Foundation.CFBridgingRelease
 import platform.Foundation.NSCopyingProtocol
 import platform.Foundation.NSData
 import platform.Foundation.NSMutableDictionary
-import platform.Foundation.NSProcessInfo
 import platform.LocalAuthentication.LAContext
 import platform.LocalAuthentication.LAPolicyDeviceOwnerAuthentication
 import platform.Security.SecAccessControlCreateWithFlags
@@ -147,9 +146,6 @@ class IosWalletVault : WalletVault {
     if (force) lock()
     return authorizeWithDevice(prompt).also { context -> authorizedContext = context }
   }
-
-  private fun monotonicMilliseconds(): Long =
-    (NSProcessInfo.processInfo.systemUptime * 1_000.0).toLong()
 
   private suspend fun authorizeWithDevice(prompt: VaultPrompt): LAContext =
     suspendCancellableCoroutine { continuation ->

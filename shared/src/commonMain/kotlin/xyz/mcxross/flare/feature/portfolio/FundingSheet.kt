@@ -18,12 +18,15 @@ import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
+import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
@@ -38,7 +41,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     if (committed != null) {
       TransactionReceipt(
         if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading account."
-        else "Your USDC has been sent to the reviewed destination.",
+        else "Your USDC has been sent.",
         committed.hash,
         { onIntent(PortfolioIntent.CloseFunding) },
         enabled = !state.busy,
@@ -47,25 +50,16 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     }
     Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
       Text("USDC on Aptos", style = MaterialTheme.typography.titleMedium)
-      Text(
-        "You’ll approve this transfer with your wallet.",
-        Modifier.padding(top = 8.dp),
-        style = MaterialTheme.typography.bodyMedium,
-        color = FlareColors.TextSecondary,
-      )
-      DetailRow(
-        "Account",
-        state.account.account?.let { it.take(10) + "…" + it.takeLast(6) }.orEmpty(),
-      )
+      DetailRow("Account", state.account.account?.let(::shortAddress).orEmpty())
       if (mode == FundingMode.WITHDRAW) {
         val destination =
           state.withdrawalDestination.ifBlank { state.profile.ownerAddress.orEmpty() }
-        Text(destination, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall)
+        DetailRow("To", shortAddress(destination))
         OutlinedTextField(
           state.withdrawalDestination,
           { onIntent(PortfolioIntent.ChangeWithdrawalDestination(it)) },
           label = { Text("Different address (optional)") },
-          placeholder = { Text("Owner wallet") },
+          placeholder = { Text("Your wallet") },
           singleLine = true,
           enabled = !state.busy && state.pendingWithdrawal == null,
           modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -75,15 +69,17 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
             state.withdrawalDestination != state.profile.ownerAddress
         ) {
           Text(
-            "Withdraw to your owner wallet, then transfer to this address. Two transactions; sponsored where available. Any network fee requires your approval.",
+            "Another address takes two transactions: a withdrawal to your wallet, then a transfer.",
             Modifier.padding(top = 12.dp),
             style = MaterialTheme.typography.bodySmall,
+            color = FlareColors.TextSecondary,
           )
         }
         if (state.pendingWithdrawal?.withdrawalCommitted == true) {
           Text(
-            "Withdrawal confirmed. Continue the transfer to finish.",
+            "The withdrawal is done. Continue to send it to the address you chose.",
             Modifier.padding(top = 12.dp),
+            style = MaterialTheme.typography.bodyMedium,
           )
         }
         state.account.overview?.let {
@@ -102,43 +98,36 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         enabled = !state.busy && state.pendingWithdrawal == null,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
       )
-      state.fundingTransaction?.let { transaction ->
-        Text(
-          transaction.label(),
-          Modifier.padding(top = 8.dp),
-          color =
-            if (transaction is TransactionState.Failed) {
-              MaterialTheme.colorScheme.error
-            } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
-            },
-          style = MaterialTheme.typography.labelMedium,
+      state.actionError?.let { error ->
+        ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
+      }
+      (state.fundingTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+        ActionNotice(
+          "Flare can’t cover the network fee right now. Your wallet would pay about " +
+            "${estimate.toDecimalString(8)} APT.",
+          Modifier.padding(top = 12.dp),
         )
-        if (transaction is TransactionState.Failed)
-          transaction.selfPayEstimateOctas?.let { estimate ->
-            Text(
-              "Sponsorship was rejected. Self-payment is estimated at " +
-                "${estimate.toDecimalString(8)} APT.",
-              Modifier.padding(top = 8.dp),
-              color = MaterialTheme.colorScheme.tertiary,
-              style = MaterialTheme.typography.bodyMedium,
-            )
-            FlareButton(
-              "Confirm and self-pay",
-              { onIntent(PortfolioIntent.ConfirmSelfPay) },
-              Modifier.fillMaxWidth().padding(top = 8.dp),
-              enabled = !state.busy,
-              style = FlareButtonStyle.OUTLINE,
-            )
-          }
+        FlareButton(
+          "Pay the fee and continue",
+          { onIntent(PortfolioIntent.ConfirmSelfPay) },
+          Modifier.fillMaxWidth().padding(top = 8.dp),
+          enabled = !state.busy,
+          style = FlareButtonStyle.OUTLINE,
+        )
       }
       FlareButton(
-        if (state.busy) "Authorizing…"
-        else if (state.pendingWithdrawal?.withdrawalCommitted == true) "Continue transfer"
-        else if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Confirm withdrawal",
-        { onIntent(PortfolioIntent.SubmitFunding) },
-        Modifier.fillMaxWidth().padding(top = 12.dp),
-        enabled = !state.busy && state.fundingAmount.isNotBlank(),
+        text =
+          when {
+            state.busy && mode == FundingMode.DEPOSIT -> "Adding funds…"
+            state.busy -> "Sending…"
+            state.pendingWithdrawal?.withdrawalCommitted == true -> "Continue transfer"
+            mode == FundingMode.DEPOSIT -> "Deposit USDC"
+            else -> "Confirm withdrawal"
+          },
+        onClick = { onIntent(PortfolioIntent.SubmitFunding) },
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        enabled = state.fundingAmount.isNotBlank(),
+        working = state.busy,
       )
       FlareButton(
         "Close",

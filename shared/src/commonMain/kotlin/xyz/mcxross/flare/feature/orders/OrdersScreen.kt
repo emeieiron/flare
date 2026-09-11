@@ -15,22 +15,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.time.Instant
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatRelativeTime
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
+import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.CompactActionButton
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareTopBar
+import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun OrdersRoute(
@@ -57,15 +62,7 @@ fun OrdersScreen(
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar(
-      "Activity",
-      subtitle =
-        if (state.account.stale) {
-          "Orders, trades & funding"
-        } else {
-          "Your latest account activity"
-        },
-    )
+    FlareTopBar("Activity", subtitle = if (state.account.stale) "Reconnecting…" else null)
     Row(
       modifier =
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 16.dp),
@@ -79,117 +76,79 @@ fun OrdersScreen(
         )
       }
     }
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    state.history.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    state.transaction
-      ?.takeIf { state.section == OrdersSection.OPEN }
-      ?.let { transaction ->
-        Text(
-          transaction.label(),
-          modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          style = MaterialTheme.typography.labelMedium,
-        )
-        if (transaction is TransactionState.Failed)
-          transaction.selfPayEstimateOctas?.let { estimate ->
-            Text(
-              "Sponsorship was rejected. Estimated self-pay cost: " +
-                "${estimate.toDecimalString(8)} APT.",
-              Modifier.padding(bottom = 8.dp),
-              color = MaterialTheme.colorScheme.tertiary,
-              style = MaterialTheme.typography.bodyMedium,
-            )
-            FlareButton(
-              "Confirm and self-pay",
-              { onIntent(OrdersIntent.ConfirmSelfPay) },
-              Modifier.fillMaxWidth().padding(bottom = 12.dp),
-              enabled = !state.busy,
-              style = FlareButtonStyle.OUTLINE,
-            )
-            if (state.apiWalletNeedsTopUp)
-              state.suggestedTopUpOctas?.let { amount ->
-                Text(
-                  "The API wallet needs APT for self-payment. Transfer " +
-                    "${amount.toDecimalString(8)} APT from the owner wallet, then continue trading.",
-                  Modifier.padding(bottom = 8.dp),
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  style = MaterialTheme.typography.bodyMedium,
-                )
-                FlareButton(
-                  "Top up API wallet",
-                  { onIntent(OrdersIntent.TopUpApiWallet) },
-                  Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                  enabled = !state.busy,
-                  style = FlareButtonStyle.OUTLINE,
-                )
-              }
-          }
-      }
-    state.topUpTransaction?.let { transaction ->
-      Text(
-        "API-wallet top-up · ${transaction.label()}",
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        color =
-          if (transaction is TransactionState.Failed) {
-            MaterialTheme.colorScheme.error
-          } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-          },
-        style = MaterialTheme.typography.labelMedium,
+    state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
+    (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+      ActionNotice(
+        "Flare can’t cover the network fee right now. Your wallet would pay about " +
+          "${estimate.toDecimalString(8)} APT.",
+        Modifier.padding(bottom = 8.dp),
       )
+      FlareButton(
+        "Pay the fee and continue",
+        { onIntent(OrdersIntent.ConfirmSelfPay) },
+        Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        enabled = !state.busy,
+        style = FlareButtonStyle.OUTLINE,
+      )
+      if (state.apiWalletNeedsTopUp)
+        state.suggestedTopUpOctas?.let { amount ->
+          ActionNotice(
+            "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
+            Modifier.padding(bottom = 8.dp),
+          )
+          FlareButton(
+            "Send APT from your wallet",
+            { onIntent(OrdersIntent.TopUpApiWallet) },
+            Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            enabled = !state.busy,
+            style = FlareButtonStyle.OUTLINE,
+          )
+        }
     }
     when (state.section) {
       OrdersSection.OPEN ->
         when {
           state.account.openOrders.isNotEmpty() ->
             state.account.openOrders.forEach { order ->
-              Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Column(Modifier.weight(1f)) {
-                    Text(
-                      (state.marketSymbols[order.market] ?: shortAddress(order.market)),
-                      style = MaterialTheme.typography.titleLarge,
-                    )
-                    Text(
-                      "${if (order.isBuy) "Buy" else "Sell"} · ${order.orderType.ifBlank { order.status }}",
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      style = MaterialTheme.typography.labelSmall,
-                    )
-                  }
-                  Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                    Text(
-                      order.remainingSize?.let { formatQuantity(it) } ?: "—",
-                      style = MaterialTheme.typography.labelMedium,
-                    )
-                    Text(
-                      order.price?.let(::formatPrice) ?: "Market",
-                      style = MaterialTheme.typography.labelSmall,
-                    )
-                  }
+              val cancelling = state.busy && state.lastCancelOrderId == order.orderId
+              Row(
+                Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Column(Modifier.weight(1f)) {
+                  Text(
+                    (state.marketSymbols[order.market] ?: shortAddress(order.market)),
+                    style = MaterialTheme.typography.labelLarge,
+                  )
+                  Text(
+                    "${if (order.isBuy) "Buy" else "Sell"} " +
+                      "${order.remainingSize?.let { formatQuantity(it) } ?: "—"} · " +
+                      (order.price?.let { "at ${formatPrice(it)}" } ?: "at market"),
+                    color = FlareColors.TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                  )
                 }
-                FlareButton(
-                  text = if (order.isTpSl) "Cancel TP/SL" else "Cancel order",
+                CompactActionButton(
+                  text = if (cancelling) "Cancelling…" else "Cancel",
+                  positive = false,
                   onClick = {
                     onIntent(OrdersIntent.Cancel(order.market, order.orderId, order.isTpSl))
                   },
-                  modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                   enabled = !state.busy,
-                  style = FlareButtonStyle.OUTLINE,
                 )
               }
               HorizontalDivider(color = FlareColors.BorderSubtle)
             }
           state.profile.ownerAddress != null || state.profile.apiWalletAddress != null ->
             EmptyState(
-              title = if (state.account.stale) "Account is locked" else "No open orders",
+              title = if (state.account.stale) "Orders are on their way" else "No open orders",
               message =
                 if (state.account.stale) {
-                  "Orders are unavailable. Try again."
+                  "They appear as soon as your account reconnects."
                 } else {
                   "Working orders will appear here after submission."
                 },
-              actionLabel = if (state.account.stale) "Try again" else null,
-              onAction = { onIntent(OrdersIntent.Refresh) },
             )
           else ->
             EmptyState(
@@ -201,7 +160,7 @@ fun OrdersScreen(
         }
       OrdersSection.ORDERS -> {
         if (state.history.orders.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No order history", onIntent)
+          HistoryEmpty(state.history.stale, "No order history")
         } else {
           state.history.orders.forEach { order ->
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
@@ -214,11 +173,11 @@ fun OrdersScreen(
                     style = MaterialTheme.typography.labelSmall,
                   )
                 }
-                Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                Column(horizontalAlignment = Alignment.End) {
                   Text(order.price?.let(::formatPrice) ?: "Market")
                   Text(
-                    formatHistoryTime(order.unixMs),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    formatRelativeTime(order.unixMs),
+                    color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
                 }
@@ -230,7 +189,7 @@ fun OrdersScreen(
       }
       OrdersSection.TRADES -> {
         if (state.history.trades.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No trade history", onIntent)
+          HistoryEmpty(state.history.stale, "No trade history")
         } else {
           state.history.trades.forEach { trade ->
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
@@ -243,20 +202,18 @@ fun OrdersScreen(
                     style = MaterialTheme.typography.labelSmall,
                   )
                 }
-                Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                Column(horizontalAlignment = Alignment.End) {
+                  if (trade.realizedPnlAmount != 0.0)
+                    Text(
+                      signedAmount(trade.realizedPnlAmount),
+                      color =
+                        if (trade.realizedPnlAmount > 0) FlareColors.Positive
+                        else FlareColors.Negative,
+                      style = MaterialTheme.typography.labelMedium,
+                    )
                   Text(
-                    "PnL ${signedAmount(trade.realizedPnlAmount)}",
-                    color =
-                      if (trade.realizedPnlAmount >= 0) {
-                        FlareColors.Positive
-                      } else {
-                        MaterialTheme.colorScheme.error
-                      },
-                    style = MaterialTheme.typography.labelMedium,
-                  )
-                  Text(
-                    formatHistoryTime(trade.transactionUnixMs),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    formatRelativeTime(trade.transactionUnixMs),
+                    color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
                 }
@@ -268,7 +225,7 @@ fun OrdersScreen(
       }
       OrdersSection.FUNDING -> {
         if (state.history.funding.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No funding history", onIntent)
+          HistoryEmpty(state.history.stale, "No funding history")
         } else {
           state.history.funding.forEach { payment ->
             Row(
@@ -283,19 +240,16 @@ fun OrdersScreen(
                   style = MaterialTheme.typography.labelSmall,
                 )
               }
-              Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+              Column(horizontalAlignment = Alignment.End) {
                 Text(
                   signedAmount(payment.realizedFundingAmount),
                   color =
-                    if (payment.realizedFundingAmount >= 0) {
-                      FlareColors.Positive
-                    } else {
-                      MaterialTheme.colorScheme.error
-                    },
+                    if (payment.realizedFundingAmount >= 0) FlareColors.Positive
+                    else FlareColors.Negative,
                 )
                 Text(
-                  formatHistoryTime(payment.transactionUnixMs),
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  formatRelativeTime(payment.transactionUnixMs),
+                  color = FlareColors.TextSecondary,
                   style = MaterialTheme.typography.labelSmall,
                 )
               }
@@ -325,22 +279,17 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun HistoryEmpty(stale: Boolean, title: String, onIntent: (OrdersIntent) -> Unit) {
+private fun HistoryEmpty(stale: Boolean, title: String) {
   EmptyState(
-    title = if (stale) "Account history is locked" else title,
+    title = if (stale) "History is on its way" else title,
     message =
       if (stale) {
-        "History is unavailable. Try again."
+        "It appears as soon as your account reconnects."
       } else {
         "Completed account activity will appear here."
       },
-    actionLabel = if (stale) "Try again" else null,
-    onAction = { onIntent(OrdersIntent.Refresh) },
   )
 }
-
-private fun formatHistoryTime(unixMs: Long): String =
-  Instant.fromEpochMilliseconds(unixMs).toString().replace('T', ' ').take(16) + " UTC"
 
 private fun signedAmount(value: Double): String =
   (if (value > 0) "+" else "") + formatBalance(value)
@@ -352,17 +301,4 @@ private fun tradeActionLabel(action: String): String =
     "OpenShort" -> "Opened short"
     "CloseShort" -> "Closed short"
     else -> action.ifBlank { "Fill" }
-  }
-
-private fun shortAddress(address: String): String =
-  if (address.length <= 18) address else address.take(10) + "…" + address.takeLast(6)
-
-private fun TransactionState.label(): String =
-  when (this) {
-    TransactionState.Simulating -> "Simulating transaction"
-    TransactionState.AwaitingAuthorization -> "Awaiting authorization"
-    TransactionState.Submitting -> "Submitting transaction"
-    is TransactionState.Pending -> "Pending · ${shortAddress(hash)}"
-    is TransactionState.Committed -> "Committed · ${shortAddress(hash)}"
-    is TransactionState.Failed -> "Failed · $message"
   }

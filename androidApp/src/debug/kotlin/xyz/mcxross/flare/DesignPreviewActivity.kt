@@ -52,8 +52,7 @@ private fun PreviewScreens(initialScreen: String) {
         candles = previewCandles(),
         stale = false,
         chartStyle = if (initialScreen == "candles") ChartStyle.CANDLESTICK else ChartStyle.LINE,
-        expectedSignerAddress = "preview",
-        sessionSignerAddress = "preview",
+        tradingKeyAddress = "preview",
         tradingEnabled = true,
       )
     )

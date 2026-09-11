@@ -10,13 +10,19 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.ExternalFeePayerSubmitter
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.store.PendingTransactionEntity
 import xyz.mcxross.flare.store.TransactionJournalDao
+import xyz.mcxross.flare.store.journalOperation
+import xyz.mcxross.flare.store.operationName
+import xyz.mcxross.flare.store.profileId
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.account.AccountAsset
 import xyz.mcxross.kaptos.account.Ed25519Account
@@ -27,7 +33,8 @@ import xyz.mcxross.kaptos.model.UserTransactionResponse
 import xyz.mcxross.kaptos.model.WaitForTransactionOptions
 import xyz.mcxross.kaptos.util.APTOS_COIN
 
-enum class TradingSigner {
+/** The key an action needs: the owner key for custody, the device trading key for trading. */
+internal enum class TradingSigner {
   OWNER,
   API,
 }
@@ -51,16 +58,18 @@ data class ReconciliationResult(val finalized: Int, val unresolved: Int)
 interface TradingRepository {
   val pendingTransactions: Flow<List<PendingTransaction>>
 
+  /**
+   * Signs with the key the command requires: the owner key for collateral and delegation, the
+   * device trading key for everything else. Callers describe the action, never the key.
+   */
   fun execute(
     command: DecibelCommand,
-    signer: TradingSigner,
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
     onPrepared: suspend (String) -> Unit = {},
   ): Flow<TransactionState>
 
-  suspend fun transactionStatus(reference: String): TransactionState =
-    error("Transaction lookup unavailable")
+  suspend fun transactionStatus(reference: String): TransactionState
 
   suspend fun apiWalletAptBalance(): ULong
 
@@ -70,14 +79,14 @@ interface TradingRepository {
 }
 
 class DefaultTradingRepository(
-  database: xyz.mcxross.flare.store.FlareDatabase,
+  database: FlareDatabase,
   private val client: DecibelClient,
   private val aptos: Aptos,
   private val wallets: WalletRepository,
   private val sessions: SessionRepository,
   private val gasSponsorship: GasSponsorshipRepository,
   private val runtime: FlareRuntimeConfig,
-  private val preferences: xyz.mcxross.flare.store.AppPreferences,
+  private val preferences: AppPreferences,
 ) : TradingRepository {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = Mutex()
@@ -85,21 +94,16 @@ class DefaultTradingRepository(
   override val pendingTransactions: Flow<List<PendingTransaction>> =
     journal.observePending().combine(preferences.values) { entries, saved ->
       entries
-        .filter { it.operation.substringAfter('|', "legacy") == saved.activeProfileId }
+        .filter { it.profileId == saved.activeProfileId }
         .map(PendingTransactionEntity::toDomain)
     }
 
   override fun execute(
     command: DecibelCommand,
-    signer: TradingSigner,
     prompt: VaultPrompt,
     feePayment: FeePayment,
     onPrepared: suspend (String) -> Unit,
   ): Flow<TransactionState> = flow {
-    if (signer == TradingSigner.API && command.requiresOwner()) {
-      emit(TransactionState.Failed("This operation requires the owner wallet"))
-      return@flow
-    }
     if (!submissionMutex.tryLock()) {
       emit(TransactionState.Failed("Another transaction is already being authorized"))
       return@flow
@@ -110,7 +114,13 @@ class DefaultTradingRepository(
       val selected = preferences.values.first()
       val generation = wallets.authorizationGeneration
       wallets.requireAuthorization(generation)
-      val resolvedSigner = if (command.requiresOwner()) TradingSigner.OWNER else TradingSigner.API
+      val signer = command.requiredSigner()
+      when (signer) {
+        TradingSigner.OWNER ->
+          check(selected.ownerAddress != null) { "Use a device that holds the owner key" }
+        TradingSigner.API ->
+          check(selected.apiWalletAddress != null) { "Finish setting up trading on this device" }
+      }
       val subaccount = command.subaccountAddress()
       require(
         subaccount == null || selected.selectedSubaccount?.sameAptosAddress(subaccount) == true
@@ -118,7 +128,7 @@ class DefaultTradingRepository(
         "The selected account changed. Review the action again."
       }
       val activeSession =
-        if (resolvedSigner == TradingSigner.API) {
+        if (signer == TradingSigner.API) {
           sessions.ensureTrading(
             checkNotNull(subaccount),
             prompt.copy(requireFreshAuthorization = false),
@@ -134,7 +144,7 @@ class DefaultTradingRepository(
             check(pendingTransactions.first().none { it.operation == command.journalName() }) {
               "An earlier transaction is pending. Check Activity before trying again."
             }
-            withSigner(resolvedSigner, prompt.copy(requireFreshAuthorization = false)) { account ->
+            withSigner(signer, prompt.copy(requireFreshAuthorization = false)) { account ->
               check(
                 activeSession.walletAddress?.equals(
                   account.accountAddress.toString(),
@@ -152,7 +162,7 @@ class DefaultTradingRepository(
                       ExternalFeePayerSubmitter { request ->
                         gasSponsorship.submit(
                           request = request,
-                          ownerOnly = command.requiresOwner(),
+                          ownerOnly = signer == TradingSigner.OWNER,
                         )
                       }
                     } else {
@@ -177,7 +187,8 @@ class DefaultTradingRepository(
                       PendingTransactionEntity(
                         hash = hash,
                         network = runtime.network.name,
-                        operation = command.journalName() + "|" + selected.activeProfileId,
+                        operation =
+                          journalOperation(command.journalName(), selected.activeProfileId),
                         state = JournalState.PREPARED,
                         createdAtMs = now,
                         updatedAtMs = now,
@@ -254,7 +265,8 @@ class DefaultTradingRepository(
         )
       )
     } finally {
-      if (command.requiresOwner()) {
+      if (command.requiredSigner() == TradingSigner.OWNER) {
+        // An owner action interrupts trading; hand the session back without another prompt.
         try {
           wallets.requireAuthorization(wallets.authorizationGeneration)
           val saved = preferences.values.first()
@@ -309,7 +321,7 @@ class DefaultTradingRepository(
 
   override suspend fun apiWalletAptBalance(): ULong {
     val address =
-      wallets.profile.first().apiWalletAddress ?: error("An API wallet is not configured")
+      wallets.profile.first().apiWalletAddress ?: error("This device has no trading key")
     return when (
       val result =
         aptos.accounts.getBalance(AccountAddress.fromString(address), AccountAsset.coin(APTOS_COIN))
@@ -328,9 +340,7 @@ class DefaultTradingRepository(
           prompt.copy(requireFreshAuthorization = true),
         )
       if (session.role != SessionRole.OWNER) {
-        emit(
-          TransactionState.Failed("Fresh owner authorization is required for an API-wallet top-up")
-        )
+        emit(TransactionState.Failed("Confirm your identity to send APT from your wallet"))
         return@flow
       }
       if (!submissionMutex.tryLock()) {
@@ -341,7 +351,7 @@ class DefaultTradingRepository(
       var preparedHash: String? = null
       try {
         val recipient =
-          wallets.profile.first().apiWalletAddress ?: error("An API wallet is not configured")
+          wallets.profile.first().apiWalletAddress ?: error("This device has no trading key")
         wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { owner ->
           check(
             session.walletAddress?.equals(owner.accountAddress.toString(), ignoreCase = true) ==
@@ -414,12 +424,13 @@ class DefaultTradingRepository(
               }
             }
           val now = Clock.System.now().toEpochMilliseconds()
-          check(journal.find(hash) == null) { "This APT top-up is already pending reconciliation" }
+          check(journal.find(hash) == null) { "This transfer is already pending reconciliation" }
           journal.upsert(
             PendingTransactionEntity(
               hash = hash,
               network = runtime.network.name,
-              operation = "TOP_UP_API_WALLET|" + preferences.values.first().activeProfileId,
+              operation =
+                journalOperation("TOP_UP_API_WALLET", preferences.values.first().activeProfileId),
               state = JournalState.PREPARED,
               createdAtMs = now,
               updatedAtMs = now,
@@ -492,7 +503,10 @@ class DefaultTradingRepository(
       } catch (error: Throwable) {
         preparedHash?.updateState(JournalState.RECONCILE_REQUIRED)
         emit(
-          TransactionState.Failed(error.message ?: "API-wallet top-up failed", hash = preparedHash)
+          TransactionState.Failed(
+            error.message ?: "The network-fee top-up failed",
+            hash = preparedHash,
+          )
         )
       } finally {
         submissionMutex.unlock()
@@ -505,8 +519,7 @@ class DefaultTradingRepository(
     journal.pending().forEach { entry ->
       if (
         entry.network != runtime.network.name ||
-          entry.operation.substringAfter('|', "legacy") !=
-            preferences.values.first().activeProfileId
+          entry.profileId != preferences.values.first().activeProfileId
       )
         return@forEach
       val transactionHash =
@@ -580,10 +593,27 @@ class DefaultTradingRepository(
   }
 
   private companion object {
-    const val MINIMUM_SESSION_REMAINING_MS = 60_000L
     const val SPONSOR_REFERENCE_PREFIX = "sponsor:"
   }
 }
+
+/**
+ * Sponsorship can fall back to self-payment only when the signing key can pay the fee itself.
+ * Returns the amount of APT the device trading key is missing, or null when no top-up applies.
+ */
+suspend fun TradingRepository.apiWalletTopUpFor(
+  failure: TransactionState.Failed,
+  profile: WalletProfile,
+): ULong? {
+  val estimate = failure.selfPayEstimateOctas ?: return null
+  if (profile.apiWalletAddress == null || profile.ownerAddress == null) return null
+  val balance = runSuspendCatching { apiWalletAptBalance() }.getOrNull() ?: return null
+  if (balance >= estimate) return null
+  val buffered = if (estimate <= ULong.MAX_VALUE / 3uL) estimate * 3uL else estimate
+  return maxOf(MINIMUM_TOP_UP_OCTAS, buffered)
+}
+
+private const val MINIMUM_TOP_UP_OCTAS = 1_000_000uL
 
 private object JournalState {
   const val PREPARED = "PREPARED"
@@ -593,19 +623,23 @@ private object JournalState {
   const val RECONCILE_REQUIRED = "RECONCILE_REQUIRED"
 }
 
-private fun DecibelCommand.requiresOwner(): Boolean =
+/**
+ * The capability boundary: creating accounts, moving collateral, and changing who may trade stay
+ * with the owner key. Everything a trader does during a session uses the device trading key.
+ */
+internal fun DecibelCommand.requiredSigner(): TradingSigner =
   when (this) {
     DecibelCommand.CreateSubaccount,
     is DecibelCommand.Deposit,
     is DecibelCommand.Withdraw,
     is DecibelCommand.TransferCollateral,
     is DecibelCommand.DelegateTrading,
-    is DecibelCommand.RevokeDelegation -> true
+    is DecibelCommand.RevokeDelegation -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
     is DecibelCommand.PlaceOrder,
     is DecibelCommand.CancelOrder,
     is DecibelCommand.CancelPositionTpSl,
-    is DecibelCommand.SetPositionTpSl -> false
+    is DecibelCommand.SetPositionTpSl -> TradingSigner.API
   }
 
 private fun DecibelCommand.journalName(): String =
@@ -627,7 +661,7 @@ private fun PendingTransactionEntity.toDomain(): PendingTransaction =
   PendingTransaction(
     hash = hash,
     network = network,
-    operation = operation.substringBefore('|'),
+    operation = operationName,
     state = state,
     createdAtMs = createdAtMs,
     updatedAtMs = updatedAtMs,

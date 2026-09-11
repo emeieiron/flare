@@ -5,14 +5,18 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import xyz.mcxross.flare.decibel.DecibelNetwork
 
 /** A single label/value rhythm for account, market, and transaction details. */
 @Composable
@@ -81,9 +85,26 @@ fun SectionLabel(title: String, modifier: Modifier = Modifier) {
   )
 }
 
+/** Addresses and hashes read the same everywhere they appear. */
+fun shortAddress(address: String): String =
+  if (address.length <= 18) address else address.take(10) + "…" + address.takeLast(6)
+
+/**
+ * Where a settled action can be inspected. Receipts link out instead of printing a hash, so the
+ * record stays available without turning the screen into a log.
+ */
+class TransactionExplorer(private val network: DecibelNetwork) {
+  fun url(hash: String): String =
+    "https://explorer.aptoslabs.com/txn/$hash?network=${network.name.lowercase()}"
+}
+
+val LocalTransactionExplorer = staticCompositionLocalOf { TransactionExplorer(DecibelNetwork.TESTNET) }
+
 /** Shared completion state: a settled receipt has one unambiguous exit. */
 @Composable
 fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enabled: Boolean = true) {
+  val explorer = LocalTransactionExplorer.current
+  val browser = LocalUriHandler.current
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
     Icon(
       Icons.Outlined.CheckCircle,
@@ -92,7 +113,11 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
       modifier = Modifier.size(48.dp),
     )
     Text(message, style = MaterialTheme.typography.bodyLarge)
-    DetailRow("Transaction", hash.take(10) + "…" + hash.takeLast(6))
+    ActionRow(
+      "View on Aptos Explorer",
+      icon = Icons.AutoMirrored.Outlined.OpenInNew,
+      onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
+    )
     FlareButton("Done", onDone, Modifier.fillMaxWidth(), enabled = enabled)
   }
 }

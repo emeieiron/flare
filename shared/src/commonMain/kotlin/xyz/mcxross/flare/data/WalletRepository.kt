@@ -3,9 +3,9 @@ package xyz.mcxross.flare.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
-import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.account.Ed25519Account
@@ -26,10 +26,11 @@ data class WalletProfile(
 data class OwnerBackup(val address: String, val words: List<String>)
 
 interface WalletRepository {
+  /** Identifies the current foreground visit; signing must not cross two of them. */
   val authorizationGeneration: Long
-    get() = 0L
 
-  fun requireAuthorization(generation: Long) {}
+  /** Fails when the app left the foreground since [generation] was read. */
+  fun requireAuthorization(generation: Long)
 
   val profile: Flow<WalletProfile>
 
@@ -41,13 +42,15 @@ interface WalletRepository {
 
   suspend fun createApiWallet(prompt: VaultPrompt): String
 
-  suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String
-
-  suspend fun importVerifiedApi(
+  /**
+   * Stores an imported trading key only after [verify] accepts it, so a rejected key never replaces
+   * a working one.
+   */
+  suspend fun importApiWallet(
     key: String,
     prompt: VaultPrompt,
     verify: suspend (Ed25519Account) -> Unit,
-  ): String = error("Verified import unavailable")
+  ): String
 
   suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String
 
@@ -65,15 +68,13 @@ interface WalletRepository {
 }
 
 class DefaultWalletRepository(
-  private val vault: WalletVault,
+  private val vault: ForegroundWalletVault,
   private val preferences: AppPreferences,
 ) : WalletRepository {
   override val authorizationGeneration: Long
-    get() = (vault as? xyz.mcxross.flare.security.ForegroundWalletVault)?.generation ?: 0L
+    get() = vault.generation
 
-  override fun requireAuthorization(generation: Long) {
-    (vault as? xyz.mcxross.flare.security.ForegroundWalletVault)?.requireVisit(generation)
-  }
+  override fun requireAuthorization(generation: Long) = vault.requireVisit(generation)
 
   override val profile: Flow<WalletProfile> =
     preferences.values.map {
@@ -133,16 +134,12 @@ class DefaultWalletRepository(
     }
   }
 
-  override suspend fun importApiWallet(aip80: String, prompt: VaultPrompt): String =
-    importVerifiedApi(aip80, prompt) {}
-
-  override suspend fun importVerifiedApi(
+  override suspend fun importApiWallet(
     key: String,
     prompt: VaultPrompt,
     verify: suspend (Ed25519Account) -> Unit,
   ): String {
-    val aip80 = key
-    val validated = Aip80PrivateKey.parse(WalletCredential.normalize(aip80))
+    val validated = Aip80PrivateKey.parse(WalletCredential.normalize(key))
     val privateKey = Ed25519PrivateKey.fromAip80(validated)
     val account = Ed25519Account(privateKey)
     return try {
@@ -184,13 +181,13 @@ class DefaultWalletRepository(
     readText(WalletSecretSlot.API_PRIVATE_KEY, prompt.copy(requireFreshAuthorization = true))
       .also(Aip80PrivateKey::parse)
 
+  /** Removing every key of a profile forgets it, and the next stored profile becomes active. */
   override suspend fun removeOwner(prompt: VaultPrompt) {
     vault.remove(
       slot(WalletSecretSlot.OWNER_MNEMONIC),
       prompt.copy(requireFreshAuthorization = true),
     )
     preferences.setOwnerWallet(null, backupConfirmed = false)
-    selectRemainingProfileIfEmpty()
   }
 
   override suspend fun removeApiWallet(prompt: VaultPrompt) {
@@ -198,21 +195,9 @@ class DefaultWalletRepository(
       slot(WalletSecretSlot.API_PRIVATE_KEY),
       prompt.copy(requireFreshAuthorization = true),
     )
-    preferences.setApiWallet(null)
+    // Setup must run again before this device can trade, so record that before forgetting the key.
     preferences.setOnboardingComplete(false)
-    selectRemainingProfileIfEmpty()
-  }
-
-  private suspend fun selectRemainingProfileIfEmpty() {
-    val saved = preferences.values.first()
-    if (saved.ownerAddress == null && saved.apiWalletAddress == null) {
-      val next = saved.profiles.firstOrNull()
-      if (next != null) preferences.activateProfile(next.id)
-      else {
-        preferences.setSelectedSubaccount(null)
-        preferences.setOnboardingComplete(false)
-      }
-    }
+    preferences.setApiWallet(null)
   }
 
   override fun lock() = vault.lock()
@@ -220,30 +205,30 @@ class DefaultWalletRepository(
   override suspend fun <T> withOwnerAccount(
     prompt: VaultPrompt,
     block: suspend (Ed25519Account) -> T,
-  ): T {
-    val generation = authorizationGeneration
-    val phrase = readText(WalletSecretSlot.OWNER_MNEMONIC, prompt)
-    val account = ownerAccount(phrase)
-    return try {
-      val foreground = vault as? xyz.mcxross.flare.security.ForegroundWalletVault
-      if (foreground != null) foreground.whileAuthorized(generation) { block(account) }
-      else block(account)
-    } finally {
-      account.close()
-    }
-  }
+  ): T = withAccount(WalletSecretSlot.OWNER_MNEMONIC, prompt, ::ownerAccount, block)
 
   override suspend fun <T> withApiAccount(
     prompt: VaultPrompt,
     block: suspend (Ed25519Account) -> T,
+  ): T =
+    withAccount(
+      WalletSecretSlot.API_PRIVATE_KEY,
+      prompt,
+      { Ed25519Account(Ed25519PrivateKey.fromAip80(it)) },
+      block,
+    )
+
+  /** Backgrounding cancels the block, so a key can never sign for an unattended app. */
+  private suspend fun <T> withAccount(
+    slot: WalletSecretSlot,
+    prompt: VaultPrompt,
+    open: (String) -> Ed25519Account,
+    block: suspend (Ed25519Account) -> T,
   ): T {
     val generation = authorizationGeneration
-    val aip80 = readText(WalletSecretSlot.API_PRIVATE_KEY, prompt)
-    val account = Ed25519Account(Ed25519PrivateKey.fromAip80(aip80))
+    val account = open(readText(slot, prompt))
     return try {
-      val foreground = vault as? xyz.mcxross.flare.security.ForegroundWalletVault
-      if (foreground != null) foreground.whileAuthorized(generation) { block(account) }
-      else block(account)
+      vault.whileAuthorized(generation) { block(account) }
     } finally {
       account.close()
     }

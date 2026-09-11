@@ -28,6 +28,9 @@ import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.HexInput
 
+/** Renew a session that has less than this left, so an action never starts on an expiring token. */
+internal const val SESSION_RENEWAL_MARGIN_MS = 60_000L
+
 enum class SessionRole {
   ANONYMOUS,
   OWNER,
@@ -42,9 +45,13 @@ data class SessionStatus(
 )
 
 interface SessionRepository {
-  fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
-
   val status: StateFlow<SessionStatus?>
+
+  /**
+   * Pins [status] to [operation] so a background refresh cannot swap the session under a
+   * transaction that was already authorized with it.
+   */
+  fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T>
 
   suspend fun accessToken(): String
 
@@ -52,19 +59,11 @@ interface SessionRepository {
 
   suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus
 
-  suspend fun verifyApiCredential(account: Ed25519Account, subaccount: String): SessionStatus =
-    error("API verification is unavailable")
+  /** Authenticates a trading key that is not stored yet, to verify it before adopting it. */
+  suspend fun verifyApiCredential(account: Ed25519Account, subaccount: String): SessionStatus
 
-  suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
-    val current = status.value
-    if (
-      current?.role == SessionRole.API &&
-        current.subaccount?.sameAptosAddress(subaccount) == true &&
-        current.expiresAt > Clock.System.now().toEpochMilliseconds() + 60_000L
-    )
-      return current
-    return authenticateApi(subaccount, prompt)
-  }
+  /** Reuses the current trading session while it remains valid, renewing it silently otherwise. */
+  suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus
 
   suspend fun useAnonymous(): SessionStatus
 
@@ -105,7 +104,7 @@ class WorkerSessionRepository(
       session
         ?.takeIf {
           if (it.role.toSessionRole() == SessionRole.ANONYMOUS) {
-            it.expiresAt - REFRESH_WINDOW_MS > now
+            it.expiresAt - SESSION_RENEWAL_MARGIN_MS > now
           } else {
             it.expiresAt > now
           }
@@ -157,7 +156,7 @@ class WorkerSessionRepository(
 
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
     mutex.withLock {
-      require(subaccount.isNotBlank()) { "An API wallet session must be bound to a subaccount" }
+      require(subaccount.isNotBlank()) { "A trading session must be bound to a trading account" }
       wallets.withApiAccount(prompt) { account ->
         authenticate(account, subaccount, SessionRole.API)
       }
@@ -175,7 +174,7 @@ class WorkerSessionRepository(
       current?.role == SessionRole.API &&
         current.walletAddress?.sameAptosAddress(address) == true &&
         current.subaccount?.sameAptosAddress(subaccount) == true &&
-        current.expiresAt > Clock.System.now().toEpochMilliseconds() + 60_000L
+        current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
     )
       return current
     return authenticateApi(subaccount, prompt)
@@ -308,10 +307,6 @@ class WorkerSessionRepository(
       subaccount = subaccount,
       expiresAt = expiresAt,
     )
-
-  private companion object {
-    const val REFRESH_WINDOW_MS = 60_000L
-  }
 }
 
 @Serializable private data class AnonymousSessionRequest(val installationId: String)

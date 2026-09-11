@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
@@ -22,8 +23,11 @@ import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.Subaccount
+import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
 
 enum class OnboardingStep {
   WELCOME,
@@ -31,14 +35,20 @@ enum class OnboardingStep {
   SHOW_BACKUP,
   CONFIRM_BACKUP,
   SUBACCOUNT,
-  API_WALLET,
+  ENABLE_TRADING,
+}
+
+/** The two on-chain steps of setup, so a fee fallback retries the step that failed. */
+enum class SetupOperation {
+  CREATE_ACCOUNT,
+  ENABLE_TRADING,
 }
 
 data class OnboardingUiState(
   val step: OnboardingStep = OnboardingStep.WELCOME,
   val profile: WalletProfile = WalletProfile(),
-  val profiles: List<xyz.mcxross.flare.store.AccountProfile> = emptyList(),
-  val activeProfileId: String = "legacy",
+  val profiles: List<AccountProfile> = emptyList(),
+  val activeProfileId: String = LEGACY_PROFILE_ID,
   val input: String = "",
   val apiImport: Boolean = false,
   val tradingAccountInput: String = "",
@@ -49,7 +59,7 @@ data class OnboardingUiState(
   val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
   val setupTransaction: TransactionState? = null,
-  val setupOperation: String? = null,
+  val setupOperation: SetupOperation? = null,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -81,9 +91,9 @@ sealed interface OnboardingIntent {
 
   data object ContinueSubaccount : OnboardingIntent
 
-  data object CreateApiWallet : OnboardingIntent
+  data object EnableTrading : OnboardingIntent
 
-  data object ShowApiSetup : OnboardingIntent
+  data object ContinueSetup : OnboardingIntent
 
   data object ClearSensitiveState : OnboardingIntent
 
@@ -106,6 +116,7 @@ class OnboardingViewModel(
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
+  private val setupPrompt = VaultPrompt("Continue setup", "Confirm your identity")
   val effects = effectChannel.receiveAsFlow()
 
   val uiState: StateFlow<OnboardingUiState> =
@@ -125,7 +136,7 @@ class OnboardingViewModel(
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
       is OnboardingIntent.SelectProfile ->
-        launchAction {
+        launchAction("That account couldn’t be opened.") {
           clearSensitiveState()
           preferences.activateProfile(intent.id)
           if (preferences.values.first().onboardingComplete)
@@ -133,14 +144,16 @@ class OnboardingViewModel(
         }
       is OnboardingIntent.ChangeTradingAccount ->
         local.value = local.value.copy(tradingAccountInput = intent.value, error = null)
-      OnboardingIntent.ConfirmSetupSelfPay -> {
-        if (local.value.setupOperation == "create") createSubaccount(FeePayment.SELF_PAY)
-        else createApiWallet(FeePayment.SELF_PAY)
-      }
+      OnboardingIntent.ConfirmSetupSelfPay ->
+        when (local.value.setupOperation) {
+          SetupOperation.CREATE_ACCOUNT -> createSubaccount(FeePayment.SELF_PAY)
+          SetupOperation.ENABLE_TRADING,
+          null -> enableTrading(FeePayment.SELF_PAY)
+        }
       OnboardingIntent.CreateOwner -> createOwner()
       OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
       OnboardingIntent.ImportCredential ->
-        if (local.value.apiImport) importApiWallet() else importOwner()
+        if (local.value.apiImport) importTradingKey() else importOwner()
       is OnboardingIntent.SetApiImport ->
         local.value = local.value.copy(apiImport = intent.enabled, error = null)
       OnboardingIntent.ReviewBackup ->
@@ -151,8 +164,8 @@ class OnboardingViewModel(
       is OnboardingIntent.SelectSubaccount ->
         local.value = local.value.copy(selectedSubaccount = intent.address, input = intent.address)
       OnboardingIntent.ContinueSubaccount -> continueSubaccount()
-      OnboardingIntent.CreateApiWallet -> createApiWallet()
-      OnboardingIntent.ShowApiSetup -> prepareOwnerAccount()
+      OnboardingIntent.EnableTrading -> enableTrading()
+      OnboardingIntent.ContinueSetup -> prepareOwnerAccount()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
@@ -179,26 +192,22 @@ class OnboardingViewModel(
     }
   }
 
-  private fun createOwner() = launchAction {
+  private fun createOwner() = launchAction("Your account wasn’t created.") {
     val backup =
       wallets.createOwner(VaultPrompt(title = "Create account", subtitle = "Confirm your identity"))
     showBackup(backup)
   }
 
-  private fun importOwner() = launchAction {
+  private fun importOwner() = launchAction("That recovery phrase wasn’t imported.") {
     wallets.importOwner(
       phrase = local.value.input.trim(),
-      prompt =
-        VaultPrompt(
-          title = "Import account",
-          subtitle = "Confirm your identity to protect your account on this device.",
-        ),
+      prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
     )
     local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
     discoverSubaccountsInternal()
   }
 
-  private fun confirmBackup() = launchAction {
+  private fun confirmBackup() = launchAction("Your backup wasn’t confirmed.") {
     val state = local.value
     val matches =
       state.confirmationIndices.all { index ->
@@ -216,30 +225,26 @@ class OnboardingViewModel(
     discoverSubaccountsInternal()
   }
 
-  private fun prepareOwnerAccount() = launchAction {
+  private fun prepareOwnerAccount() = launchAction("Setup couldn’t continue.") {
     val profile = wallets.profile.first()
     when {
       profile.apiOnly -> show(OnboardingStep.SUBACCOUNT)
       profile.ownerAddress != null && !profile.ownerBackupConfirmed -> {
         val phrase =
-          wallets.exportOwnerMnemonic(
-            VaultPrompt("Back up your account", "Authorize access to your recovery phrase.")
-          )
+          wallets.exportOwnerMnemonic(VaultPrompt("Back up your account", "Confirm your identity"))
         showBackup(OwnerBackup(profile.ownerAddress, phrase.split(' ')))
       }
       else -> discoverSubaccountsInternal()
     }
   }
 
-  private fun discoverSubaccounts() = launchAction { discoverSubaccountsInternal() }
+  private fun discoverSubaccounts() =
+    launchAction("Flare couldn’t check for your accounts.") { discoverSubaccountsInternal() }
 
   private suspend fun discoverSubaccountsInternal() {
     val subaccounts =
       accounts.discoverOwnerSubaccounts(
-        VaultPrompt(
-          title = "Find Decibel subaccounts",
-          subtitle = "Confirm the owner wallet to load its Decibel accounts.",
-        )
+        VaultPrompt(title = "Find your accounts", subtitle = "Confirm your identity")
       )
     val selected = subaccounts.firstOrNull()?.address
     local.value =
@@ -250,78 +255,54 @@ class OnboardingViewModel(
         subaccountsLoaded = true,
         selectedSubaccount = selected,
       )
-    if (subaccounts.size == 1) {
-      accounts.connectOwner(selected!!, VaultPrompt("Continue setup", "Confirm your identity"))
-      local.value = local.value.copy(step = OnboardingStep.API_WALLET)
-      if (wallets.profile.first().apiWalletAddress != null) {
-        // Verification failures leave the profile and key intact for a retry.
-        try {
-          accounts.connectApi(selected, VaultPrompt("Continue setup", "Confirm your identity"))
-          finishSetupInternal()
-        } catch (cancelled: CancellationException) {
-          throw cancelled
-        } catch (_: Exception) {
-          /* Keep the setup review available. */
-        }
+    if (subaccounts.size != 1 || selected == null) return
+    accounts.selectTradingAccount(selected, setupPrompt)
+    local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING)
+    // A device that can already trade for this account needs no further transaction. A failure
+    // here leaves the review step in place, so a retry reuses the same key.
+    if (wallets.profile.first().apiWalletAddress != null) {
+      runSuspendCatching { delegateApiAndFinish() }
+    }
+  }
+
+  private fun createSubaccount(feePayment: FeePayment = FeePayment.SPONSORED) =
+    launchAction("Your trading account wasn’t created.") {
+      local.value =
+        local.value.copy(setupOperation = SetupOperation.CREATE_ACCOUNT, setupTransaction = null)
+      check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
+        "Check for existing accounts before creating one."
       }
+      val result =
+        accounts.createSubaccount(
+          VaultPrompt(title = "Create trading account", subtitle = "Confirm your identity"),
+          feePayment = feePayment,
+        )
+      local.value = local.value.copy(setupTransaction = result)
+      if (result !is TransactionState.Committed) {
+        if ((result as? TransactionState.Failed)?.selfPayEstimateOctas == null)
+          error((result as? TransactionState.Failed)?.message.orEmpty())
+        return@launchAction
+      }
+      // Creating the account and enabling trading are one reviewed operation.
+      discoverSubaccountsInternal()
+      if (local.value.step == OnboardingStep.ENABLE_TRADING) delegateApiAndFinish()
     }
-  }
 
-  private fun createSubaccount(feePayment: FeePayment = FeePayment.SPONSORED) = launchAction {
-    local.value = local.value.copy(setupOperation = "create", setupTransaction = null)
-    check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
-      "Check for existing Decibel accounts before creating one."
-    }
-    val result =
-      accounts.createSubaccount(
-        VaultPrompt(title = "Create Decibel subaccount", subtitle = "Confirm account creation"),
-        feePayment = feePayment,
-      )
-    local.value = local.value.copy(setupTransaction = result)
-    if (result !is TransactionState.Committed) {
-      if ((result as? TransactionState.Failed)?.selfPayEstimateOctas == null)
-        error("Account creation failed")
-      return@launchAction
-    }
-    discoverSubaccountsInternal()
-    if (local.value.selectedSubaccount != null) {
-      local.value = local.value.copy(setupOperation = "delegate")
-      delegateApiAndFinish()
-    }
-  }
-
-  private fun continueSubaccount() = launchAction {
+  private fun continueSubaccount() = launchAction("That account couldn’t be opened.") {
     val address = local.value.selectedSubaccount ?: local.value.input.trim()
-    require(address.isNotBlank()) { "Enter or select a Decibel subaccount" }
+    require(address.isNotBlank()) { "Select a trading account" }
+    accounts.selectTradingAccount(address, setupPrompt)
     if (wallets.profile.first().ownerAddress != null) {
-      accounts.connectOwner(
-        subaccount = address,
-        prompt =
-          VaultPrompt(
-            title = "Connect owner account",
-            subtitle = "Authorize live account data for this Decibel subaccount.",
-          ),
-      )
-      local.value = local.value.copy(step = OnboardingStep.API_WALLET, input = "")
+      local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, input = "")
     } else {
-      accounts.connectApi(
-        subaccount = address,
-        prompt =
-          VaultPrompt(
-            title = "Connect delegated API wallet",
-            subtitle = "Decibel will verify the active delegation for this subaccount.",
-          ),
-      )
       finishSetupInternal()
     }
   }
 
-  private fun createApiWallet(feePayment: FeePayment = FeePayment.SPONSORED) = launchAction {
-    local.value = local.value.copy(setupOperation = "delegate", setupTransaction = null)
-    delegateApiAndFinish(feePayment)
-  }
+  private fun enableTrading(feePayment: FeePayment = FeePayment.SPONSORED) =
+    launchAction("Trading wasn’t enabled on this device.") { delegateApiAndFinish(feePayment) }
 
-  private fun importApiWallet() = launchAction {
+  private fun importTradingKey() = launchAction("That trading key wasn’t imported.") {
     accounts.importTradingKey(
       local.value.input.trim(),
       local.value.tradingAccountInput.trim(),
@@ -337,8 +318,10 @@ class OnboardingViewModel(
   }
 
   private suspend fun delegateApiAndFinish(feePayment: FeePayment = FeePayment.SPONSORED) {
+    local.value =
+      local.value.copy(setupOperation = SetupOperation.ENABLE_TRADING, setupTransaction = null)
     accounts.prepareTradingWallet(
-      VaultPrompt(title = "Enable trading", subtitle = "Allow trading on this device"),
+      VaultPrompt(title = "Enable trading", subtitle = "Confirm your identity"),
       feePayment = feePayment,
     )
     finishSetupInternal()
@@ -364,7 +347,8 @@ class OnboardingViewModel(
       OnboardingUiState(step = step, profile = local.value.profile, busy = local.value.busy)
   }
 
-  private fun launchAction(block: suspend () -> Unit) {
+  /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
+  private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
     actionJob =
       viewModelScope.launch {
@@ -375,10 +359,16 @@ class OnboardingViewModel(
           throw cancelled
         } catch (error: SetupTransactionException) {
           local.value =
-            local.value.copy(setupTransaction = error.transaction, error = "Delegation failed")
+            local.value.copy(
+              setupTransaction = error.transaction,
+              error =
+                actionFailure(
+                  (error.transaction as? TransactionState.Failed)?.message,
+                  "Trading wasn’t enabled on this device.",
+                ),
+            )
         } catch (error: Throwable) {
-          local.value =
-            local.value.copy(error = error.message ?: "The wallet operation could not be completed")
+          local.value = local.value.copy(error = actionFailure(error.message, outcome))
         } finally {
           local.value = local.value.copy(busy = false)
         }

@@ -29,8 +29,6 @@ sealed interface MarketsIntent {
   data class ToggleFavorite(val marketAddress: String) : MarketsIntent
 
   data class SetFavoritesOnly(val enabled: Boolean) : MarketsIntent
-
-  data object Refresh : MarketsIntent
 }
 
 class MarketsViewModel(
@@ -69,8 +67,9 @@ class MarketsViewModel(
       )
 
   init {
-    refresh()
+    viewModelScope.launch { repository.refresh() }
     viewModelScope.launch { runCatching { assetCatalog.refresh() } }
+    // The live stream owns freshness from here: it reconnects on its own and backfills on connect.
     viewModelScope.launch { repository.connectLive() }
   }
 
@@ -80,11 +79,6 @@ class MarketsViewModel(
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly -> favoritesOnly.value = intent.enabled
-      MarketsIntent.Refresh -> refresh()
     }
-  }
-
-  private fun refresh() {
-    viewModelScope.launch { repository.refresh() }
   }
 }

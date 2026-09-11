@@ -15,9 +15,11 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.SessionRepository
-import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
@@ -25,11 +27,10 @@ import xyz.mcxross.flare.store.FlarePreferences
 data class SettingsUiState(
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
-  val sessionRole: SessionRole? = null,
   val proxyUrl: String = "",
   val revealedSecretLabel: String? = null,
   val revealedSecret: String? = null,
-  val delegations: List<xyz.mcxross.flare.decibel.model.Delegation> = emptyList(),
+  val delegations: List<Delegation> = emptyList(),
   val delegationsLoaded: Boolean = false,
   val busy: Boolean = false,
   val error: String? = null,
@@ -66,104 +67,90 @@ class SettingsViewModel(
   private var secretClearJob: Job? = null
 
   val uiState: StateFlow<SettingsUiState> =
-    combine(local, preferences.values, wallets.profile, sessions.status) {
-        state,
-        persisted,
-        profile,
-        session ->
-        state.copy(preferences = persisted, profile = profile, sessionRole = session?.role)
+    combine(local, preferences.values, wallets.profile) { state, persisted, profile ->
+        state.copy(preferences = persisted, profile = profile)
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
       SettingsIntent.LoadDelegations ->
-        launchAction {
+        launchAction("Authorized keys couldn’t be loaded.") {
           local.update { it.copy(delegations = emptyList(), delegationsLoaded = false) }
           val delegates = accounts.delegations()
           local.update { it.copy(delegations = delegates, delegationsLoaded = true) }
         }
       is SettingsIntent.RevokeDelegate ->
-        launchAction {
+        launchAction("Trading access is unchanged.") {
           val result =
             accounts.revokeDelegation(
               intent.address,
               VaultPrompt("Revoke trading access", "Confirm your identity"),
             )
-          check(result is xyz.mcxross.flare.decibel.api.TransactionState.Committed) {
-            "Revocation failed. Try again."
-          }
+          check(result is TransactionState.Committed) { "Revoking access failed. Try again." }
           val delegates = accounts.delegations()
           local.update { it.copy(delegations = delegates) }
         }
       is SettingsIntent.SelectProfile ->
-        launchAction {
+        launchAction("That account couldn’t be opened.") {
           hideSecret()
           preferences.activateProfile(intent.id)
           accounts.restoreTrading()
         }
       is SettingsIntent.SetSlippage ->
-        launchAction { preferences.setSlippageBps(intent.basisPoints) }
+        launchAction("Your slippage setting didn’t change.") {
+          preferences.setSlippageBps(intent.basisPoints)
+        }
       SettingsIntent.ExportOwner ->
-        reveal("Account recovery details") {
-          wallets.exportOwnerMnemonic(
-            VaultPrompt("Show account recovery details", "Confirm your identity")
-          )
+        reveal("Recovery phrase") {
+          wallets.exportOwnerMnemonic(VaultPrompt("Show recovery phrase", "Confirm your identity"))
         }
       SettingsIntent.ExportApi ->
-        reveal("API wallet private key") {
-          wallets.exportApiWallet(VaultPrompt("Export API wallet", "Confirm your identity"))
+        reveal("Trading key") {
+          wallets.exportApiWallet(VaultPrompt("Show trading key", "Confirm your identity"))
         }
       SettingsIntent.HideSecret -> hideSecret()
       SettingsIntent.RemoveOwner ->
-        launchAction {
-          wallets.removeOwner(
-            VaultPrompt(
-              "Remove owner wallet",
-              "Confirm removal from this device. Your recovery phrase or private key is required to restore it.",
-            )
-          )
+        launchAction("The owner key is still on this device.") {
+          wallets.removeOwner(VaultPrompt("Remove owner key", "Confirm your identity"))
           sessions.invalidate()
           accounts.restoreTrading()
         }
       SettingsIntent.RemoveApi ->
-        launchAction {
-          wallets.removeApiWallet(
-            VaultPrompt(
-              "Remove API wallet",
-              "Confirm removal of the delegated trading key from this device.",
-            )
-          )
+        launchAction("The trading key is still on this device.") {
+          wallets.removeApiWallet(VaultPrompt("Remove trading key", "Confirm your identity"))
           sessions.invalidate()
           accounts.restoreTrading()
         }
     }
   }
 
-  private fun reveal(label: String, read: suspend () -> String) = launchAction {
-    val value = read()
-    local.update { it.copy(revealedSecretLabel = label, revealedSecret = value) }
-    secretClearJob?.cancel()
-    secretClearJob =
-      viewModelScope.launch {
-        delay(SECRET_REVEAL_MS)
-        hideSecret()
-      }
-  }
+  private fun reveal(label: String, read: suspend () -> String) =
+    launchAction("That secret couldn’t be shown.") {
+      val value = read()
+      local.update { it.copy(revealedSecretLabel = label, revealedSecret = value) }
+      secretClearJob?.cancel()
+      secretClearJob =
+        viewModelScope.launch {
+          delay(SECRET_REVEAL_MS)
+          hideSecret()
+        }
+    }
 
   private fun hideSecret() {
     secretClearJob?.cancel()
     local.update { it.copy(revealedSecretLabel = null, revealedSecret = null) }
   }
 
-  private fun launchAction(block: suspend () -> Unit) {
+  /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
+  private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, error = null) }
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(error = error.message ?: "The settings action failed") }
+            local.update { it.copy(error = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }
