@@ -17,6 +17,8 @@ data class MarketsUiState(
   val loading: Boolean = true,
   val query: String = "",
   val favoritesOnly: Boolean = false,
+  val selectedCategory: String? = null,
+  val categories: List<String> = emptyList(),
   val quotes: List<MarketQuote> = emptyList(),
   val stale: Boolean = true,
   val error: String? = null,
@@ -29,6 +31,8 @@ sealed interface MarketsIntent {
   data class ToggleFavorite(val marketAddress: String) : MarketsIntent
 
   data class SetFavoritesOnly(val enabled: Boolean) : MarketsIntent
+
+  data class SetCategory(val category: String?) : MarketsIntent
 }
 
 class MarketsViewModel(
@@ -37,17 +41,33 @@ class MarketsViewModel(
 ) : ViewModel() {
   private val query = MutableStateFlow("")
   private val favoritesOnly = MutableStateFlow(false)
+  private val selectedCategory = MutableStateFlow<String?>(null)
 
   val uiState: StateFlow<MarketsUiState> =
-    combine(repository.catalog, assetCatalog.assets, query, favoritesOnly) { catalog, assets, search, onlyFavorites ->
+    combine(repository.catalog, assetCatalog.assets, query, favoritesOnly, selectedCategory) {
+        catalog,
+        assets,
+        search,
+        onlyFavorites,
+        category ->
         val normalized = search.trim().lowercase()
+        val categories =
+          catalog.quotes.mapNotNull { quote ->
+              assets[assetKey(quote.market.symbol)]?.kind?.normalizedCategory()
+            }
+            .distinct()
+            .sorted()
         MarketsUiState(
           loading = catalog.loading,
           query = search,
           favoritesOnly = onlyFavorites,
+          selectedCategory = category,
+          categories = categories,
           quotes =
             catalog.quotes.filter {
               (!onlyFavorites || it.favorite) &&
+                (category == null ||
+                  assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == category) &&
                 (normalized.isEmpty() ||
                   it.market.symbol.lowercase().contains(normalized) ||
                   it.market.name.lowercase().contains(normalized) ||
@@ -79,6 +99,9 @@ class MarketsViewModel(
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly -> favoritesOnly.value = intent.enabled
+      is MarketsIntent.SetCategory -> selectedCategory.value = intent.category
     }
   }
 }
+
+private fun String.normalizedCategory(): String? = trim().lowercase().takeIf { it.isNotEmpty() }
