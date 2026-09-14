@@ -2,11 +2,16 @@ package xyz.mcxross.flare.design
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
 
@@ -590,3 +596,82 @@ fun BottomTradeDock(
     FlareButton("Sell", onSell, Modifier.weight(1f), enabled, FlareButtonStyle.SELL)
   }
 }
+
+/**
+ * Flare's authentic brand logo mark: three ascending slanted bars representing
+ * market momentum and perpetual trading signals.
+ */
+@Composable
+fun FlareLogo(
+  modifier: Modifier = Modifier,
+  color: Color = FlareColors.Positive,
+) {
+  Canvas(modifier = modifier) {
+    val stroke = size.width * 0.105f
+    for (i in 0..2) {
+      val x = size.width * (0.15f + i * 0.26f)
+      drawLine(
+        color = color,
+        start = Offset(x, size.height * 0.82f),
+        end = Offset(x + size.width * 0.24f, size.height * (0.36f - i * 0.10f)),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+      )
+    }
+  }
+}
+
+/**
+ * Premium branded splash screen (Concept A: Terminal Tile) displayed during app cold start
+ * and while awaiting biometric/passcode authentication when an account is locked.
+ */
+@Composable
+fun FlareSplashScreen(
+  modifier: Modifier = Modifier,
+) {
+  Box(
+    modifier = modifier.fillMaxSize().background(FlareColors.Canvas),
+    contentAlignment = Alignment.Center,
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.Center,
+    ) {
+      Box(
+        modifier =
+          Modifier
+            .size(92.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(FlareColors.Elevated)
+            .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(22.dp)),
+        contentAlignment = Alignment.Center,
+      ) {
+        FlareLogo(
+          modifier = Modifier.size(46.dp),
+          color = FlareColors.Positive,
+        )
+      }
+      Spacer(Modifier.height(24.dp))
+      Text(
+        text = "flare",
+        style =
+          MaterialTheme.typography.displaySmall.copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp,
+          ),
+        color = FlareColors.TextPrimary,
+      )
+      Spacer(Modifier.height(8.dp))
+      Text(
+        text = "DECIBEL PERPETUALS",
+        style =
+          MaterialTheme.typography.labelSmall.copy(
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 2.5.sp,
+          ),
+        color = FlareColors.TextTertiary,
+      )
+    }
+  }
+}
+

@@ -52,6 +52,7 @@ import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 
@@ -149,20 +150,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
   }
   Spacer(Modifier.weight(1f))
   Box(Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
-    Canvas(
-      Modifier.size(168.dp).background(FlareColors.PositiveMuted, CircleShape).padding(40.dp)
+    Box(
+      Modifier.size(168.dp).background(FlareColors.PositiveMuted, CircleShape),
+      contentAlignment = Alignment.Center,
     ) {
-      val stroke = 9.dp.toPx()
-      for (i in 0..2) {
-        val x = size.width * (0.15f + i * 0.26f)
-        drawLine(
-          FlareColors.Positive,
-          Offset(x, size.height * 0.82f),
-          Offset(x + size.width * 0.24f, size.height * (0.36f - i * 0.1f)),
-          stroke,
-          StrokeCap.Round,
-        )
-      }
+      FlareLogo(Modifier.size(88.dp), color = FlareColors.Positive)
     }
   }
   Text("A clearer way\nto trade.", style = MaterialTheme.typography.displaySmall)
