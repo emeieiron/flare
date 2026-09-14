@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,8 +50,10 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.PriceChartSkeleton
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TimeRangeSelector
+import xyz.mcxross.flare.design.TradeScreenSkeleton
 
 @Composable
 fun TradeRoute(
@@ -92,7 +93,11 @@ fun TradeScreen(
       },
     )
     if (quote == null) {
-      EmptyState("Loading market…", "Prices appear as soon as Flare reconnects.")
+      if (state.error != null) {
+        EmptyState("Market offline", "Prices appear as soon as Flare reconnects.")
+      } else {
+        TradeScreenSkeleton(chartStyle = state.chartStyle)
+      }
       return@Column
     }
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
@@ -109,13 +114,7 @@ fun TradeScreen(
       )
       Spacer(Modifier.height(24.dp))
       if (state.chartLoading) {
-        Column(
-          Modifier.fillMaxWidth().height(280.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.Center,
-        ) {
-          CircularProgressIndicator()
-        }
+        PriceChartSkeleton(chartStyle = state.chartStyle)
       } else {
         androidx.compose.runtime.key(quote.market.address, state.range, state.chartStyle) {
           FlareChartStack(

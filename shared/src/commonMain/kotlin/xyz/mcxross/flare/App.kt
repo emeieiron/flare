@@ -60,6 +60,7 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.design.AppStartupSkeleton
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
@@ -209,12 +210,7 @@ private fun FlareAppFlow() {
   }
   val savedScreens = rememberSaveableStateHolder()
   if (persisted == null || walletProfile == null) {
-    Box(
-      Modifier.fillMaxSize().background(FlareColors.Canvas),
-      contentAlignment = Alignment.Center,
-    ) {
-      CircularProgressIndicator()
-    }
+    AppStartupSkeleton()
   } else if (hasCredentials && !unlocked) {
     Box(
       Modifier.fillMaxSize().background(FlareColors.Canvas),
