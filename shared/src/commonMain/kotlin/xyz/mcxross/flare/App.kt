@@ -59,11 +59,7 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
@@ -228,17 +224,7 @@ private fun FlareAppFlow() {
           horizontalAlignment = Alignment.CenterHorizontally,
           verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-          Box(
-            modifier =
-              Modifier
-                .size(92.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(FlareColors.Elevated)
-                .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(22.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            FlareLogo(modifier = Modifier.size(46.dp), color = FlareColors.Positive)
-          }
+          FlareLogo(modifier = Modifier.size(64.dp), color = FlareColors.Positive)
           Text("flare", style = MaterialTheme.typography.headlineMedium)
           Text(
             "Confirm it’s you to continue.",
