@@ -17,7 +17,6 @@ import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PieChartOutline
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -212,18 +211,18 @@ private fun FlareAppFlow() {
   if (persisted == null || walletProfile == null) {
     AppStartupSkeleton()
   } else if (hasCredentials && !unlocked) {
-    Box(
-      Modifier.fillMaxSize().background(FlareColors.Canvas),
-      contentAlignment = Alignment.Center,
-    ) {
-      Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+    if (unlockError == null) {
+      AppStartupSkeleton()
+    } else {
+      Box(
+        Modifier.fillMaxSize().background(FlareColors.Canvas),
+        contentAlignment = Alignment.Center,
       ) {
-        Text("Flare", style = MaterialTheme.typography.headlineLarge)
-        if (unlockError == null) {
-          CircularProgressIndicator()
-        } else {
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+          Text("Flare", style = MaterialTheme.typography.headlineLarge)
           Text(
             "Confirm it’s you to continue.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
