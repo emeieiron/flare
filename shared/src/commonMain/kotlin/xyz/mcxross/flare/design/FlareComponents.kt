@@ -438,6 +438,7 @@ fun AssetHeader(
   delta: String,
   positive: Boolean,
   modifier: Modifier = Modifier,
+  badgeText: String? = null,
 ) {
   Row(
     modifier = modifier.fillMaxWidth(),
@@ -446,7 +447,33 @@ fun AssetHeader(
   ) {
     AssetIcon(asset, Modifier.size(48.dp))
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text(asset.name, style = MaterialTheme.typography.titleLarge)
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text(asset.name, style = MaterialTheme.typography.titleLarge)
+        if (badgeText != null) {
+          Box(
+            modifier =
+              Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(FlareColors.Elevated)
+                .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(4.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = badgeText,
+              style =
+                MaterialTheme.typography.labelSmall.copy(
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.SemiBold,
+                ),
+              color = FlareColors.TextSecondary,
+            )
+          }
+        }
+      }
       Text(
         asset.kind?.replaceFirstChar(Char::titlecase) ?: asset.symbol,
         color = FlareColors.TextSecondary,

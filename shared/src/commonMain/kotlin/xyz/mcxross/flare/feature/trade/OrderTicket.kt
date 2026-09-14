@@ -16,9 +16,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.toDecimalString
@@ -56,9 +58,12 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
     ) {
       mutableStateOf(false)
     }
+  val isSpot = quote.market.assetType == AssetType.SPOT
   FlareSheet(
     if (committed != null) "Order placed"
-    else if (reviewing) "Review order" else "Trade ${quote.market.symbol}",
+    else if (reviewing) "Review order"
+    else if (isSpot) "Trade ${quote.market.name}"
+    else "Trade ${quote.market.symbol}",
     dismiss,
   ) {
     if (committed != null) {
@@ -121,7 +126,11 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OrderSide.entries.forEach { value ->
           FlareChip(
-            if (value == OrderSide.BUY) "Buy / Long" else "Sell / Short",
+            if (isSpot) {
+              if (value == OrderSide.BUY) "Buy" else "Sell"
+            } else {
+              if (value == OrderSide.BUY) "Buy / Long" else "Sell / Short"
+            },
             side == value,
             { side = value },
             Modifier.weight(1f),
@@ -153,49 +162,65 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
         Modifier.fillMaxWidth().padding(top = 16.dp),
         enabled = !state.orderBusy,
       )
-      Text(
-        "Minimum ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
-        style = MaterialTheme.typography.labelSmall,
-        color = FlareColors.TextSecondary,
-        modifier = Modifier.padding(top = 6.dp),
-      )
-      LeverageControl(state, estimate?.margin) { onIntent(TradeIntent.SetLeverage(it)) }
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          "Minimum ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
+          style = MaterialTheme.typography.labelSmall,
+          color = FlareColors.TextSecondary,
+        )
+        state.availableDisplay(side)?.let { available ->
+          Text(
+            "Available $available",
+            style = MaterialTheme.typography.labelSmall,
+            color = FlareColors.TextSecondary,
+          )
+        }
+      }
+      if (!isSpot) {
+        LeverageControl(state, estimate?.margin) { onIntent(TradeIntent.SetLeverage(it)) }
+      }
       if (state.orderType == OrderType.LIMIT) {
         OrderAmountField(
           "Limit price",
           "USDC",
           state.limitPriceInput,
           { onIntent(TradeIntent.SetLimitPrice(it)) },
-          Modifier.fillMaxWidth().padding(bottom = 16.dp),
+          Modifier.fillMaxWidth().padding(top = if (isSpot) 16.dp else 0.dp, bottom = if (isSpot) 0.dp else 16.dp),
           enabled = !state.orderBusy,
         )
       }
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OrderAmountField(
-          "Take profit",
-          "USDC",
-          state.takeProfitInput,
-          { onIntent(TradeIntent.SetTakeProfit(it)) },
-          Modifier.weight(1f),
-          enabled = !state.orderBusy,
-          optional = true,
-        )
-        OrderAmountField(
-          "Stop loss",
-          "USDC",
-          state.stopLossInput,
-          { onIntent(TradeIntent.SetStopLoss(it)) },
-          Modifier.weight(1f),
-          enabled = !state.orderBusy,
-          optional = true,
+      if (!isSpot) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          OrderAmountField(
+            "Take profit",
+            "USDC",
+            state.takeProfitInput,
+            { onIntent(TradeIntent.SetTakeProfit(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+            optional = true,
+          )
+          OrderAmountField(
+            "Stop loss",
+            "USDC",
+            state.stopLossInput,
+            { onIntent(TradeIntent.SetStopLoss(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+            optional = true,
+          )
+        }
+        Text(
+          "Optional exits, included with your order.",
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+          modifier = Modifier.padding(top = 8.dp),
         )
       }
-      Text(
-        "Optional exits, included with your order.",
-        style = MaterialTheme.typography.bodySmall,
-        color = FlareColors.TextSecondary,
-        modifier = Modifier.padding(top = 8.dp),
-      )
     }
     if (state.sizeInput.isNotBlank() && inputError != null) {
       ActionNotice(inputError, Modifier.padding(top = 12.dp), NoticeTone.ALERT)

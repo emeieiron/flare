@@ -22,8 +22,11 @@ import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
+import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
@@ -69,7 +72,23 @@ data class TradeUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
-)
+  val quoteBalance: Double? = null,
+  val baseBalance: Double? = null,
+) {
+  fun availableDisplay(side: OrderSide): String? {
+    val isSpot = quote?.market?.assetType == AssetType.SPOT
+    return if (isSpot) {
+      if (side == OrderSide.BUY) {
+        quoteBalance?.let { formatBalance(it) }
+      } else {
+        val symbol = quote?.market?.symbol.orEmpty()
+        baseBalance?.let { "${formatQuantity(it, 4)} $symbol".trim() }
+      }
+    } else {
+      quoteBalance?.let { formatBalance(it) }
+    }
+  }
+}
 
 sealed interface TradeIntent {
   data class SelectMarket(val marketAddress: String?) : TradeIntent
@@ -136,6 +155,7 @@ class TradeViewModel(
           )
         }
         syncPositionLeverage()
+        syncBalances()
         if (changed && quote != null) loadCandles(quote, mutableUiState.value.range)
         if (changed && quote != null) loadMarketDetails(quote.market.address)
       }
@@ -172,20 +192,51 @@ class TradeViewModel(
         if (rangeChanged) mutableUiState.value.quote?.let { loadCandles(it, range) }
       }
     }
-    viewModelScope.launch { accounts.snapshot.collect { syncPositionLeverage() } }
+    viewModelScope.launch {
+      accounts.snapshot.collect {
+        syncPositionLeverage()
+        syncBalances()
+      }
+    }
   }
 
   private fun syncPositionLeverage() {
     mutableUiState.update { state ->
-      val position =
-        accounts.snapshot.value.positions.firstOrNull { it.market == state.quote?.market?.address }
-      state.copy(
-        positionLeverage = position?.leverage,
-        positionIsolated = position?.isIsolated,
-        leverage =
-          position?.leverage
-            ?: state.leverage.coerceIn(1, state.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1),
-      )
+      val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+      if (isSpot) {
+        state.copy(
+          positionLeverage = null,
+          positionIsolated = null,
+          leverage = 1,
+        )
+      } else {
+        val position =
+          accounts.snapshot.value.positions.firstOrNull { it.market == state.quote?.market?.address }
+        state.copy(
+          positionLeverage = position?.leverage,
+          positionIsolated = position?.isIsolated,
+          leverage =
+            position?.leverage
+              ?: state.leverage.coerceIn(1, state.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1),
+        )
+      }
+    }
+  }
+
+  private fun syncBalances() {
+    val snapshot = accounts.snapshot.value
+    val quote = mutableUiState.value.quote
+    val usdc =
+      snapshot.overview?.availableToTrade ?: snapshot.overview?.crossWithdrawableBalance ?: 0.0
+    mutableUiState.update { it.copy(quoteBalance = usdc) }
+    if (quote?.market?.assetType == AssetType.SPOT) {
+      val subaccount = snapshot.account ?: mutableUiState.value.tradingAccountAddress
+      if (subaccount != null) {
+        viewModelScope.launch {
+          val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
+          mutableUiState.update { it.copy(baseBalance = base) }
+        }
+      }
     }
   }
 
@@ -201,6 +252,7 @@ class TradeViewModel(
             } ?: markets.catalog.value.quotes.firstOrNull()
           mutableUiState.update { it.copy(quote = quote) }
           syncPositionLeverage()
+          syncBalances()
           preferences.setSelectedMarket(quote?.market?.address)
           if (quote != null) loadCandles(quote, mutableUiState.value.range)
           if (quote != null) loadMarketDetails(quote.market.address)
@@ -240,7 +292,7 @@ class TradeViewModel(
       is TradeIntent.Submit -> submitOrder(intent.side, FeePayment.SPONSORED)
       is TradeIntent.SetLeverage ->
         mutableUiState.update {
-          if (it.orderBusy || it.positionLeverage != null) it
+          if (it.orderBusy || it.positionLeverage != null || it.quote?.market?.assetType == AssetType.SPOT) it
           else
             it.copy(
               leverage =

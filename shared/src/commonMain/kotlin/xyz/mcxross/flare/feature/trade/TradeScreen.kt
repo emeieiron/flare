@@ -38,6 +38,7 @@ import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.AssetHeader
@@ -83,9 +84,10 @@ fun TradeScreen(
   var showTicket by rememberSaveable { mutableStateOf(false) }
   var showBook by rememberSaveable { mutableStateOf(false) }
   val quote = state.quote
+  val isSpot = quote?.market?.assetType == AssetType.SPOT
   Column(modifier.fillMaxSize().background(FlareColors.Canvas)) {
     BackBar(
-      quote?.market?.symbol ?: "Market",
+      if (isSpot) quote?.market?.name ?: "Market" else quote?.market?.symbol ?: "Market",
       onBack,
       Modifier.padding(horizontal = 8.dp),
       action = {
@@ -111,6 +113,7 @@ fun TradeScreen(
         formatPrice(quote.markPrice),
         formatPercent(quote.changePercent24h),
         quote.changePercent24h >= 0,
+        badgeText = if (isSpot) "SPOT" else "PERP",
       )
       Spacer(Modifier.height(24.dp))
       if (state.chartLoading) {
@@ -141,9 +144,16 @@ fun TradeScreen(
         )
       }
       SectionLabel("Market stats")
-      DetailRow("24h volume", formatCompact(quote.volume24h))
-      DetailRow("Open interest", formatCompact(quote.openInterest))
-      DetailRow("Maximum leverage", "${quote.market.maxLeverage}×")
+      if (isSpot) {
+        DetailRow("Market type", "Spot")
+        DetailRow("24h volume", formatCompact(quote.volume24h))
+        DetailRow("Base asset", quote.market.symbol)
+        DetailRow("Quote asset", quote.market.name.substringAfter('/', "USDC").trim())
+      } else {
+        DetailRow("24h volume", formatCompact(quote.volume24h))
+        DetailRow("Open interest", formatCompact(quote.openInterest))
+        DetailRow("Maximum leverage", "${quote.market.maxLeverage}×")
+      }
       TextButton({ showBook = !showBook }, Modifier.fillMaxWidth().padding(top = 12.dp)) {
         Text(if (showBook) "Hide order book" else "Order book & recent trades")
       }
@@ -195,7 +205,7 @@ fun TradeScreen(
     HorizontalDivider(color = FlareColors.BorderSubtle)
     FlareButton(
       if (state.tradingKeyAddress == null) "Create or import account"
-      else "Trade ${quote.market.symbol}",
+      else "Trade ${if (isSpot) quote.market.name else quote.market.symbol}",
       { if (state.tradingKeyAddress == null) onOpenSetup() else showTicket = true },
       Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
     )
