@@ -622,7 +622,7 @@ fun FlareLogo(
 }
 
 /**
- * Premium branded splash screen (Concept A: Terminal Tile) displayed during app cold start
+ * Premium branded splash screen displayed during app cold start
  * and while awaiting biometric/passcode authentication when an account is locked.
  */
 @Composable
@@ -637,20 +637,10 @@ fun FlareSplashScreen(
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.Center,
     ) {
-      Box(
-        modifier =
-          Modifier
-            .size(92.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(FlareColors.Elevated)
-            .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(22.dp)),
-        contentAlignment = Alignment.Center,
-      ) {
-        FlareLogo(
-          modifier = Modifier.size(46.dp),
-          color = FlareColors.Positive,
-        )
-      }
+      FlareLogo(
+        modifier = Modifier.size(72.dp),
+        color = FlareColors.Positive,
+      )
       Spacer(Modifier.height(24.dp))
       Text(
         text = "flare",
