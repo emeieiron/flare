@@ -28,6 +28,7 @@ room3 = "3.0.2"
 sqlite = "2.7.0"
 vico = "3.3.1"
 coil = "3.6.2"
+compose-shimmer = "1.5.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -75,6 +76,7 @@ vico-compose-m3 = { module = "com.patrykandpatrick.vico:compose-m3", version.ref
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
+compose-shimmer = { module = "com.valentinilk.shimmer:compose-shimmer", version.ref = "compose-shimmer" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
