@@ -25,10 +25,12 @@ import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatRelativeTime
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
 import xyz.mcxross.flare.design.EmptyState
+import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
@@ -111,16 +113,25 @@ fun OrdersScreen(
           state.account.openOrders.isNotEmpty() ->
             state.account.openOrders.forEach { order ->
               val cancelling = state.busy && state.lastCancelOrderId == order.orderId
+              val isSpot = order.assetType == AssetType.SPOT || order.market in state.spotMarkets
               Row(
                 Modifier.fillMaxWidth().padding(vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
               ) {
                 Column(Modifier.weight(1f)) {
-                  Text(
-                    (state.marketSymbols[order.market] ?: shortAddress(order.market)),
-                    style = MaterialTheme.typography.labelLarge,
-                  )
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Text(
+                      (state.marketSymbols[order.market] ?: shortAddress(order.market)),
+                      style = MaterialTheme.typography.labelLarge,
+                    )
+                    if (isSpot) {
+                      InstrumentBadge("SPOT")
+                    }
+                  }
                   Text(
                     "${if (order.isBuy) "Buy" else "Sell"} " +
                       "${order.remainingSize?.let { formatQuantity(it) } ?: "—"} · " +
@@ -163,10 +174,19 @@ fun OrdersScreen(
           HistoryEmpty(state.history.stale, "No order history")
         } else {
           state.history.orders.forEach { order ->
+            val isSpot = order.assetType == AssetType.SPOT || order.market in state.spotMarkets
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                  Text(order.orderDirection.ifBlank { if (order.isBuy) "Buy" else "Sell" })
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Text(order.orderDirection.ifBlank { if (order.isBuy) "Buy" else "Sell" })
+                    if (isSpot) {
+                      InstrumentBadge("SPOT")
+                    }
+                  }
                   Text(
                     "${(state.marketSymbols[order.market] ?: shortAddress(order.market))} · ${order.status}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -192,10 +212,19 @@ fun OrdersScreen(
           HistoryEmpty(state.history.stale, "No trade history")
         } else {
           state.history.trades.forEach { trade ->
+            val isSpot = trade.assetType == AssetType.SPOT || trade.market in state.spotMarkets
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                  Text(tradeActionLabel(trade.action))
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Text(tradeActionLabel(trade.action))
+                    if (isSpot) {
+                      InstrumentBadge("SPOT")
+                    }
+                  }
                   Text(
                     "${(state.marketSymbols[trade.market] ?: shortAddress(trade.market))} · ${formatQuantity(trade.size)} @ ${formatPrice(trade.price)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
