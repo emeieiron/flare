@@ -133,11 +133,11 @@ fun TradeScreen(
         { onIntent(TradeIntent.SelectRange(it)) },
         Modifier.fillMaxWidth().padding(top = 12.dp),
       )
-      if (state.stale || state.error != null) {
+      if (state.error != null && !state.stale) {
         ActionNotice(
-          "Reconnecting to live prices. Trading resumes automatically.",
+          state.error,
           Modifier.padding(top = 16.dp),
-          NoticeTone.PROGRESS,
+          NoticeTone.ALERT,
         )
       }
       SectionLabel("Market stats")

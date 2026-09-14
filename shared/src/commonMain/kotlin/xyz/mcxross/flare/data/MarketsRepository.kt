@@ -43,9 +43,9 @@ data class MarketQuote(
 )
 
 data class MarketCatalog(
-  val loading: Boolean = false,
+  val loading: Boolean = true,
   val quotes: List<MarketQuote> = emptyList(),
-  val stale: Boolean = true,
+  val stale: Boolean = false,
   val error: String? = null,
   val updatedAtMs: Long? = null,
 )
@@ -71,10 +71,9 @@ class DefaultMarketsRepository(
   override val catalog: StateFlow<MarketCatalog> = mutableCatalog.asStateFlow()
 
   override suspend fun refresh() = refreshMutex.withLock {
-    mutableCatalog.update { it.copy(loading = true, error = null) }
+    mutableCatalog.update { it.copy(loading = it.quotes.isEmpty(), error = null) }
     favorites.clear()
     favorites += preferences.favoriteMarkets.first()
-    if (mutableCatalog.value.quotes.isEmpty()) loadCachedMarkets()
     runSuspendCatching {
       coroutineScope {
         val markets = async { client.markets.markets() }
@@ -111,6 +110,7 @@ class DefaultMarketsRepository(
         )
         mutableCatalog.value =
           MarketCatalog(
+            loading = false,
             quotes =
               quotes.sortedWith(
                 compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol }
@@ -120,11 +120,12 @@ class DefaultMarketsRepository(
           )
       }
       .onFailure { error ->
+        loadCachedMarkets()
         mutableCatalog.update {
           it.copy(
             loading = false,
             stale = true,
-            error = error.message ?: "Market data is unavailable",
+            error = if (it.quotes.isEmpty()) error.message ?: "Market data is unavailable" else null,
           )
         }
       }
@@ -144,7 +145,7 @@ class DefaultMarketsRepository(
     if (quotes.isNotEmpty()) {
       mutableCatalog.value =
         MarketCatalog(
-          loading = true,
+          loading = false,
           quotes =
             quotes.sortedWith(
               compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol }
