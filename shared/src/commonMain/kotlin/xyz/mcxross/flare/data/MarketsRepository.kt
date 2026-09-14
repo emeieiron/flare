@@ -21,8 +21,10 @@ import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.AllMarketPrices
+import xyz.mcxross.flare.decibel.api.AllSpotMids
 import xyz.mcxross.flare.decibel.api.DecibelStreamData
 import xyz.mcxross.flare.decibel.api.StreamEvent
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.decibel.model.CandleInterval
 import xyz.mcxross.flare.decibel.model.Market
@@ -79,21 +81,35 @@ class DefaultMarketsRepository(
         val markets = async { client.markets.markets() }
         val contexts = async { client.markets.assetContexts() }
         val prices = async { client.markets.prices() }
+        val spotContexts = async { runCatching { client.markets.spotAssetContexts() }.getOrDefault(emptyList()) }
         val contextsByMarket = contexts.await().associateBy { it.market }
         val pricesByMarket = prices.await().associateBy { it.market }
+        val spotContextsByMarket = spotContexts.await().associateBy { it.marketAddress }
         val marketList = markets.await()
         seedDefaultWatchlist(marketList)
         marketList.map { market ->
-          val context = contextsByMarket[market.address] ?: contextsByMarket[market.name]
-          val price = pricesByMarket[market.address] ?: pricesByMarket[market.name]
-          MarketQuote(
-            market = market,
-            markPrice = context?.markPrice ?: price?.markPrice ?: 0.0,
-            changePercent24h = context?.priceChangePercent24h ?: 0.0,
-            volume24h = context?.volume24h ?: 0.0,
-            openInterest = context?.openInterest ?: price?.openInterest ?: 0.0,
-            favorite = market.address in favorites,
-          )
+          if (market.assetType == AssetType.SPOT) {
+            val spot = spotContextsByMarket[market.address] ?: spotContextsByMarket[market.name]
+            MarketQuote(
+              market = market,
+              markPrice = spot?.price ?: 0.0,
+              changePercent24h = spot?.priceChangePercent24h ?: 0.0,
+              volume24h = spot?.volume24hQuote ?: 0.0,
+              openInterest = 0.0,
+              favorite = market.address in favorites,
+            )
+          } else {
+            val context = contextsByMarket[market.address] ?: contextsByMarket[market.name]
+            val price = pricesByMarket[market.address] ?: pricesByMarket[market.name]
+            MarketQuote(
+              market = market,
+              markPrice = context?.markPrice ?: price?.markPrice ?: 0.0,
+              changePercent24h = context?.priceChangePercent24h ?: 0.0,
+              volume24h = context?.volume24h ?: 0.0,
+              openInterest = context?.openInterest ?: price?.openInterest ?: 0.0,
+              favorite = market.address in favorites,
+            )
+          }
         }
       }
     }
@@ -169,12 +185,13 @@ class DefaultMarketsRepository(
 
   override suspend fun connectLive() {
     var lastRecoveryAtMs = 0L
-    client.stream.subscribe(setOf(AllMarketPrices)).collect { event ->
+    client.stream.subscribe(setOf(AllMarketPrices, AllSpotMids)).collect { event ->
       when (event) {
         is StreamEvent.Connected -> refresh()
         is StreamEvent.Message -> {
           val now = Clock.System.now().toEpochMilliseconds()
           val prices = (event.data as? DecibelStreamData.MarketPrices)?.values
+          val spotMids = (event.data as? DecibelStreamData.SpotMids)?.values
           if (prices != null) {
             val pricesByMarket = prices.associateBy { it.market }
             mutableCatalog.update { current ->
@@ -190,6 +207,26 @@ class DefaultMarketsRepository(
                         markPrice = price.markPrice,
                         openInterest = price.openInterest,
                       )
+                    }
+                  },
+                stale = false,
+                error = null,
+                updatedAtMs = now,
+              )
+            }
+          }
+          if (spotMids != null) {
+            val spotByMarket = spotMids.associateBy { it.marketAddress }
+            mutableCatalog.update { current ->
+              current.copy(
+                quotes =
+                  current.quotes.map { quote ->
+                    val spot = spotByMarket[quote.market.address]
+                    val newPrice = spot?.price
+                    if (newPrice == null) {
+                      quote
+                    } else {
+                      quote.copy(markPrice = newPrice)
                     }
                   },
                 stale = false,

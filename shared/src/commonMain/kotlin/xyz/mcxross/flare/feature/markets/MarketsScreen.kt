@@ -27,11 +27,13 @@ import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
 import xyz.mcxross.flare.design.MarketListSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.data.assetKey
+import xyz.mcxross.flare.decibel.model.AssetType
 
 @Composable
 fun MarketsRoute(
@@ -61,11 +63,23 @@ fun MarketsScreen(
     FlareTopBar(
       title = "Markets",
     )
+    FlareSegmentedControl(
+      options = listOf(MarketInstrumentFilter.PERPETUALS, MarketInstrumentFilter.SPOT),
+      selectedOption = state.selectedInstrument,
+      onOptionSelected = { onIntent(MarketsIntent.SetInstrument(it)) },
+      label = {
+        when (it) {
+          MarketInstrumentFilter.PERPETUALS -> "Perpetuals"
+          MarketInstrumentFilter.SPOT -> "Spot"
+        }
+      },
+      modifier = Modifier.padding(bottom = 12.dp),
+    )
     FlareSearchField(
       value = state.query,
       onValueChange = { onIntent(MarketsIntent.Search(it)) },
       modifier = Modifier.fillMaxWidth(),
-      placeholder = "Search markets",
+      placeholder = if (state.selectedInstrument == MarketInstrumentFilter.SPOT) "Search spot markets" else "Search perpetuals",
       leadingIcon = Icons.Outlined.Search,
     )
     LazyRow(
@@ -81,6 +95,18 @@ fun MarketsScreen(
             onIntent(MarketsIntent.SetCategory(null))
           },
         )
+      }
+      if (state.selectedInstrument == MarketInstrumentFilter.SPOT) {
+        item {
+          FlareChip(
+            text = "All",
+            selected = !state.favoritesOnly && state.selectedCategory == null,
+            onClick = {
+              onIntent(MarketsIntent.SetFavoritesOnly(false))
+              onIntent(MarketsIntent.SetCategory(null))
+            },
+          )
+        }
       }
       items(state.categories, key = { it }) { category ->
         FlareChip(
@@ -102,7 +128,8 @@ fun MarketsScreen(
           when {
             state.query.isNotBlank() -> "Search results"
             state.favoritesOnly -> "Your watchlist"
-            else -> "All markets"
+            state.selectedInstrument == MarketInstrumentFilter.SPOT -> "All spot markets"
+            else -> "All perpetuals"
           },
           style = MaterialTheme.typography.titleMedium,
         )
@@ -141,7 +168,8 @@ fun MarketsScreen(
               when {
                 state.query.isNotBlank() -> "Search results"
                 state.favoritesOnly -> "Your watchlist"
-                else -> "All markets"
+                state.selectedInstrument == MarketInstrumentFilter.SPOT -> "All spot markets"
+                else -> "All perpetuals"
               },
               style = MaterialTheme.typography.titleMedium,
             )
@@ -167,6 +195,7 @@ fun MarketsScreen(
             onFavorite = {
               onIntent(MarketsIntent.ToggleFavorite(quote.market.address))
             },
+            badgeText = if (quote.market.assetType == AssetType.SPOT) "SPOT" else null,
           )
         }
       }

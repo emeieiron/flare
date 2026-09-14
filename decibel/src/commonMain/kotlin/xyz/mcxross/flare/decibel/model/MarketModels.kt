@@ -70,6 +70,48 @@ data class AssetContext(
 )
 
 @Serializable
+data class SpotAssetContext(
+  @SerialName("market_addr") val marketAddress: String,
+  val name: String,
+  @SerialName("ticker_id") val tickerId: String,
+  @SerialName("base_asset_addr") val baseAssetAddress: String,
+  @SerialName("quote_asset_addr") val quoteAssetAddress: String,
+  @SerialName("base_decimals") val baseDecimals: Int,
+  @SerialName("quote_decimals") val quoteDecimals: Int,
+  @SerialName("last_price") val lastPrice: Double? = null,
+  val mid: Double? = null,
+  @SerialName("prev_day_price") val prevDayPrice: Double? = null,
+  @SerialName("volume_24h_base") val volume24hBase: Double = 0.0,
+  @SerialName("volume_24h_quote") val volume24hQuote: Double = 0.0,
+  @SerialName("high_24h") val high24h: Double? = null,
+  @SerialName("low_24h") val low24h: Double? = null,
+  @SerialName("timestamp_unix_ms") val timestampUnixMs: Long,
+) {
+  val price: Double
+    get() = lastPrice ?: mid ?: 0.0
+
+  val priceChangePercent24h: Double
+    get() {
+      val prev = prevDayPrice ?: return 0.0
+      if (prev == 0.0) return 0.0
+      return ((price - prev) / prev) * 100.0
+    }
+}
+
+@Serializable
+data class SpotMidPrice(
+  @SerialName("market_addr") val marketAddress: String,
+  @SerialName("asset_type") val assetType: String = "spot",
+  val mid: Double? = null,
+  @SerialName("last_trade_price") val lastTradePrice: Double? = null,
+  @SerialName("transaction_unix_ms") val transactionUnixMs: Long = 0,
+) {
+  val price: Double?
+    get() = lastTradePrice ?: mid
+}
+
+
+@Serializable
 data class Candle(
   @SerialName("t") val openTimeMs: Long,
   @SerialName("T") val closeTimeMs: Long,

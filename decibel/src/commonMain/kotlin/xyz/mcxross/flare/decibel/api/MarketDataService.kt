@@ -10,6 +10,7 @@ import xyz.mcxross.flare.decibel.model.MarketPrice
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.OrderBook
 import xyz.mcxross.flare.decibel.model.Page
+import xyz.mcxross.flare.decibel.model.SpotAssetContext
 
 interface MarketDataService {
   suspend fun markets(): List<Market>
@@ -17,6 +18,8 @@ interface MarketDataService {
   suspend fun prices(market: String? = null): List<MarketPrice>
 
   suspend fun assetContexts(market: String? = null): List<AssetContext>
+
+  suspend fun spotAssetContexts(): List<SpotAssetContext>
 
   suspend fun candles(
     market: String,
@@ -33,13 +36,16 @@ interface MarketDataService {
 
 internal class DefaultMarketDataService(private val api: DecibelApi) : MarketDataService {
   override suspend fun markets(): List<Market> =
-    api.get<List<Market>>("markets").filter { it.assetType == AssetType.PERP }
+    api.get("markets")
 
   override suspend fun prices(market: String?): List<MarketPrice> =
     api.get("prices") { market?.let { url.parameters.append("market", it) } }
 
   override suspend fun assetContexts(market: String?): List<AssetContext> =
     api.get("asset_contexts") { market?.let { url.parameters.append("market", it) } }
+
+  override suspend fun spotAssetContexts(): List<SpotAssetContext> =
+    api.get("spot/asset_contexts")
 
   override suspend fun candles(
     market: String,

@@ -264,6 +264,50 @@ fun IndicatorChip(
 }
 
 @Composable
+fun <T> FlareSegmentedControl(
+  options: List<T>,
+  selectedOption: T,
+  onOptionSelected: (T) -> Unit,
+  label: (T) -> String,
+  modifier: Modifier = Modifier,
+) {
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .background(FlareColors.Elevated)
+        .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(12.dp))
+        .padding(3.dp),
+    horizontalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    options.forEach { option ->
+      val selected = option == selectedOption
+      val background by animateColorAsState(if (selected) FlareColors.Canvas else Color.Transparent)
+      val textColor by
+        animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
+      Box(
+        modifier =
+          Modifier
+            .weight(1f)
+            .height(36.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(background)
+            .clickable { onOptionSelected(option) },
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = label(option),
+          color = textColor,
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+      }
+    }
+  }
+}
+
+@Composable
 fun <T> TimeRangeSelector(
   values: List<T>,
   selected: T,
@@ -437,6 +481,7 @@ fun MarketListRow(
   onClick: () -> Unit,
   onFavorite: () -> Unit,
   modifier: Modifier = Modifier,
+  badgeText: String? = null,
 ) {
   val colors = LocalFlareTradingColors.current
   Row(
@@ -455,7 +500,29 @@ fun MarketListRow(
     }
     Spacer(Modifier.width(12.dp))
     Column(modifier = Modifier.weight(1f)) {
-      Text(asset.symbol, style = MaterialTheme.typography.labelLarge)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(asset.symbol, style = MaterialTheme.typography.labelLarge)
+        if (badgeText != null) {
+          Spacer(Modifier.width(6.dp))
+          Box(
+            modifier =
+              Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(FlareColors.Elevated)
+                .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 1.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              text = badgeText,
+              color = FlareColors.TextSecondary,
+              style = MaterialTheme.typography.labelSmall,
+              fontSize = 9.sp,
+              fontWeight = FontWeight.SemiBold,
+            )
+          }
+        }
+      }
       Text(
         asset.detailLabel(),
         maxLines = 1,

@@ -12,9 +12,12 @@ import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderBook
 import xyz.mcxross.flare.decibel.model.Position
+import xyz.mcxross.flare.decibel.model.SpotMidPrice
 
 sealed interface DecibelStreamData {
   data class MarketPrices(val values: List<MarketPrice>) : DecibelStreamData
+
+  data class SpotMids(val values: List<SpotMidPrice>) : DecibelStreamData
 
   data class MarketPriceValue(val value: MarketPrice) : DecibelStreamData
 
@@ -65,6 +68,10 @@ internal fun decodeStreamData(
       DecibelStreamData.MarketPrices(
         json.decodeFromJsonElement<MarketPricesEnvelope>(payload).prices
       )
+    AllSpotMids ->
+      DecibelStreamData.SpotMids(
+        json.decodeFromJsonElement<SpotMidsEnvelope>(payload).mids
+      )
     is MarketPriceTopic ->
       DecibelStreamData.MarketPriceValue(
         json.decodeFromJsonElement<MarketPriceEnvelope>(payload).price
@@ -96,6 +103,8 @@ internal fun decodeStreamData(
   }
 
 @Serializable private data class MarketPricesEnvelope(val prices: List<MarketPrice>)
+
+@Serializable private data class SpotMidsEnvelope(val mids: List<SpotMidPrice>)
 
 @Serializable private data class MarketPriceEnvelope(val price: MarketPrice)
 
