@@ -23,6 +23,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
@@ -123,7 +124,12 @@ class PortfolioViewModel(
         )
       }
       .combine(markets.catalog) { state, catalog ->
+        val nonSpotPositions =
+          state.account.positions.filter { pos ->
+            catalog.quotes.none { it.market.address == pos.market && it.market.assetType == AssetType.SPOT }
+          }
         state.copy(
+          account = state.account.copy(positions = nonSpotPositions),
           marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
           markPrices = catalog.quotes.associate { it.market.address to it.markPrice },
         )

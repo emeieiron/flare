@@ -432,6 +432,32 @@ fun FlareTopBar(
 }
 
 @Composable
+fun InstrumentBadge(
+  text: String,
+  modifier: Modifier = Modifier,
+) {
+  Box(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(4.dp))
+        .background(FlareColors.Elevated)
+        .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(4.dp))
+        .padding(horizontal = 6.dp, vertical = 2.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = text,
+      style =
+        MaterialTheme.typography.labelSmall.copy(
+          fontSize = 10.sp,
+          fontWeight = FontWeight.SemiBold,
+        ),
+      color = FlareColors.TextSecondary,
+    )
+  }
+}
+
+@Composable
 fun AssetHeader(
   asset: AssetIdentity,
   price: String,
@@ -453,25 +479,7 @@ fun AssetHeader(
       ) {
         Text(asset.name, style = MaterialTheme.typography.titleLarge)
         if (badgeText != null) {
-          Box(
-            modifier =
-              Modifier
-                .clip(RoundedCornerShape(4.dp))
-                .background(FlareColors.Elevated)
-                .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(4.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            contentAlignment = Alignment.Center,
-          ) {
-            Text(
-              text = badgeText,
-              style =
-                MaterialTheme.typography.labelSmall.copy(
-                  fontSize = 10.sp,
-                  fontWeight = FontWeight.SemiBold,
-                ),
-              color = FlareColors.TextSecondary,
-            )
-          }
+          InstrumentBadge(badgeText)
         }
       }
       Text(

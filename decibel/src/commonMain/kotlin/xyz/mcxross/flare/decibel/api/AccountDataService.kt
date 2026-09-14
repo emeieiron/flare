@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.FundingPayment
 import xyz.mcxross.flare.decibel.model.MarketTrade
@@ -18,11 +19,26 @@ interface AccountDataService {
 
   suspend fun positions(account: String, market: String? = null): List<Position>
 
-  suspend fun openOrders(account: String, limit: Int = 200, offset: Int = 0): Page<Order>
+  suspend fun openOrders(
+    account: String,
+    limit: Int = 200,
+    offset: Int = 0,
+    assetType: AssetType? = null,
+  ): Page<Order>
 
-  suspend fun orderHistory(account: String, limit: Int = 100, offset: Int = 0): Page<Order>
+  suspend fun orderHistory(
+    account: String,
+    limit: Int = 100,
+    offset: Int = 0,
+    assetType: AssetType? = null,
+  ): Page<Order>
 
-  suspend fun tradeHistory(account: String, limit: Int = 100, offset: Int = 0): Page<MarketTrade>
+  suspend fun tradeHistory(
+    account: String,
+    limit: Int = 100,
+    offset: Int = 0,
+    assetType: AssetType? = null,
+  ): Page<MarketTrade>
 
   suspend fun fundingHistory(
     account: String,
@@ -46,26 +62,41 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
       market?.let { parameter("market_address", it) }
     }
 
-  override suspend fun openOrders(account: String, limit: Int, offset: Int): Page<Order> =
+  override suspend fun openOrders(
+    account: String,
+    limit: Int,
+    offset: Int,
+    assetType: AssetType?,
+  ): Page<Order> =
     api.get("open_orders") {
       parameter("account", account)
-      parameter("asset_type", "perp")
+      assetType?.let { parameter("asset_type", it.name.lowercase()) }
       parameter("limit", limit.coerceIn(1, 200))
       parameter("offset", offset.coerceIn(0, 10_000))
     }
 
-  override suspend fun orderHistory(account: String, limit: Int, offset: Int): Page<Order> =
+  override suspend fun orderHistory(
+    account: String,
+    limit: Int,
+    offset: Int,
+    assetType: AssetType?,
+  ): Page<Order> =
     api.get("order_history") {
       parameter("account", account)
-      parameter("asset_type", "perp")
+      assetType?.let { parameter("asset_type", it.name.lowercase()) }
       parameter("limit", limit.coerceIn(1, 200))
       parameter("offset", offset.coerceIn(0, 10_000))
     }
 
-  override suspend fun tradeHistory(account: String, limit: Int, offset: Int): Page<MarketTrade> =
+  override suspend fun tradeHistory(
+    account: String,
+    limit: Int,
+    offset: Int,
+    assetType: AssetType?,
+  ): Page<MarketTrade> =
     api.get("trade_history") {
       parameter("account", account)
-      parameter("asset_type", "perp")
+      assetType?.let { parameter("asset_type", it.name.lowercase()) }
       parameter("limit", limit.coerceIn(1, 200))
       parameter("offset", offset.coerceIn(0, 10_000))
     }
