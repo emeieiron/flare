@@ -51,6 +51,57 @@ class ServiceContractTest {
     assertEquals("Trading", subaccounts.single().name)
   }
 
+  @Test
+  fun openOrdersWithoutAssetTypeOmitsParameter() = runTest {
+    var query = ""
+    val http =
+      HttpClient(
+        MockEngine { request ->
+          query = request.url.encodedQuery
+          respondJson("""{"items":[],"total_count":0}""")
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    service.openOrders("0x22")
+
+    assertEquals("account=0x22&limit=200&offset=0", query)
+  }
+
+  @Test
+  fun orderHistoryWithSpotAssetTypeSendsParameter() = runTest {
+    var query = ""
+    val http =
+      HttpClient(
+        MockEngine { request ->
+          query = request.url.encodedQuery
+          respondJson("""{"items":[],"total_count":0}""")
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    service.orderHistory("0x22", assetType = xyz.mcxross.flare.decibel.model.AssetType.SPOT)
+
+    assertEquals("account=0x22&asset_type=spot&limit=100&offset=0", query)
+  }
+
+  @Test
+  fun tradeHistoryWithoutAssetTypeOmitsParameter() = runTest {
+    var query = ""
+    val http =
+      HttpClient(
+        MockEngine { request ->
+          query = request.url.encodedQuery
+          respondJson("""{"items":[],"total_count":0}""")
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    service.tradeHistory("0x22")
+
+    assertEquals("account=0x22&limit=100&offset=0", query)
+  }
+
   private fun api(client: HttpClient) =
     DecibelApi(
       client,

@@ -36,6 +36,7 @@ enum class OrdersSection(val label: String) {
 data class OrdersUiState(
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
+  val spotMarkets: Set<String> = emptySet(),
   val account: AccountSnapshot = AccountSnapshot(),
   val history: AccountHistorySnapshot = AccountHistorySnapshot(),
   val section: OrdersSection = OrdersSection.OPEN,
@@ -79,7 +80,12 @@ class OrdersViewModel(
       }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
-          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol }
+          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
+          spotMarkets =
+            catalog.quotes
+              .filter { it.market.assetType == AssetType.SPOT }
+              .map { it.market.address }
+              .toSet(),
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrdersUiState())
