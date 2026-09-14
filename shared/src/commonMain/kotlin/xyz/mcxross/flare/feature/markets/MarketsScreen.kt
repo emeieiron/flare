@@ -23,10 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
-import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareChip
-import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareTopBar
@@ -62,7 +60,6 @@ fun MarketsScreen(
   ) {
     FlareTopBar(
       title = "Markets",
-      subtitle = if (state.stale && state.quotes.isNotEmpty()) "Reconnecting…" else null,
     )
     FlareSearchField(
       value = state.query,
@@ -97,6 +94,24 @@ fun MarketsScreen(
       }
     }
     if (state.loading && state.quotes.isEmpty()) {
+      Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Text(
+          when {
+            state.query.isNotBlank() -> "Search results"
+            state.favoritesOnly -> "Your watchlist"
+            else -> "All markets"
+          },
+          style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+          "Price / 24h",
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+        )
+      }
       MarketListSkeleton()
     } else if (state.quotes.isEmpty()) {
       EmptyState(
@@ -108,7 +123,7 @@ fun MarketsScreen(
             else -> "No markets found"
           },
         message =
-          if (state.error != null) "Flare is reconnecting. Prices appear as soon as they arrive."
+          if (state.error != null) "Prices appear as soon as market data arrives."
           else if (state.favoritesOnly && state.query.isBlank()) {
             "Tap the star beside a market to follow it here."
           } else {
@@ -134,14 +149,6 @@ fun MarketsScreen(
               "Price / 24h",
               style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary,
-            )
-          }
-        }
-        if (state.stale) {
-          item {
-            ActionNotice(
-              "Reconnecting to live prices. Trading resumes automatically.",
-              tone = NoticeTone.PROGRESS,
             )
           }
         }
