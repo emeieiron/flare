@@ -65,6 +65,8 @@ class MarketsViewModel(
       filter,
     ) { catalog, assets, f ->
       val normalized = f.query.trim().lowercase()
+      val isPerp = f.instrument == MarketInstrumentFilter.PERPETUALS
+      val effectiveFavoritesOnly = if (isPerp && f.category == null) true else f.favoritesOnly
       val categories =
         when (f.instrument) {
           MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
@@ -73,7 +75,7 @@ class MarketsViewModel(
       MarketsUiState(
         loading = catalog.loading,
         query = f.query,
-        favoritesOnly = f.favoritesOnly,
+        favoritesOnly = effectiveFavoritesOnly,
         selectedInstrument = f.instrument,
         selectedCategory = f.category,
         categories = categories,
@@ -85,7 +87,7 @@ class MarketsViewModel(
                 MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
               }
             matchesInstrument &&
-              (!f.favoritesOnly || it.favorite) &&
+              (normalized.isNotEmpty() || !effectiveFavoritesOnly || it.favorite) &&
               (f.category == null ||
                 assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == f.category) &&
               (normalized.isEmpty() ||
@@ -119,10 +121,36 @@ class MarketsViewModel(
       is MarketsIntent.Search -> filter.update { it.copy(query = intent.value) }
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
-      is MarketsIntent.SetFavoritesOnly -> filter.update { it.copy(favoritesOnly = intent.enabled) }
-      is MarketsIntent.SetCategory -> filter.update { it.copy(category = intent.category) }
+      is MarketsIntent.SetFavoritesOnly -> filter.update { current ->
+        if (intent.enabled) {
+          current.copy(favoritesOnly = true, category = null)
+        } else {
+          if (current.instrument == MarketInstrumentFilter.PERPETUALS && current.category == null) {
+            current.copy(favoritesOnly = true)
+          } else {
+            current.copy(favoritesOnly = false)
+          }
+        }
+      }
+      is MarketsIntent.SetCategory -> filter.update { current ->
+        if (intent.category == null) {
+          if (current.instrument == MarketInstrumentFilter.PERPETUALS) {
+            current.copy(category = null, favoritesOnly = true)
+          } else {
+            current.copy(category = null)
+          }
+        } else {
+          current.copy(category = intent.category, favoritesOnly = false)
+        }
+      }
       is MarketsIntent.SetInstrument ->
-        filter.update { it.copy(instrument = intent.instrument, category = null) }
+        filter.update { current ->
+          if (intent.instrument == MarketInstrumentFilter.PERPETUALS) {
+            current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)
+          } else {
+            current.copy(instrument = intent.instrument, category = null)
+          }
+        }
     }
   }
 }
