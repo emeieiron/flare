@@ -12,6 +12,7 @@ import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.DetailRow
@@ -21,14 +22,18 @@ import xyz.mcxross.flare.design.FlareColors
 internal fun OrderReview(state: TradeUiState, side: OrderSide) {
   val quote = state.quote ?: return
   val estimate = state.orderEstimate(side)
-  val exits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
+  val isSpot = quote.market.assetType == AssetType.SPOT
+  val exits = !isSpot && (state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
   Text(
     "${if (side == OrderSide.BUY) "Buy" else "Sell"} ${state.sizeInput} ${quote.market.symbol}",
     style = MaterialTheme.typography.titleLarge,
     color = if (side == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
   )
+  val subtitle =
+    if (isSpot) "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · Spot"
+    else "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
   Text(
-    "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}",
+    subtitle,
     color = FlareColors.TextSecondary,
     modifier = Modifier.padding(top = 4.dp),
   )
@@ -37,13 +42,17 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
     estimate?.entryPrice?.let(::formatPrice) ?: "—",
   )
   DetailRow("Order value", estimate?.value?.let(::formatBalance) ?: "—")
-  DetailRow("Estimated margin", estimate?.margin?.let(::formatBalance) ?: "—")
+  if (!isSpot) {
+    DetailRow("Estimated margin", estimate?.margin?.let(::formatBalance) ?: "—")
+  }
   if (state.orderType == OrderType.MARKET) {
     DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
   }
   // Only exits the person actually set are worth a row; the rest is noise on a confirmation screen.
-  OutcomeRow("Take profit", state.takeProfitInput, estimate?.profit, FlareColors.Positive)
-  OutcomeRow("Stop loss", state.stopLossInput, estimate?.loss, FlareColors.Negative)
+  if (!isSpot) {
+    OutcomeRow("Take profit", state.takeProfitInput, estimate?.profit, FlareColors.Positive)
+    OutcomeRow("Stop loss", state.stopLossInput, estimate?.loss, FlareColors.Negative)
+  }
   state.limitDistanceFromMark(side)?.let { distance ->
     Text(
       "This limit price is ${formatPercent(distance * 100)} " +
@@ -55,7 +64,9 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
     )
   }
   Text(
-    if (exits) {
+    if (isSpot) {
+      "Estimates assume a full fill at the price shown, before network and trading fees."
+    } else if (exits) {
       "Estimates assume a full fill at the prices shown, before fees and funding. An exit places a " +
         "limit order when it triggers, so execution is not guaranteed."
     } else {

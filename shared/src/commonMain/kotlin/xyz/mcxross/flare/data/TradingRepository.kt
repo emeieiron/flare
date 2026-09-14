@@ -73,6 +73,8 @@ interface TradingRepository {
 
   suspend fun apiWalletAptBalance(): ULong
 
+  suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double = 0.0
+
   fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState>
 
   suspend fun reconcilePending(): ReconciliationResult
@@ -330,6 +332,19 @@ class DefaultTradingRepository(
       is AptosResult.Failure -> error(result.error.toString())
     }
   }
+
+  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
+    runSuspendCatching {
+      val address = AccountAddress.fromString(accountAddress)
+      if (symbol.equals("APT", ignoreCase = true)) {
+        when (val result = aptos.accounts.getBalance(address, AccountAsset.coin(APTOS_COIN))) {
+          is AptosResult.Success -> result.value.toDouble() / 100_000_000.0
+          is AptosResult.Failure -> 0.0
+        }
+      } else {
+        0.0
+      }
+    }.getOrDefault(0.0)
 
   override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
     flow {
