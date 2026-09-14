@@ -36,7 +36,7 @@ internal fun TradeUiState.leverageCommand(
 /** A failed or unresolved settings update must never continue into placing an order. */
 internal suspend fun placeConfiguredOrder(
   configuration: DecibelCommand.ConfigureMarket?,
-  entry: DecibelCommand.PlaceOrder,
+  entry: DecibelCommand,
   execute: (DecibelCommand) -> Flow<TransactionState>,
   onState: (OrderStage, TransactionState) -> Unit,
 ): TransactionState {

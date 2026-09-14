@@ -137,6 +137,8 @@ class TradeViewModel(
   private var requestedMarket: String? = null
   private var chartJob: Job? = null
   private var marketDetailsJob: Job? = null
+  private var baseBalanceJob: Job? = null
+  private var lastBaseBalanceKey: String? = null
 
   init {
     viewModelScope.launch {
@@ -154,10 +156,12 @@ class TradeViewModel(
             leverage = if (changed) 1 else it.leverage,
           )
         }
-        syncPositionLeverage()
-        syncBalances()
-        if (changed && quote != null) loadCandles(quote, mutableUiState.value.range)
-        if (changed && quote != null) loadMarketDetails(quote.market.address)
+        if (changed) {
+          syncPositionLeverage()
+          syncBalances()
+          if (quote != null) loadCandles(quote, mutableUiState.value.range)
+          if (quote != null) loadMarketDetails(quote.market.address)
+        }
       }
     }
     viewModelScope.launch {
@@ -195,7 +199,7 @@ class TradeViewModel(
     viewModelScope.launch {
       accounts.snapshot.collect {
         syncPositionLeverage()
-        syncBalances()
+        syncBalances(forceBase = true)
       }
     }
   }
@@ -223,7 +227,7 @@ class TradeViewModel(
     }
   }
 
-  private fun syncBalances() {
+  private fun syncBalances(forceBase: Boolean = false) {
     val snapshot = accounts.snapshot.value
     val quote = mutableUiState.value.quote
     val usdc =
@@ -231,12 +235,19 @@ class TradeViewModel(
     mutableUiState.update { it.copy(quoteBalance = usdc) }
     if (quote?.market?.assetType == AssetType.SPOT) {
       val subaccount = snapshot.account ?: mutableUiState.value.tradingAccountAddress
-      if (subaccount != null) {
-        viewModelScope.launch {
-          val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
-          mutableUiState.update { it.copy(baseBalance = base) }
-        }
+      val key = "$subaccount:${quote.market.address}"
+      if (subaccount != null && (forceBase || key != lastBaseBalanceKey)) {
+        lastBaseBalanceKey = key
+        baseBalanceJob?.cancel()
+        baseBalanceJob =
+          viewModelScope.launch {
+            val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
+            mutableUiState.update { it.copy(baseBalance = base) }
+          }
       }
+    } else {
+      lastBaseBalanceKey = null
+      baseBalanceJob?.cancel()
     }
   }
 
@@ -252,7 +263,7 @@ class TradeViewModel(
             } ?: markets.catalog.value.quotes.firstOrNull()
           mutableUiState.update { it.copy(quote = quote) }
           syncPositionLeverage()
-          syncBalances()
+          syncBalances(forceBase = true)
           preferences.setSelectedMarket(quote?.market?.address)
           if (quote != null) loadCandles(quote, mutableUiState.value.range)
           if (quote != null) loadMarketDetails(quote.market.address)
@@ -378,11 +389,14 @@ class TradeViewModel(
             require(!snapshot.stale && snapshot.account == subaccount) {
               "Your account is still reconnecting. Try again in a moment."
             }
+            val isSpot = market.assetType == AssetType.SPOT
             val position = snapshot.positions.firstOrNull { it.market == market.address }
             val terminal =
               placeConfiguredOrder(
-                configuration = state.leverageCommand(subaccount, position),
-                entry = DecibelCommand.PlaceOrder(subaccount, validated),
+                configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
+                entry =
+                  if (isSpot) DecibelCommand.PlaceSpotOrder(subaccount, validated)
+                  else DecibelCommand.PlaceOrder(subaccount, validated),
                 execute = { command ->
                   trading.execute(
                     command,

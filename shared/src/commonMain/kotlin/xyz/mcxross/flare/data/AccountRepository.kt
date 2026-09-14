@@ -311,14 +311,15 @@ class DefaultAccountRepository(
 
         override suspend fun createWallet() = wallets.createApiWallet(prompt)
 
-        override suspend fun isDelegated(address: String): Boolean =
-          client.accounts.delegations(subaccount).any {
+        override suspend fun isDelegated(address: String): Boolean {
+          val delegations = client.accounts.delegations(subaccount)
+          val now = Clock.System.now().epochSeconds
+          return delegations.any {
             it.delegate.sameAptosAddress(address) &&
-              it.canTradeAllPerpMarkets &&
-              (it.expirationTimeSeconds?.let { expiry ->
-                expiry == 0L || expiry > Clock.System.now().epochSeconds
-              } ?: true)
+              (it.canTradeAllPerpMarkets || it.canTradeAllSpotMarkets) &&
+              (it.expirationTimeSeconds?.let { expiry -> expiry == 0L || expiry > now } ?: true)
           }
+        }
 
         override suspend fun requireNoPendingTransactions() {
           trading.reconcilePending()
