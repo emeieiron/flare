@@ -241,7 +241,25 @@ class DecibelTradingExecutionTest {
             null,
           ),
         ),
+        DecibelCommand.PlaceSpotOrder(
+          "0x11",
+          ValidatedOrder(
+            "0x22",
+            OrderSide.BUY,
+            10uL,
+            1uL,
+            TimeInForce.GOOD_TILL_CANCELLED,
+            false,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+          ),
+        ),
         DecibelCommand.CancelOrder("0x11", "0x22", "340282366920938463463374607431768211455"),
+        DecibelCommand.CancelSpotOrder("0x11", "0x22", "340282366920938463463374607431768211455"),
         DecibelCommand.SetPositionTpSl("0x11", "0x22", stopLossTrigger = 1uL),
         DecibelCommand.CancelPositionTpSl("0x11", "0x22", "1"),
       )
@@ -294,6 +312,7 @@ class DecibelTradingExecutionTest {
     val f = ExecutionFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try {
       assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_ENTRY_ABI))
+      assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI))
       block(f)
     } finally {
       f.aptos.close()

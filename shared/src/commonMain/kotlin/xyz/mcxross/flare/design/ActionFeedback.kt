@@ -64,7 +64,8 @@ private fun failureCause(detail: String): String? =
       "timed out",
       "timeout",
     ) -> "Flare couldn’t reach the network."
-    detail.mentions("429", "too many requests") -> "The service is busy. Try again in a moment."
+    detail.mentions("429", "too many requests", "rate limit") ->
+      "The service is busy. Try again in a moment."
     else -> null
   }
 

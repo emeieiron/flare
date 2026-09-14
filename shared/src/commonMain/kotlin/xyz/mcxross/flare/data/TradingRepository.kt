@@ -336,7 +336,8 @@ class DefaultTradingRepository(
   override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
     runSuspendCatching {
       val address = AccountAddress.fromString(accountAddress)
-      if (symbol.equals("APT", ignoreCase = true)) {
+      val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
+      if (token.equals("APT", ignoreCase = true)) {
         when (val result = aptos.accounts.getBalance(address, AccountAsset.coin(APTOS_COIN))) {
           is AptosResult.Success -> result.value.toDouble() / 100_000_000.0
           is AptosResult.Failure -> 0.0
@@ -652,7 +653,9 @@ internal fun DecibelCommand.requiredSigner(): TradingSigner =
     is DecibelCommand.RevokeDelegation -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
     is DecibelCommand.PlaceOrder,
+    is DecibelCommand.PlaceSpotOrder,
     is DecibelCommand.CancelOrder,
+    is DecibelCommand.CancelSpotOrder,
     is DecibelCommand.CancelPositionTpSl,
     is DecibelCommand.SetPositionTpSl -> TradingSigner.API
   }
@@ -667,7 +670,9 @@ private fun DecibelCommand.journalName(): String =
     is DecibelCommand.RevokeDelegation -> "REVOKE_DELEGATION"
     is DecibelCommand.ConfigureMarket -> "CONFIGURE_MARKET"
     is DecibelCommand.PlaceOrder -> "PLACE_ORDER"
+    is DecibelCommand.PlaceSpotOrder -> "PLACE_SPOT_ORDER"
     is DecibelCommand.CancelOrder -> "CANCEL_ORDER"
+    is DecibelCommand.CancelSpotOrder -> "CANCEL_SPOT_ORDER"
     is DecibelCommand.CancelPositionTpSl -> "CANCEL_POSITION_TP_SL"
     is DecibelCommand.SetPositionTpSl -> "SET_POSITION_TP_SL"
   }
@@ -692,7 +697,9 @@ internal fun DecibelCommand.subaccountAddress(): String? =
     is DecibelCommand.RevokeDelegation -> subaccount
     is DecibelCommand.ConfigureMarket -> subaccount
     is DecibelCommand.PlaceOrder -> subaccount
+    is DecibelCommand.PlaceSpotOrder -> subaccount
     is DecibelCommand.CancelOrder -> subaccount
+    is DecibelCommand.CancelSpotOrder -> subaccount
     is DecibelCommand.CancelPositionTpSl -> subaccount
     is DecibelCommand.SetPositionTpSl -> subaccount
   }

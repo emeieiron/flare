@@ -331,7 +331,8 @@ fun SettingsScreen(
 /** What a delegation actually permits, in place of the raw permission type. */
 private fun delegationSummary(delegation: Delegation): String {
   val scope =
-    if (delegation.canTradeAllPerpMarkets) "Can trade every market"
+    if (delegation.canTradeAllPerpMarkets) "Can trade perp markets"
+    else if (delegation.canTradeAllSpotMarkets) "Can trade spot markets"
     else "Can trade ${delegation.permissionMarket ?: "one market"}"
   val expiry =
     delegation.expirationTimeSeconds?.let { " · expires ${formatCalendarDate(it * 1_000L)}" }
