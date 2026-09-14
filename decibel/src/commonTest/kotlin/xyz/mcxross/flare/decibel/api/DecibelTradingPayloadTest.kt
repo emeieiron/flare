@@ -27,36 +27,77 @@ class DecibelTradingPayloadTest {
       val order = order()
       val commands =
         listOf(
-          DecibelCommand.CreateSubaccount to "create_new_subaccount",
-          DecibelCommand.Deposit(SUBACCOUNT, ASSET, 1uL) to "deposit_to_subaccount_at",
-          DecibelCommand.Withdraw(SUBACCOUNT, ASSET, 1uL) to "withdraw_from_cross_collateral",
+          DecibelCommand.CreateSubaccount to ("dex_accounts_entry" to "create_new_subaccount"),
+          DecibelCommand.Deposit(SUBACCOUNT, ASSET, 1uL) to ("dex_accounts_entry" to "deposit_to_subaccount_at"),
+          DecibelCommand.Withdraw(SUBACCOUNT, ASSET, 1uL) to ("dex_accounts_entry" to "withdraw_from_cross_collateral"),
           DecibelCommand.DelegateTrading(SUBACCOUNT, DELEGATE, 100uL) to
-            "delegate_perp_trading_to_for_subaccount",
-          DecibelCommand.RevokeDelegation(SUBACCOUNT, DELEGATE) to "revoke_delegation",
+            ("dex_accounts_entry" to "delegate_all_trading_to_for_subaccount"),
+          DecibelCommand.RevokeDelegation(SUBACCOUNT, DELEGATE) to ("dex_accounts_entry" to "revoke_delegation"),
           DecibelCommand.ConfigureMarket(
             SUBACCOUNT,
             MARKET,
             MarginMode.CROSS,
             10u,
-          ) to "configure_user_settings_for_market",
-          DecibelCommand.PlaceOrder(SUBACCOUNT, order) to "place_order_to_subaccount",
-          DecibelCommand.CancelOrder(SUBACCOUNT, MARKET, MAX_U128) to "cancel_order_to_subaccount",
+          ) to ("dex_accounts_entry" to "configure_user_settings_for_market"),
+          DecibelCommand.PlaceOrder(SUBACCOUNT, order) to ("dex_accounts_entry" to "place_order_to_subaccount"),
+          DecibelCommand.PlaceSpotOrder(SUBACCOUNT, order) to ("dex_accounts_spot_entry" to "place_spot_order_to_subaccount"),
+          DecibelCommand.CancelOrder(SUBACCOUNT, MARKET, MAX_U128) to ("dex_accounts_entry" to "cancel_order_to_subaccount"),
+          DecibelCommand.CancelSpotOrder(SUBACCOUNT, MARKET, MAX_U128) to ("dex_accounts_spot_entry" to "cancel_spot_order_to_subaccount"),
           DecibelCommand.CancelPositionTpSl(SUBACCOUNT, MARKET, MAX_U128) to
-            "cancel_tp_sl_order_for_position",
+            ("dex_accounts_entry" to "cancel_tp_sl_order_for_position"),
           DecibelCommand.SetPositionTpSl(
             subaccount = SUBACCOUNT,
             market = MARKET,
             takeProfitTrigger = 21uL,
-          ) to "place_tp_sl_order_for_position",
+          ) to ("dex_accounts_entry" to "place_tp_sl_order_for_position"),
         )
 
-      commands.forEach { (command, function) ->
+      commands.forEach { (command, target) ->
+        val (module, function) = target
         val payload = service.payload(command).success()
         assertEquals(DEPLOYMENT.packageAddress, payload.call.module.address.toStringLong())
-        assertEquals("dex_accounts_entry", payload.call.module.name.toString())
+        assertEquals(module, payload.call.module.name.toString())
         assertEquals(function, payload.call.function.toString())
         assertEquals(emptyList(), payload.call.typeArguments)
       }
+    }
+  }
+
+  @Test
+  fun placeSpotOrderEncodingPinsAllDocumentedArgumentsAndNoBuilderFee() = runTest {
+    withService { service ->
+      val payload = service.payload(DecibelCommand.PlaceSpotOrder(SUBACCOUNT, order())).success()
+
+      assertEquals(
+        listOf(
+          addressHex(SUBACCOUNT),
+          addressHex(MARKET),
+          "0807060504030201",
+          "0900000000000000",
+          "01",
+          "02",
+          "00",
+          "00",
+        ),
+        payload.argumentHex(),
+      )
+    }
+  }
+
+  @Test
+  fun cancelSpotOrderEncodingMatchesAbi() = runTest {
+    withService { service ->
+      val payload =
+        service.payload(DecibelCommand.CancelSpotOrder(SUBACCOUNT, MARKET, MAX_U128)).success()
+
+      assertEquals(
+        listOf(
+          addressHex(SUBACCOUNT),
+          addressHex(MARKET),
+          "ffffffffffffffffffffffffffffffff",
+        ),
+        payload.argumentHex(),
+      )
     }
   }
 
@@ -207,6 +248,7 @@ class DecibelTradingPayloadTest {
     val aptos = Aptos()
     try {
       aptos.transactions.preloadModuleAbis(DECIBEL_ENTRY_ABI).success()
+      aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI).success()
       block(DefaultDecibelTradingService(aptos, DEPLOYMENT))
     } finally {
       aptos.close()
@@ -283,7 +325,7 @@ internal val DECIBEL_ENTRY_ABI =
               "u64",
             ),
             function(
-              "delegate_perp_trading_to_for_subaccount",
+              "delegate_all_trading_to_for_subaccount",
               "address",
               "address",
               "0x1::option::Option<u64>",
@@ -342,6 +384,38 @@ internal val DECIBEL_ENTRY_ABI =
               "0x1::option::Option<u64>",
               "0x1::option::Option<address>",
               "0x1::option::Option<u64>",
+            ),
+          ),
+        structs = emptyList(),
+      ),
+  )
+
+internal val DECIBEL_SPOT_ENTRY_ABI =
+  MoveModuleBytecode(
+    bytecode = "0x",
+    abi =
+      MoveModule(
+        address = DEPLOYMENT.packageAddress,
+        name = "dex_accounts_spot_entry",
+        friends = emptyList(),
+        exposedFunctions =
+          listOf(
+            function(
+              "place_spot_order_to_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::spot_market::SpotMarket>",
+              "u64",
+              "u64",
+              "bool",
+              "u8",
+              "0x1::option::Option<address>",
+              "0x1::option::Option<u64>",
+            ),
+            function(
+              "cancel_spot_order_to_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::spot_market::SpotMarket>",
+              "u128",
             ),
           ),
         structs = emptyList(),

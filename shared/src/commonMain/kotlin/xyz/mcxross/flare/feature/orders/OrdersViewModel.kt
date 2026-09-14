@@ -22,6 +22,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 
@@ -128,10 +129,15 @@ class OrdersViewModel(
           suggestedTopUpOctas = null,
         )
       }
+      val isSpot =
+        markets.catalog.value.quotes.firstOrNull { it.market.address == market }?.market?.assetType ==
+          AssetType.SPOT
       trading
         .execute(
           if (isTpSl) {
             DecibelCommand.CancelPositionTpSl(subaccount, market, orderId)
+          } else if (isSpot) {
+            DecibelCommand.CancelSpotOrder(subaccount, market, orderId)
           } else {
             DecibelCommand.CancelOrder(subaccount, market, orderId)
           },

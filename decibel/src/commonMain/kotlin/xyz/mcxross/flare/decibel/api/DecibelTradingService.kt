@@ -51,7 +51,12 @@ sealed interface DecibelCommand {
 
   data class PlaceOrder(val subaccount: String, val order: ValidatedOrder) : DecibelCommand
 
+  data class PlaceSpotOrder(val subaccount: String, val order: ValidatedOrder) : DecibelCommand
+
   data class CancelOrder(val subaccount: String, val market: String, val orderId: String) :
+    DecibelCommand
+
+  data class CancelSpotOrder(val subaccount: String, val market: String, val orderId: String) :
     DecibelCommand
 
   data class CancelPositionTpSl(val subaccount: String, val market: String, val orderId: String) :
@@ -174,7 +179,7 @@ internal class DefaultDecibelTradingService(
           )
       }
       is DecibelCommand.DelegateTrading -> {
-        function = "$packageAddress::dex_accounts_entry::delegate_perp_trading_to_for_subaccount"
+        function = "$packageAddress::dex_accounts_entry::delegate_all_trading_to_for_subaccount"
         arguments =
           listOf(
             address(command.subaccount),
@@ -221,6 +226,23 @@ internal class DefaultDecibelTradingService(
             option(null),
           )
       }
+      is DecibelCommand.PlaceSpotOrder -> {
+        function = "$packageAddress::dex_accounts_spot_entry::place_spot_order_to_subaccount"
+        val order = command.order
+        require(order.price > 0uL) { "Order price must be positive" }
+        require(order.size > 0uL) { "Order size must be positive" }
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(order.marketAddress),
+            MoveArgument.U64(order.price),
+            MoveArgument.U64(order.size),
+            MoveArgument.Bool(order.side == xyz.mcxross.flare.decibel.model.OrderSide.BUY),
+            MoveArgument.U8(order.timeInForce.chainValue),
+            option(null),
+            option(null),
+          )
+      }
       is DecibelCommand.CancelOrder -> {
         function = "$packageAddress::dex_accounts_entry::cancel_order_to_subaccount"
         arguments =
@@ -228,6 +250,15 @@ internal class DefaultDecibelTradingService(
             address(command.subaccount),
             MoveArgument.U128(command.orderId),
             address(command.market),
+          )
+      }
+      is DecibelCommand.CancelSpotOrder -> {
+        function = "$packageAddress::dex_accounts_spot_entry::cancel_spot_order_to_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.market),
+            MoveArgument.U128(command.orderId),
           )
       }
       is DecibelCommand.CancelPositionTpSl -> {
@@ -323,6 +354,7 @@ internal class DefaultDecibelTradingService(
         }
         val failed = simulation.value.firstOrNull { !it.success }
         if (failed != null) {
+          println("SIMULATION_FAILED_VM_STATUS: ${failed.vmStatus}")
           emit(TransactionState.Failed(failed.vmStatus))
           return@flow
         }

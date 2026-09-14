@@ -114,6 +114,9 @@ data class Delegation(
 ) {
   val canTradeAllPerpMarkets: Boolean
     get() = permissionType == "TradePerpsAllMarkets"
+
+  val canTradeAllSpotMarkets: Boolean
+    get() = permissionType == "TradeSpotAllMarkets"
 }
 
 @Serializable
