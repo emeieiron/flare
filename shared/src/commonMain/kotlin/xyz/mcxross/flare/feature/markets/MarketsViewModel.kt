@@ -8,15 +8,30 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.decibel.model.AssetType
+
+enum class MarketInstrumentFilter {
+  PERPETUALS,
+  SPOT,
+}
+
+internal data class MarketFilter(
+  val query: String = "",
+  val favoritesOnly: Boolean = true,
+  val instrument: MarketInstrumentFilter = MarketInstrumentFilter.PERPETUALS,
+  val category: String? = null,
+)
 
 data class MarketsUiState(
   val loading: Boolean = true,
   val query: String = "",
   val favoritesOnly: Boolean = true,
+  val selectedInstrument: MarketInstrumentFilter = MarketInstrumentFilter.PERPETUALS,
   val selectedCategory: String? = null,
   val categories: List<String> = marketCategoryTabs,
   val quotes: List<MarketQuote> = emptyList(),
@@ -33,46 +48,59 @@ sealed interface MarketsIntent {
   data class SetFavoritesOnly(val enabled: Boolean) : MarketsIntent
 
   data class SetCategory(val category: String?) : MarketsIntent
+
+  data class SetInstrument(val instrument: MarketInstrumentFilter) : MarketsIntent
 }
 
 class MarketsViewModel(
   private val repository: MarketsRepository,
   private val assetCatalog: AssetCatalogRepository,
 ) : ViewModel() {
-  private val query = MutableStateFlow("")
-  private val favoritesOnly = MutableStateFlow(true)
-  private val selectedCategory = MutableStateFlow<String?>(null)
+  private val filter = MutableStateFlow(MarketFilter())
 
   val uiState: StateFlow<MarketsUiState> =
-    combine(repository.catalog, assetCatalog.assets, query, favoritesOnly, selectedCategory) {
-        catalog,
-        assets,
-        search,
-        onlyFavorites,
-        category ->
-        val normalized = search.trim().lowercase()
-        MarketsUiState(
-          loading = catalog.loading,
-          query = search,
-          favoritesOnly = onlyFavorites,
-          selectedCategory = category,
-          quotes =
-            catalog.quotes.filter {
-              (!onlyFavorites || it.favorite) &&
-                (category == null ||
-                  assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == category) &&
-                (normalized.isEmpty() ||
-                  it.market.symbol.lowercase().contains(normalized) ||
-                  it.market.name.lowercase().contains(normalized) ||
-                  assets[assetKey(it.market.symbol)]?.let { asset ->
-                    asset.name.lowercase().contains(normalized) || asset.kind.lowercase().contains(normalized)
-                  } == true)
-            },
-          stale = catalog.stale,
-          error = catalog.error,
-          assets = assets,
-        )
-      }
+    combine(
+      repository.catalog,
+      assetCatalog.assets,
+      filter,
+    ) { catalog, assets, f ->
+      val normalized = f.query.trim().lowercase()
+      val categories =
+        when (f.instrument) {
+          MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
+          MarketInstrumentFilter.SPOT -> spotCategoryTabs
+        }
+      MarketsUiState(
+        loading = catalog.loading,
+        query = f.query,
+        favoritesOnly = f.favoritesOnly,
+        selectedInstrument = f.instrument,
+        selectedCategory = f.category,
+        categories = categories,
+        quotes =
+          catalog.quotes.filter {
+            val matchesInstrument =
+              when (f.instrument) {
+                MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
+                MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
+              }
+            matchesInstrument &&
+              (!f.favoritesOnly || it.favorite) &&
+              (f.category == null ||
+                assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == f.category) &&
+              (normalized.isEmpty() ||
+                it.market.symbol.lowercase().contains(normalized) ||
+                it.market.name.lowercase().contains(normalized) ||
+                assets[assetKey(it.market.symbol)]?.let { asset ->
+                  asset.name.lowercase().contains(normalized) ||
+                    asset.kind.lowercase().contains(normalized)
+                } == true)
+          },
+        stale = catalog.stale,
+        error = catalog.error,
+        assets = assets,
+      )
+    }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -88,11 +116,13 @@ class MarketsViewModel(
 
   fun onIntent(intent: MarketsIntent) {
     when (intent) {
-      is MarketsIntent.Search -> query.value = intent.value
+      is MarketsIntent.Search -> filter.update { it.copy(query = intent.value) }
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
-      is MarketsIntent.SetFavoritesOnly -> favoritesOnly.value = intent.enabled
-      is MarketsIntent.SetCategory -> selectedCategory.value = intent.category
+      is MarketsIntent.SetFavoritesOnly -> filter.update { it.copy(favoritesOnly = intent.enabled) }
+      is MarketsIntent.SetCategory -> filter.update { it.copy(category = intent.category) }
+      is MarketsIntent.SetInstrument ->
+        filter.update { it.copy(instrument = intent.instrument, category = null) }
     }
   }
 }
@@ -100,3 +130,4 @@ class MarketsViewModel(
 private fun String.normalizedCategory(): String? = trim().lowercase().takeIf { it.isNotEmpty() }
 
 private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
+private val spotCategoryTabs = listOf("crypto")
