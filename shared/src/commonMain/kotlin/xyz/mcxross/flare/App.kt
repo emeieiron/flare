@@ -59,10 +59,16 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.design.AppStartupSkeleton
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareTheme
 import xyz.mcxross.flare.design.LocalTransactionExplorer
@@ -209,10 +215,10 @@ private fun FlareAppFlow() {
   }
   val savedScreens = rememberSaveableStateHolder()
   if (persisted == null || walletProfile == null) {
-    AppStartupSkeleton()
+    FlareSplashScreen()
   } else if (hasCredentials && !unlocked) {
     if (unlockError == null) {
-      AppStartupSkeleton()
+      FlareSplashScreen()
     } else {
       Box(
         Modifier.fillMaxSize().background(FlareColors.Canvas),
@@ -220,9 +226,20 @@ private fun FlareAppFlow() {
       ) {
         Column(
           horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(20.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-          Text("Flare", style = MaterialTheme.typography.headlineLarge)
+          Box(
+            modifier =
+              Modifier
+                .size(92.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(FlareColors.Elevated)
+                .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center,
+          ) {
+            FlareLogo(modifier = Modifier.size(46.dp), color = FlareColors.Positive)
+          }
+          Text("flare", style = MaterialTheme.typography.headlineMedium)
           Text(
             "Confirm it’s you to continue.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,

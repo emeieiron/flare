@@ -68,6 +68,7 @@ private fun PreviewScreens(initialScreen: String) {
     )
     Box(Modifier.weight(1f)) {
       when (screen) {
+        "splash" -> FlareSplashScreen()
         "welcome",
         "import" ->
           OnboardingScreen(
