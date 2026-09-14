@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import xyz.mcxross.flare.feature.trade.ChartStyle
 
 @Preview
 @Composable
@@ -57,6 +58,21 @@ private fun FlareMarketRowPreview() {
         onClick = {},
         onFavorite = {},
       )
+    }
+  }
+}
+
+@Preview
+@Composable
+private fun FlareShimmerPreview() {
+  FlareTheme {
+    Column(
+      modifier = Modifier.fillMaxWidth().background(FlareColors.Canvas).padding(20.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      MarketListRowSkeleton()
+      PriceChartSkeleton(chartStyle = ChartStyle.LINE)
+      PriceChartSkeleton(chartStyle = ChartStyle.CANDLESTICK)
     }
   }
 }

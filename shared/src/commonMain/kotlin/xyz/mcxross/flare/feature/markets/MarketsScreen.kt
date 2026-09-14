@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
+import xyz.mcxross.flare.design.MarketListSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.data.assetKey
 
@@ -97,18 +97,7 @@ fun MarketsScreen(
       }
     }
     if (state.loading && state.quotes.isEmpty()) {
-      Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-      ) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-        Text(
-          "Loading markets…",
-          modifier = Modifier.padding(top = 12.dp),
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
+      MarketListSkeleton()
     } else if (state.quotes.isEmpty()) {
       EmptyState(
         title =
