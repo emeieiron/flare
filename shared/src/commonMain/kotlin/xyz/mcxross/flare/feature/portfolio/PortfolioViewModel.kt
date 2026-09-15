@@ -6,7 +6,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -145,6 +148,7 @@ class PortfolioViewModel(
   private val assetCatalog: AssetCatalogRepository? = null,
 ) : ViewModel() {
   private val local = MutableStateFlow(PortfolioUiState())
+  private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private var lastPositionCommand: DecibelCommand? = null
 
   init {
@@ -152,10 +156,38 @@ class PortfolioViewModel(
       runSuspendCatching { accounts.refresh() }
     }
     viewModelScope.launch {
-      combine(accounts.snapshot, markets.catalog) { snapshot, catalog ->
-        snapshot to catalog
-      }.collect { (snapshot, catalog) ->
-        syncSpotHoldings(snapshot, catalog)
+      accounts.snapshot
+        .mapNotNull { it.account }
+        .distinctUntilChanged()
+        .collect { subaccount ->
+          fetchSpotBalances(subaccount)
+        }
+    }
+    viewModelScope.launch {
+      markets.catalog
+        .map { catalog ->
+          catalog.quotes
+            .filter { it.market.assetType == AssetType.SPOT }
+            .map { it.market.address }
+            .sorted()
+        }
+        .distinctUntilChanged()
+        .collect { spotMarketAddresses ->
+          if (spotMarketAddresses.isNotEmpty()) {
+            val subaccount = accounts.snapshot.value.account
+            if (subaccount != null) {
+              fetchSpotBalances(subaccount)
+            }
+          }
+        }
+    }
+    viewModelScope.launch {
+      var wasPending = false
+      trading.pendingTransactions.collect { pending ->
+        if (wasPending && pending.isEmpty()) {
+          accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
+        }
+        wasPending = pending.isNotEmpty()
       }
     }
   }
@@ -174,25 +206,72 @@ class PortfolioViewModel(
             saved.profiles.firstOrNull { it.id == saved.activeProfileId }?.withdrawal
         )
       }
-      .combine(markets.catalog) { state, catalog ->
+      .combine(spotBalances) { state, balances ->
+        state to balances
+      }
+      .combine(markets.catalog) { (state, balances), catalog ->
         val nonSpotPositions =
           state.account.positions.filter { pos ->
             catalog.quotes.none { it.market.address == pos.market && it.market.assetType == AssetType.SPOT }
           }
-        val updatedHoldings =
-          state.spotHoldings.map { holding ->
-            if (holding.isCollateral || holding.marketAddress == null) {
-              holding
-            } else {
-              val mark =
-                catalog.quotes.firstOrNull { it.market.address == holding.marketAddress }?.markPrice
-                  ?: holding.markPrice
-              holding.copy(markPrice = mark, valueUsd = holding.quantity * mark)
-            }
+
+        val holdings = mutableListOf<SpotHolding>()
+
+        // 1. Collateral (USDC Cash)
+        val usdcBalance =
+          state.account.overview?.crossWithdrawableBalance
+            ?: state.account.overview?.availableToTrade
+            ?: 0.0
+        if (usdcBalance > 0.0 || state.account.overview != null) {
+          holdings.add(
+            SpotHolding(
+              symbol = "USDC",
+              name = "USD Coin",
+              marketAddress = null,
+              quantity = usdcBalance,
+              markPrice = 1.0,
+              valueUsd = usdcBalance,
+              isCollateral = true,
+              badge = "CASH",
+            )
+          )
+        }
+
+        // 2. Spot crypto assets
+        for ((symbol, quantity) in balances) {
+          if (quantity > 0.0) {
+            val spotQuote =
+              catalog.quotes.firstOrNull { quote ->
+                quote.market.assetType == AssetType.SPOT &&
+                  (quote.market.symbol.split("/").firstOrNull()?.trim()?.equals(symbol, ignoreCase = true) == true ||
+                   quote.market.symbol.equals(symbol, ignoreCase = true))
+              }
+            val mark = spotQuote?.markPrice ?: 0.0
+            val metadata = assetCatalog?.assetFor(symbol)
+            holdings.add(
+              SpotHolding(
+                symbol = symbol,
+                name = metadata?.name ?: if (symbol.equals("APT", ignoreCase = true)) "Aptos" else symbol,
+                marketAddress = spotQuote?.market?.address,
+                quantity = quantity,
+                markPrice = mark,
+                valueUsd = quantity * mark,
+                isCollateral = false,
+                badge = "SPOT",
+              )
+            )
           }
+        }
+
+        val sortedHoldings =
+          holdings.sortedWith(
+            compareByDescending<SpotHolding> { it.isCollateral }
+              .thenByDescending { it.valueUsd }
+          )
+
         state.copy(
           account = state.account.copy(positions = nonSpotPositions),
-          spotHoldings = updatedHoldings,
+          spotHoldings = sortedHoldings,
           marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
           markPrices = catalog.quotes.associate { it.market.address to it.markPrice },
         )
@@ -208,6 +287,7 @@ class PortfolioViewModel(
           runSuspendCatching {
             accounts.refresh()
             markets.refresh()
+            accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
           }
         }
       is PortfolioIntent.ChangeWithdrawalDestination ->
@@ -431,62 +511,20 @@ class PortfolioViewModel(
     }
   }
 
-  private suspend fun syncSpotHoldings(snapshot: AccountSnapshot, catalog: MarketCatalog) {
-    val subaccount = snapshot.account
-    if (subaccount == null) {
-      local.update { it.copy(spotHoldings = emptyList()) }
-      return
-    }
-    val holdings = mutableListOf<SpotHolding>()
+  private suspend fun fetchSpotBalances(subaccount: String) {
+    val spotSymbols =
+      markets.catalog.value.quotes
+        .filter { it.market.assetType == AssetType.SPOT }
+        .mapNotNull { it.market.symbol.split("/").firstOrNull()?.trim() }
+        .distinct()
+        .ifEmpty { listOf("APT") }
 
-    // 1. Collateral (USDC Cash)
-    val usdcBalance =
-      snapshot.overview?.crossWithdrawableBalance
-        ?: snapshot.overview?.availableToTrade
-        ?: 0.0
-    if (usdcBalance > 0.0 || snapshot.overview != null) {
-      holdings.add(
-        SpotHolding(
-          symbol = "USDC",
-          name = "USD Coin",
-          marketAddress = null,
-          quantity = usdcBalance,
-          markPrice = 1.0,
-          valueUsd = usdcBalance,
-          isCollateral = true,
-          badge = "CASH",
-        )
-      )
-    }
-
-    // 2. Spot crypto assets from catalog
-    val spotQuotes = catalog.quotes.filter { it.market.assetType == AssetType.SPOT }
-    for (quote in spotQuotes) {
-      val symbol = quote.market.symbol.split("/").firstOrNull()?.trim() ?: quote.market.symbol
+    val updated = spotBalances.value.toMutableMap()
+    for (symbol in spotSymbols) {
       val balance = trading.baseAssetBalance(subaccount, symbol)
-      if (balance > 0.0) {
-        val metadata = assetCatalog?.assetFor(symbol)
-        holdings.add(
-          SpotHolding(
-            symbol = symbol,
-            name = metadata?.name ?: if (symbol.equals("APT", ignoreCase = true)) "Aptos" else symbol,
-            marketAddress = quote.market.address,
-            quantity = balance,
-            markPrice = quote.markPrice,
-            valueUsd = balance * quote.markPrice,
-            isCollateral = false,
-            badge = "SPOT",
-          )
-        )
-      }
+      updated[symbol] = balance
     }
-
-    val sortedHoldings =
-      holdings.sortedWith(
-        compareByDescending<SpotHolding> { it.isCollateral }
-          .thenByDescending { it.valueUsd }
-      )
-    local.update { it.copy(spotHoldings = sortedHoldings) }
+    spotBalances.value = updated.filterValues { it > 0.0 }
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
