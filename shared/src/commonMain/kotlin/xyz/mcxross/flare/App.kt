@@ -310,7 +310,14 @@ private fun FlareShell(onOpenSetup: () -> Unit) {
       popEnterTransition = { fadeIn(tween(180)) },
       popExitTransition = { fadeOut(tween(140)) },
     ) {
-      composable<PortfolioDestination> { PortfolioRoute(onOpenSetup) }
+      composable<PortfolioDestination> {
+        PortfolioRoute(
+          onOpenSetup = onOpenSetup,
+          onMarketClick = { marketAddress ->
+            navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
+          },
+        )
+      }
       composable<MarketsDestination> {
         MarketsRoute(
           onMarketClick = { marketAddress ->

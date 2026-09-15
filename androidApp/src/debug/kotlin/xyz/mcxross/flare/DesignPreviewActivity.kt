@@ -236,6 +236,29 @@ private fun previewBook(quote: MarketQuote) =
 private fun previewPortfolio() =
   PortfolioUiState(
     profile = WalletProfile(ownerAddress = "preview"),
+    spotHoldings =
+      listOf(
+        SpotHolding(
+          symbol = "USDC",
+          name = "USD Coin",
+          marketAddress = null,
+          quantity = 8240.32,
+          markPrice = 1.0,
+          valueUsd = 8240.32,
+          isCollateral = true,
+          badge = "CASH",
+        ),
+        SpotHolding(
+          symbol = "APT",
+          name = "Aptos",
+          marketAddress = "0x26f",
+          quantity = 100.0,
+          markPrice = 10.50,
+          valueUsd = 1050.0,
+          isCollateral = false,
+          badge = "SPOT",
+        ),
+      ),
     account =
       AccountSnapshot(
         overview =
