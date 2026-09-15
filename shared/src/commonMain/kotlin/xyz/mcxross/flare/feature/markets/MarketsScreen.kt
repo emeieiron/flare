@@ -96,18 +96,6 @@ fun MarketsScreen(
           },
         )
       }
-      if (state.selectedInstrument == MarketInstrumentFilter.SPOT) {
-        item {
-          FlareChip(
-            text = "All",
-            selected = !state.favoritesOnly && state.selectedCategory == null,
-            onClick = {
-              onIntent(MarketsIntent.SetFavoritesOnly(false))
-              onIntent(MarketsIntent.SetCategory(null))
-            },
-          )
-        }
-      }
       items(state.categories, key = { it }) { category ->
         val isCategorySelected = !state.favoritesOnly && state.selectedCategory == category
         FlareChip(
@@ -115,13 +103,8 @@ fun MarketsScreen(
           selected = isCategorySelected,
           onClick = {
             if (isCategorySelected) {
-              if (state.selectedInstrument == MarketInstrumentFilter.PERPETUALS) {
-                onIntent(MarketsIntent.SetFavoritesOnly(true))
-                onIntent(MarketsIntent.SetCategory(null))
-              } else {
-                onIntent(MarketsIntent.SetFavoritesOnly(false))
-                onIntent(MarketsIntent.SetCategory(null))
-              }
+              onIntent(MarketsIntent.SetFavoritesOnly(true))
+              onIntent(MarketsIntent.SetCategory(null))
             } else {
               onIntent(MarketsIntent.SetFavoritesOnly(false))
               onIntent(MarketsIntent.SetCategory(category))
@@ -215,6 +198,5 @@ internal fun marketSectionTitle(state: MarketsUiState): String =
     state.query.isNotBlank() -> "Search results"
     state.favoritesOnly -> "Your watchlist"
     state.selectedCategory != null -> marketCategoryLabel(state.selectedCategory)
-    state.selectedInstrument == MarketInstrumentFilter.SPOT -> "All spot markets"
     else -> "Your watchlist"
   }
