@@ -40,7 +40,9 @@ import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
+import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.shortAddress
@@ -48,11 +50,12 @@ import xyz.mcxross.flare.design.shortAddress
 @Composable
 fun PortfolioRoute(
   onOpenSetup: () -> Unit,
+  onMarketClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
   viewModel: PortfolioViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
-  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, modifier)
+  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, modifier)
 }
 
 @Composable
@@ -60,6 +63,7 @@ fun PortfolioScreen(
   state: PortfolioUiState,
   onIntent: (PortfolioIntent) -> Unit,
   onOpenSetup: () -> Unit,
+  onMarketClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val overview = state.account.overview
@@ -94,26 +98,49 @@ fun PortfolioScreen(
       style = MaterialTheme.typography.bodyMedium,
     )
     Text(
-      overview?.equityBalance?.let(::formatBalance) ?: "—",
+      if (overview != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalBalance)
+      else "—",
       Modifier.padding(top = 8.dp),
       style = MaterialTheme.typography.displayMedium,
     )
-    if (overview != null) {
+    if (overview != null || state.spotHoldings.isNotEmpty()) {
       Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
       ) {
-        PortfolioMetric(
-          "Unrealized P&L",
-          formatSignedBalance(overview.unrealizedPnl),
-          Modifier.weight(1f),
-        )
-        PortfolioMetric("Available", formatBalance(overview.availableToTrade), Modifier.weight(1f))
-        PortfolioMetric(
-          "Margin ratio",
-          "${(overview.crossMarginRatio * 100).toInt()}%",
-          Modifier.weight(1f),
-        )
+        if (state.selectedTab == PortfolioTab.POSITIONS) {
+          PortfolioMetric(
+            "Unrealized P&L",
+            overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "$0.00",
+            Modifier.weight(1f),
+          )
+          PortfolioMetric(
+            "Available",
+            overview?.availableToTrade?.let(::formatBalance) ?: "$0.00",
+            Modifier.weight(1f),
+          )
+          PortfolioMetric(
+            "Margin ratio",
+            overview?.let { "${(it.crossMarginRatio * 100).toInt()}%" } ?: "0%",
+            Modifier.weight(1f),
+          )
+        } else {
+          PortfolioMetric(
+            "USDC Cash",
+            formatBalance(state.collateralBalance),
+            Modifier.weight(1f),
+          )
+          PortfolioMetric(
+            "Spot assets",
+            formatBalance(state.totalSpotValue),
+            Modifier.weight(1f),
+          )
+          PortfolioMetric(
+            "Assets",
+            "${state.spotHoldings.size}",
+            Modifier.weight(1f),
+          )
+        }
       }
     }
     if (state.profile.ownerAddress != null)
@@ -146,31 +173,62 @@ fun PortfolioScreen(
     settlingNotice(state.pendingTransactions)?.let { notice ->
       ActionNotice(notice, Modifier.padding(top = 16.dp), NoticeTone.PROGRESS)
     }
-    Spacer(Modifier.height(32.dp))
-    Text("Your positions", style = MaterialTheme.typography.titleLarge)
-    HorizontalDivider(Modifier.padding(top = 12.dp), color = FlareColors.BorderSubtle)
-    when {
-      state.account.positions.isNotEmpty() ->
-        state.account.positions.forEach { position ->
-          PositionRow(
-            position = position,
-            symbol = state.marketSymbols[position.market] ?: shortAddress(position.market),
-            markPrice = state.markPrices[position.market],
-            enabled = !state.busy,
-            onClick = { onIntent(PortfolioIntent.ManagePosition(position.market)) },
+    Spacer(Modifier.height(24.dp))
+    FlareSegmentedControl(
+      options = PortfolioTab.entries,
+      selectedOption = state.selectedTab,
+      onOptionSelected = { onIntent(PortfolioIntent.SelectTab(it)) },
+      label = { it.title },
+    )
+    Spacer(Modifier.height(16.dp))
+    if (state.selectedTab == PortfolioTab.POSITIONS) {
+      HorizontalDivider(color = FlareColors.BorderSubtle)
+      when {
+        state.account.positions.isNotEmpty() ->
+          state.account.positions.forEach { position ->
+            PositionRow(
+              position = position,
+              symbol = state.marketSymbols[position.market] ?: shortAddress(position.market),
+              markPrice = state.markPrices[position.market],
+              enabled = !state.busy,
+              onClick = { onIntent(PortfolioIntent.ManagePosition(position.market)) },
+            )
+            HorizontalDivider(color = FlareColors.BorderSubtle)
+          }
+        state.isLive ->
+          EmptyState(
+            title = "No open positions",
+            message = "Positions will appear here after an order fills.",
           )
-          HorizontalDivider(color = FlareColors.BorderSubtle)
-        }
-      state.isLive ->
-        EmptyState(
-          title = "No open positions",
-          message = "Positions will appear here after an order fills.",
-        )
-      else ->
-        EmptyState(
-          title = "Positions are on their way",
-          message = "They appear as soon as your account reconnects.",
-        )
+        else ->
+          EmptyState(
+            title = "Positions are on their way",
+            message = "They appear as soon as your account reconnects.",
+          )
+      }
+    } else {
+      HorizontalDivider(color = FlareColors.BorderSubtle)
+      when {
+        state.spotHoldings.isNotEmpty() ->
+          state.spotHoldings.forEach { holding ->
+            HoldingRow(
+              holding = holding,
+              enabled = holding.marketAddress != null && !state.busy,
+              onClick = { holding.marketAddress?.let(onMarketClick) },
+            )
+            HorizontalDivider(color = FlareColors.BorderSubtle)
+          }
+        state.isLive ->
+          EmptyState(
+            title = "No assets held",
+            message = "Deposit funds or trade spot to build your portfolio.",
+          )
+        else ->
+          EmptyState(
+            title = "Holdings are on their way",
+            message = "They appear as soon as your account reconnects.",
+          )
+      }
     }
   }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
@@ -228,6 +286,63 @@ private fun PositionRow(
       tint = FlareColors.TextTertiary,
       modifier = Modifier.size(20.dp),
     )
+  }
+}
+
+/** One tappable summary per holding: symbol, name/collateral, quantity and USD value. */
+@Composable
+private fun HoldingRow(
+  holding: SpotHolding,
+  enabled: Boolean,
+  onClick: () -> Unit,
+) {
+  Row(
+    modifier =
+      Modifier.fillMaxWidth()
+        .then(
+          if (enabled) Modifier.clickable(role = Role.Button, onClick = onClick)
+          else Modifier
+        )
+        .padding(vertical = 16.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Column(Modifier.weight(1f)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Text(holding.symbol, style = MaterialTheme.typography.labelLarge)
+        if (holding.badge != null) {
+          InstrumentBadge(holding.badge)
+        }
+      }
+      Text(
+        if (holding.isCollateral) "${holding.name} · Collateral"
+        else "${holding.name} · ${formatPrice(holding.markPrice)}",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    Column(horizontalAlignment = Alignment.End) {
+      Text(
+        formatBalance(holding.valueUsd),
+        style = MaterialTheme.typography.labelLarge,
+      )
+      Text(
+        "${formatQuantity(holding.quantity, 4)} ${holding.symbol}",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    if (holding.marketAddress != null) {
+      Icon(
+        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        contentDescription = "Trade ${holding.symbol}",
+        tint = FlareColors.TextTertiary,
+        modifier = Modifier.size(20.dp),
+      )
+    }
   }
 }
 
