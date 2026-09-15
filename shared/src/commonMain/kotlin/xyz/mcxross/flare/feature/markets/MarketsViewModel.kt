@@ -65,8 +65,7 @@ class MarketsViewModel(
       filter,
     ) { catalog, assets, f ->
       val normalized = f.query.trim().lowercase()
-      val isPerp = f.instrument == MarketInstrumentFilter.PERPETUALS
-      val effectiveFavoritesOnly = if (isPerp && f.category == null) true else f.favoritesOnly
+      val effectiveFavoritesOnly = if (f.category == null) true else f.favoritesOnly
       val categories =
         when (f.instrument) {
           MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
@@ -125,7 +124,7 @@ class MarketsViewModel(
         if (intent.enabled) {
           current.copy(favoritesOnly = true, category = null)
         } else {
-          if (current.instrument == MarketInstrumentFilter.PERPETUALS && current.category == null) {
+          if (current.category == null) {
             current.copy(favoritesOnly = true)
           } else {
             current.copy(favoritesOnly = false)
@@ -134,22 +133,14 @@ class MarketsViewModel(
       }
       is MarketsIntent.SetCategory -> filter.update { current ->
         if (intent.category == null) {
-          if (current.instrument == MarketInstrumentFilter.PERPETUALS) {
-            current.copy(category = null, favoritesOnly = true)
-          } else {
-            current.copy(category = null)
-          }
+          current.copy(category = null, favoritesOnly = true)
         } else {
           current.copy(category = intent.category, favoritesOnly = false)
         }
       }
       is MarketsIntent.SetInstrument ->
         filter.update { current ->
-          if (intent.instrument == MarketInstrumentFilter.PERPETUALS) {
-            current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)
-          } else {
-            current.copy(instrument = intent.instrument, category = null)
-          }
+          current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)
         }
     }
   }

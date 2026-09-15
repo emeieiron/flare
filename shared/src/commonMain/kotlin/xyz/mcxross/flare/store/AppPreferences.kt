@@ -58,6 +58,7 @@ data class FlarePreferences(
   val onboardingComplete: Boolean = false,
   val selectedMarket: String? = null,
   val favoriteMarkets: Set<String> = emptySet(),
+  val spotWatchlistSeeded: Boolean = false,
   val installationId: String? = null,
   val ownerAddress: String? = null,
   val apiWalletAddress: String? = null,
@@ -88,6 +89,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),
         selectedMarket = preferences[SelectedMarketKey],
         favoriteMarkets = preferences[FavoriteMarketsKey].orEmpty(),
+        spotWatchlistSeeded = preferences[SpotWatchlistSeededKey] ?: false,
         installationId = preferences[InstallationIdKey],
         ownerAddress = active?.ownerAddress,
         apiWalletAddress = active?.apiWalletAddress,
@@ -98,6 +100,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
   val favoriteMarkets: Flow<Set<String>> = values.map { it.favoriteMarkets }
+  val spotWatchlistSeeded: Flow<Boolean> = values.map { it.spotWatchlistSeeded }
 
   suspend fun setNetwork(network: DecibelNetwork) {
     dataStore.edit { it[NetworkKey] = network.name }
@@ -133,6 +136,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   suspend fun setFavoriteMarkets(marketAddresses: Set<String>) {
     dataStore.edit { it[FavoriteMarketsKey] = marketAddresses }
+  }
+
+  suspend fun setSpotWatchlistSeeded(seeded: Boolean) {
+    dataStore.edit { it[SpotWatchlistSeededKey] = seeded }
   }
 
   suspend fun installationId(): String {
@@ -263,6 +270,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val OnboardingCompleteKey = booleanPreferencesKey("onboarding_complete")
     val SelectedMarketKey = stringPreferencesKey("selected_market")
     val FavoriteMarketsKey = stringSetPreferencesKey("favorite_markets")
+    val SpotWatchlistSeededKey = booleanPreferencesKey("spot_watchlist_seeded")
     val InstallationIdKey = stringPreferencesKey("installation_id")
     val OwnerAddressKey = stringPreferencesKey("owner_address")
     val ApiWalletAddressKey = stringPreferencesKey("api_wallet_address")

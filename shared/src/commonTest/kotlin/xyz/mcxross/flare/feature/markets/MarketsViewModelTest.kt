@@ -47,13 +47,15 @@ class MarketsViewModelTest {
   private val adaPerp = createMarket("ADA/USD", "0xada_perp", AssetType.PERP, "crypto")
   private val goldPerp = createMarket("GOLD/USD", "0xgold_perp", AssetType.PERP, "commodity")
   private val aptSpot = createMarket("APT/USDC", "0xapt_spot", AssetType.SPOT, "crypto")
+  private val usdcSpot = createMarket("USDC/USDT", "0xusdc_spot", AssetType.SPOT, "crypto")
 
   private val quotes =
     listOf(
       MarketQuote(market = btcPerp, markPrice = 70_000.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = true),
       MarketQuote(market = adaPerp, markPrice = 0.30, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = false),
       MarketQuote(market = goldPerp, markPrice = 2_600.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = true),
-      MarketQuote(market = aptSpot, markPrice = 10.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = false),
+      MarketQuote(market = aptSpot, markPrice = 10.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = true),
+      MarketQuote(market = usdcSpot, markPrice = 1.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = false),
     )
 
   private val assetMetadataMap =
@@ -62,6 +64,7 @@ class MarketsViewModelTest {
       "ADA" to AssetMetadata(symbol = "ADA", name = "Cardano", kind = "crypto", iconUrl = null, sha256 = null),
       "GOLD" to AssetMetadata(symbol = "GOLD", name = "Gold", kind = "commodity", iconUrl = null, sha256 = null),
       "APT" to AssetMetadata(symbol = "APT", name = "Aptos", kind = "crypto", iconUrl = null, sha256 = null),
+      "USDC" to AssetMetadata(symbol = "USDC", name = "USDC", kind = "crypto", iconUrl = null, sha256 = null),
     )
 
   private class FakeMarketsRepository(initialQuotes: List<MarketQuote>) : MarketsRepository {
@@ -157,5 +160,59 @@ class MarketsViewModelTest {
 
     assertEquals("Search results", marketSectionTitle(state))
     assertEquals(listOf("ADA"), state.quotes.map { it.market.symbol })
+  }
+
+  @Test
+  fun spotTabDefaultsToWatchlistWithSeededFavorite() = runTest {
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    vm.uiState.first { it.quotes.isNotEmpty() }
+
+    vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
+    val state = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.SPOT }
+
+    assertTrue(state.favoritesOnly)
+    assertEquals(null, state.selectedCategory)
+    assertEquals("Your watchlist", marketSectionTitle(state))
+    assertEquals(listOf("APT"), state.quotes.map { it.market.symbol })
+  }
+
+  @Test
+  fun spotCategoryFilteringAndToggleBackToWatchlist() = runTest {
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    vm.uiState.first { it.quotes.isNotEmpty() }
+
+    vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
+    vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
+    vm.onIntent(MarketsIntent.SetCategory("crypto"))
+
+    val state = vm.uiState.first { it.selectedCategory == "crypto" && it.selectedInstrument == MarketInstrumentFilter.SPOT }
+    assertFalse(state.favoritesOnly)
+    assertEquals("crypto", state.selectedCategory)
+    assertEquals("Crypto", marketSectionTitle(state))
+    assertEquals(listOf("APT", "USDC"), state.quotes.map { it.market.symbol })
+
+    // Deselect category back to Watchlist
+    vm.onIntent(MarketsIntent.SetCategory(null))
+    val watchlistState = vm.uiState.first { it.selectedCategory == null && it.selectedInstrument == MarketInstrumentFilter.SPOT }
+    assertTrue(watchlistState.favoritesOnly)
+    assertEquals("Your watchlist", marketSectionTitle(watchlistState))
+    assertEquals(listOf("APT"), watchlistState.quotes.map { it.market.symbol })
+  }
+
+  @Test
+  fun spotCannotHaveFavoritesOnlyFalseWhenCategoryIsNull() = runTest {
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    vm.uiState.first { it.quotes.isNotEmpty() }
+
+    vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
+    val state = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.SPOT }
+
+    vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
+    val currentState = vm.uiState.value
+
+    assertTrue(currentState.favoritesOnly)
+    assertEquals(null, currentState.selectedCategory)
+    assertEquals("Your watchlist", marketSectionTitle(currentState))
+    assertEquals(listOf("APT"), currentState.quotes.map { it.market.symbol })
   }
 }
