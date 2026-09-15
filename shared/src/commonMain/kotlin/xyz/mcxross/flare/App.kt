@@ -51,6 +51,8 @@ import androidx.room3.RoomDatabase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
@@ -193,21 +195,24 @@ private fun FlareAppFlow() {
   // Submitted work settles without supervision: while anything is outstanding the app keeps
   // checking, and stops the moment the journal is clear.
   LaunchedEffect(unlocked) {
-    trading.pendingTransactions.collectLatest { pending ->
-      if (pending.isEmpty()) return@collectLatest
-      var backoffMs = RECONNECT_BASE_DELAY_MS
-      while (true) {
-        try {
-          trading.reconcilePending()
-        } catch (cancelled: CancellationException) {
-          throw cancelled
-        } catch (_: Throwable) {
-          // Pending records stay durable; the next pass retries them.
+    trading.pendingTransactions
+      .map { it.isNotEmpty() }
+      .distinctUntilChanged()
+      .collectLatest { hasPending ->
+        if (!hasPending) return@collectLatest
+        var backoffMs = RECONNECT_BASE_DELAY_MS
+        while (true) {
+          try {
+            trading.reconcilePending()
+          } catch (cancelled: CancellationException) {
+            throw cancelled
+          } catch (_: Throwable) {
+            // Pending records stay durable; the next pass retries them.
+          }
+          delay(backoffMs)
+          backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
         }
-        delay(backoffMs)
-        backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
       }
-    }
   }
   val savedScreens = rememberSaveableStateHolder()
   if (persisted == null || walletProfile == null) {
