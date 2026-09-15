@@ -173,12 +173,31 @@ class DefaultMarketsRepository(
   }
 
   private suspend fun seedDefaultWatchlist(markets: List<Market>) {
-    if (markets.any { it.address in favorites }) return
+    var changed = false
+    val perpMarkets = markets.filter { it.assetType == AssetType.PERP }
+    val spotMarkets = markets.filter { it.assetType == AssetType.SPOT }
 
-    val seededAddresses =
-      markets.filter { it.symbol in DEFAULT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
-    if (seededAddresses.isNotEmpty()) {
-      favorites += seededAddresses
+    if (perpMarkets.isNotEmpty() && perpMarkets.none { it.address in favorites }) {
+      val seededAddresses =
+        perpMarkets.filter { it.symbol in DEFAULT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
+      if (seededAddresses.isNotEmpty()) {
+        favorites += seededAddresses
+        changed = true
+      }
+    }
+
+    val spotSeeded = preferences.values.first().spotWatchlistSeeded
+    if (!spotSeeded && spotMarkets.isNotEmpty()) {
+      val seededAddresses =
+        spotMarkets.filter { it.symbol in DEFAULT_SPOT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
+      if (seededAddresses.isNotEmpty()) {
+        favorites += seededAddresses
+        changed = true
+      }
+      preferences.setSpotWatchlistSeeded(true)
+    }
+
+    if (changed) {
       preferences.setFavoriteMarkets(favorites)
     }
   }
@@ -283,6 +302,7 @@ class DefaultMarketsRepository(
   private companion object {
     const val MALFORMED_RECOVERY_INTERVAL_MS = 30_000L
     val DEFAULT_WATCHLIST_SYMBOLS = setOf("APT", "BTC", "GOLD", "AAPL")
+    val DEFAULT_SPOT_WATCHLIST_SYMBOLS = setOf("APT")
   }
 }
 
