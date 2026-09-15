@@ -14,28 +14,29 @@ import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.CoreFoundation.CFDataCreate
-import platform.CoreFoundation.CFDictionaryRef
+import platform.CoreFoundation.CFDataGetBytePtr
+import platform.CoreFoundation.CFDataGetLength
+import platform.CoreFoundation.CFDataRef
+import platform.CoreFoundation.CFDictionaryAddValue
+import platform.CoreFoundation.CFDictionaryCreateMutable
 import platform.CoreFoundation.CFRelease
+import platform.CoreFoundation.CFStringCreateWithCString
+import platform.CoreFoundation.CFStringRef
 import platform.CoreFoundation.CFTypeRefVar
+import platform.CoreFoundation.kCFAllocatorDefault
 import platform.CoreFoundation.kCFBooleanTrue
-import platform.Foundation.CFBridgingRelease
-import platform.Foundation.NSCopyingProtocol
-import platform.Foundation.NSData
-import platform.Foundation.NSMutableDictionary
+import platform.CoreFoundation.kCFStringEncodingUTF8
 import platform.LocalAuthentication.LAContext
 import platform.LocalAuthentication.LAPolicyDeviceOwnerAuthentication
-import platform.Security.SecAccessControlCreateWithFlags
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
-import platform.Security.SecItemUpdate
 import platform.Security.errSecInteractionNotAllowed
 import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.errSecUserCanceled
-import platform.Security.kSecAccessControlUserPresence
-import platform.Security.kSecAttrAccessControl
-import platform.Security.kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
+import platform.Security.kSecAttrAccessible
+import platform.Security.kSecAttrAccessibleWhenUnlockedThisDeviceOnly
 import platform.Security.kSecAttrAccount
 import platform.Security.kSecAttrService
 import platform.Security.kSecClass
@@ -43,79 +44,61 @@ import platform.Security.kSecClassGenericPassword
 import platform.Security.kSecMatchLimit
 import platform.Security.kSecMatchLimitOne
 import platform.Security.kSecReturnData
-import platform.Security.kSecUseAuthenticationContext
-import platform.Security.kSecUseOperationPrompt
 import platform.Security.kSecValueData
 
 class IosWalletVault : WalletVault {
   private var authorizedContext: LAContext? = null
 
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) {
-    val context = authorize(prompt, force = prompt.requireFreshAuthorization)
-    val accessControl =
-      SecAccessControlCreateWithFlags(
-        null,
-        kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-        kSecAccessControlUserPresence,
-        null,
-      ) ?: throw WalletVaultException.Unavailable("A device passcode is required")
-    try {
-      val lookup =
-        dictionaryOf(
-          kSecClass to kSecClassGenericPassword,
-          kSecAttrService to SERVICE,
-          kSecAttrAccount to slot.storageKey,
-          kSecUseAuthenticationContext to context,
-        )
-      val attributes =
-        dictionaryOf(kSecAttrAccessControl to accessControl, kSecValueData to secret.toNSData())
-      val updateStatus =
-        withCFDictionary(lookup) { query ->
-          withCFDictionary(attributes) { values -> SecItemUpdate(query, values) }
+    authorize(prompt, force = prompt.requireFreshAuthorization)
+    delete(slot)
+    memScoped {
+      val serviceRef = SERVICE.toCFString() ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
+      val accountRef = slot.storageKey.toCFString() ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
+      val dataRef = secret.toCFData() ?: throw WalletVaultException.Unavailable("Keychain data encoding failed")
+      val dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
+        ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
+      try {
+        CFDictionaryAddValue(dict, kSecClass, kSecClassGenericPassword)
+        CFDictionaryAddValue(dict, kSecAttrService, serviceRef)
+        CFDictionaryAddValue(dict, kSecAttrAccount, accountRef)
+        CFDictionaryAddValue(dict, kSecAttrAccessible, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+        CFDictionaryAddValue(dict, kSecValueData, dataRef)
+        val status = SecItemAdd(dict, null)
+        if (status != errSecSuccess) {
+          throw WalletVaultException.Unavailable("Keychain write failed ($status)")
         }
-      val status =
-        if (updateStatus == errSecItemNotFound) {
-          val item =
-            dictionaryOf(
-              kSecClass to kSecClassGenericPassword,
-              kSecAttrService to SERVICE,
-              kSecAttrAccount to slot.storageKey,
-              kSecAttrAccessControl to accessControl,
-              kSecUseAuthenticationContext to context,
-              kSecValueData to secret.toNSData(),
-            )
-          withCFDictionary(item) { SecItemAdd(it, null) }
-        } else {
-          updateStatus
-        }
-      if (status != errSecSuccess) {
-        throw WalletVaultException.Unavailable("Keychain write failed ($status)")
+      } finally {
+        CFRelease(dict)
+        CFRelease(dataRef)
+        CFRelease(serviceRef)
+        CFRelease(accountRef)
       }
-    } finally {
-      CFRelease(accessControl)
     }
   }
 
   override suspend fun read(slot: WalletSecretSlot, prompt: VaultPrompt): ByteArray {
-    val context = authorize(prompt, force = prompt.requireFreshAuthorization)
-    val query =
-      dictionaryOf(
-        kSecClass to kSecClassGenericPassword,
-        kSecAttrService to SERVICE,
-        kSecAttrAccount to slot.storageKey,
-        kSecReturnData to kCFBooleanTrue,
-        kSecMatchLimit to kSecMatchLimitOne,
-        kSecUseAuthenticationContext to context,
-        kSecUseOperationPrompt to "${prompt.title}\n${prompt.subtitle}",
-      )
-    return withCFDictionary(query) { cfQuery ->
-      memScoped {
+    authorize(prompt, force = prompt.requireFreshAuthorization)
+    return memScoped {
+      val serviceRef = SERVICE.toCFString() ?: throw WalletVaultException.Corrupted()
+      val accountRef = slot.storageKey.toCFString() ?: throw WalletVaultException.Corrupted()
+      val dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
+        ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
+      try {
+        CFDictionaryAddValue(dict, kSecClass, kSecClassGenericPassword)
+        CFDictionaryAddValue(dict, kSecAttrService, serviceRef)
+        CFDictionaryAddValue(dict, kSecAttrAccount, accountRef)
+        CFDictionaryAddValue(dict, kSecReturnData, kCFBooleanTrue)
+        CFDictionaryAddValue(dict, kSecMatchLimit, kSecMatchLimitOne)
         val result = alloc<CFTypeRefVar>()
-        when (val status = SecItemCopyMatching(cfQuery, result.ptr)) {
+        when (val status = SecItemCopyMatching(dict, result.ptr)) {
           errSecSuccess -> {
-            val data =
-              CFBridgingRelease(result.value) as? NSData ?: throw WalletVaultException.Corrupted()
-            data.toByteArray()
+            val cfData = result.value ?: throw WalletVaultException.Corrupted()
+            try {
+              (cfData as CFDataRef).toByteArray()
+            } finally {
+              CFRelease(cfData)
+            }
           }
           errSecUserCanceled -> throw WalletVaultException.Cancelled()
           errSecItemNotFound -> throw WalletVaultException.Corrupted()
@@ -123,6 +106,10 @@ class IosWalletVault : WalletVault {
             throw WalletVaultException.Unavailable("Keychain authorization is unavailable")
           else -> throw WalletVaultException.Unavailable("Keychain read failed ($status)")
         }
+      } finally {
+        CFRelease(dict)
+        CFRelease(serviceRef)
+        CFRelease(accountRef)
       }
     }
   }
@@ -173,13 +160,21 @@ class IosWalletVault : WalletVault {
     }
 
   private fun delete(slot: WalletSecretSlot) {
-    val query =
-      dictionaryOf(
-        kSecClass to kSecClassGenericPassword,
-        kSecAttrService to SERVICE,
-        kSecAttrAccount to slot.storageKey,
-      )
-    withCFDictionary(query) { SecItemDelete(it) }
+    memScoped {
+      val serviceRef = SERVICE.toCFString() ?: return@memScoped
+      val accountRef = slot.storageKey.toCFString() ?: return@memScoped
+      val dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null) ?: return@memScoped
+      try {
+        CFDictionaryAddValue(dict, kSecClass, kSecClassGenericPassword)
+        CFDictionaryAddValue(dict, kSecAttrService, serviceRef)
+        CFDictionaryAddValue(dict, kSecAttrAccount, accountRef)
+        SecItemDelete(dict)
+      } finally {
+        CFRelease(dict)
+        CFRelease(serviceRef)
+        CFRelease(accountRef)
+      }
+    }
   }
 
   private companion object {
@@ -187,35 +182,20 @@ class IosWalletVault : WalletVault {
   }
 }
 
-private fun dictionaryOf(vararg pairs: Pair<Any?, Any?>): NSMutableDictionary =
-  NSMutableDictionary().apply {
-    pairs.forEach { (key, value) ->
-      if (key != null && value != null) setObject(value, key as NSCopyingProtocol)
-    }
-  }
-
-private fun <T> withCFDictionary(
-  dictionary: NSMutableDictionary,
-  block: (CFDictionaryRef?) -> T,
-): T {
-  val retained = platform.Foundation.CFBridgingRetain(dictionary) as? CFDictionaryRef
-  return try {
-    block(retained)
-  } finally {
-    if (retained != null) CFRelease(retained)
-  }
+private fun ByteArray.toCFData(): CFDataRef? = usePinned { pinned ->
+  CFDataCreate(kCFAllocatorDefault, pinned.addressOf(0).reinterpret(), size.toLong())
 }
 
-private fun ByteArray.toNSData(): NSData = usePinned { pinned ->
-  CFBridgingRelease(CFDataCreate(null, pinned.addressOf(0).reinterpret(), size.toLong())) as NSData
+private fun CFDataRef.toByteArray(): ByteArray {
+  val length = CFDataGetLength(this).toInt()
+  if (length == 0) return ByteArray(0)
+  val result = ByteArray(length)
+  result.usePinned { pinned ->
+    val src = CFDataGetBytePtr(this)
+    platform.posix.memcpy(pinned.addressOf(0), src, length.convert())
+  }
+  return result
 }
 
-private fun NSData.toByteArray(): ByteArray {
-  val output = ByteArray(length.toInt())
-  if (output.isEmpty()) return output
-  val source = bytes ?: return output
-  output.usePinned { pinned ->
-    platform.posix.memcpy(pinned.addressOf(0), source, length.convert())
-  }
-  return output
-}
+private fun String.toCFString(): CFStringRef? =
+  CFStringCreateWithCString(kCFAllocatorDefault, this, kCFStringEncodingUTF8)

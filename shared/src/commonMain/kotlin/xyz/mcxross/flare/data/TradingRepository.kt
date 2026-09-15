@@ -4,6 +4,7 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -101,7 +102,7 @@ class DefaultTradingRepository(
       entries
         .filter { it.profileId == saved.activeProfileId }
         .map(PendingTransactionEntity::toDomain)
-    }
+    }.distinctUntilChanged()
 
   override fun execute(
     command: DecibelCommand,
@@ -306,7 +307,7 @@ class DefaultTradingRepository(
       val result =
         aptos.transactions.waitForTransaction(
           hash,
-          WaitForTransactionOptions(timeoutSecs = 2, checkSuccess = false),
+          WaitForTransactionOptions(timeoutSecs = 10, checkSuccess = false),
         )
     ) {
       is AptosResult.Failure -> TransactionState.Pending(reference)
@@ -579,7 +580,7 @@ class DefaultTradingRepository(
         val result =
           aptos.transactions.waitForTransaction(
             transactionHash,
-            WaitForTransactionOptions(timeoutSecs = 2, checkSuccess = false),
+            WaitForTransactionOptions(timeoutSecs = 10, checkSuccess = false),
           )
       ) {
         is AptosResult.Success -> {
