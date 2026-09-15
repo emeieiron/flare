@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
@@ -92,6 +93,8 @@ class DefaultTradingRepository(
 ) : TradingRepository {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = Mutex()
+  private val balanceCacheMutex = Mutex()
+  private val baseAssetBalanceCache = mutableMapOf<String, Double>()
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
     journal.observePending().combine(preferences.values) { entries, saved ->
@@ -337,15 +340,25 @@ class DefaultTradingRepository(
     runSuspendCatching {
       val address = AccountAddress.fromString(accountAddress)
       val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
+      val cacheKey = "$accountAddress:$token"
       if (token.equals("APT", ignoreCase = true)) {
         when (val result = aptos.accounts.getBalance(address, AccountAsset.coin(APTOS_COIN))) {
-          is AptosResult.Success -> result.value.toDouble() / 100_000_000.0
-          is AptosResult.Failure -> 0.0
+          is AptosResult.Success -> {
+            val balance = result.value.toDouble() / 100_000_000.0
+            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] = balance }
+            balance
+          }
+          is AptosResult.Failure -> {
+            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] ?: 0.0 }
+          }
         }
       } else {
         0.0
       }
-    }.getOrDefault(0.0)
+    }.getOrElse {
+      val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
+      balanceCacheMutex.withLock { baseAssetBalanceCache["$accountAddress:$token"] ?: 0.0 }
+    }
 
   override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
     flow {
