@@ -3,16 +3,25 @@ package xyz.mcxross.flare.feature.portfolio
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
@@ -43,7 +52,20 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.account.Ed25519Account
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioViewModelTest {
+
+  private val testDispatcher = UnconfinedTestDispatcher()
+
+  @BeforeTest
+  fun setUp() {
+    Dispatchers.setMain(testDispatcher)
+  }
+
+  @AfterTest
+  fun tearDown() {
+    Dispatchers.resetMain()
+  }
 
   private fun createMarket(
     name: String,
@@ -221,6 +243,7 @@ class PortfolioViewModelTest {
         marketDetails = FakeMarketDetailsRepository(),
         assetCatalog = FakeAssetCatalogRepository(),
       )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     assertEquals(PortfolioTab.POSITIONS, vm.uiState.first().selectedTab)
 

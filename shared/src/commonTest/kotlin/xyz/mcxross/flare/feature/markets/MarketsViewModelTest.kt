@@ -1,13 +1,22 @@
 package xyz.mcxross.flare.feature.markets
 
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.MarketCatalog
@@ -16,7 +25,20 @@ import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Market
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MarketsViewModelTest {
+
+  private val testDispatcher = UnconfinedTestDispatcher()
+
+  @BeforeTest
+  fun setUp() {
+    Dispatchers.setMain(testDispatcher)
+  }
+
+  @AfterTest
+  fun tearDown() {
+    Dispatchers.resetMain()
+  }
 
   private fun createMarket(
     name: String,
@@ -84,6 +106,7 @@ class MarketsViewModelTest {
   @Test
   fun perpetualsTabDefaultsToWatchlistAndNeverShowsAllPerpsWithoutCategory() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     val state = vm.uiState.first { it.quotes.isNotEmpty() }
 
     assertEquals(MarketInstrumentFilter.PERPETUALS, state.selectedInstrument)
@@ -99,9 +122,9 @@ class MarketsViewModelTest {
   @Test
   fun categoryFilteringAndTitle() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
-    vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
     vm.onIntent(MarketsIntent.SetCategory("crypto"))
 
     val state = vm.uiState.first { it.selectedCategory == "crypto" }
@@ -117,6 +140,7 @@ class MarketsViewModelTest {
   @Test
   fun switchingFromSpotBackToPerpetualsResetsToWatchlist() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
     // Switch to Spot
@@ -137,7 +161,8 @@ class MarketsViewModelTest {
   @Test
   fun perpetualsCannotHaveFavoritesOnlyFalseWhenCategoryIsNull() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
-    vm.uiState.first { it.quotes.isNotEmpty() }
+    backgroundScope.launch { vm.uiState.collect() }
+    val initial = vm.uiState.first { it.quotes.isNotEmpty() }
 
     // Attempt to set favoritesOnly = false without category on Perpetuals
     vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
@@ -152,6 +177,7 @@ class MarketsViewModelTest {
   @Test
   fun searchReturnsMatchingMarketsAcrossEntireInstrument() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
     // Search for non-favorite "ADA"
@@ -165,6 +191,7 @@ class MarketsViewModelTest {
   @Test
   fun spotTabDefaultsToWatchlistWithSeededFavorite() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
     vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
@@ -179,10 +206,10 @@ class MarketsViewModelTest {
   @Test
   fun spotCategoryFilteringAndToggleBackToWatchlist() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
     vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
-    vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
     vm.onIntent(MarketsIntent.SetCategory("crypto"))
 
     val state = vm.uiState.first { it.selectedCategory == "crypto" && it.selectedInstrument == MarketInstrumentFilter.SPOT }
@@ -202,6 +229,7 @@ class MarketsViewModelTest {
   @Test
   fun spotCannotHaveFavoritesOnlyFalseWhenCategoryIsNull() = runTest {
     val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
+    backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
     vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
