@@ -14,7 +14,27 @@ Flare handles private keys and leveraged trading. A small patch can have financi
 
 ## Local setup
 
-Follow [README.md](README.md). For unpublished dependency work, publish FastKrypto and then Kaptos to Maven Local. Build Flare with `FLARE_MAVEN_LOCAL=true`. Do not commit absolute paths or use checkout paths as Gradle dependencies.
+Follow the prerequisites and setup steps in [README.md](README.md).
+
+### Developing with Local Kaptos Builds
+
+For unpublished dependency work, publish FastKrypto and then Kaptos to Maven Local:
+
+```sh
+# In the FastKrypto repository
+rustup run 1.92 ./gradlew -PenableSigning=false publishToMavenLocal
+
+# In the Kaptos repository
+./gradlew -PenableSigning=false publishToMavenLocal
+```
+
+Then build Flare with local dependency resolution enabled:
+
+```sh
+FLARE_MAVEN_LOCAL=true ./gradlew :decibel:jvmTest
+```
+
+Do not commit absolute paths or use checkout paths as Gradle dependencies.
 
 ## Change workflow
 
