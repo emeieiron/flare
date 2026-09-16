@@ -4,6 +4,8 @@
 
 Built with **Kotlin Multiplatform**, Flare shares its core business and transaction logic across **Android and iOS**, using [**Kaptos**](https://github.com/mcxross/kaptos) as its core Aptos transaction and blockchain engine.
 
+![Flare App Preview](assets/flare.png)
+
 > [!IMPORTANT]
 > Flare is under active development on Decibel testnet. Do not use this repository with mainnet funds without completing the audit checklist in [SECURITY.md](SECURITY.md).
 
