@@ -44,8 +44,8 @@ import kotlin.math.min
 import xyz.mcxross.flare.feature.trade.ChartStyle
 
 /**
- * Standard shimmer configuration tailored for Flare's dark theme.
- * Uses a smooth 1300ms linear sweep with alpha modulation against dark surfaces.
+ * Standard shimmer configuration tailored for Flare's dark theme. Uses a smooth 1300ms linear sweep
+ * with alpha modulation against dark surfaces.
  */
 @Composable
 fun rememberFlareShimmer(): Shimmer =
@@ -67,9 +67,7 @@ fun rememberFlareShimmer(): Shimmer =
       ),
   )
 
-/**
- * Base building block for skeleton screens.
- */
+/** Base building block for skeleton screens. */
 @Composable
 fun FlareSkeletonBox(
   modifier: Modifier = Modifier,
@@ -79,9 +77,7 @@ fun FlareSkeletonBox(
   Box(modifier.background(color, shape))
 }
 
-/**
- * A single row skeleton matching [MarketListRow] 1:1.
- */
+/** A single row skeleton matching [MarketListRow] 1:1. */
 @Composable
 fun MarketListRowSkeleton(
   modifier: Modifier = Modifier,
@@ -130,18 +126,14 @@ fun MarketListRowSkeleton(
   }
 }
 
-/**
- * Reusable list skeleton for market discovery and watchlist loading.
- */
+/** Reusable list skeleton for market discovery and watchlist loading. */
 @Composable
 fun MarketListSkeleton(
   modifier: Modifier = Modifier,
   itemCount: Int = 8,
 ) {
   val shimmer = rememberFlareShimmer()
-  Column(
-    modifier = modifier.fillMaxWidth().shimmer(shimmer),
-  ) {
+  Column(modifier = modifier.fillMaxWidth().shimmer(shimmer)) {
     repeat(itemCount) {
       MarketListRowSkeleton()
     }
@@ -322,8 +314,8 @@ private fun CandlestickSkeletonCanvas(
 }
 
 /**
- * Shimmer placeholder matching the 280 dp chart area in [TradeScreen].
- * Adapts to [ChartStyle.LINE] and [ChartStyle.CANDLESTICK].
+ * Shimmer placeholder matching the 280 dp chart area in [TradeScreen]. Adapts to [ChartStyle.LINE]
+ * and [ChartStyle.CANDLESTICK].
  */
 @Composable
 fun PriceChartSkeleton(
@@ -341,7 +333,7 @@ fun PriceChartSkeleton(
         .height(280.dp)
         .then(shimmerModifier)
         .background(FlareColors.Surface, RoundedCornerShape(12.dp))
-        .padding(16.dp),
+        .padding(16.dp)
   ) {
     when (chartStyle) {
       ChartStyle.LINE -> LineChartSkeletonCanvas(Modifier.fillMaxSize())
@@ -350,22 +342,14 @@ fun PriceChartSkeleton(
   }
 }
 
-/**
- * Full-screen trade view skeleton used while loading market details.
- */
+/** Full-screen trade view skeleton used while loading market details. */
 @Composable
 fun TradeScreenSkeleton(
   modifier: Modifier = Modifier,
   chartStyle: ChartStyle = ChartStyle.LINE,
 ) {
   val shimmer = rememberFlareShimmer()
-  Column(
-    modifier =
-      modifier
-        .fillMaxSize()
-        .padding(horizontal = 24.dp)
-        .shimmer(shimmer),
-  ) {
+  Column(modifier = modifier.fillMaxSize().padding(horizontal = 24.dp).shimmer(shimmer)) {
     Spacer(Modifier.height(16.dp))
     Row(
       modifier = Modifier.fillMaxWidth(),
@@ -406,13 +390,9 @@ fun TradeScreenSkeleton(
   }
 }
 
-/**
- * Clean startup skeleton displayed on cold launch before preferences/profile resolve.
- */
+/** Clean startup skeleton displayed on cold launch before preferences/profile resolve. */
 @Composable
-fun AppStartupSkeleton(
-  modifier: Modifier = Modifier,
-) {
+fun AppStartupSkeleton(modifier: Modifier = Modifier) {
   val shimmer = rememberFlareShimmer()
   Column(
     modifier =
@@ -420,7 +400,7 @@ fun AppStartupSkeleton(
         .fillMaxSize()
         .background(FlareColors.Canvas)
         .padding(horizontal = 24.dp)
-        .shimmer(shimmer),
+        .shimmer(shimmer)
   ) {
     Spacer(Modifier.height(24.dp))
     FlareSkeletonBox(Modifier.height(36.dp).width(130.dp), RoundedCornerShape(6.dp))

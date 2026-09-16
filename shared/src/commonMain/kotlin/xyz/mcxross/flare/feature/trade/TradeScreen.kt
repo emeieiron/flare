@@ -25,15 +25,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.AssetCatalogRepository
-import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.ChartRange
+import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
@@ -42,19 +41,19 @@ import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.AssetHeader
-import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.BackBar
-import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.PriceChartSkeleton
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TimeRangeSelector
 import xyz.mcxross.flare.design.TradeScreenSkeleton
+import xyz.mcxross.flare.design.resolveAssetIdentity
 
 @Composable
 fun TradeRoute(

@@ -28,21 +28,28 @@ class DecibelTradingPayloadTest {
       val commands =
         listOf(
           DecibelCommand.CreateSubaccount to ("dex_accounts_entry" to "create_new_subaccount"),
-          DecibelCommand.Deposit(SUBACCOUNT, ASSET, 1uL) to ("dex_accounts_entry" to "deposit_to_subaccount_at"),
-          DecibelCommand.Withdraw(SUBACCOUNT, ASSET, 1uL) to ("dex_accounts_entry" to "withdraw_from_cross_collateral"),
+          DecibelCommand.Deposit(SUBACCOUNT, ASSET, 1uL) to
+            ("dex_accounts_entry" to "deposit_to_subaccount_at"),
+          DecibelCommand.Withdraw(SUBACCOUNT, ASSET, 1uL) to
+            ("dex_accounts_entry" to "withdraw_from_cross_collateral"),
           DecibelCommand.DelegateTrading(SUBACCOUNT, DELEGATE, 100uL) to
             ("dex_accounts_entry" to "delegate_all_trading_to_for_subaccount"),
-          DecibelCommand.RevokeDelegation(SUBACCOUNT, DELEGATE) to ("dex_accounts_entry" to "revoke_delegation"),
+          DecibelCommand.RevokeDelegation(SUBACCOUNT, DELEGATE) to
+            ("dex_accounts_entry" to "revoke_delegation"),
           DecibelCommand.ConfigureMarket(
             SUBACCOUNT,
             MARKET,
             MarginMode.CROSS,
             10u,
           ) to ("dex_accounts_entry" to "configure_user_settings_for_market"),
-          DecibelCommand.PlaceOrder(SUBACCOUNT, order) to ("dex_accounts_entry" to "place_order_to_subaccount"),
-          DecibelCommand.PlaceSpotOrder(SUBACCOUNT, order) to ("dex_accounts_spot_entry" to "place_spot_order_to_subaccount"),
-          DecibelCommand.CancelOrder(SUBACCOUNT, MARKET, MAX_U128) to ("dex_accounts_entry" to "cancel_order_to_subaccount"),
-          DecibelCommand.CancelSpotOrder(SUBACCOUNT, MARKET, MAX_U128) to ("dex_accounts_spot_entry" to "cancel_spot_order_to_subaccount"),
+          DecibelCommand.PlaceOrder(SUBACCOUNT, order) to
+            ("dex_accounts_entry" to "place_order_to_subaccount"),
+          DecibelCommand.PlaceSpotOrder(SUBACCOUNT, order) to
+            ("dex_accounts_spot_entry" to "place_spot_order_to_subaccount"),
+          DecibelCommand.CancelOrder(SUBACCOUNT, MARKET, MAX_U128) to
+            ("dex_accounts_entry" to "cancel_order_to_subaccount"),
+          DecibelCommand.CancelSpotOrder(SUBACCOUNT, MARKET, MAX_U128) to
+            ("dex_accounts_spot_entry" to "cancel_spot_order_to_subaccount"),
           DecibelCommand.CancelPositionTpSl(SUBACCOUNT, MARKET, MAX_U128) to
             ("dex_accounts_entry" to "cancel_tp_sl_order_for_position"),
           DecibelCommand.SetPositionTpSl(

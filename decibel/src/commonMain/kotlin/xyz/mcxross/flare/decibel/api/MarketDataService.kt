@@ -2,7 +2,6 @@ package xyz.mcxross.flare.decibel.api
 
 import io.ktor.client.request.parameter
 import xyz.mcxross.flare.decibel.model.AssetContext
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.decibel.model.CandleInterval
 import xyz.mcxross.flare.decibel.model.Market
@@ -35,8 +34,7 @@ interface MarketDataService {
 }
 
 internal class DefaultMarketDataService(private val api: DecibelApi) : MarketDataService {
-  override suspend fun markets(): List<Market> =
-    api.get("markets")
+  override suspend fun markets(): List<Market> = api.get("markets")
 
   override suspend fun prices(market: String?): List<MarketPrice> =
     api.get("prices") { market?.let { url.parameters.append("market", it) } }
@@ -44,8 +42,7 @@ internal class DefaultMarketDataService(private val api: DecibelApi) : MarketDat
   override suspend fun assetContexts(market: String?): List<AssetContext> =
     api.get("asset_contexts") { market?.let { url.parameters.append("market", it) } }
 
-  override suspend fun spotAssetContexts(): List<SpotAssetContext> =
-    api.get("spot/asset_contexts")
+  override suspend fun spotAssetContexts(): List<SpotAssetContext> = api.get("spot/asset_contexts")
 
   override suspend fun candles(
     market: String,

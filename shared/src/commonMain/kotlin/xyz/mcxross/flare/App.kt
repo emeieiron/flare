@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -61,13 +62,12 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
-import androidx.compose.foundation.layout.size
-import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareNavigationItem
+import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.TransactionExplorer
@@ -114,9 +114,10 @@ fun App(
       }
   ) {
     CompositionLocalProvider(
-      LocalTransactionExplorer provides remember(runtimeConfig) {
-        TransactionExplorer(runtimeConfig.network)
-      }
+      LocalTransactionExplorer provides
+        remember(runtimeConfig) {
+          TransactionExplorer(runtimeConfig.network)
+        }
     ) {
       FlareTheme { FlareAppFlow() }
     }

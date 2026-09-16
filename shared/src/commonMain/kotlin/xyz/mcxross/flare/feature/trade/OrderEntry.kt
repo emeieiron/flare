@@ -18,7 +18,8 @@ internal fun TradeUiState.entryPrice(side: OrderSide): String? =
 internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
   val market = quote?.market ?: error("Select a market first")
   val isSpot = market.assetType == AssetType.SPOT
-  val takeProfit = if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
+  val takeProfit =
+    if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
   val stopLoss = if (isSpot) null else stopLossInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
   if (takeProfit != null || stopLoss != null) {
     val entry = entryPrice(side) ?: error("An entry price is needed to check your exits")

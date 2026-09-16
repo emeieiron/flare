@@ -101,7 +101,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       state.actionError?.let { error ->
         ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
       }
-      (state.fundingTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+      (state.fundingTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate
+        ->
         ActionNotice(
           "Flare can’t cover the network fee right now. Your wallet would pay about " +
             "${estimate.toDecimalString(8)} APT.",

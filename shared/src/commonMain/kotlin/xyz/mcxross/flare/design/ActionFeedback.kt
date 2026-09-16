@@ -69,8 +69,9 @@ private fun failureCause(detail: String): String? =
     else -> null
   }
 
-private fun String.mentions(vararg needles: String): Boolean =
-  needles.any { contains(it, ignoreCase = true) }
+private fun String.mentions(vararg needles: String): Boolean = needles.any {
+  contains(it, ignoreCase = true)
+}
 
 /** The everyday name for a journaled operation, used while the app confirms it. */
 fun settlingActionName(operation: String): String =

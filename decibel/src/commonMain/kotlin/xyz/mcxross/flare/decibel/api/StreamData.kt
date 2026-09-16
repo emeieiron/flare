@@ -69,9 +69,7 @@ internal fun decodeStreamData(
         json.decodeFromJsonElement<MarketPricesEnvelope>(payload).prices
       )
     AllSpotMids ->
-      DecibelStreamData.SpotMids(
-        json.decodeFromJsonElement<SpotMidsEnvelope>(payload).mids
-      )
+      DecibelStreamData.SpotMids(json.decodeFromJsonElement<SpotMidsEnvelope>(payload).mids)
     is MarketPriceTopic ->
       DecibelStreamData.MarketPriceValue(
         json.decodeFromJsonElement<MarketPriceEnvelope>(payload).price

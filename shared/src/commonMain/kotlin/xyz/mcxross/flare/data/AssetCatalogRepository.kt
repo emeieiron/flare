@@ -60,7 +60,9 @@ class DefaultAssetCatalogRepository(
   private val refreshMutex = Mutex()
 
   override val assets: StateFlow<Map<String, AssetMetadata>> =
-    cache.observeAssets().map { rows -> rows.associate { it.symbolKey to it.toDomain() } }
+    cache
+      .observeAssets()
+      .map { rows -> rows.associate { it.symbolKey to it.toDomain() } }
       .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, emptyMap())
 
   override suspend fun refresh() {
@@ -71,7 +73,9 @@ class DefaultAssetCatalogRepository(
       }
       val refreshedAtMs = Clock.System.now().toEpochMilliseconds()
       if (cache.revision() == manifest.revision) {
-        cache.upsertSync(AssetCatalogSyncEntity(revision = manifest.revision, refreshedAtMs = refreshedAtMs))
+        cache.upsertSync(
+          AssetCatalogSyncEntity(revision = manifest.revision, refreshedAtMs = refreshedAtMs)
+        )
         return@withLock
       }
       cache.replaceCatalog(
@@ -85,10 +89,13 @@ class DefaultAssetCatalogRepository(
 fun assetKey(symbol: String): String = symbol.trim().uppercase()
 
 fun resolveAssetIconUrl(path: String?): String? =
-  path?.trim()?.takeIf { it.isNotEmpty() }?.let { icon ->
-    if (icon.startsWith("https://") || icon.startsWith("http://")) icon
-    else "$ASSET_CATALOG_ORIGIN/${icon.trimStart('/')}"
-  }
+  path
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?.let { icon ->
+      if (icon.startsWith("https://") || icon.startsWith("http://")) icon
+      else "$ASSET_CATALOG_ORIGIN/${icon.trimStart('/')}"
+    }
 
 private fun AssetManifestEntry.toEntity(revision: String, updatedAtMs: Long) =
   AssetMetadataEntity(

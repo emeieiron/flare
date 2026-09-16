@@ -16,13 +16,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
+import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
@@ -32,8 +33,6 @@ import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
 import xyz.mcxross.flare.design.MarketListSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
-import xyz.mcxross.flare.data.assetKey
-import xyz.mcxross.flare.decibel.model.AssetType
 
 @Composable
 fun MarketsRoute(
@@ -60,9 +59,7 @@ fun MarketsScreen(
   Column(
     modifier = modifier.fillMaxSize().background(FlareColors.Canvas).padding(horizontal = 24.dp)
   ) {
-    FlareTopBar(
-      title = "Markets",
-    )
+    FlareTopBar(title = "Markets")
     FlareSegmentedControl(
       options = listOf(MarketInstrumentFilter.PERPETUALS, MarketInstrumentFilter.SPOT),
       selectedOption = state.selectedInstrument,
@@ -79,7 +76,9 @@ fun MarketsScreen(
       value = state.query,
       onValueChange = { onIntent(MarketsIntent.Search(it)) },
       modifier = Modifier.fillMaxWidth(),
-      placeholder = if (state.selectedInstrument == MarketInstrumentFilter.SPOT) "Search spot markets" else "Search perpetuals",
+      placeholder =
+        if (state.selectedInstrument == MarketInstrumentFilter.SPOT) "Search spot markets"
+        else "Search perpetuals",
       leadingIcon = Icons.Outlined.Search,
     )
     LazyRow(
@@ -166,11 +165,12 @@ fun MarketsScreen(
         }
         items(state.quotes, key = { it.market.address }) { quote ->
           MarketListRow(
-            asset = resolveAssetIdentity(
-              quote.market.symbol,
-              quote.market.name,
-              state.assets[assetKey(quote.market.symbol)],
-            ),
+            asset =
+              resolveAssetIdentity(
+                quote.market.symbol,
+                quote.market.name,
+                state.assets[assetKey(quote.market.symbol)],
+              ),
             price = formatPrice(quote.markPrice),
             delta = formatPercent(quote.changePercent24h),
             positive = quote.changePercent24h >= 0,

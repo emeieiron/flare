@@ -384,16 +384,15 @@ internal class DefaultDecibelTradingService(
           return@flow
         }
       }
-    val feePayerAuthenticator =
-      feePayer?.let {
-        when (val result = aptos.transactions.sign(it, unsigned)) {
-          is AptosResult.Success -> result.value
-          is AptosResult.Failure -> {
-            emit(TransactionState.Failed(result.error.toString()))
-            return@flow
-          }
+    val feePayerAuthenticator = feePayer?.let {
+      when (val result = aptos.transactions.sign(it, unsigned)) {
+        is AptosResult.Success -> result.value
+        is AptosResult.Failure -> {
+          emit(TransactionState.Failed(result.error.toString()))
+          return@flow
         }
       }
+    }
     val preparedReference: String
     val externalRequest =
       if (externalFeePayer == null) {

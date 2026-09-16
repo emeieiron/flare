@@ -9,11 +9,12 @@ import xyz.mcxross.flare.design.resolveAssetIdentity
 class AssetCatalogTest {
   @Test
   fun manifestDecodesMixedAssetKindsAndUnknownFields() {
-    val manifest =
-      Json { ignoreUnknownKeys = true }
-        .decodeFromString<AssetManifest>(
-          """{"schemaVersion":1,"revision":"abc","ignored":true,"assets":[{"symbol":"BTC","name":"Bitcoin","kind":"crypto","icon":"/assets/btc.svg","sha256":"hash"},{"symbol":"AAPL","name":"Apple","kind":"equity","icon":null}]}"""
-        )
+    val manifest = Json {
+      ignoreUnknownKeys = true
+    }
+      .decodeFromString<AssetManifest>(
+        """{"schemaVersion":1,"revision":"abc","ignored":true,"assets":[{"symbol":"BTC","name":"Bitcoin","kind":"crypto","icon":"/assets/btc.svg","sha256":"hash"},{"symbol":"AAPL","name":"Apple","kind":"equity","icon":null}]}"""
+      )
 
     assertEquals("abc", manifest.revision)
     assertEquals(listOf("crypto", "equity"), manifest.assets.map(AssetManifestEntry::kind))
@@ -23,8 +24,14 @@ class AssetCatalogTest {
   @Test
   fun assetKeysAreCaseInsensitiveAndPathsResolveAgainstCatalogOrigin() {
     assertEquals("KPEPE", assetKey("kPEPE"))
-    assertEquals("https://flare.mcxross.xyz/assets/kpepe.svg", resolveAssetIconUrl("/assets/kpepe.svg"))
-    assertEquals("https://example.test/icon.svg", resolveAssetIconUrl("https://example.test/icon.svg"))
+    assertEquals(
+      "https://flare.mcxross.xyz/assets/kpepe.svg",
+      resolveAssetIconUrl("/assets/kpepe.svg"),
+    )
+    assertEquals(
+      "https://example.test/icon.svg",
+      resolveAssetIconUrl("https://example.test/icon.svg"),
+    )
   }
 
   @Test

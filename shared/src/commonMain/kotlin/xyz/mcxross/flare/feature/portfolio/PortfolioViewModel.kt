@@ -18,7 +18,6 @@ import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.FeePayment
-import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.PendingTransaction
@@ -212,7 +211,9 @@ class PortfolioViewModel(
       .combine(markets.catalog) { (state, balances), catalog ->
         val nonSpotPositions =
           state.account.positions.filter { pos ->
-            catalog.quotes.none { it.market.address == pos.market && it.market.assetType == AssetType.SPOT }
+            catalog.quotes.none {
+              it.market.address == pos.market && it.market.assetType == AssetType.SPOT
+            }
           }
 
         val holdings = mutableListOf<SpotHolding>()
@@ -243,15 +244,21 @@ class PortfolioViewModel(
             val spotQuote =
               catalog.quotes.firstOrNull { quote ->
                 quote.market.assetType == AssetType.SPOT &&
-                  (quote.market.symbol.split("/").firstOrNull()?.trim()?.equals(symbol, ignoreCase = true) == true ||
-                   quote.market.symbol.equals(symbol, ignoreCase = true))
+                  (quote.market.symbol
+                    .split("/")
+                    .firstOrNull()
+                    ?.trim()
+                    ?.equals(symbol, ignoreCase = true) == true ||
+                    quote.market.symbol.equals(symbol, ignoreCase = true))
               }
             val mark = spotQuote?.markPrice ?: 0.0
             val metadata = assetCatalog?.assetFor(symbol)
             holdings.add(
               SpotHolding(
                 symbol = symbol,
-                name = metadata?.name ?: if (symbol.equals("APT", ignoreCase = true)) "Aptos" else symbol,
+                name =
+                  metadata?.name
+                    ?: if (symbol.equals("APT", ignoreCase = true)) "Aptos" else symbol,
                 marketAddress = spotQuote?.market?.address,
                 quantity = quantity,
                 markPrice = mark,
@@ -265,8 +272,7 @@ class PortfolioViewModel(
 
         val sortedHoldings =
           holdings.sortedWith(
-            compareByDescending<SpotHolding> { it.isCollateral }
-              .thenByDescending { it.valueUsd }
+            compareByDescending<SpotHolding> { it.isCollateral }.thenByDescending { it.valueUsd }
           )
 
         state.copy(
@@ -280,8 +286,7 @@ class PortfolioViewModel(
 
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
-      is PortfolioIntent.SelectTab ->
-        local.update { it.copy(selectedTab = intent.tab) }
+      is PortfolioIntent.SelectTab -> local.update { it.copy(selectedTab = intent.tab) }
       PortfolioIntent.Refresh ->
         viewModelScope.launch {
           runSuspendCatching {
@@ -361,57 +366,60 @@ class PortfolioViewModel(
     }
   }
 
-  private fun closePosition(feePayment: FeePayment) = launchAction("Your position stayed open.") {
-    val position = managedPosition()
-    val quote = marketQuote(position.market)
-    marketDetails.refresh(position.market)
-    val details = marketDetails.details.value
-    require(!details.stale && details.orderBook != null) {
-      "A live order book is required to close a position"
-    }
-    val slippage = preferences.values.first().slippageBps
-    val validated =
-      OrderDraft(
-          marketAddress = position.market,
-          side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
-          type = OrderType.MARKET,
-          size = DecimalInput(position.absoluteSize),
-          reduceOnly = true,
-          slippage = SlippageBps(slippage.toUInt()),
-        )
-        .validate(quote.market, details.orderBook)
-        .value ?: error("The exact position size cannot be aligned to the current market precision")
-    val subaccount = checkNotNull(uiState.value.account.account)
-    executePositionCommandInternal(DecibelCommand.PlaceOrder(subaccount, validated), feePayment)
-  }
-
-  private fun setTpSl(feePayment: FeePayment) = launchAction("Your exits weren’t changed.") {
-    val position = managedPosition()
-    val quote = marketQuote(position.market)
-    val state = local.value
-    val takeProfit = optionalPrice(state.takeProfitInput, quote.market.precision.priceDecimals)
-    val stopLoss = optionalPrice(state.stopLossInput, quote.market.precision.priceDecimals)
-    require(takeProfit != null || stopLoss != null) { "Enter a take-profit or stop-loss price" }
-    listOfNotNull(takeProfit, stopLoss).forEach { units ->
-      require(
-        quote.market.precision.tickSize == 0uL || units % quote.market.precision.tickSize == 0uL
-      ) {
-        "TP/SL prices must align to tick size ${quote.market.precision.tickSize}"
+  private fun closePosition(feePayment: FeePayment) =
+    launchAction("Your position stayed open.") {
+      val position = managedPosition()
+      val quote = marketQuote(position.market)
+      marketDetails.refresh(position.market)
+      val details = marketDetails.details.value
+      require(!details.stale && details.orderBook != null) {
+        "A live order book is required to close a position"
       }
+      val slippage = preferences.values.first().slippageBps
+      val validated =
+        OrderDraft(
+            marketAddress = position.market,
+            side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
+            type = OrderType.MARKET,
+            size = DecimalInput(position.absoluteSize),
+            reduceOnly = true,
+            slippage = SlippageBps(slippage.toUInt()),
+          )
+          .validate(quote.market, details.orderBook)
+          .value
+          ?: error("The exact position size cannot be aligned to the current market precision")
+      val subaccount = checkNotNull(uiState.value.account.account)
+      executePositionCommandInternal(DecibelCommand.PlaceOrder(subaccount, validated), feePayment)
     }
-    val subaccount = checkNotNull(uiState.value.account.account)
-    executePositionCommandInternal(
-      DecibelCommand.SetPositionTpSl(
-        subaccount = subaccount,
-        market = position.market,
-        takeProfitTrigger = takeProfit,
-        takeProfitLimit = takeProfit,
-        stopLossTrigger = stopLoss,
-        stopLossLimit = stopLoss,
-      ),
-      feePayment,
-    )
-  }
+
+  private fun setTpSl(feePayment: FeePayment) =
+    launchAction("Your exits weren’t changed.") {
+      val position = managedPosition()
+      val quote = marketQuote(position.market)
+      val state = local.value
+      val takeProfit = optionalPrice(state.takeProfitInput, quote.market.precision.priceDecimals)
+      val stopLoss = optionalPrice(state.stopLossInput, quote.market.precision.priceDecimals)
+      require(takeProfit != null || stopLoss != null) { "Enter a take-profit or stop-loss price" }
+      listOfNotNull(takeProfit, stopLoss).forEach { units ->
+        require(
+          quote.market.precision.tickSize == 0uL || units % quote.market.precision.tickSize == 0uL
+        ) {
+          "TP/SL prices must align to tick size ${quote.market.precision.tickSize}"
+        }
+      }
+      val subaccount = checkNotNull(uiState.value.account.account)
+      executePositionCommandInternal(
+        DecibelCommand.SetPositionTpSl(
+          subaccount = subaccount,
+          market = position.market,
+          takeProfitTrigger = takeProfit,
+          takeProfitLimit = takeProfit,
+          stopLossTrigger = stopLoss,
+          stopLossLimit = stopLoss,
+        ),
+        feePayment,
+      )
+    }
 
   private fun executePositionCommand(command: DecibelCommand, feePayment: FeePayment) =
     launchAction("Your position wasn’t updated.") {
@@ -444,21 +452,26 @@ class PortfolioViewModel(
     }
   }
 
-  private fun topUpApiWallet() = launchAction("The network fee wasn’t covered.") {
-    val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
-    trading
-      .topUpApiWallet(
-        amount,
-        VaultPrompt("Cover network fees", "Confirm your identity", requireFreshAuthorization = true),
-      )
-      .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
-    when (val terminal = local.value.topUpTransaction) {
-      is TransactionState.Committed ->
-        local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
-      is TransactionState.Failed -> error(terminal.message)
-      else -> Unit
+  private fun topUpApiWallet() =
+    launchAction("The network fee wasn’t covered.") {
+      val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+      trading
+        .topUpApiWallet(
+          amount,
+          VaultPrompt(
+            "Cover network fees",
+            "Confirm your identity",
+            requireFreshAuthorization = true,
+          ),
+        )
+        .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
+      when (val terminal = local.value.topUpTransaction) {
+        is TransactionState.Committed ->
+          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
+        is TransactionState.Failed -> error(terminal.message)
+        else -> Unit
+      }
     }
-  }
 
   private suspend fun marketQuote(market: String) =
     (markets.catalog.value.quotes.firstOrNull { it.market.address == market }
