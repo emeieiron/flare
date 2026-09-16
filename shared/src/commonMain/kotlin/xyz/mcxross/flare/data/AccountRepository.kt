@@ -561,159 +561,156 @@ class DefaultAccountRepository(
     else sessions.authenticateOwner(account, prompt)
   }
 
-  override suspend fun refresh() =
-    refreshMutex.withLock {
-      val account = preferences.values.first().selectedSubaccount
-      if (account == null) {
-        mutableSnapshot.value = AccountSnapshot(error = "No trading account is selected")
-        return@withLock
-      }
-      if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
-        mutableSnapshot.value =
-          AccountSnapshot(account = account, error = "Account data is unavailable. Try again.")
-        return@withLock
-      }
-      mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
-      runSuspendCatching {
-          coroutineScope {
-            val overview = async { client.accounts.overview(account) }
-            val positions = async { client.accounts.positions(account) }
-            val orders = async { client.accounts.openOrders(account) }
-            Triple(overview.await(), positions.await(), orders.await())
-          }
-        }
-        .onSuccess { (overview, positions, orders) ->
-          if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-          mutableSnapshot.value =
-            AccountSnapshot(
-              account = account,
-              overview = overview,
-              positions = positions.filterNot(Position::isDeleted),
-              openOrders = orders.items,
-              stale = false,
-            )
-        }
-        .onFailure { error ->
-          mutableSnapshot.update {
-            it.copy(
-              loading = false,
-              stale = true,
-              error = error.message ?: "Account data is unavailable",
-            )
-          }
-        }
+  override suspend fun refresh() = refreshMutex.withLock {
+    val account = preferences.values.first().selectedSubaccount
+    if (account == null) {
+      mutableSnapshot.value = AccountSnapshot(error = "No trading account is selected")
+      return@withLock
     }
-
-  override suspend fun refreshHistory() =
-    historyMutex.withLock {
-      val account = preferences.values.first().selectedSubaccount
-      if (account == null) {
-        mutableHistory.value = AccountHistorySnapshot(error = "No trading account is selected")
-        return@withLock
+    if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
+      mutableSnapshot.value =
+        AccountSnapshot(account = account, error = "Account data is unavailable. Try again.")
+      return@withLock
+    }
+    mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
+    runSuspendCatching {
+      coroutineScope {
+        val overview = async { client.accounts.overview(account) }
+        val positions = async { client.accounts.positions(account) }
+        val orders = async { client.accounts.openOrders(account) }
+        Triple(overview.await(), positions.await(), orders.await())
       }
-      if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
+    }
+      .onSuccess { (overview, positions, orders) ->
+        if (preferences.values.first().selectedSubaccount != account) return@onSuccess
+        mutableSnapshot.value =
+          AccountSnapshot(
+            account = account,
+            overview = overview,
+            positions = positions.filterNot(Position::isDeleted),
+            openOrders = orders.items,
+            stale = false,
+          )
+      }
+      .onFailure { error ->
+        mutableSnapshot.update {
+          it.copy(
+            loading = false,
+            stale = true,
+            error = error.message ?: "Account data is unavailable",
+          )
+        }
+      }
+  }
+
+  override suspend fun refreshHistory() = historyMutex.withLock {
+    val account = preferences.values.first().selectedSubaccount
+    if (account == null) {
+      mutableHistory.value = AccountHistorySnapshot(error = "No trading account is selected")
+      return@withLock
+    }
+    if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
+      mutableHistory.value =
+        AccountHistorySnapshot(
+          account = account,
+          error = "Account history is unavailable. Try again.",
+        )
+      return@withLock
+    }
+    mutableHistory.update { it.copy(account = account, loading = true, error = null) }
+    runSuspendCatching {
+      coroutineScope {
+        val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
+        val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
+        val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
+        Triple(orders.await(), trades.await(), funding.await())
+      }
+    }
+      .onSuccess { (orders, trades, funding) ->
+        if (preferences.values.first().selectedSubaccount != account) return@onSuccess
         mutableHistory.value =
           AccountHistorySnapshot(
             account = account,
-            error = "Account history is unavailable. Try again.",
+            orders = orders.items,
+            trades = trades.items,
+            funding = funding.items,
+            ordersHasMore = orders.hasMore(0),
+            tradesHasMore = trades.hasMore(0),
+            fundingHasMore = funding.hasMore(0),
+            stale = false,
           )
-        return@withLock
       }
-      mutableHistory.update { it.copy(account = account, loading = true, error = null) }
-      runSuspendCatching {
-          coroutineScope {
-            val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
-            val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
-            val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
-            Triple(orders.await(), trades.await(), funding.await())
-          }
+      .onFailure { error ->
+        mutableHistory.update {
+          it.copy(
+            loading = false,
+            stale = true,
+            error = error.message ?: "Account history is unavailable",
+          )
         }
-        .onSuccess { (orders, trades, funding) ->
-          if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-          mutableHistory.value =
-            AccountHistorySnapshot(
-              account = account,
-              orders = orders.items,
-              trades = trades.items,
-              funding = funding.items,
-              ordersHasMore = orders.hasMore(0),
-              tradesHasMore = trades.hasMore(0),
-              fundingHasMore = funding.hasMore(0),
-              stale = false,
-            )
-        }
-        .onFailure { error ->
-          mutableHistory.update {
-            it.copy(
-              loading = false,
-              stale = true,
-              error = error.message ?: "Account history is unavailable",
-            )
-          }
-        }
-    }
+      }
+  }
 
-  override suspend fun loadMoreHistory(kind: AccountHistoryKind) =
-    historyMutex.withLock {
-      val current = mutableHistory.value
-      val account = current.account ?: return@withLock
-      val shouldLoad =
-        when (kind) {
-          AccountHistoryKind.ORDERS -> current.ordersHasMore
-          AccountHistoryKind.TRADES -> current.tradesHasMore
-          AccountHistoryKind.FUNDING -> current.fundingHasMore
-        }
-      if (!shouldLoad || current.loading || current.loadingMore) return@withLock
-      mutableHistory.update { it.copy(loadingMore = true, error = null) }
-      runSuspendCatching {
-          when (kind) {
-            AccountHistoryKind.ORDERS ->
-              HistoryResult.Orders(
-                client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, current.orders.size)
-              )
-            AccountHistoryKind.TRADES ->
-              HistoryResult.Trades(
-                client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, current.trades.size)
-              )
-            AccountHistoryKind.FUNDING ->
-              HistoryResult.Funding(
-                client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, current.funding.size)
-              )
-          }
-        }
-        .onSuccess { result ->
-          mutableHistory.update { state ->
-            when (result) {
-              is HistoryResult.Orders ->
-                state.copy(
-                  orders = state.orders + result.page.items,
-                  ordersHasMore = result.page.hasMore(state.orders.size),
-                  loadingMore = false,
-                )
-              is HistoryResult.Trades ->
-                state.copy(
-                  trades = state.trades + result.page.items,
-                  tradesHasMore = result.page.hasMore(state.trades.size),
-                  loadingMore = false,
-                )
-              is HistoryResult.Funding ->
-                state.copy(
-                  funding = state.funding + result.page.items,
-                  fundingHasMore = result.page.hasMore(state.funding.size),
-                  loadingMore = false,
-                )
-            }
-          }
-        }
-        .onFailure { error ->
-          mutableHistory.update {
-            it.copy(
-              loadingMore = false,
-              error = error.message ?: "Unable to load more account history",
-            )
-          }
-        }
+  override suspend fun loadMoreHistory(kind: AccountHistoryKind) = historyMutex.withLock {
+    val current = mutableHistory.value
+    val account = current.account ?: return@withLock
+    val shouldLoad =
+      when (kind) {
+        AccountHistoryKind.ORDERS -> current.ordersHasMore
+        AccountHistoryKind.TRADES -> current.tradesHasMore
+        AccountHistoryKind.FUNDING -> current.fundingHasMore
+      }
+    if (!shouldLoad || current.loading || current.loadingMore) return@withLock
+    mutableHistory.update { it.copy(loadingMore = true, error = null) }
+    runSuspendCatching {
+      when (kind) {
+        AccountHistoryKind.ORDERS ->
+          HistoryResult.Orders(
+            client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, current.orders.size)
+          )
+        AccountHistoryKind.TRADES ->
+          HistoryResult.Trades(
+            client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, current.trades.size)
+          )
+        AccountHistoryKind.FUNDING ->
+          HistoryResult.Funding(
+            client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, current.funding.size)
+          )
+      }
     }
+      .onSuccess { result ->
+        mutableHistory.update { state ->
+          when (result) {
+            is HistoryResult.Orders ->
+              state.copy(
+                orders = state.orders + result.page.items,
+                ordersHasMore = result.page.hasMore(state.orders.size),
+                loadingMore = false,
+              )
+            is HistoryResult.Trades ->
+              state.copy(
+                trades = state.trades + result.page.items,
+                tradesHasMore = result.page.hasMore(state.trades.size),
+                loadingMore = false,
+              )
+            is HistoryResult.Funding ->
+              state.copy(
+                funding = state.funding + result.page.items,
+                fundingHasMore = result.page.hasMore(state.funding.size),
+                loadingMore = false,
+              )
+          }
+        }
+      }
+      .onFailure { error ->
+        mutableHistory.update {
+          it.copy(
+            loadingMore = false,
+            error = error.message ?: "Unable to load more account history",
+          )
+        }
+      }
+  }
 
   override fun startLive() {
     val account = mutableSnapshot.value.account ?: return
@@ -823,8 +820,9 @@ class DefaultAccountRepository(
   }
 }
 
-private fun MarketTrade.stableIdentity(): String =
-  tradeId.ifBlank { "$transactionVersion:$market:$account:$price:$size" }
+private fun MarketTrade.stableIdentity(): String = tradeId.ifBlank {
+  "$transactionVersion:$market:$account:$price:$size"
+}
 
 private sealed interface HistoryResult {
   data class Orders(val page: Page<Order>) : HistoryResult

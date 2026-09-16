@@ -312,7 +312,9 @@ class DecibelTradingExecutionTest {
     val f = ExecutionFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try {
       assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_ENTRY_ABI))
-      assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI))
+      assertIs<AptosResult.Success<Unit>>(
+        f.aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI)
+      )
       block(f)
     } finally {
       f.aptos.close()

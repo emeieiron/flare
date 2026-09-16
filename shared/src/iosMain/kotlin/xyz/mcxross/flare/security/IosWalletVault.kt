@@ -53,11 +53,17 @@ class IosWalletVault : WalletVault {
     authorize(prompt, force = prompt.requireFreshAuthorization)
     delete(slot)
     memScoped {
-      val serviceRef = SERVICE.toCFString() ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
-      val accountRef = slot.storageKey.toCFString() ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
-      val dataRef = secret.toCFData() ?: throw WalletVaultException.Unavailable("Keychain data encoding failed")
-      val dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
-        ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
+      val serviceRef =
+        SERVICE.toCFString()
+          ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
+      val accountRef =
+        slot.storageKey.toCFString()
+          ?: throw WalletVaultException.Unavailable("Keychain string encoding failed")
+      val dataRef =
+        secret.toCFData() ?: throw WalletVaultException.Unavailable("Keychain data encoding failed")
+      val dict =
+        CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
+          ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
       try {
         CFDictionaryAddValue(dict, kSecClass, kSecClassGenericPassword)
         CFDictionaryAddValue(dict, kSecAttrService, serviceRef)
@@ -82,8 +88,9 @@ class IosWalletVault : WalletVault {
     return memScoped {
       val serviceRef = SERVICE.toCFString() ?: throw WalletVaultException.Corrupted()
       val accountRef = slot.storageKey.toCFString() ?: throw WalletVaultException.Corrupted()
-      val dict = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
-        ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
+      val dict =
+        CFDictionaryCreateMutable(kCFAllocatorDefault, 0, null, null)
+          ?: throw WalletVaultException.Unavailable("Keychain dictionary creation failed")
       try {
         CFDictionaryAddValue(dict, kSecClass, kSecClassGenericPassword)
         CFDictionaryAddValue(dict, kSecAttrService, serviceRef)

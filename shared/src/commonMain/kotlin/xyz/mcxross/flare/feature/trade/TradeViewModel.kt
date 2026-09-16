@@ -215,13 +215,18 @@ class TradeViewModel(
         )
       } else {
         val position =
-          accounts.snapshot.value.positions.firstOrNull { it.market == state.quote?.market?.address }
+          accounts.snapshot.value.positions.firstOrNull {
+            it.market == state.quote?.market?.address
+          }
         state.copy(
           positionLeverage = position?.leverage,
           positionIsolated = position?.isIsolated,
           leverage =
             position?.leverage
-              ?: state.leverage.coerceIn(1, state.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1),
+              ?: state.leverage.coerceIn(
+                1,
+                state.quote?.market?.maxLeverage?.coerceIn(1, 100) ?: 1,
+              ),
         )
       }
     }
@@ -239,11 +244,10 @@ class TradeViewModel(
       if (subaccount != null && (forceBase || key != lastBaseBalanceKey)) {
         lastBaseBalanceKey = key
         baseBalanceJob?.cancel()
-        baseBalanceJob =
-          viewModelScope.launch {
-            val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
-            mutableUiState.update { it.copy(baseBalance = base) }
-          }
+        baseBalanceJob = viewModelScope.launch {
+          val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
+          mutableUiState.update { it.copy(baseBalance = base) }
+        }
       }
     } else {
       lastBaseBalanceKey = null
@@ -303,7 +307,12 @@ class TradeViewModel(
       is TradeIntent.Submit -> submitOrder(intent.side, FeePayment.SPONSORED)
       is TradeIntent.SetLeverage ->
         mutableUiState.update {
-          if (it.orderBusy || it.positionLeverage != null || it.quote?.market?.assetType == AssetType.SPOT) it
+          if (
+            it.orderBusy ||
+              it.positionLeverage != null ||
+              it.quote?.market?.assetType == AssetType.SPOT
+          )
+            it
           else
             it.copy(
               leverage =
@@ -341,11 +350,10 @@ class TradeViewModel(
 
   private fun loadMarketDetails(market: String) {
     marketDetailsJob?.cancel()
-    marketDetailsJob =
-      viewModelScope.launch {
-        marketDetails.refresh(market)
-        marketDetails.connectLive(market)
-      }
+    marketDetailsJob = viewModelScope.launch {
+      marketDetails.refresh(market)
+      marketDetails.connectLive(market)
+    }
   }
 
   private fun submitOrder(side: OrderSide, feePayment: FeePayment) {
@@ -366,75 +374,75 @@ class TradeViewModel(
       }
       try {
         runSuspendCatching {
-            val state = mutableUiState.value
-            val market = state.quote?.market ?: error("Select a market first")
-            val subaccount =
-              preferences.values.first().selectedSubaccount ?: error("Complete account setup")
-            if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
-              error("A live order book is required for a market order")
-            }
-            val draft = state.orderDraft(side)
-            val validation = draft.validate(market, state.marketDetails.orderBook)
-            val validated =
-              validation.value
-                ?: error(
-                  validation.errors.joinToString("\n", transform = OrderValidationError::message)
-                )
-            val reconciliation = trading.reconcilePending()
-            require(reconciliation.unresolved == 0) {
-              "Flare is still confirming an earlier action. Try again in a moment."
-            }
-            accounts.refresh()
-            val snapshot = accounts.snapshot.value
-            require(!snapshot.stale && snapshot.account == subaccount) {
-              "Your account is still reconnecting. Try again in a moment."
-            }
-            val isSpot = market.assetType == AssetType.SPOT
-            val position = snapshot.positions.firstOrNull { it.market == market.address }
-            val terminal =
-              placeConfiguredOrder(
-                configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
-                entry =
-                  if (isSpot) DecibelCommand.PlaceSpotOrder(subaccount, validated)
-                  else DecibelCommand.PlaceOrder(subaccount, validated),
-                execute = { command ->
-                  trading.execute(
-                    command,
-                    VaultPrompt(
-                      title =
-                        if (command is DecibelCommand.ConfigureMarket)
-                          "Apply ${state.leverage}× leverage"
-                        else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
-                      subtitle = "Confirm your identity",
-                    ),
-                    if (
-                      feePayment == FeePayment.SELF_PAY &&
-                        (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
-                    )
-                      FeePayment.SELF_PAY
-                    else FeePayment.SPONSORED,
-                  )
-                },
-                onState = { stage, transaction ->
-                  mutableUiState.update {
-                    if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
-                    else it.copy(transaction = transaction)
-                  }
-                },
+          val state = mutableUiState.value
+          val market = state.quote?.market ?: error("Select a market first")
+          val subaccount =
+            preferences.values.first().selectedSubaccount ?: error("Complete account setup")
+          if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
+            error("A live order book is required for a market order")
+          }
+          val draft = state.orderDraft(side)
+          val validation = draft.validate(market, state.marketDetails.orderBook)
+          val validated =
+            validation.value
+              ?: error(
+                validation.errors.joinToString("\n", transform = OrderValidationError::message)
               )
-            when (val transaction = terminal) {
-              is TransactionState.Committed -> accounts.refresh()
-              is TransactionState.Failed -> {
-                if (transaction.selfPayEstimateOctas == null) error(transaction.message)
-                trading.apiWalletTopUpFor(transaction, wallets.profile.first())?.let { topUp ->
-                  mutableUiState.update {
-                    it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp)
-                  }
+          val reconciliation = trading.reconcilePending()
+          require(reconciliation.unresolved == 0) {
+            "Flare is still confirming an earlier action. Try again in a moment."
+          }
+          accounts.refresh()
+          val snapshot = accounts.snapshot.value
+          require(!snapshot.stale && snapshot.account == subaccount) {
+            "Your account is still reconnecting. Try again in a moment."
+          }
+          val isSpot = market.assetType == AssetType.SPOT
+          val position = snapshot.positions.firstOrNull { it.market == market.address }
+          val terminal =
+            placeConfiguredOrder(
+              configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
+              entry =
+                if (isSpot) DecibelCommand.PlaceSpotOrder(subaccount, validated)
+                else DecibelCommand.PlaceOrder(subaccount, validated),
+              execute = { command ->
+                trading.execute(
+                  command,
+                  VaultPrompt(
+                    title =
+                      if (command is DecibelCommand.ConfigureMarket)
+                        "Apply ${state.leverage}× leverage"
+                      else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                    subtitle = "Confirm your identity",
+                  ),
+                  if (
+                    feePayment == FeePayment.SELF_PAY &&
+                      (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
+                  )
+                    FeePayment.SELF_PAY
+                  else FeePayment.SPONSORED,
+                )
+              },
+              onState = { stage, transaction ->
+                mutableUiState.update {
+                  if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
+                  else it.copy(transaction = transaction)
+                }
+              },
+            )
+          when (val transaction = terminal) {
+            is TransactionState.Committed -> accounts.refresh()
+            is TransactionState.Failed -> {
+              if (transaction.selfPayEstimateOctas == null) error(transaction.message)
+              trading.apiWalletTopUpFor(transaction, wallets.profile.first())?.let { topUp ->
+                mutableUiState.update {
+                  it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp)
                 }
               }
-              else -> Unit
             }
+            else -> Unit
           }
+        }
           .onFailure { error ->
             mutableUiState.update {
               it.copy(orderError = actionFailure(error.message, "Your order wasn’t placed."))
@@ -454,29 +462,29 @@ class TradeViewModel(
       }
       try {
         runSuspendCatching {
-            val amount =
-              mutableUiState.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
-            trading
-              .topUpApiWallet(
-                amount,
-                VaultPrompt(
-                  "Cover network fees",
-                  "Confirm your identity",
-                  requireFreshAuthorization = true,
-                ),
-              )
-              .collect { transaction ->
-                mutableUiState.update { it.copy(topUpTransaction = transaction) }
-              }
-            when (val terminal = mutableUiState.value.topUpTransaction) {
-              is TransactionState.Committed ->
-                mutableUiState.update {
-                  it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
-                }
-              is TransactionState.Failed -> error(terminal.message)
-              else -> Unit
+          val amount =
+            mutableUiState.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+          trading
+            .topUpApiWallet(
+              amount,
+              VaultPrompt(
+                "Cover network fees",
+                "Confirm your identity",
+                requireFreshAuthorization = true,
+              ),
+            )
+            .collect { transaction ->
+              mutableUiState.update { it.copy(topUpTransaction = transaction) }
             }
+          when (val terminal = mutableUiState.value.topUpTransaction) {
+            is TransactionState.Committed ->
+              mutableUiState.update {
+                it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
+              }
+            is TransactionState.Failed -> error(terminal.message)
+            else -> Unit
           }
+        }
           .onFailure { error ->
             mutableUiState.update {
               it.copy(orderError = actionFailure(error.message, "The network fee wasn’t covered."))
@@ -491,38 +499,38 @@ class TradeViewModel(
   /** The chart keeps trying on its own; selecting another market or range cancels the attempt. */
   private fun loadCandles(quote: MarketQuote, range: ChartRange) {
     chartJob?.cancel()
-    chartJob =
-      viewModelScope.launch {
-        var backoffMs = CHART_RETRY_BASE_MS
-        while (true) {
-          mutableUiState.update { it.copy(chartLoading = true, error = null) }
-          val loaded =
-            runSuspendCatching { charts.candles(quote.market.address, range) }
-              .onSuccess { snapshot ->
-                mutableUiState.update {
-                  it.copy(
-                    candles = snapshot.candles,
-                    chartLoading = false,
-                    stale = snapshot.stale,
-                    error = snapshot.error,
-                  )
-                }
-              }
-              .onFailure {
-                mutableUiState.update {
-                  it.copy(
-                    chartLoading = false,
-                    stale = true,
-                    error = "Reconnecting to the price history…",
-                  )
-                }
-              }
-              .isSuccess
-          if (loaded) return@launch
-          delay(backoffMs)
-          backoffMs = (backoffMs * 2).coerceAtMost(CHART_RETRY_MAX_MS)
+    chartJob = viewModelScope.launch {
+      var backoffMs = CHART_RETRY_BASE_MS
+      while (true) {
+        mutableUiState.update { it.copy(chartLoading = true, error = null) }
+        val loaded = runSuspendCatching {
+          charts.candles(quote.market.address, range)
         }
+          .onSuccess { snapshot ->
+            mutableUiState.update {
+              it.copy(
+                candles = snapshot.candles,
+                chartLoading = false,
+                stale = snapshot.stale,
+                error = snapshot.error,
+              )
+            }
+          }
+          .onFailure {
+            mutableUiState.update {
+              it.copy(
+                chartLoading = false,
+                stale = true,
+                error = "Reconnecting to the price history…",
+              )
+            }
+          }
+          .isSuccess
+        if (loaded) return@launch
+        delay(backoffMs)
+        backoffMs = (backoffMs * 2).coerceAtMost(CHART_RETRY_MAX_MS)
       }
+    }
   }
 }
 

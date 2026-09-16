@@ -97,69 +97,161 @@ class PortfolioViewModelTest {
 
   private val quotes =
     listOf(
-      MarketQuote(market = btcPerp, markPrice = 70_000.0, changePercent24h = 0.0, volume24h = 0.0, openInterest = 0.0, favorite = true),
-      MarketQuote(market = aptSpot, markPrice = 0.5866, changePercent24h = -14.2, volume24h = 28.9, openInterest = 0.0, favorite = true),
+      MarketQuote(
+        market = btcPerp,
+        markPrice = 70_000.0,
+        changePercent24h = 0.0,
+        volume24h = 0.0,
+        openInterest = 0.0,
+        favorite = true,
+      ),
+      MarketQuote(
+        market = aptSpot,
+        markPrice = 0.5866,
+        changePercent24h = -14.2,
+        volume24h = 28.9,
+        openInterest = 0.0,
+        favorite = true,
+      ),
     )
 
   private class FakeAccountRepository(initialSnapshot: AccountSnapshot) : AccountRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(initialSnapshot)
-    override val history: StateFlow<AccountHistorySnapshot> = MutableStateFlow(AccountHistorySnapshot())
+    override val history: StateFlow<AccountHistorySnapshot> =
+      MutableStateFlow(AccountHistorySnapshot())
+
     override suspend fun delegations(): List<Delegation> = emptyList()
-    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState = TransactionState.Committed("0x")
+
+    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState =
+      TransactionState.Committed("0x")
+
     override suspend fun restoreTrading() {}
+
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
-    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> = emptyList()
+
+    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> =
+      emptyList()
+
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
-    override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): TransactionState = TransactionState.Committed("0x")
-    override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): TransactionState = TransactionState.Committed("0x")
+
+    override suspend fun createSubaccount(
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): TransactionState = TransactionState.Committed("0x")
+
+    override suspend fun delegateApiWallet(
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): TransactionState = TransactionState.Committed("0x")
+
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}
-    override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<TransactionState> = emptyFlow()
-    override fun withdrawUsdc(amount: String, destination: String?, prompt: VaultPrompt, feePayment: FeePayment): Flow<TransactionState> = emptyFlow()
+
+    override fun depositUsdc(
+      amount: String,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): Flow<TransactionState> = emptyFlow()
+
+    override fun withdrawUsdc(
+      amount: String,
+      destination: String?,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): Flow<TransactionState> = emptyFlow()
+
     override suspend fun refresh() {}
+
     override suspend fun refreshHistory() {}
+
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
+
     override fun startLive() {}
   }
 
   private class FakeWalletRepository : WalletRepository {
-    override val profile: Flow<WalletProfile> = MutableStateFlow(WalletProfile(ownerAddress = "0xowner", apiWalletAddress = "0xapi"))
+    override val profile: Flow<WalletProfile> =
+      MutableStateFlow(WalletProfile(ownerAddress = "0xowner", apiWalletAddress = "0xapi"))
     override val authorizationGeneration: Long = 0L
+
     override fun requireAuthorization(generation: Long) {}
-    override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup = OwnerBackup("0xowner", emptyList())
+
+    override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup =
+      OwnerBackup("0xowner", emptyList())
+
     override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String = "0xowner"
+
     override suspend fun confirmOwnerBackup() {}
+
     override suspend fun createApiWallet(prompt: VaultPrompt): String = "0xapi"
-    override suspend fun importApiWallet(key: String, prompt: VaultPrompt, verify: suspend (Ed25519Account) -> Unit): String = "0xapi"
+
+    override suspend fun importApiWallet(
+      key: String,
+      prompt: VaultPrompt,
+      verify: suspend (Ed25519Account) -> Unit,
+    ): String = "0xapi"
+
     override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = ""
+
     override suspend fun exportApiWallet(prompt: VaultPrompt): String = ""
+
     override suspend fun removeOwner(prompt: VaultPrompt) {}
+
     override suspend fun removeApiWallet(prompt: VaultPrompt) {}
+
     override fun lock() {}
-    override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Ed25519Account) -> T): T = error("Not supported")
-    override suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Ed25519Account) -> T): T = error("Not supported")
+
+    override suspend fun <T> withOwnerAccount(
+      prompt: VaultPrompt,
+      block: suspend (Ed25519Account) -> T,
+    ): T = error("Not supported")
+
+    override suspend fun <T> withApiAccount(
+      prompt: VaultPrompt,
+      block: suspend (Ed25519Account) -> T,
+    ): T = error("Not supported")
   }
 
-  private class FakeTradingRepository(private val spotBalances: Map<String, Double> = emptyMap()) : TradingRepository {
+  private class FakeTradingRepository(private val spotBalances: Map<String, Double> = emptyMap()) :
+    TradingRepository {
     override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
+
     override suspend fun reconcilePending() = ReconciliationResult(0, 0)
-    override suspend fun transactionStatus(hash: String): TransactionState = TransactionState.Committed(hash)
-    override fun execute(command: DecibelCommand, prompt: VaultPrompt, feePayment: FeePayment, onPrepared: suspend (String) -> Unit): Flow<TransactionState> = emptyFlow()
+
+    override suspend fun transactionStatus(hash: String): TransactionState =
+      TransactionState.Committed(hash)
+
+    override fun execute(
+      command: DecibelCommand,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+      onPrepared: suspend (String) -> Unit,
+    ): Flow<TransactionState> = emptyFlow()
+
     override suspend fun apiWalletAptBalance(): ULong = 100_000_000uL
-    override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double = spotBalances[symbol] ?: 0.0
-    override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> = emptyFlow()
+
+    override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
+      spotBalances[symbol] ?: 0.0
+
+    override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
+      emptyFlow()
   }
 
   private class FakeMarketsRepository(initialQuotes: List<MarketQuote>) : MarketsRepository {
     override val catalog: StateFlow<MarketCatalog> =
       MutableStateFlow(MarketCatalog(loading = false, quotes = initialQuotes, stale = false))
+
     override suspend fun refresh() {}
+
     override suspend fun connectLive() {}
+
     override suspend fun toggleFavorite(marketAddress: String) {}
   }
 
   private class FakeMarketDetailsRepository : MarketDetailsRepository {
     override val details: StateFlow<MarketDetails> = MutableStateFlow(MarketDetails(stale = false))
+
     override suspend fun refresh(marketAddress: String) {}
+
     override suspend fun connectLive(marketAddress: String) {}
   }
 
@@ -171,11 +263,14 @@ class PortfolioViewModelTest {
           "usdc" to AssetMetadata("USDC", "USD Coin", "crypto", null, null),
         )
       )
+
     override suspend fun refresh() {}
   }
 
-  private class MemoryPreferences(initial: Preferences = emptyPreferences()) : DataStore<Preferences> {
+  private class MemoryPreferences(initial: Preferences = emptyPreferences()) :
+    DataStore<Preferences> {
     override val data = MutableStateFlow(initial)
+
     override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
       transform(data.value).also { data.value = it }
   }
@@ -258,9 +353,11 @@ class PortfolioViewModelTest {
 
   @Test
   fun spotMarketsAreFilteredOutOfPerpPositions() = runTest {
-    val perpPos = Position("0xbtc_perp", "0xsub", "0.1", 10, 68000.0, false, false, 0.0, 60000.0, 1L, false)
+    val perpPos =
+      Position("0xbtc_perp", "0xsub", "0.1", 10, 68000.0, false, false, 0.0, 60000.0, 1L, false)
     val spotPos = Position("0xapt_spot", "0xsub", "10", 1, 0.58, false, false, 0.0, 0.0, 1L, false)
-    val snapshot = AccountSnapshot(account = "0xsubaccount", positions = listOf(perpPos, spotPos), stale = false)
+    val snapshot =
+      AccountSnapshot(account = "0xsubaccount", positions = listOf(perpPos, spotPos), stale = false)
 
     val vm =
       PortfolioViewModel(

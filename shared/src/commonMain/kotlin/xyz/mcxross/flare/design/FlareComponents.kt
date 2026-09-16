@@ -8,14 +8,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -44,9 +40,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -191,7 +189,11 @@ enum class NoticeTone {
 
 /** One quiet line about what the app is doing, or why an action did not happen. */
 @Composable
-fun ActionNotice(message: String, modifier: Modifier = Modifier, tone: NoticeTone = NoticeTone.INFO) {
+fun ActionNotice(
+  message: String,
+  modifier: Modifier = Modifier,
+  tone: NoticeTone = NoticeTone.INFO,
+) {
   Row(
     modifier =
       modifier
@@ -212,7 +214,8 @@ fun ActionNotice(message: String, modifier: Modifier = Modifier, tone: NoticeTon
       message,
       style = MaterialTheme.typography.bodySmall,
       color =
-        if (tone == NoticeTone.ALERT) MaterialTheme.colorScheme.error else FlareColors.TextSecondary,
+        if (tone == NoticeTone.ALERT) MaterialTheme.colorScheme.error
+        else FlareColors.TextSecondary,
     )
   }
 }
@@ -288,8 +291,7 @@ fun <T> FlareSegmentedControl(
         animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
       Box(
         modifier =
-          Modifier
-            .weight(1f)
+          Modifier.weight(1f)
             .height(36.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(background)
@@ -541,8 +543,7 @@ fun MarketListRow(
           Spacer(Modifier.width(6.dp))
           Box(
             modifier =
-              Modifier
-                .clip(RoundedCornerShape(4.dp))
+              Modifier.clip(RoundedCornerShape(4.dp))
                 .background(FlareColors.Elevated)
                 .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(4.dp))
                 .padding(horizontal = 5.dp, vertical = 1.dp),
@@ -598,7 +599,9 @@ private fun AssetIcon(asset: AssetIdentity, modifier: Modifier = Modifier) {
         contentDescription = "${asset.name} icon",
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
-        loading = { Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge) },
+        loading = {
+          Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge)
+        },
         error = { Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge) },
         success = { SubcomposeAsyncImageContent() },
       )
@@ -700,8 +703,8 @@ fun BottomTradeDock(
 }
 
 /**
- * Flare's authentic brand logo mark: three ascending slanted bars representing
- * market momentum and perpetual trading signals.
+ * Flare's authentic brand logo mark: three ascending slanted bars representing market momentum and
+ * perpetual trading signals.
  */
 @Composable
 fun FlareLogo(
@@ -724,13 +727,11 @@ fun FlareLogo(
 }
 
 /**
- * Premium branded splash screen displayed during app cold start
- * and while awaiting biometric/passcode authentication when an account is locked.
+ * Premium branded splash screen displayed during app cold start and while awaiting
+ * biometric/passcode authentication when an account is locked.
  */
 @Composable
-fun FlareSplashScreen(
-  modifier: Modifier = Modifier,
-) {
+fun FlareSplashScreen(modifier: Modifier = Modifier) {
   Box(
     modifier = modifier.fillMaxSize().background(FlareColors.Canvas),
     contentAlignment = Alignment.Center,
@@ -766,4 +767,3 @@ fun FlareSplashScreen(
     }
   }
 }
-
