@@ -24,4 +24,5 @@ fun resolveAssetIdentity(
 
 fun assetMonogram(symbol: String): String = symbol.trim().firstOrNull()?.uppercase() ?: "?"
 
-fun AssetIdentity.detailLabel(): String = kind?.replaceFirstChar(Char::titlecase)?.let { "$name · $it" } ?: name
+fun AssetIdentity.detailLabel(): String =
+  kind?.replaceFirstChar(Char::titlecase)?.let { "$name · $it" } ?: name

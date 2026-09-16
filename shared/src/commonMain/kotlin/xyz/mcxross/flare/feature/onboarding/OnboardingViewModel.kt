@@ -192,51 +192,59 @@ class OnboardingViewModel(
     }
   }
 
-  private fun createOwner() = launchAction("Your account wasn’t created.") {
-    val backup =
-      wallets.createOwner(VaultPrompt(title = "Create account", subtitle = "Confirm your identity"))
-    showBackup(backup)
-  }
-
-  private fun importOwner() = launchAction("That recovery phrase wasn’t imported.") {
-    wallets.importOwner(
-      phrase = local.value.input.trim(),
-      prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
-    )
-    local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
-    discoverSubaccountsInternal()
-  }
-
-  private fun confirmBackup() = launchAction("Your backup wasn’t confirmed.") {
-    val state = local.value
-    val matches =
-      state.confirmationIndices.all { index ->
-        state.confirmations[index]?.trim()?.lowercase() == state.backupWords[index].lowercase()
-      }
-    require(matches) { "The confirmation words do not match the recovery phrase" }
-    wallets.confirmOwnerBackup()
-    local.value =
-      state.copy(
-        step = OnboardingStep.SUBACCOUNT,
-        backupWords = emptyList(),
-        confirmationIndices = emptyList(),
-        confirmations = emptyMap(),
-      )
-    discoverSubaccountsInternal()
-  }
-
-  private fun prepareOwnerAccount() = launchAction("Setup couldn’t continue.") {
-    val profile = wallets.profile.first()
-    when {
-      profile.apiOnly -> show(OnboardingStep.SUBACCOUNT)
-      profile.ownerAddress != null && !profile.ownerBackupConfirmed -> {
-        val phrase =
-          wallets.exportOwnerMnemonic(VaultPrompt("Back up your account", "Confirm your identity"))
-        showBackup(OwnerBackup(profile.ownerAddress, phrase.split(' ')))
-      }
-      else -> discoverSubaccountsInternal()
+  private fun createOwner() =
+    launchAction("Your account wasn’t created.") {
+      val backup =
+        wallets.createOwner(
+          VaultPrompt(title = "Create account", subtitle = "Confirm your identity")
+        )
+      showBackup(backup)
     }
-  }
+
+  private fun importOwner() =
+    launchAction("That recovery phrase wasn’t imported.") {
+      wallets.importOwner(
+        phrase = local.value.input.trim(),
+        prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
+      )
+      local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
+      discoverSubaccountsInternal()
+    }
+
+  private fun confirmBackup() =
+    launchAction("Your backup wasn’t confirmed.") {
+      val state = local.value
+      val matches =
+        state.confirmationIndices.all { index ->
+          state.confirmations[index]?.trim()?.lowercase() == state.backupWords[index].lowercase()
+        }
+      require(matches) { "The confirmation words do not match the recovery phrase" }
+      wallets.confirmOwnerBackup()
+      local.value =
+        state.copy(
+          step = OnboardingStep.SUBACCOUNT,
+          backupWords = emptyList(),
+          confirmationIndices = emptyList(),
+          confirmations = emptyMap(),
+        )
+      discoverSubaccountsInternal()
+    }
+
+  private fun prepareOwnerAccount() =
+    launchAction("Setup couldn’t continue.") {
+      val profile = wallets.profile.first()
+      when {
+        profile.apiOnly -> show(OnboardingStep.SUBACCOUNT)
+        profile.ownerAddress != null && !profile.ownerBackupConfirmed -> {
+          val phrase =
+            wallets.exportOwnerMnemonic(
+              VaultPrompt("Back up your account", "Confirm your identity")
+            )
+          showBackup(OwnerBackup(profile.ownerAddress, phrase.split(' ')))
+        }
+        else -> discoverSubaccountsInternal()
+      }
+    }
 
   private fun discoverSubaccounts() =
     launchAction("Flare couldn’t check for your accounts.") { discoverSubaccountsInternal() }
@@ -288,28 +296,30 @@ class OnboardingViewModel(
       if (local.value.step == OnboardingStep.ENABLE_TRADING) delegateApiAndFinish()
     }
 
-  private fun continueSubaccount() = launchAction("That account couldn’t be opened.") {
-    val address = local.value.selectedSubaccount ?: local.value.input.trim()
-    require(address.isNotBlank()) { "Select a trading account" }
-    accounts.selectTradingAccount(address, setupPrompt)
-    if (wallets.profile.first().ownerAddress != null) {
-      local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, input = "")
-    } else {
-      finishSetupInternal()
+  private fun continueSubaccount() =
+    launchAction("That account couldn’t be opened.") {
+      val address = local.value.selectedSubaccount ?: local.value.input.trim()
+      require(address.isNotBlank()) { "Select a trading account" }
+      accounts.selectTradingAccount(address, setupPrompt)
+      if (wallets.profile.first().ownerAddress != null) {
+        local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, input = "")
+      } else {
+        finishSetupInternal()
+      }
     }
-  }
 
   private fun enableTrading(feePayment: FeePayment = FeePayment.SPONSORED) =
     launchAction("Trading wasn’t enabled on this device.") { delegateApiAndFinish(feePayment) }
 
-  private fun importTradingKey() = launchAction("That trading key wasn’t imported.") {
-    accounts.importTradingKey(
-      local.value.input.trim(),
-      local.value.tradingAccountInput.trim(),
-      VaultPrompt("Import trading account", "Confirm your identity"),
-    )
-    finishSetupInternal()
-  }
+  private fun importTradingKey() =
+    launchAction("That trading key wasn’t imported.") {
+      accounts.importTradingKey(
+        local.value.input.trim(),
+        local.value.tradingAccountInput.trim(),
+        VaultPrompt("Import trading account", "Confirm your identity"),
+      )
+      finishSetupInternal()
+    }
 
   private suspend fun finishSetupInternal() {
     preferences.setOnboardingComplete(true)
@@ -350,28 +360,27 @@ class OnboardingViewModel(
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
-    actionJob =
-      viewModelScope.launch {
-        local.value = local.value.copy(busy = true, error = null)
-        try {
-          block()
-        } catch (cancelled: CancellationException) {
-          throw cancelled
-        } catch (error: SetupTransactionException) {
-          local.value =
-            local.value.copy(
-              setupTransaction = error.transaction,
-              error =
-                actionFailure(
-                  (error.transaction as? TransactionState.Failed)?.message,
-                  "Trading wasn’t enabled on this device.",
-                ),
-            )
-        } catch (error: Throwable) {
-          local.value = local.value.copy(error = actionFailure(error.message, outcome))
-        } finally {
-          local.value = local.value.copy(busy = false)
-        }
+    actionJob = viewModelScope.launch {
+      local.value = local.value.copy(busy = true, error = null)
+      try {
+        block()
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (error: SetupTransactionException) {
+        local.value =
+          local.value.copy(
+            setupTransaction = error.transaction,
+            error =
+              actionFailure(
+                (error.transaction as? TransactionState.Failed)?.message,
+                "Trading wasn’t enabled on this device.",
+              ),
+          )
+      } catch (error: Throwable) {
+        local.value = local.value.copy(error = actionFailure(error.message, outcome))
+      } finally {
+        local.value = local.value.copy(busy = false)
       }
+    }
   }
 }

@@ -180,8 +180,9 @@ class WorkerSessionRepository(
     return authenticateApi(subaccount, prompt)
   }
 
-  override suspend fun useAnonymous(): SessionStatus =
-    mutex.withLock { createAnonymousSession(Clock.System.now().toEpochMilliseconds()).toStatus() }
+  override suspend fun useAnonymous(): SessionStatus = mutex.withLock {
+    createAnonymousSession(Clock.System.now().toEpochMilliseconds()).toStatus()
+  }
 
   override suspend fun invalidate() {
     mutex.withLock {
