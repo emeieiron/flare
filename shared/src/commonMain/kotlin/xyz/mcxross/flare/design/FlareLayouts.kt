@@ -98,7 +98,9 @@ class TransactionExplorer(private val network: DecibelNetwork) {
     "https://explorer.aptoslabs.com/txn/$hash?network=${network.name.lowercase()}"
 }
 
-val LocalTransactionExplorer = staticCompositionLocalOf { TransactionExplorer(DecibelNetwork.TESTNET) }
+val LocalTransactionExplorer = staticCompositionLocalOf {
+  TransactionExplorer(DecibelNetwork.TESTNET)
+}
 
 /** Shared completion state: a settled receipt has one unambiguous exit. */
 @Composable

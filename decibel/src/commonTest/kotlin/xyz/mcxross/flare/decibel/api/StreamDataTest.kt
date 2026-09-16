@@ -29,8 +29,7 @@ class StreamDataTest {
         """{"topic":"all_spot_mids","mids":[{"market_addr":"0x26f","asset_type":"spot","mid":0.597,"last_trade_price":0.683,"transaction_unix_ms":1789358981393}]}"""
       )
 
-    val data =
-      assertIs<DecibelStreamData.SpotMids>(decodeStreamData(AllSpotMids, payload, json))
+    val data = assertIs<DecibelStreamData.SpotMids>(decodeStreamData(AllSpotMids, payload, json))
     assertEquals("0x26f", data.values.single().marketAddress)
     assertEquals(0.597, data.values.single().mid)
     assertEquals(0.683, data.values.single().lastTradePrice)

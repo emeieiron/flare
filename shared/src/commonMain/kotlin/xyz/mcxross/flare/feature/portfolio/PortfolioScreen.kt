@@ -299,10 +299,7 @@ private fun HoldingRow(
   Row(
     modifier =
       Modifier.fillMaxWidth()
-        .then(
-          if (enabled) Modifier.clickable(role = Role.Button, onClick = onClick)
-          else Modifier
-        )
+        .then(if (enabled) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
         .padding(vertical = 16.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(12.dp),

@@ -31,7 +31,8 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
   )
   val subtitle =
     if (isSpot) "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · Spot"
-    else "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
+    else
+      "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
   Text(
     subtitle,
     color = FlareColors.TextSecondary,

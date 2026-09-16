@@ -62,8 +62,7 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
   FlareSheet(
     if (committed != null) "Order placed"
     else if (reviewing) "Review order"
-    else if (isSpot) "Trade ${quote.market.name}"
-    else "Trade ${quote.market.symbol}",
+    else if (isSpot) "Trade ${quote.market.name}" else "Trade ${quote.market.symbol}",
     dismiss,
   ) {
     if (committed != null) {
@@ -189,7 +188,8 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
           "USDC",
           state.limitPriceInput,
           { onIntent(TradeIntent.SetLimitPrice(it)) },
-          Modifier.fillMaxWidth().padding(top = if (isSpot) 16.dp else 0.dp, bottom = if (isSpot) 0.dp else 16.dp),
+          Modifier.fillMaxWidth()
+            .padding(top = if (isSpot) 16.dp else 0.dp, bottom = if (isSpot) 0.dp else 16.dp),
           enabled = !state.orderBusy,
         )
       }

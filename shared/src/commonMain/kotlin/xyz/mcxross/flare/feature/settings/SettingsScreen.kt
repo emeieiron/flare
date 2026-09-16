@@ -225,7 +225,11 @@ fun SettingsScreen(
       if (state.delegationsLoaded && state.delegations.isEmpty())
         Text("Nothing can trade for this account yet.")
       if (!state.delegationsLoaded || state.busy)
-        ActionNotice("Checking authorized keys…", Modifier.padding(top = 12.dp), NoticeTone.PROGRESS)
+        ActionNotice(
+          "Checking authorized keys…",
+          Modifier.padding(top = 12.dp),
+          NoticeTone.PROGRESS,
+        )
       state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
     }
   revokeAddress?.let { address ->

@@ -42,28 +42,27 @@ class ForegroundWalletVault(private val platform: WalletVault) : WalletVault {
     }
   }
 
-  suspend fun unlock(slots: List<WalletSecretSlot>, prompt: VaultPrompt) =
-    mutex.withLock {
-      if (mutableUnlocked.value) return@withLock
-      val start = visit.value
-      val loaded = mutableMapOf<WalletSecretSlot, ByteArray>()
-      try {
-        slots.distinct().forEachIndexed { index, slot ->
-          loaded[slot] = platform.read(slot, prompt.copy(requireFreshAuthorization = index == 0))
-        }
-        check(visit.compareAndSet(start, start.copy(secrets = loaded.toMap()))) {
-          "Open Flare to continue"
-        }
-        mutableUnlocked.value = true
-        if (generation != start.generation) {
-          mutableUnlocked.value = false
-          throw WalletVaultException.Cancelled()
-        }
-      } catch (error: Throwable) {
-        loaded.values.forEach { it.fill(0) }
-        throw error
+  suspend fun unlock(slots: List<WalletSecretSlot>, prompt: VaultPrompt) = mutex.withLock {
+    if (mutableUnlocked.value) return@withLock
+    val start = visit.value
+    val loaded = mutableMapOf<WalletSecretSlot, ByteArray>()
+    try {
+      slots.distinct().forEachIndexed { index, slot ->
+        loaded[slot] = platform.read(slot, prompt.copy(requireFreshAuthorization = index == 0))
       }
+      check(visit.compareAndSet(start, start.copy(secrets = loaded.toMap()))) {
+        "Open Flare to continue"
+      }
+      mutableUnlocked.value = true
+      if (generation != start.generation) {
+        mutableUnlocked.value = false
+        throw WalletVaultException.Cancelled()
+      }
+    } catch (error: Throwable) {
+      loaded.values.forEach { it.fill(0) }
+      throw error
     }
+  }
 
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) =
     mutex.withLock {
@@ -96,14 +95,13 @@ class ForegroundWalletVault(private val platform: WalletVault) : WalletVault {
       }
     }
 
-  override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) =
-    mutex.withLock {
-      val start = visit.value
-      platform.remove(slot, prompt)
-      if (visit.compareAndSet(start, start.copy(secrets = start.secrets - slot)))
-        start.secrets[slot]?.fill(0)
-      Unit
-    }
+  override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) = mutex.withLock {
+    val start = visit.value
+    platform.remove(slot, prompt)
+    if (visit.compareAndSet(start, start.copy(secrets = start.secrets - slot)))
+      start.secrets[slot]?.fill(0)
+    Unit
+  }
 
   override fun lock() {
     mutableUnlocked.value = false

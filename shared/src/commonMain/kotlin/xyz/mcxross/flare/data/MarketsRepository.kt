@@ -81,7 +81,9 @@ class DefaultMarketsRepository(
         val markets = async { client.markets.markets() }
         val contexts = async { client.markets.assetContexts() }
         val prices = async { client.markets.prices() }
-        val spotContexts = async { runCatching { client.markets.spotAssetContexts() }.getOrDefault(emptyList()) }
+        val spotContexts = async {
+          runCatching { client.markets.spotAssetContexts() }.getOrDefault(emptyList())
+        }
         val contextsByMarket = contexts.await().associateBy { it.market }
         val pricesByMarket = prices.await().associateBy { it.market }
         val spotContextsByMarket = spotContexts.await().associateBy { it.marketAddress }
@@ -141,7 +143,8 @@ class DefaultMarketsRepository(
           it.copy(
             loading = false,
             stale = true,
-            error = if (it.quotes.isEmpty()) error.message ?: "Market data is unavailable" else null,
+            error =
+              if (it.quotes.isEmpty()) error.message ?: "Market data is unavailable" else null,
           )
         }
       }
@@ -157,7 +160,9 @@ class DefaultMarketsRepository(
         .getOrNull()
     }
     seedDefaultWatchlist(cachedQuotes.map { it.market })
-    val quotes = cachedQuotes.map { quote -> quote.copy(favorite = quote.market.address in favorites) }
+    val quotes = cachedQuotes.map { quote ->
+      quote.copy(favorite = quote.market.address in favorites)
+    }
     if (quotes.isNotEmpty()) {
       mutableCatalog.value =
         MarketCatalog(
@@ -179,7 +184,9 @@ class DefaultMarketsRepository(
 
     if (perpMarkets.isNotEmpty() && perpMarkets.none { it.address in favorites }) {
       val seededAddresses =
-        perpMarkets.filter { it.symbol in DEFAULT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
+        perpMarkets
+          .filter { it.symbol in DEFAULT_WATCHLIST_SYMBOLS }
+          .mapTo(mutableSetOf()) { it.address }
       if (seededAddresses.isNotEmpty()) {
         favorites += seededAddresses
         changed = true
@@ -189,7 +196,9 @@ class DefaultMarketsRepository(
     val spotSeeded = preferences.values.first().spotWatchlistSeeded
     if (!spotSeeded && spotMarkets.isNotEmpty()) {
       val seededAddresses =
-        spotMarkets.filter { it.symbol in DEFAULT_SPOT_WATCHLIST_SYMBOLS }.mapTo(mutableSetOf()) { it.address }
+        spotMarkets
+          .filter { it.symbol in DEFAULT_SPOT_WATCHLIST_SYMBOLS }
+          .mapTo(mutableSetOf()) { it.address }
       if (seededAddresses.isNotEmpty()) {
         favorites += seededAddresses
         changed = true

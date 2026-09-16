@@ -98,11 +98,14 @@ class DefaultTradingRepository(
   private val baseAssetBalanceCache = mutableMapOf<String, Double>()
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
-    journal.observePending().combine(preferences.values) { entries, saved ->
-      entries
-        .filter { it.profileId == saved.activeProfileId }
-        .map(PendingTransactionEntity::toDomain)
-    }.distinctUntilChanged()
+    journal
+      .observePending()
+      .combine(preferences.values) { entries, saved ->
+        entries
+          .filter { it.profileId == saved.activeProfileId }
+          .map(PendingTransactionEntity::toDomain)
+      }
+      .distinctUntilChanged()
 
   override fun execute(
     command: DecibelCommand,
@@ -356,7 +359,8 @@ class DefaultTradingRepository(
       } else {
         0.0
       }
-    }.getOrElse {
+    }
+    .getOrElse {
       val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
       balanceCacheMutex.withLock { baseAssetBalanceCache["$accountAddress:$token"] ?: 0.0 }
     }

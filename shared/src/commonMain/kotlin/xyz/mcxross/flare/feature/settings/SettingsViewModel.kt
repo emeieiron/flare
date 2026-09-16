@@ -130,11 +130,10 @@ class SettingsViewModel(
       val value = read()
       local.update { it.copy(revealedSecretLabel = label, revealedSecret = value) }
       secretClearJob?.cancel()
-      secretClearJob =
-        viewModelScope.launch {
-          delay(SECRET_REVEAL_MS)
-          hideSecret()
-        }
+      secretClearJob = viewModelScope.launch {
+        delay(SECRET_REVEAL_MS)
+        hideSecret()
+      }
     }
 
   private fun hideSecret() {

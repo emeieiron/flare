@@ -7,12 +7,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
-import xyz.mcxross.flare.data.MarketQuote
+import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.AssetCatalogRepository
-import xyz.mcxross.flare.data.assetKey
+import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.decibel.model.AssetType
 
 enum class MarketInstrumentFilter {
@@ -60,48 +60,48 @@ class MarketsViewModel(
 
   val uiState: StateFlow<MarketsUiState> =
     combine(
-      repository.catalog,
-      assetCatalog.assets,
-      filter,
-    ) { catalog, assets, f ->
-      val normalized = f.query.trim().lowercase()
-      val effectiveFavoritesOnly = if (f.category == null) true else f.favoritesOnly
-      val categories =
-        when (f.instrument) {
-          MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
-          MarketInstrumentFilter.SPOT -> spotCategoryTabs
-        }
-      MarketsUiState(
-        loading = catalog.loading,
-        query = f.query,
-        favoritesOnly = effectiveFavoritesOnly,
-        selectedInstrument = f.instrument,
-        selectedCategory = f.category,
-        categories = categories,
-        quotes =
-          catalog.quotes.filter {
-            val matchesInstrument =
-              when (f.instrument) {
-                MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
-                MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
-              }
-            matchesInstrument &&
-              (normalized.isNotEmpty() || !effectiveFavoritesOnly || it.favorite) &&
-              (f.category == null ||
-                assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == f.category) &&
-              (normalized.isEmpty() ||
-                it.market.symbol.lowercase().contains(normalized) ||
-                it.market.name.lowercase().contains(normalized) ||
-                assets[assetKey(it.market.symbol)]?.let { asset ->
-                  asset.name.lowercase().contains(normalized) ||
-                    asset.kind.lowercase().contains(normalized)
-                } == true)
-          },
-        stale = catalog.stale,
-        error = catalog.error,
-        assets = assets,
-      )
-    }
+        repository.catalog,
+        assetCatalog.assets,
+        filter,
+      ) { catalog, assets, f ->
+        val normalized = f.query.trim().lowercase()
+        val effectiveFavoritesOnly = if (f.category == null) true else f.favoritesOnly
+        val categories =
+          when (f.instrument) {
+            MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
+            MarketInstrumentFilter.SPOT -> spotCategoryTabs
+          }
+        MarketsUiState(
+          loading = catalog.loading,
+          query = f.query,
+          favoritesOnly = effectiveFavoritesOnly,
+          selectedInstrument = f.instrument,
+          selectedCategory = f.category,
+          categories = categories,
+          quotes =
+            catalog.quotes.filter {
+              val matchesInstrument =
+                when (f.instrument) {
+                  MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
+                  MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
+                }
+              matchesInstrument &&
+                (normalized.isNotEmpty() || !effectiveFavoritesOnly || it.favorite) &&
+                (f.category == null ||
+                  assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == f.category) &&
+                (normalized.isEmpty() ||
+                  it.market.symbol.lowercase().contains(normalized) ||
+                  it.market.name.lowercase().contains(normalized) ||
+                  assets[assetKey(it.market.symbol)]?.let { asset ->
+                    asset.name.lowercase().contains(normalized) ||
+                      asset.kind.lowercase().contains(normalized)
+                  } == true)
+            },
+          stale = catalog.stale,
+          error = catalog.error,
+          assets = assets,
+        )
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -120,24 +120,26 @@ class MarketsViewModel(
       is MarketsIntent.Search -> filter.update { it.copy(query = intent.value) }
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
-      is MarketsIntent.SetFavoritesOnly -> filter.update { current ->
-        if (intent.enabled) {
-          current.copy(favoritesOnly = true, category = null)
-        } else {
-          if (current.category == null) {
-            current.copy(favoritesOnly = true)
+      is MarketsIntent.SetFavoritesOnly ->
+        filter.update { current ->
+          if (intent.enabled) {
+            current.copy(favoritesOnly = true, category = null)
           } else {
-            current.copy(favoritesOnly = false)
+            if (current.category == null) {
+              current.copy(favoritesOnly = true)
+            } else {
+              current.copy(favoritesOnly = false)
+            }
           }
         }
-      }
-      is MarketsIntent.SetCategory -> filter.update { current ->
-        if (intent.category == null) {
-          current.copy(category = null, favoritesOnly = true)
-        } else {
-          current.copy(category = intent.category, favoritesOnly = false)
+      is MarketsIntent.SetCategory ->
+        filter.update { current ->
+          if (intent.category == null) {
+            current.copy(category = null, favoritesOnly = true)
+          } else {
+            current.copy(category = intent.category, favoritesOnly = false)
+          }
         }
-      }
       is MarketsIntent.SetInstrument ->
         filter.update { current ->
           current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)

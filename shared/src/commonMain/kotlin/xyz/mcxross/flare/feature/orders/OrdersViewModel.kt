@@ -111,16 +111,17 @@ class OrdersViewModel(
     }
   }
 
-  private fun loadMore() = launchAction("More activity couldn’t be loaded.") {
-    val kind =
-      when (local.value.section) {
-        OrdersSection.OPEN -> return@launchAction
-        OrdersSection.ORDERS -> AccountHistoryKind.ORDERS
-        OrdersSection.TRADES -> AccountHistoryKind.TRADES
-        OrdersSection.FUNDING -> AccountHistoryKind.FUNDING
-      }
-    accounts.loadMoreHistory(kind)
-  }
+  private fun loadMore() =
+    launchAction("More activity couldn’t be loaded.") {
+      val kind =
+        when (local.value.section) {
+          OrdersSection.OPEN -> return@launchAction
+          OrdersSection.ORDERS -> AccountHistoryKind.ORDERS
+          OrdersSection.TRADES -> AccountHistoryKind.TRADES
+          OrdersSection.FUNDING -> AccountHistoryKind.FUNDING
+        }
+      accounts.loadMoreHistory(kind)
+    }
 
   private fun cancel(market: String, orderId: String, isTpSl: Boolean, feePayment: FeePayment) =
     launchAction("Your order is still open.") {
@@ -136,8 +137,10 @@ class OrdersViewModel(
         )
       }
       val isSpot =
-        markets.catalog.value.quotes.firstOrNull { it.market.address == market }?.market?.assetType ==
-          AssetType.SPOT
+        markets.catalog.value.quotes
+          .firstOrNull { it.market.address == market }
+          ?.market
+          ?.assetType == AssetType.SPOT
       trading
         .execute(
           if (isTpSl) {
@@ -166,21 +169,26 @@ class OrdersViewModel(
       }
     }
 
-  private fun topUpApiWallet() = launchAction("The network fee wasn’t covered.") {
-    val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
-    trading
-      .topUpApiWallet(
-        amount,
-        VaultPrompt("Cover network fees", "Confirm your identity", requireFreshAuthorization = true),
-      )
-      .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
-    when (val terminal = local.value.topUpTransaction) {
-      is TransactionState.Committed ->
-        local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
-      is TransactionState.Failed -> error(terminal.message)
-      else -> Unit
+  private fun topUpApiWallet() =
+    launchAction("The network fee wasn’t covered.") {
+      val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+      trading
+        .topUpApiWallet(
+          amount,
+          VaultPrompt(
+            "Cover network fees",
+            "Confirm your identity",
+            requireFreshAuthorization = true,
+          ),
+        )
+        .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
+      when (val terminal = local.value.topUpTransaction) {
+        is TransactionState.Committed ->
+          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
+        is TransactionState.Failed -> error(terminal.message)
+        else -> Unit
+      }
     }
-  }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {

@@ -110,7 +110,6 @@ data class SpotMidPrice(
     get() = lastTradePrice ?: mid
 }
 
-
 @Serializable
 data class Candle(
   @SerialName("t") val openTimeMs: Long,
