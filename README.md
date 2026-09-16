@@ -1,137 +1,101 @@
 # Flare
 
-Flare is an open-source, native-mobile-first client for [Decibel](https://docs.decibel.trade/llms-full.txt). It uses Kotlin and Compose Multiplatform for the shared Android/iOS application, and Kaptos as the only Aptos transaction SDK.
+**Flare** is an open-source, native mobile client for decentralized perpetual and spot trading on [Decibel](https://decibel.trade), powered by Aptos. 
+
+Built with **Kotlin Multiplatform**, Flare shares its core business and transaction logic across **Android and iOS**, using [**Kaptos**](https://github.com/mcxross/kaptos) as its core Aptos transaction and blockchain engine.
 
 > [!IMPORTANT]
-> Flare is under active development. Test and debug builds target Decibel testnet. Do not use this repository with funds you cannot afford to lose, and do not enable mainnet without completing the release checklist in [SECURITY.md](SECURITY.md).
+> Flare is under active development on Decibel testnet. Do not use this repository with mainnet funds without completing the audit checklist in [SECURITY.md](SECURITY.md).
 
-## Current scope
+---
 
-- Anonymous perpetual-market discovery, search, favorites, order books, trades, and Vico charts.
-- Local Aptos account creation with BIP-39 backup confirmation, plus one import field for recovery phrases, raw Ed25519 private keys, and AIP-80 keys.
-- Independent AIP-80 API trading wallets, subaccount discovery/creation, and verified delegation.
-- Aptos-USDC deposits and withdrawals.
-- Live account overview, positions, open orders, and order/trade/funding history.
-- Market and limit orders with leverage selection, attached TP/SL, and a profit/loss review; cancellation, full close, and position TP/SL management.
-- Sponsored transactions with explicit self-pay fallback and owner-signed API-wallet APT top-up.
-- Durable pending-transaction journaling and restart reconciliation.
+## Features
 
-Encrypted order submission, external wallets, cross-chain bridging, spot, vaults, rewards, referrals, bulk orders, and TWAP are intentionally outside the first release.
+- **Native Mobile Experience**: Native UI on Android (Jetpack Compose) and iOS (SwiftUI) powered by a shared Kotlin Multiplatform business logic core.
+- **Perpetuals & Spot Trading**:
+  - **Perpetuals**: Leverage configuration, margin modes, position management with attached Take-Profit/Stop-Loss (TP/SL), and funding history.
+  - **Spot Markets**: Direct spot pair trading, real-time asset balances, and portfolio holdings.
+  - **Order Execution**: Market and limit orders across both perps (`dex_accounts_perp_entry`) and spot (`dex_accounts_spot_entry`), real-time L2 order books, live trade feeds, and interactive Vico charts.
+- **Self-Custodial Account Management**:
+  - BIP-39 mnemonic generation and seed phrase recovery.
+  - Seamless import for recovery phrases, raw Ed25519 private keys, and AIP-80 standard keys.
+  - Subaccount creation, discovery, and verified API trading wallet delegation.
+- **Gasless Trading**: Built-in sponsored transactions via Gas Station with automatic self-pay fallback.
+- **Offline Resilience**: Durable pending-transaction journaling with automatic restart reconciliation.
 
-See [DESIGN.md](DESIGN.md) for the mobile navigation, reusable components, and offline debug preview, and [native validation](docs/mobile-ui-validation.md) for testnet results and screenshots.
+---
+
+## Tech Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| **UI & Presentation** | Jetpack Compose (Android), SwiftUI (iOS), Vico Charts, MVI/MVVM |
+| **Platforms** | Android (Jetpack), iOS (SwiftUI shell embedding shared framework) |
+| **Blockchain & Web3** | [Kaptos](https://github.com/mcxross/kaptos) (Kotlin Multiplatform SDK for Aptos) |
+| **State & DI** | Koin, Kotlinx Coroutines & Flow |
+| **Local Storage** | Room, DataStore, Platform Secure Enclaves (Keychain & EncryptedSharedPreferences) |
+| **Networking** | Ktor HTTP/WebSockets, Decibel Worker Proxy |
+
+---
 
 ## Architecture
 
-| Path | Responsibility |
-| --- | --- |
-| `androidApp/` | Android application entry point and packaging |
-| `iosApp/` | SwiftUI shell embedding the shared static framework |
-| `shared/` | Compose UI, feature MVVM, repositories, Room, DataStore, and secure platform vaults |
-| `decibel/` | Compose-free Kotlin Multiplatform Decibel SDK facade and domain types |
-
-Features expose immutable UI state and intents from Koin-provided ViewModels. ViewModels depend on repositories; repositories own REST snapshots, WebSocket invalidation/backfill, local caches, and transaction state. The `:decibel` module owns protocol models and ABI-aware commands but never imports Compose.
-
-The credential-isolating proxy is maintained independently in the companion `decibel-worker` repository. Keeping its TypeScript, Wrangler configuration, Durable Objects, and deployment lifecycle outside Flare keeps server-side TypeScript out of this Kotlin-centric mobile repository while retaining a clear security boundary.
-
-Transaction values enter the system as decimal strings. Live market precision converts them to chain integers only after precision, tick, lot, minimum, and overflow checks. Kaptos builds, simulates, signs, submits, and reconciles every Aptos transaction.
-
-## Prerequisites
-
-- JDK 21
-- Android SDK 37
-- Xcode 16 or newer for iOS builds
-- A running deployment from the companion `decibel-worker` repository
-- A Decibel/Geomi node key and Gas Station key when self-hosting that Worker
-
-The repository pins Compose Multiplatform 1.12.0 and Vico 3.3.1. Dependency versions are deliberate; contributor setup should update Kaptos rather than lowering Flare's toolchain or UI-library baseline.
-
-Flare bundles Inter 4.1 under the SIL Open Font License 1.1 and uses tabular numerals throughout the Material 3 typography. Apple SF Pro files are not redistributed.
-
-## Kaptos dependency
-
-Public builds resolve `xyz.mcxross.kaptos:kaptos:1.0.0` from Maven Central. Contributors changing Kaptos can consume a Maven Local publication without editing tracked files:
-
-```sh
-FLARE_MAVEN_LOCAL=true ./gradlew :decibel:jvmTest
+```
+flare/
+├── androidApp/  # Android entry point, manifests, and packaging
+├── iosApp/      # SwiftUI wrapper embedding the shared Kotlin framework
+├── shared/      # Shared ViewModels, domain logic, secure storage, and repositories
+└── decibel/     # Protocol models, Move ABI serialization, and market types
 ```
 
-For unpublished dependency changes, publish FastKrypto first from its Kotlin Gradle project:
+- **`:shared`** houses all core business logic, domain models, and state management.
+- **`:decibel`** provides a headless Kotlin Multiplatform client for Decibel protocol types.
+- **Kaptos** handles all on-chain interactions: building payloads, gas simulation, transaction signing, submission, and confirmation.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- JDK 21+
+- Android Studio Ladybug+ / Android SDK 37
+- Xcode 16+ (for iOS)
+- Running instance of the companion `decibel-worker`
+
+### 1. Start the Decibel Worker Proxy
 
 ```sh
-rustup run 1.92 ./gradlew -PenableSigning=false publishToMavenLocal
-```
-
-Then publish Kaptos from the Kaptos repository:
-
-```sh
-./gradlew -PenableSigning=false publishToMavenLocal
-```
-
-Kaptos resolves the pinned FastKrypto `0.2.0` publication from Maven Local or Maven Central. Flare consumes a locally published Kaptos artifact when `FLARE_MAVEN_LOCAL=true`, or when the non-committed Gradle property `useMavenLocal=true` is set. Local repositories are opt-in in Flare so a release build cannot be silently shadowed by an artifact in `~/.m2`.
-
-## Run locally
-
-Start the separately checked-out `decibel-worker` first:
-
-```sh
-cd ../decibel-worker
-npm ci
-cp .dev.vars.example .dev.vars
+git clone https://github.com/emeieiron/decibel-worker
+cd decibel-worker
+npm ci && cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-Set the three values in its `.dev.vars`; that file is ignored by the Worker repository. Its README is the source of truth for deployment, Durable Object migrations, route policy, and local WebSocket diagnostics.
-
-Build Android:
+### 2. Run Android
 
 ```sh
-./gradlew :androidApp:assembleDebug
+./gradlew :androidApp:installDebug
 ```
 
-Android Studio and command-line debug builds use `http://10.0.2.2:8787` by default. On the standard Android Emulator, `10.0.2.2` routes to the host machine where the local Worker is running; `127.0.0.1` would address the emulator itself. A custom endpoint can be injected with `-PflareWorkerUrl=...`.
+*(By default, the debug build connects to the local worker proxy at `http://10.0.2.2:8787`).*
 
-For a USB-connected physical device, forward the device loopback port before launching and build with the loopback override:
+### 3. Run iOS
 
-```sh
-adb reverse tcp:8787 tcp:8787
-./gradlew -PflareWorkerUrl=http://127.0.0.1:8787 :androidApp:installDebug
-```
+Open `iosApp/iosApp.xcodeproj` in Xcode and select your target simulator or physical device.
 
-Inject a deployed Worker URL for a packaged Android build:
+---
 
-```sh
-./gradlew -PflareWorkerUrl=https://flare-worker.example.com :androidApp:assembleRelease
-```
+## Security
 
-For local Kaptos development:
+Private keys never leave the device's secure hardware (iOS Keychain and Android EncryptedSharedPreferences). Network communications pass through a stateless, credential-isolating proxy worker to keep sensitive node and gas credentials off client devices.
 
-```sh
-FLARE_MAVEN_LOCAL=true ./gradlew :androidApp:assembleDebug
-```
+For threat analysis and security reports, see [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 
-Open `iosApp/iosApp.xcodeproj` in Xcode to run the iOS application. The default application runtime connects to `http://127.0.0.1:8787`. Set the `FLARE_WORKER_URL` Xcode build setting to the deployed HTTPS URL for packaged builds; do not commit credentials or environment-specific secrets.
+---
 
-## Verification
+## Contributing & License
 
-```sh
-./gradlew :decibel:jvmTest :shared:testAndroidHostTest :androidApp:lintDebug :androidApp:assembleDebug
-./gradlew :decibel:iosSimulatorArm64Test :shared:iosSimulatorArm64Test :shared:compileKotlinIosSimulatorArm64
-```
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for local development workflows and Kaptos snapshot testing.
 
-Run `:shared:iosSimulatorArm64Test` on an Apple Silicon macOS host. Testnet end-to-end transactions require valid Worker credentials and are intentionally not part of untrusted pull-request CI.
-
-Changes spanning the proxy boundary must also pass `npm run check` in the separate `decibel-worker` repository.
-
-## Security model
-
-The application contains no Decibel node or Gas Station credential. The Worker exposes fixed allowlisted routes, consumes single-use authentication challenges, scopes short-lived sessions to a network/wallet/subaccount/role, and validates sponsored BCS transactions before adding a server credential. Wallet secrets remain in platform-backed secure storage and are never written to Room or DataStore.
-
-Read [THREAT_MODEL.md](THREAT_MODEL.md) before changing authentication, signing, sponsorship, storage, or transaction reconciliation. Report vulnerabilities through the process in [SECURITY.md](SECURITY.md).
-
-Transaction-path testnet findings, reproducible commands, and remaining gaps are recorded in [transaction validation](docs/transaction-validation.md).
-
-Release evidence is tracked with [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md); mainnet remains a manual, value-capped gate.
-
-## Contributing and license
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Flare is licensed under the [Apache License 2.0](LICENSE). Third-party dependencies and bundled assets retain their respective licenses; see [NOTICE](NOTICE).
+Flare is licensed under the [Apache License 2.0](LICENSE).
