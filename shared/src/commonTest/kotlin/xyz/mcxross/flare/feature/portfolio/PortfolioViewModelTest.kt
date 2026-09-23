@@ -132,6 +132,8 @@ class PortfolioViewModelTest {
     override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> =
       emptyList()
 
+    override suspend fun subaccounts(owner: String): List<Subaccount> = emptyList()
+
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
 
     override suspend fun createSubaccount(

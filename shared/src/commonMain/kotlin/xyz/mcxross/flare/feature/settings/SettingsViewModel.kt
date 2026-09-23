@@ -21,6 +21,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.actionFailure
@@ -37,6 +38,8 @@ data class SettingsUiState(
   val revealedSecret: String? = null,
   val delegations: List<Delegation> = emptyList(),
   val delegationsLoaded: Boolean = false,
+  val subaccountsByOwner: Map<String, List<Subaccount>> = emptyMap(),
+  val creatingSubaccount: Boolean = false,
   val referralCodeInput: String = "",
   val referralRedeemed: Boolean = false,
   val referralMessage: String? = null,
@@ -50,9 +53,15 @@ data class SettingsUiState(
 sealed interface SettingsIntent {
   data object LoadDelegations : SettingsIntent
 
+  data object LoadSubaccounts : SettingsIntent
+
   data class RevokeDelegate(val address: String) : SettingsIntent
 
   data class SelectProfile(val id: String) : SettingsIntent
+
+  data class SelectSubaccount(val profileId: String, val subaccountAddress: String) : SettingsIntent
+
+  data object CreateSubaccountForActiveProfile : SettingsIntent
 
   data class SetSlippage(val basisPoints: Int) : SettingsIntent
 
@@ -99,6 +108,7 @@ class SettingsViewModel(
       val amps = runSuspendCatching { accounts.ampsBreakdown() }.getOrNull()
       val tier = runSuspendCatching { accounts.tierInfo() }.getOrNull()
       local.update { it.copy(streak = streak, amps = amps, tier = tier) }
+      loadSubaccounts()
     }
   }
 
@@ -110,6 +120,7 @@ class SettingsViewModel(
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      SettingsIntent.LoadSubaccounts -> loadSubaccounts()
       is SettingsIntent.ChangeReferralCode ->
         local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
       SettingsIntent.RedeemReferralCode ->
@@ -154,6 +165,51 @@ class SettingsViewModel(
           hideSecret()
           preferences.activateProfile(intent.id)
           accounts.restoreTrading()
+          loadSubaccounts()
+        }
+      is SettingsIntent.SelectSubaccount ->
+        launchAction("Selecting trading subaccount failed.") {
+          val current = preferences.values.first()
+          if (current.activeProfileId != intent.profileId) {
+            preferences.activateProfile(intent.profileId)
+          }
+          val prompt = VaultPrompt("Select trading subaccount", "Confirm your identity")
+          accounts.selectTradingAccount(intent.subaccountAddress, prompt)
+          runSuspendCatching { accounts.prepareTradingWallet(prompt) }
+          loadSubaccounts()
+        }
+      SettingsIntent.CreateSubaccountForActiveProfile ->
+        launchAction("Creating trading subaccount failed.") {
+          val current = preferences.values.first()
+          val owner = current.ownerAddress ?: error("An owner wallet is required to create a subaccount")
+          local.update { it.copy(creatingSubaccount = true) }
+          try {
+            val before =
+              runSuspendCatching { accounts.subaccounts(owner) }.getOrDefault(emptyList()).map { it.address }.toSet()
+            val prompt = VaultPrompt("Create trading subaccount", "Confirm your identity")
+            val result = accounts.createSubaccount(prompt)
+            check(result is TransactionState.Committed) {
+              (result as? TransactionState.Failed)?.message ?: "Subaccount transaction failed. Try again."
+            }
+            var newAddress: String? = null
+            repeat(10) {
+              delay(1500)
+              val after = runSuspendCatching { accounts.subaccounts(owner) }.getOrDefault(emptyList())
+              val created = after.firstOrNull { it.address !in before }
+              if (created != null) {
+                newAddress = created.address
+                return@repeat
+              }
+            }
+            val targetAddress = newAddress ?: accounts.subaccounts(owner).lastOrNull()?.address
+            if (targetAddress != null) {
+              accounts.selectTradingAccount(targetAddress, prompt)
+              runSuspendCatching { accounts.prepareTradingWallet(prompt) }
+            }
+            loadSubaccounts()
+          } finally {
+            local.update { it.copy(creatingSubaccount = false) }
+          }
         }
       is SettingsIntent.SetSlippage ->
         launchAction("Your slippage setting didn’t change.") {
@@ -264,6 +320,22 @@ class SettingsViewModel(
       } finally {
         local.update { it.copy(busy = false) }
       }
+    }
+  }
+
+  private fun loadSubaccounts() {
+    viewModelScope.launch {
+      val profiles = preferences.values.first().profiles
+      val map = mutableMapOf<String, List<Subaccount>>()
+      for (p in profiles) {
+        val owner = p.ownerAddress ?: continue
+        runSuspendCatching {
+          accounts.subaccounts(owner)
+        }.onSuccess { list ->
+          map[owner] = list
+        }
+      }
+      local.update { it.copy(subaccountsByOwner = map) }
     }
   }
 
