@@ -86,6 +86,10 @@ data class WithdrawQueueUpdates(val accountAddress: String) : AccountStreamTopic
   override val wireValue: String = "withdraw_queue:${canonicalTopicAddress(accountAddress)}"
 }
 
+data class UserActiveTwaps(val accountAddress: String) : AccountStreamTopic {
+  override val wireValue: String = "user_active_twaps:${canonicalTopicAddress(accountAddress)}"
+}
+
 private fun canonicalTopicAddress(value: String): String =
   try {
     AccountAddress.fromString(value).toString()

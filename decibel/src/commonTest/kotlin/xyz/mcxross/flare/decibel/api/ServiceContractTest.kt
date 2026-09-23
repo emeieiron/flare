@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
@@ -167,6 +168,23 @@ class ServiceContractTest {
     val amps = ampsService.amps("0xowner")
     assertEquals(1500.0, amps.totalAmps)
     assertEquals(42, amps.rank)
+  }
+
+  @Test
+  fun referralCodeDecode() = runTest {
+    val http =
+      HttpClient(
+        MockEngine {
+          respondJson(
+            """{"referral_code":"FLARE2026","is_valid":true,"is_active":true}"""
+          )
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+    val info = service.verifyReferralCode("FLARE2026")
+    assertEquals("FLARE2026", info.code)
+    assertTrue(info.valid)
+    assertTrue(info.active)
   }
 
   private fun api(client: HttpClient) =

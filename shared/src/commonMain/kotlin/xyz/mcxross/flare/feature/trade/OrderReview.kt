@@ -49,6 +49,10 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
   if (state.orderType == OrderType.MARKET) {
     DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
   }
+  if (state.orderType == OrderType.TWAP) {
+    DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
+    DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
+  }
   if (estimate?.builderFeeAmount != null && estimate.builderFeeAmount > 0) {
     val bps = estimate.builderFeeBps ?: 5
     val percentStr = "${bps / 100.0}%"

@@ -167,8 +167,10 @@ data class TradingStreak(
 data class AmpsBreakdown(
   @SerialName("total_amps") val totalAmps: Double = 0.0,
   @SerialName("trading_amps") val tradingAmps: Double = 0.0,
+  @SerialName("streak_amps") val streakAmps: Double = 0.0,
+  @SerialName("bonus_amps") val bonusAmps: Double = 0.0,
   @SerialName("referral_amps") val referralAmps: Double = 0.0,
-  @SerialName("daily_amps") val dailyAmps: Double = 0.0,
+  @SerialName("vault_amps") val vaultAmps: Double = 0.0,
   val rank: Int? = null,
 )
 
@@ -181,8 +183,9 @@ data class TierInfo(
 
 @Serializable
 data class ReferralCodeInfo(
-  val code: String,
-  val valid: Boolean = true,
+  @SerialName("referral_code") val code: String = "",
+  @SerialName("is_valid") val valid: Boolean = false,
+  @SerialName("is_active") val active: Boolean = false,
   val owner: String? = null,
   @SerialName("discount_percent") val discountPercent: Double = 0.0,
 )
@@ -197,4 +200,46 @@ data class ReferralRedemptionRequest(
 data class ReferralRedemptionResponse(
   val success: Boolean = true,
   val message: String? = null,
+)
+
+@Serializable
+data class TwapOrder(
+  @SerialName("order_id") val orderId: String = "",
+  @SerialName("account") val account: String = "",
+  @SerialName("market") val market: String = "",
+  @SerialName("side") val side: OrderSide = OrderSide.BUY,
+  @SerialName("total_size") val totalSize: Double = 0.0,
+  @SerialName("executed_size") val executedSize: Double = 0.0,
+  @SerialName("status") val status: String = "active",
+  @SerialName("duration_seconds") val durationSeconds: Long = 0L,
+  @SerialName("frequency_seconds") val frequencySeconds: Long = 0L,
+  @SerialName("created_at") val createdAt: Long = 0L,
+  @SerialName("client_order_id") val clientOrderId: String? = null,
+) {
+  val twapId: String get() = orderId
+  val isBuy: Boolean get() = side == OrderSide.BUY
+}
+
+@Serializable
+data class VaultInfo(
+  val address: String = "",
+  val name: String = "",
+  val manager: String = "",
+  val description: String = "",
+  @SerialName("total_shares") val totalShares: Double = 0.0,
+  @SerialName("share_price") val sharePrice: Double = 1.0,
+  @SerialName("total_aum") val totalAum: Double = 0.0,
+  @SerialName("performance_fee_bps") val performanceFeeBps: Int = 0,
+  @SerialName("lockup_seconds") val lockupSeconds: Long = 0L,
+  @SerialName("is_active") val isActive: Boolean = true,
+)
+
+@Serializable
+data class AccountVaultPerformance(
+  val vault: VaultInfo = VaultInfo(),
+  @SerialName("current_num_shares") val currentNumShares: Double = 0.0,
+  @SerialName("current_value") val currentValue: Double = 0.0,
+  @SerialName("net_deposits") val netDeposits: Double = 0.0,
+  @SerialName("realized_pnl") val realizedPnl: Double = 0.0,
+  @SerialName("returns_percent") val returnsPercent: Double = 0.0,
 )

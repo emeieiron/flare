@@ -25,6 +25,7 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
+import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
@@ -369,16 +370,24 @@ class PortfolioViewModel(
             actionError = null,
           )
         }
-      is PortfolioIntent.ManagePosition ->
+      is PortfolioIntent.ManagePosition -> {
+        val position = accounts.snapshot.value.positions.firstOrNull { it.market == intent.market }
+        val tpStr = position?.takeProfitTriggerPrice?.let { p ->
+          formatPrice(p).replace(",", "").replace("$", "").trim()
+        }.orEmpty()
+        val slStr = position?.stopLossTriggerPrice?.let { p ->
+          formatPrice(p).replace(",", "").replace("$", "").trim()
+        }.orEmpty()
         local.update {
           it.copy(
             managedPositionMarket = intent.market,
-            takeProfitInput = "",
-            stopLossInput = "",
+            takeProfitInput = tpStr,
+            stopLossInput = slStr,
             positionTransaction = null,
             actionError = null,
           )
         }
+      }
       PortfolioIntent.DismissPositionManagement ->
         local.update {
           it.copy(

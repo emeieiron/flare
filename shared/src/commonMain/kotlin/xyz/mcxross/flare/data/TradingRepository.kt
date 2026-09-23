@@ -670,12 +670,16 @@ internal fun DecibelCommand.requiredSigner(): TradingSigner =
     is DecibelCommand.DelegateTrading,
     is DecibelCommand.RevokeDelegation,
     is DecibelCommand.ApproveMaxBuilderFee,
-    is DecibelCommand.RevokeMaxBuilderFee -> TradingSigner.OWNER
+    is DecibelCommand.RevokeMaxBuilderFee,
+    is DecibelCommand.ContributeToVault,
+    is DecibelCommand.RedeemFromVault -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
     is DecibelCommand.PlaceOrder,
     is DecibelCommand.PlaceSpotOrder,
+    is DecibelCommand.PlaceTwapOrder,
     is DecibelCommand.CancelOrder,
     is DecibelCommand.CancelSpotOrder,
+    is DecibelCommand.CancelTwapOrder,
     is DecibelCommand.CancelPositionTpSl,
     is DecibelCommand.SetPositionTpSl -> TradingSigner.API
   }
@@ -691,12 +695,16 @@ private fun DecibelCommand.journalName(): String =
     is DecibelCommand.ConfigureMarket -> "CONFIGURE_MARKET"
     is DecibelCommand.PlaceOrder -> "PLACE_ORDER"
     is DecibelCommand.PlaceSpotOrder -> "PLACE_SPOT_ORDER"
+    is DecibelCommand.PlaceTwapOrder -> "PLACE_TWAP_ORDER"
     is DecibelCommand.CancelOrder -> "CANCEL_ORDER"
     is DecibelCommand.CancelSpotOrder -> "CANCEL_SPOT_ORDER"
+    is DecibelCommand.CancelTwapOrder -> "CANCEL_TWAP_ORDER"
     is DecibelCommand.CancelPositionTpSl -> "CANCEL_POSITION_TP_SL"
     is DecibelCommand.SetPositionTpSl -> "SET_POSITION_TP_SL"
     is DecibelCommand.ApproveMaxBuilderFee -> "APPROVE_MAX_BUILDER_FEE"
     is DecibelCommand.RevokeMaxBuilderFee -> "REVOKE_MAX_BUILDER_FEE"
+    is DecibelCommand.ContributeToVault -> "CONTRIBUTE_TO_VAULT"
+    is DecibelCommand.RedeemFromVault -> "REDEEM_FROM_VAULT"
   }
 
 private fun PendingTransactionEntity.toDomain(): PendingTransaction =
@@ -720,10 +728,14 @@ internal fun DecibelCommand.subaccountAddress(): String? =
     is DecibelCommand.ConfigureMarket -> subaccount
     is DecibelCommand.PlaceOrder -> subaccount
     is DecibelCommand.PlaceSpotOrder -> subaccount
+    is DecibelCommand.PlaceTwapOrder -> subaccount
     is DecibelCommand.CancelOrder -> subaccount
     is DecibelCommand.CancelSpotOrder -> subaccount
+    is DecibelCommand.CancelTwapOrder -> subaccount
     is DecibelCommand.CancelPositionTpSl -> subaccount
     is DecibelCommand.SetPositionTpSl -> subaccount
     is DecibelCommand.ApproveMaxBuilderFee -> subaccount
     is DecibelCommand.RevokeMaxBuilderFee -> subaccount
+    is DecibelCommand.ContributeToVault -> subaccount
+    is DecibelCommand.RedeemFromVault -> subaccount
   }

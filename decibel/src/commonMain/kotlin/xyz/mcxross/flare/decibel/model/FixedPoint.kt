@@ -94,7 +94,7 @@ fun OrderDraft.validate(
         if (limitPrice == null) errors += OrderValidationError.MissingLimitPrice
         parse(limitPrice, "price", precision.priceDecimals)
       }
-      OrderType.MARKET -> {
+      OrderType.MARKET, OrderType.TWAP -> {
         val bookAddress = orderBook?.let { parseAddress(it.market, "order book market", errors) }
         val reliableBook = orderBook?.takeIf {
           metadataAddress != null && bookAddress != null && metadataAddress == bookAddress
@@ -252,6 +252,88 @@ fun OrderDraft.validate(
       )
   )
 }
+
+fun OrderDraft.validateTwap(
+  market: Market,
+  frequencySeconds: ULong = 60uL,
+  durationSeconds: ULong = 3600uL,
+): TwapValidationResult {
+  val precision = market.precision
+  val errors = mutableListOf<OrderValidationError>()
+  val metadataAddress = parseAddress(market.address, "market metadata", errors)
+  val draftAddress = parseAddress(marketAddress, "order market", errors)
+  if (metadataAddress != null && draftAddress != null && metadataAddress != draftAddress) {
+    errors += OrderValidationError.MarketMismatch("order market", market.address, marketAddress)
+  }
+  val parsedSize = parse(size, "size", precision.sizeDecimals)
+  parsedSize.error?.let(errors::add)
+
+  val sizeUnits = parsedSize.value
+  if (sizeUnits != null) {
+    if (sizeUnits < precision.minimumSize) {
+      errors += OrderValidationError.BelowMinimum("size", precision.minimumSize)
+    }
+    if (precision.lotSize > 0u && sizeUnits % precision.lotSize != 0uL) {
+      errors += OrderValidationError.NotAligned("size", precision.lotSize)
+    }
+  }
+
+  val rawBuilderAddress = builderAddress
+  val parsedBuilderAddress: String? =
+    if (rawBuilderAddress != null && rawBuilderAddress.isNotBlank()) {
+      runCatching { AccountAddress.fromString(rawBuilderAddress).toStringLong() }
+        .getOrElse {
+          errors +=
+            OrderValidationError.InvalidBuilderAddress(
+              field = "builder address",
+              reason = it.message ?: "Invalid Aptos address",
+            )
+          null
+        }
+    } else {
+      null
+    }
+
+  val validatedFeeUnits: ULong? =
+    if (builderFeeBps != null) {
+      if (builderFeeBps > 10u) {
+        errors +=
+          OrderValidationError.InvalidBuilderFee(
+            field = "builder fee",
+            reason = "Builder fee cannot exceed 10 bps (0.10%)",
+          )
+        null
+      } else if (builderFeeBps > 0u && parsedBuilderAddress != null) {
+        builderFeeBps.toULong() * 100uL
+      } else {
+        null
+      }
+    } else {
+      null
+    }
+
+  if (errors.isNotEmpty() || sizeUnits == null) {
+    return TwapValidationResult(errors = errors)
+  }
+  val finalBuilderAddress =
+    if (validatedFeeUnits != null && parsedBuilderAddress != null) parsedBuilderAddress else null
+  val finalBuilderFeeUnits = if (finalBuilderAddress != null) validatedFeeUnits else null
+  return TwapValidationResult(
+    value =
+      ValidatedTwapOrder(
+        marketAddress = marketAddress,
+        side = side,
+        size = sizeUnits,
+        reduceOnly = reduceOnly,
+        clientOrderId = clientOrderId?.takeIf(String::isNotBlank),
+        frequencySeconds = frequencySeconds,
+        durationSeconds = durationSeconds,
+        builderAddress = finalBuilderAddress,
+        builderFeeUnits = finalBuilderFeeUnits,
+      )
+  )
+}
+
 
 private fun parseAddress(
   value: String,

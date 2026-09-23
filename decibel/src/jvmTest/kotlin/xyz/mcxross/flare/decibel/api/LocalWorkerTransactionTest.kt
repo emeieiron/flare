@@ -28,6 +28,46 @@ import xyz.mcxross.kaptos.util.APTOS_COIN
 /** Opt-in local testnet integration. Keys are read from a private file and never logged. */
 class LocalWorkerTransactionTest {
   @Test
+  fun workerAnonymousRoutesAndDecibelData() = runBlocking {
+    val http = HttpClient {
+      install(ContentNegotiation) { json(DecibelClient.DefaultJson) }
+      expectSuccess = false
+    }
+    val base = "http://127.0.0.1:8787"
+    val ping = runCatching {
+      http.post("$base/v1/session/anonymous") {
+        contentType(ContentType.Application.Json)
+        setBody(buildJsonObject { put("installationId", "flare_local_worker_test_1234") })
+      }
+    }.getOrNull()
+    assumeTrue(ping != null && ping.status.isSuccess(), "Local worker at $base is not running")
+
+    val token = ping!!.body<JsonObject>().getValue("token").jsonPrimitive.content
+    assertTrue(token.isNotBlank())
+
+    // Test markets endpoint through worker
+    val marketsResponse = http.get("$base/decibel/api/v1/markets") {
+      bearerAuth(token)
+    }
+    assertEquals(HttpStatusCode.OK, marketsResponse.status)
+
+    // Test vaults endpoint through worker
+    val vaultsResponse = http.get("$base/decibel/api/v1/vaults") {
+      bearerAuth(token)
+    }
+    assertEquals(HttpStatusCode.OK, vaultsResponse.status)
+
+    // Test referrals code lookup through worker
+    val referralResponse = http.get("$base/decibel/api/v1/referrals/code/test") {
+      bearerAuth(token)
+    }
+    assertEquals(HttpStatusCode.OK, referralResponse.status)
+    val referralInfo = referralResponse.body<ReferralCodeInfo>()
+    assertEquals("test", referralInfo.code)
+    assertEquals(false, referralInfo.valid)
+  }
+
+  @Test
   fun accountAndTradingLifecycle() = runBlocking {
     val keyFile = System.getenv("FLARE_TEST_KEY_FILE")
     assumeTrue(!keyFile.isNullOrBlank(), "Set FLARE_TEST_KEY_FILE for local testnet integration")

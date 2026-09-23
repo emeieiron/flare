@@ -61,6 +61,23 @@ class DecibelTradingPayloadTest {
             ("dex_accounts_entry" to "approve_max_builder_fee_for_subaccount"),
           DecibelCommand.RevokeMaxBuilderFee(SUBACCOUNT, BUILDER) to
             ("dex_accounts_entry" to "revoke_max_builder_fee_for_subaccount"),
+          DecibelCommand.PlaceTwapOrder(
+            SUBACCOUNT,
+            xyz.mcxross.flare.decibel.model.ValidatedTwapOrder(
+              marketAddress = MARKET,
+              side = xyz.mcxross.flare.decibel.model.OrderSide.BUY,
+              size = 100_000uL,
+              reduceOnly = false,
+              frequencySeconds = 60uL,
+              durationSeconds = 3600uL,
+            ),
+          ) to ("dex_accounts_entry" to "place_twap_order_to_subaccount_v2"),
+          DecibelCommand.CancelTwapOrder(SUBACCOUNT, MARKET, MAX_U128) to
+            ("dex_accounts_entry" to "cancel_twap_orders_to_subaccount"),
+          DecibelCommand.ContributeToVault(SUBACCOUNT, MARKET, ASSET, 10_000_000uL) to
+            ("dex_accounts_entry" to "contribute_to_vault"),
+          DecibelCommand.RedeemFromVault(SUBACCOUNT, MARKET, 5_000_000uL) to
+            ("dex_accounts_entry" to "redeem_from_vault"),
         )
 
       commands.forEach { (command, target) ->
@@ -451,6 +468,38 @@ internal val DECIBEL_ENTRY_ABI =
               "0x1::option::Option<u64>",
               "0x1::option::Option<address>",
               "0x1::option::Option<u64>",
+            ),
+            function(
+              "place_twap_order_to_subaccount_v2",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::perp_market::PerpMarket>",
+              "u64",
+              "bool",
+              "bool",
+              "0x1::option::Option<0x1::string::String>",
+              "u64",
+              "u64",
+              "0x1::option::Option<address>",
+              "0x1::option::Option<u64>",
+            ),
+            function(
+              "cancel_twap_orders_to_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::perp_market::PerpMarket>",
+              "u128",
+            ),
+            function(
+              "contribute_to_vault",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
+              "0x1::object::Object<0x1::fungible_asset::Metadata>",
+              "u64",
+            ),
+            function(
+              "redeem_from_vault",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
+              "u64",
             ),
           ),
         structs = emptyList(),

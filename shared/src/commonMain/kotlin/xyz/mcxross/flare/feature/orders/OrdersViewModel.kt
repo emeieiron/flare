@@ -23,11 +23,13 @@ import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 
 enum class OrdersSection(val label: String) {
   OPEN("Open"),
+  TWAP("TWAP"),
   ORDERS("Orders"),
   TRADES("Trades"),
   FUNDING("Funding"),
@@ -40,6 +42,8 @@ data class OrdersUiState(
   val spotMarkets: Set<String> = emptySet(),
   val account: AccountSnapshot = AccountSnapshot(),
   val history: AccountHistorySnapshot = AccountHistorySnapshot(),
+  val activeTwaps: List<TwapOrder> = emptyList(),
+  val twapHistory: List<TwapOrder> = emptyList(),
   val section: OrdersSection = OrdersSection.OPEN,
   val transaction: TransactionState? = null,
   val busy: Boolean = false,
@@ -47,6 +51,8 @@ data class OrdersUiState(
   val lastCancelMarket: String? = null,
   val lastCancelOrderId: String? = null,
   val lastCancelIsTpSl: Boolean = false,
+  val lastCancelTwapMarket: String? = null,
+  val lastCancelTwapId: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
@@ -59,9 +65,15 @@ sealed interface OrdersIntent {
 
   data class Cancel(val market: String, val orderId: String, val isTpSl: Boolean) : OrdersIntent
 
+  data class CancelTwap(val market: String, val twapId: String) : OrdersIntent
+
+  data object CancelAll : OrdersIntent
+
   data object ConfirmSelfPay : OrdersIntent
 
   data object TopUpApiWallet : OrdersIntent
+
+  data object RefreshTwaps : OrdersIntent
 }
 
 class OrdersViewModel(
@@ -71,6 +83,17 @@ class OrdersViewModel(
   private val markets: MarketsRepository,
 ) : ViewModel() {
   private val local = MutableStateFlow(OrdersUiState())
+
+  init {
+    viewModelScope.launch {
+      accounts.snapshot.collect {
+        if (local.value.section == OrdersSection.TWAP) {
+          refreshTwaps()
+        }
+      }
+    }
+  }
+
   val uiState: StateFlow<OrdersUiState> =
     combine(local, wallets.profile, accounts.snapshot, accounts.history) {
         state,
@@ -93,10 +116,18 @@ class OrdersViewModel(
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
-      is OrdersIntent.SelectSection -> local.update { it.copy(section = intent.section) }
+      is OrdersIntent.SelectSection -> {
+        local.update { it.copy(section = intent.section) }
+        if (intent.section == OrdersSection.TWAP) {
+          refreshTwaps()
+        }
+      }
       OrdersIntent.LoadMore -> loadMore()
       is OrdersIntent.Cancel ->
         cancel(intent.market, intent.orderId, intent.isTpSl, FeePayment.SPONSORED)
+      is OrdersIntent.CancelTwap ->
+        cancelTwap(intent.market, intent.twapId, FeePayment.SPONSORED)
+      OrdersIntent.CancelAll -> cancelAll()
       OrdersIntent.ConfirmSelfPay -> {
         val state = local.value
         if (state.lastCancelMarket != null && state.lastCancelOrderId != null) {
@@ -106,9 +137,16 @@ class OrdersViewModel(
             state.lastCancelIsTpSl,
             FeePayment.SELF_PAY,
           )
+        } else if (state.lastCancelTwapMarket != null && state.lastCancelTwapId != null) {
+          cancelTwap(
+            state.lastCancelTwapMarket,
+            state.lastCancelTwapId,
+            FeePayment.SELF_PAY,
+          )
         }
       }
       OrdersIntent.TopUpApiWallet -> topUpApiWallet()
+      OrdersIntent.RefreshTwaps -> refreshTwaps()
     }
   }
 
@@ -116,7 +154,7 @@ class OrdersViewModel(
     launchAction("More activity couldn’t be loaded.") {
       val kind =
         when (local.value.section) {
-          OrdersSection.OPEN -> return@launchAction
+          OrdersSection.OPEN, OrdersSection.TWAP -> return@launchAction
           OrdersSection.ORDERS -> AccountHistoryKind.ORDERS
           OrdersSection.TRADES -> AccountHistoryKind.TRADES
           OrdersSection.FUNDING -> AccountHistoryKind.FUNDING
@@ -191,6 +229,78 @@ class OrdersViewModel(
         else -> Unit
       }
     }
+
+  private fun cancelTwap(market: String, twapId: String, feePayment: FeePayment) =
+    launchAction("Your TWAP order wasn’t cancelled.") {
+      val subaccount = checkNotNull(uiState.value.account.account)
+      local.update {
+        it.copy(
+          lastCancelTwapMarket = market,
+          lastCancelTwapId = twapId,
+          apiWalletNeedsTopUp = false,
+          suggestedTopUpOctas = null,
+        )
+      }
+      trading
+        .execute(
+          DecibelCommand.CancelTwapOrder(subaccount, market, twapId),
+          VaultPrompt("Cancel TWAP order", "Confirm your identity"),
+          feePayment,
+        )
+        .collect { state -> local.update { it.copy(transaction = state) } }
+      when (val state = local.value.transaction) {
+        is TransactionState.Committed -> {
+          refreshTwaps()
+        }
+        is TransactionState.Failed -> {
+          if (state.selfPayEstimateOctas == null) error(state.message)
+          trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+          }
+        }
+        else -> Unit
+      }
+    }
+
+  private fun cancelAll() =
+    launchAction("Some orders couldn’t be cancelled.") {
+      accounts.refresh()
+      val openOrders = uiState.value.account.openOrders
+      if (openOrders.isEmpty()) return@launchAction
+      val subaccount = checkNotNull(uiState.value.account.account)
+      for (order in openOrders) {
+        val isSpot =
+          markets.catalog.value.quotes
+            .firstOrNull { it.market.address == order.market }
+            ?.market
+            ?.assetType == AssetType.SPOT || order.assetType == AssetType.SPOT
+        val command =
+          if (order.isTpSl) {
+            DecibelCommand.CancelPositionTpSl(subaccount, order.market, order.orderId)
+          } else if (isSpot) {
+            DecibelCommand.CancelSpotOrder(subaccount, order.market, order.orderId)
+          } else {
+            DecibelCommand.CancelOrder(subaccount, order.market, order.orderId)
+          }
+        trading
+          .execute(
+            command,
+            VaultPrompt("Cancel order", "Confirm your identity"),
+            FeePayment.SPONSORED,
+          )
+          .collect { state -> local.update { it.copy(transaction = state) } }
+      }
+      accounts.refresh()
+      accounts.refreshHistory()
+    }
+
+  fun refreshTwaps() {
+    viewModelScope.launch {
+      val active = runCatching { accounts.activeTwaps() }.getOrDefault(emptyList())
+      val history = runCatching { accounts.twapHistory() }.getOrDefault(emptyList())
+      local.update { it.copy(activeTwaps = active, twapHistory = history) }
+    }
+  }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
