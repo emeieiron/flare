@@ -27,12 +27,16 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
+import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.SlippageBps
+import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.absoluteSize
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
@@ -45,6 +49,18 @@ import xyz.mcxross.flare.store.WithdrawalContinuation
 enum class FundingMode {
   DEPOSIT,
   WITHDRAW,
+}
+
+enum class PortfolioChartRange(val label: String, val wireValue: String) {
+  DAY_1("1D", "1D"),
+  WEEK_1("1W", "1W"),
+  MONTH_1("1M", "1M"),
+  ALL("ALL", "ALL"),
+}
+
+enum class PortfolioMetric(val label: String, val wireValue: String) {
+  EQUITY("Equity", "account_value"),
+  PNL("Realized PnL", "pnl"),
 }
 
 enum class PortfolioTab(val title: String) {
@@ -83,6 +99,13 @@ data class PortfolioUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
+  val chartPoints: List<PortfolioChartPoint> = emptyList(),
+  val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
+  val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
+  val chartLoading: Boolean = false,
+  val streak: TradingStreak? = null,
+  val amps: AmpsBreakdown? = null,
+  val tier: TierInfo? = null,
   val busy: Boolean = false,
   val actionError: String? = null,
 ) {
@@ -107,6 +130,10 @@ sealed interface PortfolioIntent {
   data class SelectTab(val tab: PortfolioTab) : PortfolioIntent
 
   data object Refresh : PortfolioIntent
+
+  data class SelectChartRange(val range: PortfolioChartRange) : PortfolioIntent
+
+  data class SelectChartMetric(val metric: PortfolioMetric) : PortfolioIntent
 
   data class OpenFunding(val mode: FundingMode) : PortfolioIntent
 
@@ -160,6 +187,8 @@ class PortfolioViewModel(
         .distinctUntilChanged()
         .collect { subaccount ->
           fetchSpotBalances(subaccount)
+          fetchPortfolioChart()
+          fetchStreaksAndAmps()
         }
     }
     viewModelScope.launch {
@@ -287,12 +316,22 @@ class PortfolioViewModel(
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
       is PortfolioIntent.SelectTab -> local.update { it.copy(selectedTab = intent.tab) }
+      is PortfolioIntent.SelectChartRange -> {
+        local.update { it.copy(chartRange = intent.range) }
+        fetchPortfolioChart()
+      }
+      is PortfolioIntent.SelectChartMetric -> {
+        local.update { it.copy(chartMetric = intent.metric) }
+        fetchPortfolioChart()
+      }
       PortfolioIntent.Refresh ->
         viewModelScope.launch {
           runSuspendCatching {
             accounts.refresh()
             markets.refresh()
             accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
+            fetchPortfolioChart()
+            fetchStreaksAndAmps()
           }
         }
       is PortfolioIntent.ChangeWithdrawalDestination ->
@@ -538,6 +577,29 @@ class PortfolioViewModel(
       updated[symbol] = balance
     }
     spotBalances.value = updated.filterValues { it > 0.0 }
+  }
+
+  private fun fetchPortfolioChart() {
+    viewModelScope.launch {
+      local.update { it.copy(chartLoading = true) }
+      val points =
+        runSuspendCatching {
+          accounts.portfolioChart(
+            timeRange = local.value.chartRange.wireValue,
+            metric = local.value.chartMetric.wireValue,
+          )
+        }.getOrDefault(emptyList())
+      local.update { it.copy(chartPoints = points, chartLoading = false) }
+    }
+  }
+
+  private fun fetchStreaksAndAmps() {
+    viewModelScope.launch {
+      val streak = runSuspendCatching { accounts.tradingStreak() }.getOrNull()
+      val amps = runSuspendCatching { accounts.ampsBreakdown() }.getOrNull()
+      val tier = runSuspendCatching { accounts.tierInfo() }.getOrNull()
+      local.update { it.copy(streak = streak, amps = amps, tier = tier) }
+    }
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */

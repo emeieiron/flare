@@ -1,18 +1,27 @@
 package xyz.mcxross.flare.decibel.api
 
 import io.ktor.client.request.parameter
+import io.ktor.client.request.setBody
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.FundMovement
 import xyz.mcxross.flare.decibel.model.FundingPayment
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
+import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.Position
+import xyz.mcxross.flare.decibel.model.ReferralCodeInfo
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionRequest
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionResponse
 import xyz.mcxross.flare.decibel.model.Subaccount
+import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak
 
 interface AccountDataService {
   suspend fun overview(account: String): AccountOverview
@@ -49,6 +58,28 @@ interface AccountDataService {
   suspend fun subaccounts(owner: String): List<Subaccount>
 
   suspend fun delegations(subaccount: String): List<Delegation>
+
+  suspend fun portfolioChart(
+    account: String,
+    timeRange: String = "1D",
+    metric: String = "account_value",
+  ): List<PortfolioChartPoint>
+
+  suspend fun fundHistory(
+    account: String,
+    limit: Int = 100,
+    offset: Int = 0,
+  ): Page<FundMovement>
+
+  suspend fun streak(account: String): TradingStreak
+
+  suspend fun amps(owner: String): AmpsBreakdown
+
+  suspend fun tier(account: String): TierInfo
+
+  suspend fun verifyReferralCode(code: String): ReferralCodeInfo
+
+  suspend fun redeemReferralCode(account: String, code: String): ReferralRedemptionResponse
 }
 
 internal class DefaultAccountDataService(private val api: DecibelApi) : AccountDataService {
@@ -129,4 +160,68 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
 
   override suspend fun delegations(subaccount: String): List<Delegation> =
     api.get("delegations") { parameter("subaccount", subaccount) }
+
+  override suspend fun portfolioChart(
+    account: String,
+    timeRange: String,
+    metric: String,
+  ): List<PortfolioChartPoint> =
+    runCatching {
+      api.get<List<PortfolioChartPoint>>("portfolio_chart") {
+        parameter("account", account)
+        parameter("range", timeRange)
+        parameter("metric", metric)
+      }
+    }.getOrElse {
+      emptyList()
+    }
+
+  override suspend fun fundHistory(
+    account: String,
+    limit: Int,
+    offset: Int,
+  ): Page<FundMovement> =
+    runCatching {
+      api.get<Page<FundMovement>>("account_fund_history") {
+        parameter("account", account)
+        parameter("limit", limit.coerceIn(1, 200))
+        parameter("offset", offset.coerceIn(0, 10_000))
+      }
+    }.getOrElse {
+      runCatching {
+        val items =
+          api.get<List<FundMovement>>("account_fund_history") {
+            parameter("account", account)
+            parameter("limit", limit.coerceIn(1, 200))
+            parameter("offset", offset.coerceIn(0, 10_000))
+          }
+        Page(items = items, totalCount = items.size.toLong())
+      }.getOrDefault(Page())
+    }
+
+  override suspend fun streak(account: String): TradingStreak =
+    runCatching {
+      api.get<TradingStreak>("streaks/account") { parameter("account", account) }
+    }.getOrDefault(TradingStreak())
+
+  override suspend fun amps(owner: String): AmpsBreakdown =
+    runCatching {
+      api.get<AmpsBreakdown>("amps/$owner")
+    }.getOrDefault(AmpsBreakdown())
+
+  override suspend fun tier(account: String): TierInfo =
+    runCatching {
+      api.get<TierInfo>("points/tier") { parameter("account", account) }
+    }.getOrDefault(TierInfo())
+
+  override suspend fun verifyReferralCode(code: String): ReferralCodeInfo =
+    api.get("referrals/code/$code")
+
+  override suspend fun redeemReferralCode(
+    account: String,
+    code: String,
+  ): ReferralRedemptionResponse =
+    api.post("referrals/redeem") {
+      setBody(ReferralRedemptionRequest(account, code))
+    }
 }

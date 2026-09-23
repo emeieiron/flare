@@ -31,6 +31,7 @@ enum class OrdersSection(val label: String) {
   ORDERS("Orders"),
   TRADES("Trades"),
   FUNDING("Funding"),
+  TRANSFERS("Transfers"),
 }
 
 data class OrdersUiState(
@@ -119,6 +120,7 @@ class OrdersViewModel(
           OrdersSection.ORDERS -> AccountHistoryKind.ORDERS
           OrdersSection.TRADES -> AccountHistoryKind.TRADES
           OrdersSection.FUNDING -> AccountHistoryKind.FUNDING
+          OrdersSection.TRANSFERS -> AccountHistoryKind.TRANSFERS
         }
       accounts.loadMoreHistory(kind)
     }

@@ -102,6 +102,73 @@ class ServiceContractTest {
     assertEquals("account=0x22&limit=100&offset=0", query)
   }
 
+  @Test
+  fun portfolioChartDecodesPoints() = runTest {
+    val http =
+      HttpClient(
+        MockEngine {
+          respondJson(
+            """[{"timestamp":1735758000000,"value":1250.5,"account_value":1250.5,"realized_pnl":150.5}]"""
+          )
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    val points = service.portfolioChart("0x22", "1D", "account_value")
+
+    assertEquals(1, points.size)
+    assertEquals(1250.5, points.first().accountValue)
+    assertEquals(150.5, points.first().realizedPnl)
+  }
+
+  @Test
+  fun fundHistoryDecodesMovements() = runTest {
+    val http =
+      HttpClient(
+        MockEngine {
+          respondJson(
+            """{"items":[{"timestamp":1735758000000,"type":"deposit","amount":500.0,"asset_symbol":"USDC","transaction_hash":"0xabc","status":"confirmed"}],"total_count":1}"""
+          )
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    val history = service.fundHistory("0x22")
+
+    assertEquals(1, history.items.size)
+    assertEquals("deposit", history.items.first().type)
+    assertEquals(500.0, history.items.first().amount)
+  }
+
+  @Test
+  fun streakAndAmpsDecodeFields() = runTest {
+    val httpStreak =
+      HttpClient(
+        MockEngine {
+          respondJson(
+            """{"streak_count":5,"longest_streak":10,"grace_days_remaining":2,"qualifying_dates":["2026-09-20","2026-09-21"]}"""
+          )
+        }
+      )
+    val streakService = DefaultAccountDataService(api(httpStreak))
+    val streak = streakService.streak("0x22")
+    assertEquals(5, streak.streakCount)
+    assertEquals(2, streak.graceDaysRemaining)
+
+    val httpAmps =
+      HttpClient(
+        MockEngine {
+          respondJson(
+            """{"total_amps":1500.0,"trading_amps":1000.0,"referral_amps":500.0,"daily_amps":50.0,"rank":42}"""
+          )
+        }
+      )
+    val ampsService = DefaultAccountDataService(api(httpAmps))
+    val amps = ampsService.amps("0xowner")
+    assertEquals(1500.0, amps.totalAmps)
+    assertEquals(42, amps.rank)
+  }
+
   private fun api(client: HttpClient) =
     DecibelApi(
       client,

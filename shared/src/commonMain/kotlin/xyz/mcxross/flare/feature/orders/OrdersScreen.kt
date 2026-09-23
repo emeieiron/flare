@@ -287,6 +287,43 @@ fun OrdersScreen(
           }
         }
       }
+      OrdersSection.TRANSFERS -> {
+        if (state.history.transfers.isEmpty()) {
+          HistoryEmpty(state.history.stale, "No transfer history")
+        } else {
+          state.history.transfers.forEach { transfer ->
+            val isDeposit = transfer.type.lowercase().contains("deposit")
+            Row(
+              Modifier.fillMaxWidth().padding(vertical = 14.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+              Column(Modifier.weight(1f)) {
+                Text(if (isDeposit) "Deposit" else "Withdrawal")
+                Text(
+                  "${transfer.assetSymbol} · ${transfer.status.replaceFirstChar { it.uppercase() }}" +
+                    (transfer.transactionHash?.let { " · ${shortAddress(it)}" } ?: ""),
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  style = MaterialTheme.typography.labelSmall,
+                )
+              }
+              Column(horizontalAlignment = Alignment.End) {
+                Text(
+                  (if (isDeposit) "+" else "-") + formatBalance(transfer.amount),
+                  color = if (isDeposit) FlareColors.Positive else FlareColors.Negative,
+                )
+                if (transfer.timestamp > 0) {
+                  Text(
+                    formatRelativeTime(transfer.timestamp),
+                    color = FlareColors.TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                  )
+                }
+              }
+            }
+            HorizontalDivider(color = FlareColors.BorderSubtle)
+          }
+        }
+      }
     }
     val canLoadMore =
       when (state.section) {
@@ -294,6 +331,7 @@ fun OrdersScreen(
         OrdersSection.ORDERS -> state.history.ordersHasMore
         OrdersSection.TRADES -> state.history.tradesHasMore
         OrdersSection.FUNDING -> state.history.fundingHasMore
+        OrdersSection.TRANSFERS -> state.history.transfersHasMore
       }
     if (canLoadMore) {
       FlareButton(

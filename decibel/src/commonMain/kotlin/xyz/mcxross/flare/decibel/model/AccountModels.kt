@@ -135,3 +135,66 @@ data class FundingPayment(
   @SerialName("fee_amount") val feeAmount: Double,
   @SerialName("transaction_unix_ms") val transactionUnixMs: Long,
 )
+
+@Serializable
+data class PortfolioChartPoint(
+  val timestamp: Long = 0L,
+  val value: Double = 0.0,
+  @SerialName("account_value") val accountValue: Double? = null,
+  @SerialName("realized_pnl") val realizedPnl: Double? = null,
+)
+
+@Serializable
+data class FundMovement(
+  val timestamp: Long = 0L,
+  val type: String = "deposit",
+  val amount: Double = 0.0,
+  @SerialName("asset_symbol") val assetSymbol: String = "USDC",
+  @SerialName("transaction_hash") val transactionHash: String? = null,
+  @SerialName("transaction_version") val transactionVersion: Long? = null,
+  val status: String = "confirmed",
+)
+
+@Serializable
+data class TradingStreak(
+  @SerialName("streak_count") val streakCount: Int = 0,
+  @SerialName("longest_streak") val longestStreak: Int = 0,
+  @SerialName("grace_days_remaining") val graceDaysRemaining: Int = 0,
+  @SerialName("qualifying_dates") val qualifyingDates: List<String> = emptyList(),
+)
+
+@Serializable
+data class AmpsBreakdown(
+  @SerialName("total_amps") val totalAmps: Double = 0.0,
+  @SerialName("trading_amps") val tradingAmps: Double = 0.0,
+  @SerialName("referral_amps") val referralAmps: Double = 0.0,
+  @SerialName("daily_amps") val dailyAmps: Double = 0.0,
+  val rank: Int? = null,
+)
+
+@Serializable
+data class TierInfo(
+  val tier: String = "Bronze",
+  val percentile: Double = 0.0,
+  @SerialName("fee_discount_bps") val feeDiscountBps: Int = 0,
+)
+
+@Serializable
+data class ReferralCodeInfo(
+  val code: String,
+  val valid: Boolean = true,
+  val owner: String? = null,
+  @SerialName("discount_percent") val discountPercent: Double = 0.0,
+)
+
+@Serializable
+data class ReferralRedemptionRequest(
+  val account: String,
+  val code: String,
+)
+
+@Serializable
+data class ReferralRedemptionResponse(
+  val success: Boolean = true,
+  val message: String? = null,
+)
