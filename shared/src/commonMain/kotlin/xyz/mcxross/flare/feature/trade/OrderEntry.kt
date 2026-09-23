@@ -8,6 +8,7 @@ import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.SlippageBps
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.decibel.model.validate
+import xyz.mcxross.flare.decibel.model.validateTwap
 
 internal fun TradeUiState.entryPrice(side: OrderSide): String? =
   if (orderType == OrderType.LIMIT) limitPriceInput.takeIf(String::isNotBlank)
@@ -64,8 +65,18 @@ internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatchin
       "Choose leverage within this market’s limit"
     }
   }
-  val result = orderDraft(side).validate(market, marketDetails.orderBook)
-  require(result.isValid) { result.errors.joinToString("\n") { it.message() } }
+  if (orderType == OrderType.TWAP) {
+    val duration = twapDurationMinutesInput.toULongOrNull()?.times(60uL) ?: 3600uL
+    val frequency = twapFrequencyMinutesInput.toULongOrNull()?.times(60uL) ?: 60uL
+    require(duration in 120uL..86400uL) { "Duration must be between 2 minutes and 24 hours" }
+    require(frequency >= 60uL) { "Frequency must be at least 1 minute" }
+    require(frequency <= duration) { "Frequency cannot exceed duration" }
+    val result = orderDraft(side).validateTwap(market, frequency, duration)
+    require(result.isValid) { result.errors.joinToString("\n") { it.message() } }
+  } else {
+    val result = orderDraft(side).validate(market, marketDetails.orderBook)
+    require(result.isValid) { result.errors.joinToString("\n") { it.message() } }
+  }
 }
   .exceptionOrNull()
   ?.message

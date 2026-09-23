@@ -85,6 +85,30 @@ sealed interface DecibelCommand {
     val subaccount: String,
     val builder: String,
   ) : DecibelCommand
+
+  data class PlaceTwapOrder(
+    val subaccount: String,
+    val order: xyz.mcxross.flare.decibel.model.ValidatedTwapOrder,
+  ) : DecibelCommand
+
+  data class CancelTwapOrder(
+    val subaccount: String,
+    val market: String,
+    val twapId: String,
+  ) : DecibelCommand
+
+  data class ContributeToVault(
+    val subaccount: String,
+    val vaultAddress: String,
+    val assetMetadata: String,
+    val amount: ULong,
+  ) : DecibelCommand
+
+  data class RedeemFromVault(
+    val subaccount: String,
+    val vaultAddress: String,
+    val shares: ULong,
+  ) : DecibelCommand
 }
 
 sealed interface TransactionState {
@@ -347,6 +371,69 @@ internal class DefaultDecibelTradingService(
           listOf(
             address(command.subaccount),
             address(command.builder),
+          )
+      }
+      is DecibelCommand.PlaceTwapOrder -> {
+        function = "$packageAddress::dex_accounts_entry::place_twap_order_to_subaccount_v2"
+        val order = command.order
+        require(order.size > 0uL) { "Order size must be positive" }
+        require(order.durationSeconds in 120uL..86400uL) {
+          "TWAP duration must be between 120 and 86,400 seconds"
+        }
+        require(order.frequencySeconds >= 60uL) {
+          "TWAP frequency must be at least 60 seconds"
+        }
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(order.marketAddress),
+            MoveArgument.U64(order.size),
+            MoveArgument.Bool(order.side == xyz.mcxross.flare.decibel.model.OrderSide.BUY),
+            MoveArgument.Bool(order.reduceOnly),
+            option(order.clientOrderId?.let(MoveArgument::StringValue)),
+            MoveArgument.U64(order.frequencySeconds),
+            MoveArgument.U64(order.durationSeconds),
+            option(
+              order.builderAddress?.let {
+                if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
+                else null
+              }
+            ),
+            option(
+              order.builderFeeUnits?.let {
+                if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
+              }
+            ),
+          )
+      }
+      is DecibelCommand.CancelTwapOrder -> {
+        function = "$packageAddress::dex_accounts_entry::cancel_twap_orders_to_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.market),
+            MoveArgument.U128(command.twapId),
+          )
+      }
+      is DecibelCommand.ContributeToVault -> {
+        require(command.amount > 0uL) { "Contribution amount must be positive" }
+        function = "$packageAddress::dex_accounts_entry::contribute_to_vault"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.vaultAddress),
+            address(command.assetMetadata),
+            MoveArgument.U64(command.amount),
+          )
+      }
+      is DecibelCommand.RedeemFromVault -> {
+        require(command.shares > 0uL) { "Redemption shares must be positive" }
+        function = "$packageAddress::dex_accounts_entry::redeem_from_vault"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.vaultAddress),
+            MoveArgument.U64(command.shares),
           )
       }
     }

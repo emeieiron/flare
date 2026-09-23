@@ -33,6 +33,7 @@ import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
 import xyz.mcxross.flare.decibel.model.validate
+import xyz.mcxross.flare.decibel.model.validateTwap
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -78,6 +79,8 @@ data class TradeUiState(
   val builderAddress: String? = null,
   val builderFeeBps: Int? = null,
   val builderApproved: Boolean = false,
+  val twapDurationMinutesInput: String = "60",
+  val twapFrequencyMinutesInput: String = "1",
 ) {
   fun availableDisplay(side: OrderSide): String? {
     val isSpot = quote?.market?.assetType == AssetType.SPOT
@@ -116,6 +119,10 @@ sealed interface TradeIntent {
   data class SetStopLoss(val value: String) : TradeIntent
 
   data class SetLeverage(val value: Int) : TradeIntent
+
+  data class SetTwapDurationMinutes(val value: String) : TradeIntent
+
+  data class SetTwapFrequencyMinutes(val value: String) : TradeIntent
 
   data class Submit(val side: OrderSide) : TradeIntent
 
@@ -336,6 +343,14 @@ class TradeViewModel(
         mutableUiState.update {
           it.copy(stopLossInput = decimalCharacters(intent.value), orderError = null)
         }
+      is TradeIntent.SetTwapDurationMinutes ->
+        mutableUiState.update {
+          it.copy(twapDurationMinutesInput = decimalCharacters(intent.value), orderError = null)
+        }
+      is TradeIntent.SetTwapFrequencyMinutes ->
+        mutableUiState.update {
+          it.copy(twapFrequencyMinutesInput = decimalCharacters(intent.value), orderError = null)
+        }
       TradeIntent.ConfirmSelfPay ->
         mutableUiState.value.lastSide?.let { submitOrder(it, FeePayment.SELF_PAY) }
       TradeIntent.TopUpApiWallet -> topUpApiWallet()
@@ -390,12 +405,35 @@ class TradeViewModel(
             error("A live order book is required for a market order")
           }
           val draft = state.orderDraft(side)
-          val validation = draft.validate(market, state.marketDetails.orderBook)
-          val validated =
-            validation.value
-              ?: error(
-                validation.errors.joinToString("\n", transform = OrderValidationError::message)
-              )
+          val isSpot = market.assetType == AssetType.SPOT
+          val entryCommand =
+            if (isSpot) {
+              val validation = draft.validate(market, state.marketDetails.orderBook)
+              val validated =
+                validation.value
+                  ?: error(
+                    validation.errors.joinToString("\n", transform = OrderValidationError::message)
+                  )
+              DecibelCommand.PlaceSpotOrder(subaccount, validated)
+            } else if (state.orderType == OrderType.TWAP) {
+              val duration = state.twapDurationMinutesInput.toULongOrNull()?.times(60uL) ?: 3600uL
+              val frequency = state.twapFrequencyMinutesInput.toULongOrNull()?.times(60uL) ?: 60uL
+              val twapValidation = draft.validateTwap(market, frequency, duration)
+              val twapValidated =
+                twapValidation.value
+                  ?: error(
+                    twapValidation.errors.joinToString("\n", transform = OrderValidationError::message)
+                  )
+              DecibelCommand.PlaceTwapOrder(subaccount, twapValidated)
+            } else {
+              val validation = draft.validate(market, state.marketDetails.orderBook)
+              val validated =
+                validation.value
+                  ?: error(
+                    validation.errors.joinToString("\n", transform = OrderValidationError::message)
+                  )
+              DecibelCommand.PlaceOrder(subaccount, validated)
+            }
           val reconciliation = trading.reconcilePending()
           require(reconciliation.unresolved == 0) {
             "Flare is still confirming an earlier action. Try again in a moment."
@@ -405,14 +443,11 @@ class TradeViewModel(
           require(!snapshot.stale && snapshot.account == subaccount) {
             "Your account is still reconnecting. Try again in a moment."
           }
-          val isSpot = market.assetType == AssetType.SPOT
           val position = snapshot.positions.firstOrNull { it.market == market.address }
           val terminal =
             placeConfiguredOrder(
               configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
-              entry =
-                if (isSpot) DecibelCommand.PlaceSpotOrder(subaccount, validated)
-                else DecibelCommand.PlaceOrder(subaccount, validated),
+              entry = entryCommand,
               execute = { command ->
                 trading.execute(
                   command,

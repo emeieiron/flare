@@ -110,7 +110,24 @@ fun OrdersScreen(
     when (state.section) {
       OrdersSection.OPEN ->
         when {
-          state.account.openOrders.isNotEmpty() ->
+          state.account.openOrders.isNotEmpty() -> {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                "${state.account.openOrders.size} open ${if (state.account.openOrders.size == 1) "order" else "orders"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = FlareColors.TextSecondary,
+              )
+              CompactActionButton(
+                text = "Cancel All",
+                positive = false,
+                onClick = { onIntent(OrdersIntent.CancelAll) },
+                enabled = !state.busy,
+              )
+            }
             state.account.openOrders.forEach { order ->
               val cancelling = state.busy && state.lastCancelOrderId == order.orderId
               val isSpot = order.assetType == AssetType.SPOT || order.market in state.spotMarkets
@@ -151,6 +168,7 @@ fun OrdersScreen(
               }
               HorizontalDivider(color = FlareColors.BorderSubtle)
             }
+          }
           state.profile.ownerAddress != null || state.profile.apiWalletAddress != null ->
             EmptyState(
               title = if (state.account.stale) "Orders are on their way" else "No open orders",
@@ -167,6 +185,82 @@ fun OrdersScreen(
               message = "Connect your account to see orders, trades, and funding in one place.",
               actionLabel = "Connect account",
               onAction = onOpenSetup,
+            )
+        }
+      OrdersSection.TWAP ->
+        when {
+          state.activeTwaps.isNotEmpty() || state.twapHistory.isNotEmpty() -> {
+            if (state.activeTwaps.isNotEmpty()) {
+              Text(
+                "Active TWAPs",
+                style = MaterialTheme.typography.titleSmall,
+                color = FlareColors.TextPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+              )
+              state.activeTwaps.forEach { twap ->
+                val cancelling = state.busy && state.lastCancelTwapId == twap.twapId
+                Row(
+                  Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  Column(Modifier.weight(1f)) {
+                    Text(
+                      state.marketSymbols[twap.market] ?: shortAddress(twap.market),
+                      style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                      "${if (twap.isBuy) "Buy" else "Sell"} · " +
+                        "Interval: ${twap.frequencySeconds}s · Duration: ${twap.durationSeconds / 60}m",
+                      color = FlareColors.TextSecondary,
+                      style = MaterialTheme.typography.labelSmall,
+                    )
+                  }
+                  CompactActionButton(
+                    text = if (cancelling) "Cancelling…" else "Cancel",
+                    positive = false,
+                    onClick = {
+                      onIntent(OrdersIntent.CancelTwap(twap.market, twap.twapId))
+                    },
+                    enabled = !state.busy,
+                  )
+                }
+                HorizontalDivider(color = FlareColors.BorderSubtle)
+              }
+            }
+            if (state.twapHistory.isNotEmpty()) {
+              Text(
+                "Past TWAPs",
+                style = MaterialTheme.typography.titleSmall,
+                color = FlareColors.TextSecondary,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+              )
+              state.twapHistory.forEach { twap ->
+                Row(
+                  Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  Column(Modifier.weight(1f)) {
+                    Text(
+                      state.marketSymbols[twap.market] ?: shortAddress(twap.market),
+                      style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                      "${if (twap.isBuy) "Buy" else "Sell"} · Status: ${twap.status ?: "Finished"}",
+                      color = FlareColors.TextSecondary,
+                      style = MaterialTheme.typography.labelSmall,
+                    )
+                  }
+                }
+                HorizontalDivider(color = FlareColors.BorderSubtle)
+              }
+            }
+          }
+          else ->
+            EmptyState(
+              title = "No TWAP orders",
+              message = "TWAP orders execute automatically across regular time intervals.",
             )
         }
       OrdersSection.ORDERS -> {
@@ -327,7 +421,7 @@ fun OrdersScreen(
     }
     val canLoadMore =
       when (state.section) {
-        OrdersSection.OPEN -> false
+        OrdersSection.OPEN, OrdersSection.TWAP -> false
         OrdersSection.ORDERS -> state.history.ordersHasMore
         OrdersSection.TRADES -> state.history.tradesHasMore
         OrdersSection.FUNDING -> state.history.fundingHasMore

@@ -193,6 +193,14 @@ class PortfolioViewModelTest {
 
     override suspend fun redeemReferralCode(code: String): Boolean = true
 
+    override suspend fun activeTwaps(): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
+
+    override suspend fun twapHistory(limit: Int): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
+
+    override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> = emptyList()
+
+    override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> = emptyList()
+
     override fun startLive() {}
   }
 

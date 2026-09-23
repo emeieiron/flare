@@ -45,6 +45,9 @@ import xyz.mcxross.flare.decibel.model.ReferralCodeInfo
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
+import xyz.mcxross.flare.decibel.model.TwapOrder
+import xyz.mcxross.flare.decibel.model.VaultInfo
+import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -162,6 +165,14 @@ interface AccountRepository {
   suspend fun verifyReferralCode(code: String): ReferralCodeInfo?
 
   suspend fun redeemReferralCode(code: String): Boolean
+
+  suspend fun activeTwaps(): List<TwapOrder>
+
+  suspend fun twapHistory(limit: Int = 50): List<TwapOrder>
+
+  suspend fun vaults(limit: Int = 50): List<VaultInfo>
+
+  suspend fun accountVaultPerformance(): List<AccountVaultPerformance>
 
   suspend fun refresh()
 
@@ -967,6 +978,25 @@ class DefaultAccountRepository(
   override suspend fun redeemReferralCode(code: String): Boolean {
     val account = preferences.values.first().selectedSubaccount ?: return false
     return runCatching { client.accounts.redeemReferralCode(account, code).success }.getOrDefault(false)
+  }
+
+  override suspend fun activeTwaps(): List<TwapOrder> {
+    val account = preferences.values.first().selectedSubaccount ?: return emptyList()
+    return client.accounts.activeTwaps(account)
+  }
+
+  override suspend fun twapHistory(limit: Int): List<TwapOrder> {
+    val account = preferences.values.first().selectedSubaccount ?: return emptyList()
+    return client.accounts.twapHistory(account, limit)
+  }
+
+  override suspend fun vaults(limit: Int): List<VaultInfo> {
+    return client.accounts.vaults(limit)
+  }
+
+  override suspend fun accountVaultPerformance(): List<AccountVaultPerformance> {
+    val account = preferences.values.first().selectedSubaccount ?: return emptyList()
+    return client.accounts.accountVaultPerformance(account)
   }
 
   private companion object {

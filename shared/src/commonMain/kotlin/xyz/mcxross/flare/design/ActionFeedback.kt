@@ -79,10 +79,16 @@ fun settlingActionName(operation: String): String =
     "DEPOSIT" -> "deposit"
     "WITHDRAW",
     "TRANSFER_COLLATERAL" -> "withdrawal"
-    "PLACE_ORDER" -> "order"
+    "PLACE_ORDER",
+    "PLACE_SPOT_ORDER",
+    "PLACE_TWAP_ORDER" -> "order"
     "CANCEL_ORDER",
+    "CANCEL_SPOT_ORDER",
+    "CANCEL_TWAP_ORDER",
     "CANCEL_POSITION_TP_SL" -> "cancellation"
     "SET_POSITION_TP_SL" -> "exit update"
+    "CONTRIBUTE_TO_VAULT" -> "vault deposit"
+    "REDEEM_FROM_VAULT" -> "vault redemption"
     "CONFIGURE_MARKET" -> "leverage change"
     "CREATE_SUBACCOUNT" -> "account setup"
     "DELEGATE_TRADING" -> "trading access"

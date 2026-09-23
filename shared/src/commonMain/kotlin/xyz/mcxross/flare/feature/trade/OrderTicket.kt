@@ -54,6 +54,8 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
       state.stopLossInput,
       state.orderType,
       state.leverage,
+      state.twapDurationMinutesInput,
+      state.twapFrequencyMinutesInput,
       side,
     ) {
       mutableStateOf(false)
@@ -143,7 +145,10 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        listOf(OrderType.MARKET, OrderType.LIMIT).forEach { type ->
+        val orderTypes =
+          if (isSpot) listOf(OrderType.MARKET, OrderType.LIMIT)
+          else listOf(OrderType.MARKET, OrderType.LIMIT, OrderType.TWAP)
+        orderTypes.forEach { type ->
           FlareChip(
             text = type.name.lowercase().replaceFirstChar(Char::uppercase),
             selected = state.orderType == type,
@@ -182,6 +187,35 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
       if (!isSpot) {
         LeverageControl(state, estimate?.margin) { onIntent(TradeIntent.SetLeverage(it)) }
       }
+      if (state.orderType == OrderType.TWAP) {
+        Row(
+          Modifier.fillMaxWidth().padding(top = 12.dp),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          OrderAmountField(
+            "Duration",
+            "min",
+            state.twapDurationMinutesInput,
+            { onIntent(TradeIntent.SetTwapDurationMinutes(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+          )
+          OrderAmountField(
+            "Interval",
+            "min",
+            state.twapFrequencyMinutesInput,
+            { onIntent(TradeIntent.SetTwapFrequencyMinutes(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+          )
+        }
+        Text(
+          "TWAP divides the order into regular slices across the duration.",
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+          modifier = Modifier.padding(top = 6.dp),
+        )
+      }
       if (state.orderType == OrderType.LIMIT) {
         OrderAmountField(
           "Limit price",
@@ -193,7 +227,7 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
           enabled = !state.orderBusy,
         )
       }
-      if (!isSpot) {
+      if (!isSpot && state.orderType != OrderType.TWAP) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           OrderAmountField(
             "Take profit",

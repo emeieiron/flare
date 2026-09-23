@@ -40,6 +40,7 @@ enum class OrderSide {
 enum class OrderType {
   LIMIT,
   MARKET,
+  TWAP,
 }
 
 @Serializable
@@ -93,6 +94,19 @@ data class ValidatedOrder(
   val builderFeeUnits: ULong? = null,
 )
 
+@Serializable
+data class ValidatedTwapOrder(
+  val marketAddress: String,
+  val side: OrderSide,
+  val size: ULong,
+  val reduceOnly: Boolean = false,
+  val clientOrderId: String? = null,
+  val frequencySeconds: ULong = 60uL,
+  val durationSeconds: ULong = 3600uL,
+  val builderAddress: String? = null,
+  val builderFeeUnits: ULong? = null,
+)
+
 sealed interface OrderValidationError {
   data class InvalidDecimal(val field: String, val reason: String) : OrderValidationError
 
@@ -127,3 +141,12 @@ data class OrderValidationResult(
   val isValid: Boolean
     get() = value != null && errors.isEmpty()
 }
+
+data class TwapValidationResult(
+  val value: ValidatedTwapOrder? = null,
+  val errors: List<OrderValidationError> = emptyList(),
+) {
+  val isValid: Boolean
+    get() = value != null && errors.isEmpty()
+}
+
