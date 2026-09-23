@@ -99,6 +99,8 @@ sealed interface OnboardingIntent {
 
   data object ContinueSetup : OnboardingIntent
 
+  data class InitializeMode(val mode: String) : OnboardingIntent
+
   data object ClearSensitiveState : OnboardingIntent
 
   data object Back : OnboardingIntent
@@ -110,6 +112,7 @@ sealed interface OnboardingIntent {
 
 sealed interface OnboardingEffect {
   data object Completed : OnboardingEffect
+  data object Cancelled : OnboardingEffect
 }
 
 class OnboardingViewModel(
@@ -121,6 +124,9 @@ class OnboardingViewModel(
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
+  private var subflowMode: String? = null
+  private var previousProfileId: String? = null
+  private var createdProfileId: String? = null
   private val setupPrompt = VaultPrompt("Continue setup", "Confirm your identity")
   val effects = effectChannel.receiveAsFlow()
 
@@ -140,6 +146,19 @@ class OnboardingViewModel(
 
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
+      is OnboardingIntent.InitializeMode -> {
+        if (subflowMode == null) {
+          subflowMode = intent.mode
+          viewModelScope.launch {
+            previousProfileId = preferences.values.first().activeProfileId
+            when (intent.mode.uppercase()) {
+              "CREATE" -> createOwner()
+              "IMPORT" -> show(OnboardingStep.IMPORT)
+              "CONTINUE" -> prepareOwnerAccount()
+            }
+          }
+        }
+      }
       is OnboardingIntent.SetBuilderOptIn ->
         local.value = local.value.copy(builderOptIn = intent.enabled, error = null)
       is OnboardingIntent.SelectProfile ->
@@ -186,6 +205,19 @@ class OnboardingViewModel(
               confirmations = emptyMap(),
               error = null,
             )
+        } else if (subflowMode != null) {
+          val toClean = createdProfileId
+          viewModelScope.launch {
+            if (toClean != null) {
+              val current = preferences.values.first()
+              val profile = current.profiles.firstOrNull { it.id == toClean }
+              if (profile?.onboardingComplete != true) {
+                preferences.removeProfile(toClean)
+              }
+            }
+            previousProfileId?.let { preferences.activateProfile(it) }
+            effectChannel.send(OnboardingEffect.Cancelled)
+          }
         } else show(OnboardingStep.WELCOME)
       }
       is OnboardingIntent.ChangeInput ->
@@ -205,15 +237,18 @@ class OnboardingViewModel(
         wallets.createOwner(
           VaultPrompt(title = "Create account", subtitle = "Confirm your identity")
         )
+      createdProfileId = "owner_${backup.address}"
       showBackup(backup)
     }
 
   private fun importOwner() =
     launchAction("That recovery phrase wasn’t imported.") {
-      wallets.importOwner(
-        phrase = local.value.input.trim(),
-        prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
-      )
+      val address =
+        wallets.importOwner(
+          phrase = local.value.input.trim(),
+          prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
+        )
+      createdProfileId = "owner_$address"
       local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
       discoverSubaccountsInternal()
     }
@@ -334,6 +369,7 @@ class OnboardingViewModel(
     }
 
   private suspend fun finishSetupInternal() {
+    createdProfileId = null
     preferences.setOnboardingComplete(true)
     clearSensitiveState()
     effectChannel.send(OnboardingEffect.Completed)
