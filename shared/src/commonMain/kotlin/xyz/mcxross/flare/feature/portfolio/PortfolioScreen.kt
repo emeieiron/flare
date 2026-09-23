@@ -160,6 +160,27 @@ fun PortfolioScreen(
           style = FlareButtonStyle.OUTLINE,
         )
       }
+
+    if (state.streak != null || state.amps != null || state.tier != null) {
+      TradingRewardsCard(
+        streak = state.streak,
+        amps = state.amps,
+        tier = state.tier,
+        modifier = Modifier.padding(top = 16.dp),
+      )
+    }
+
+    if (overview != null || state.chartPoints.isNotEmpty()) {
+      PortfolioPerformanceChart(
+        points = state.chartPoints,
+        range = state.chartRange,
+        metric = state.chartMetric,
+        onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
+        onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
+        modifier = Modifier.padding(top = 16.dp),
+      )
+    }
+
     if (
       !state.isLive &&
         (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)

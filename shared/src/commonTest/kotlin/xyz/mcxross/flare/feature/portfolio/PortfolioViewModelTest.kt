@@ -178,6 +178,21 @@ class PortfolioViewModelTest {
 
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
 
+    override suspend fun portfolioChart(
+      timeRange: String,
+      metric: String,
+    ): List<xyz.mcxross.flare.decibel.model.PortfolioChartPoint> = emptyList()
+
+    override suspend fun tradingStreak(): xyz.mcxross.flare.decibel.model.TradingStreak? = null
+
+    override suspend fun ampsBreakdown(): xyz.mcxross.flare.decibel.model.AmpsBreakdown? = null
+
+    override suspend fun tierInfo(): xyz.mcxross.flare.decibel.model.TierInfo? = null
+
+    override suspend fun verifyReferralCode(code: String): xyz.mcxross.flare.decibel.model.ReferralCodeInfo? = null
+
+    override suspend fun redeemReferralCode(code: String): Boolean = true
+
     override fun startLive() {}
   }
 

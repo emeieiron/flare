@@ -19,7 +19,10 @@ import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -34,6 +37,12 @@ data class SettingsUiState(
   val revealedSecret: String? = null,
   val delegations: List<Delegation> = emptyList(),
   val delegationsLoaded: Boolean = false,
+  val referralCodeInput: String = "",
+  val referralRedeemed: Boolean = false,
+  val referralMessage: String? = null,
+  val streak: TradingStreak? = null,
+  val amps: AmpsBreakdown? = null,
+  val tier: TierInfo? = null,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -52,6 +61,10 @@ sealed interface SettingsIntent {
   data object ApproveBuilderFee : SettingsIntent
 
   data object RevokeBuilderFee : SettingsIntent
+
+  data class ChangeReferralCode(val code: String) : SettingsIntent
+
+  data object RedeemReferralCode : SettingsIntent
 
   data object ExportOwner : SettingsIntent
 
@@ -80,6 +93,15 @@ class SettingsViewModel(
     )
   private var secretClearJob: Job? = null
 
+  init {
+    viewModelScope.launch {
+      val streak = runSuspendCatching { accounts.tradingStreak() }.getOrNull()
+      val amps = runSuspendCatching { accounts.ampsBreakdown() }.getOrNull()
+      val tier = runSuspendCatching { accounts.tierInfo() }.getOrNull()
+      local.update { it.copy(streak = streak, amps = amps, tier = tier) }
+    }
+  }
+
   val uiState: StateFlow<SettingsUiState> =
     combine(local, preferences.values, wallets.profile) { state, persisted, profile ->
         state.copy(preferences = persisted, profile = profile)
@@ -88,6 +110,28 @@ class SettingsViewModel(
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      is SettingsIntent.ChangeReferralCode ->
+        local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
+      SettingsIntent.RedeemReferralCode ->
+        launchAction("Redeeming referral code failed.") {
+          val code = local.value.referralCodeInput.trim()
+          check(code.isNotBlank()) { "Enter a referral code" }
+          val success = accounts.redeemReferralCode(code)
+          if (success) {
+            local.update {
+              it.copy(
+                referralRedeemed = true,
+                referralMessage = "Referral code redeemed successfully!",
+              )
+            }
+          } else {
+            local.update {
+              it.copy(
+                referralMessage = "Invalid referral code or unable to redeem.",
+              )
+            }
+          }
+        }
       SettingsIntent.LoadDelegations ->
         launchAction("Authorized keys couldn’t be loaded.") {
           local.update { it.copy(delegations = emptyList(), delegationsLoaded = false) }

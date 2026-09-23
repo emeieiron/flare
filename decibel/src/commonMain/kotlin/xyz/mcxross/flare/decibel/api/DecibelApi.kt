@@ -4,11 +4,15 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.appendPathSegments
+import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerializationException
@@ -38,6 +42,68 @@ internal class DecibelApi(
           client.get(config.restBaseUrl) {
             url { appendPathSegments("api", "v1", path.trimStart('/')) }
             header(HttpHeaders.Origin, config.origin)
+            config.accessToken()?.let { bearerAuth(it) }
+            parameters()
+          }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (error: Throwable) {
+          attempt += 1
+          lastError =
+            DecibelApiError(
+              statusCode = 0,
+              message = error.message ?: "Decibel request transport failed",
+              retryable = true,
+            )
+          if (attempt >= DECIBEL_MAX_ATTEMPTS) throw lastError
+          delay(retryDelayMs(attempt))
+          continue
+        }
+      val body = response.bodyAsText()
+      if (response.status.value in 200..299) {
+        try {
+          return json.decodeFromString(body)
+        } catch (error: SerializationException) {
+          throw DecibelApiError(
+            statusCode = response.status.value,
+            message = "Decibel returned an incompatible response for $path: ${error.message}",
+            retryable = false,
+          )
+        }
+      }
+
+      val retryable = response.status in DECIBEL_RETRYABLE_STATUSES
+      lastError =
+        DecibelApiError(
+          statusCode = response.status.value,
+          message = decodeDecibelMessage(json, body, response.status),
+          retryable = retryable,
+        )
+      attempt += 1
+      if (!retryable || attempt >= DECIBEL_MAX_ATTEMPTS) throw lastError
+      val retryAfterMs =
+        response.headers[HttpHeaders.RetryAfter]
+          ?.toLongOrNull()
+          ?.coerceIn(0L, DECIBEL_MAX_RETRY_DELAY_MS / 1_000L)
+          ?.times(1_000L)
+      delay(retryAfterMs ?: retryDelayMs(attempt))
+    }
+    throw checkNotNull(lastError)
+  }
+
+  suspend inline fun <reified T> post(
+    path: String,
+    crossinline parameters: HttpRequestBuilder.() -> Unit = {},
+  ): T {
+    var attempt = 0
+    var lastError: DecibelApiError? = null
+    while (attempt < DECIBEL_MAX_ATTEMPTS) {
+      val response =
+        try {
+          client.post(config.restBaseUrl) {
+            url { appendPathSegments("api", "v1", path.trimStart('/')) }
+            header(HttpHeaders.Origin, config.origin)
+            contentType(ContentType.Application.Json)
             config.accessToken()?.let { bearerAuth(it) }
             parameters()
           }

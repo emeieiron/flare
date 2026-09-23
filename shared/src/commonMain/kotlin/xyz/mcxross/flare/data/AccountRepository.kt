@@ -31,14 +31,20 @@ import xyz.mcxross.flare.decibel.api.StreamEvent
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.FundMovement
 import xyz.mcxross.flare.decibel.model.FundingPayment
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
+import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.Position
+import xyz.mcxross.flare.decibel.model.ReferralCodeInfo
 import xyz.mcxross.flare.decibel.model.Subaccount
+import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -59,6 +65,7 @@ enum class AccountHistoryKind {
   ORDERS,
   TRADES,
   FUNDING,
+  TRANSFERS,
 }
 
 data class AccountHistorySnapshot(
@@ -66,9 +73,11 @@ data class AccountHistorySnapshot(
   val orders: List<Order> = emptyList(),
   val trades: List<MarketTrade> = emptyList(),
   val funding: List<FundingPayment> = emptyList(),
+  val transfers: List<FundMovement> = emptyList(),
   val ordersHasMore: Boolean = false,
   val tradesHasMore: Boolean = false,
   val fundingHasMore: Boolean = false,
+  val transfersHasMore: Boolean = false,
   val loading: Boolean = false,
   val loadingMore: Boolean = false,
   val stale: Boolean = true,
@@ -138,6 +147,21 @@ interface AccountRepository {
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): TransactionState
+
+  suspend fun portfolioChart(
+    timeRange: String = "1D",
+    metric: String = "account_value",
+  ): List<PortfolioChartPoint>
+
+  suspend fun tradingStreak(): TradingStreak?
+
+  suspend fun ampsBreakdown(): AmpsBreakdown?
+
+  suspend fun tierInfo(): TierInfo?
+
+  suspend fun verifyReferralCode(code: String): ReferralCodeInfo?
+
+  suspend fun redeemReferralCode(code: String): Boolean
 
   suspend fun refresh()
 
@@ -703,10 +727,20 @@ class DefaultAccountRepository(
         val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
         val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
         val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
-        Triple(orders.await(), trades.await(), funding.await())
+        val transfers = async { client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0) }
+        object {
+          val orders = orders
+          val trades = trades
+          val funding = funding
+          val transfers = transfers
+        }
       }
     }
-      .onSuccess { (orders, trades, funding) ->
+      .onSuccess { data ->
+        val orders = data.orders.await()
+        val trades = data.trades.await()
+        val funding = data.funding.await()
+        val transfers = data.transfers.await()
         if (preferences.values.first().selectedSubaccount != account) return@onSuccess
         mutableHistory.value =
           AccountHistorySnapshot(
@@ -714,9 +748,11 @@ class DefaultAccountRepository(
             orders = orders.items,
             trades = trades.items,
             funding = funding.items,
+            transfers = transfers.items,
             ordersHasMore = orders.hasMore(0),
             tradesHasMore = trades.hasMore(0),
             fundingHasMore = funding.hasMore(0),
+            transfersHasMore = transfers.hasMore(0),
             stale = false,
           )
       }
@@ -739,6 +775,7 @@ class DefaultAccountRepository(
         AccountHistoryKind.ORDERS -> current.ordersHasMore
         AccountHistoryKind.TRADES -> current.tradesHasMore
         AccountHistoryKind.FUNDING -> current.fundingHasMore
+        AccountHistoryKind.TRANSFERS -> current.transfersHasMore
       }
     if (!shouldLoad || current.loading || current.loadingMore) return@withLock
     mutableHistory.update { it.copy(loadingMore = true, error = null) }
@@ -755,6 +792,10 @@ class DefaultAccountRepository(
         AccountHistoryKind.FUNDING ->
           HistoryResult.Funding(
             client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, current.funding.size)
+          )
+        AccountHistoryKind.TRANSFERS ->
+          HistoryResult.Transfers(
+            client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, current.transfers.size)
           )
       }
     }
@@ -777,6 +818,12 @@ class DefaultAccountRepository(
               state.copy(
                 funding = state.funding + result.page.items,
                 fundingHasMore = result.page.hasMore(state.funding.size),
+                loadingMore = false,
+              )
+            is HistoryResult.Transfers ->
+              state.copy(
+                transfers = state.transfers + result.page.items,
+                transfersHasMore = result.page.hasMore(state.transfers.size),
                 loadingMore = false,
               )
           }
@@ -891,6 +938,37 @@ class DefaultAccountRepository(
     }
   }
 
+  override suspend fun portfolioChart(
+    timeRange: String,
+    metric: String,
+  ): List<PortfolioChartPoint> {
+    val account = preferences.values.first().selectedSubaccount ?: return emptyList()
+    return client.accounts.portfolioChart(account, timeRange, metric)
+  }
+
+  override suspend fun tradingStreak(): TradingStreak? {
+    val account = preferences.values.first().selectedSubaccount ?: return null
+    return client.accounts.streak(account)
+  }
+
+  override suspend fun ampsBreakdown(): AmpsBreakdown? {
+    val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
+    return client.accounts.amps(owner)
+  }
+
+  override suspend fun tierInfo(): TierInfo? {
+    val account = preferences.values.first().selectedSubaccount ?: return null
+    return client.accounts.tier(account)
+  }
+
+  override suspend fun verifyReferralCode(code: String): ReferralCodeInfo? =
+    runCatching { client.accounts.verifyReferralCode(code) }.getOrNull()
+
+  override suspend fun redeemReferralCode(code: String): Boolean {
+    val account = preferences.values.first().selectedSubaccount ?: return false
+    return runCatching { client.accounts.redeemReferralCode(account, code).success }.getOrDefault(false)
+  }
+
   private companion object {
     /** One reviewed "create account and enable trading" may span its two transactions. */
     const val SETUP_APPROVAL_WINDOW_MS = 60_000L
@@ -910,6 +988,8 @@ private sealed interface HistoryResult {
   data class Trades(val page: Page<MarketTrade>) : HistoryResult
 
   data class Funding(val page: Page<FundingPayment>) : HistoryResult
+
+  data class Transfers(val page: Page<FundMovement>) : HistoryResult
 }
 
 private fun <T> Page<T>.hasMore(offset: Int): Boolean {

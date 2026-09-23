@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -78,6 +79,7 @@ fun SettingsScreen(
 ) {
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
+  var showReferralSheet by remember { mutableStateOf(false) }
   var showRevokeConfirm by remember { mutableStateOf(false) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
@@ -180,6 +182,12 @@ fun SettingsScreen(
           builderStatus,
           Icons.Outlined.CardGiftcard,
           onClick = { showBuilderSheet = true },
+        )
+        ActionRow(
+          "Referral code",
+          if (state.referralRedeemed) "Code active" else "Enter a referral code",
+          Icons.Outlined.CardGiftcard,
+          onClick = { showReferralSheet = true },
         )
       }
       ActionRow(
@@ -419,6 +427,36 @@ fun SettingsScreen(
         Spacer(Modifier.height(12.dp))
         ActionNotice(it, tone = NoticeTone.ALERT)
       }
+    }
+  if (showReferralSheet)
+    FlareSheet("Referral code", { showReferralSheet = false }) {
+      Text(
+        "Enter a Decibel referral code to link your account and earn trading fee discounts.",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      Spacer(Modifier.height(16.dp))
+      OutlinedTextField(
+        value = state.referralCodeInput,
+        onValueChange = { onIntent(SettingsIntent.ChangeReferralCode(it)) },
+        placeholder = { Text("e.g. FLARE2026") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+      )
+      state.referralMessage?.let { msg ->
+        ActionNotice(
+          msg,
+          Modifier.padding(top = 12.dp),
+          if (state.referralRedeemed) NoticeTone.INFO else NoticeTone.ALERT,
+        )
+      }
+      Spacer(Modifier.height(20.dp))
+      FlareButton(
+        text = if (state.busy) "Redeeming…" else "Redeem code",
+        onClick = { onIntent(SettingsIntent.RedeemReferralCode) },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !state.busy && state.referralCodeInput.isNotBlank() && !state.referralRedeemed,
+      )
     }
   if (showRevokeConfirm) {
     AlertDialog(
