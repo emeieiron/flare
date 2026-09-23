@@ -26,6 +26,7 @@ import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.data.formatPrice
+import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
@@ -710,6 +711,23 @@ class PortfolioViewModel(
     if (mode == VaultActionMode.DEPOSIT && parsedAmount < 10.0) {
       local.update { it.copy(actionError = "The minimum deposit for DLP vaults is 10 USDC.") }
       return
+    }
+    if (mode == VaultActionMode.REDEEM) {
+      val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
+      val maxShares = position?.currentNumShares ?: 0.0
+      if (parsedAmount < 5.0) {
+        local.update { it.copy(actionError = "The minimum redemption for DLP vaults is 5 shares.") }
+        return
+      }
+      if (maxShares > 0.0 && parsedAmount > maxShares) {
+        local.update {
+          it.copy(
+            actionError =
+              "You cannot redeem more than your balance of ${formatQuantity(maxShares, 4)} shares."
+          )
+        }
+        return
+      }
     }
     launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
       val prompt =

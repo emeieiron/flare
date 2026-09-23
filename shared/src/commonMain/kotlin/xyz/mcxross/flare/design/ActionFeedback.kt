@@ -52,7 +52,11 @@ private fun failureCause(detail: String): String? =
     detail.mentions("ECONTRIBUTION_AMOUNT_TOO_LOW") ->
       "The minimum deposit for DLP vaults is 10 USDC."
     detail.mentions("EREDEMPTION_AMOUNT_TOO_LOW") ->
-      "The minimum redemption for DLP vaults is 5 USDC."
+      "The minimum redemption for DLP vaults is 5 shares."
+    detail.mentions("EINSUFFICIENT_SHARES") ->
+      "You don’t have enough vault shares."
+    detail.mentions("EVAULT_LOCKED", "ELOCKED") ->
+      "This vault is currently locked."
     detail.mentions("INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE", "OUT_OF_GAS") ->
       "The network fee couldn’t be covered."
     detail.mentions("INSUFFICIENT_BALANCE", "INSUFFICIENT_FUNDS") -> "The balance is too low."
