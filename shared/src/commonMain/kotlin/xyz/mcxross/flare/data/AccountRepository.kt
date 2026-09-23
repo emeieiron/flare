@@ -174,6 +174,20 @@ interface AccountRepository {
 
   suspend fun accountVaultPerformance(): List<AccountVaultPerformance>
 
+  fun contributeToVault(
+    vaultAddress: String,
+    amount: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment = FeePayment.SPONSORED,
+  ): Flow<TransactionState>
+
+  fun redeemFromVault(
+    vaultAddress: String,
+    shares: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment = FeePayment.SPONSORED,
+  ): Flow<TransactionState>
+
   suspend fun refresh()
 
   suspend fun refreshHistory()
@@ -997,6 +1011,63 @@ class DefaultAccountRepository(
   override suspend fun accountVaultPerformance(): List<AccountVaultPerformance> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
     return client.accounts.accountVaultPerformance(account)
+  }
+
+  override fun contributeToVault(
+    vaultAddress: String,
+    amount: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): Flow<TransactionState> = flow {
+    val subaccount =
+      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val units = DecimalInput(amount).toChainUnits("Contribution amount", USDC_DECIMALS).getOrThrow()
+    require(units > 0uL) { "Enter an amount greater than zero" }
+    try {
+      emitAll(
+        trading.execute(
+          command =
+            DecibelCommand.ContributeToVault(
+              subaccount = subaccount,
+              vaultAddress = vaultAddress,
+              assetMetadata = client.config.deployment.usdcMetadataAddress,
+              amount = units,
+            ),
+          prompt = prompt.copy(requireFreshAuthorization = true),
+          feePayment = feePayment,
+        )
+      )
+    } finally {
+      runSuspendCatching { restoreTrading() }
+    }
+  }
+
+  override fun redeemFromVault(
+    vaultAddress: String,
+    shares: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): Flow<TransactionState> = flow {
+    val subaccount =
+      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val units = DecimalInput(shares).toChainUnits("Redemption shares", USDC_DECIMALS).getOrThrow()
+    require(units > 0uL) { "Enter a share count greater than zero" }
+    try {
+      emitAll(
+        trading.execute(
+          command =
+            DecibelCommand.RedeemFromVault(
+              subaccount = subaccount,
+              vaultAddress = vaultAddress,
+              shares = units,
+            ),
+          prompt = prompt.copy(requireFreshAuthorization = true),
+          feePayment = feePayment,
+        )
+      )
+    } finally {
+      runSuspendCatching { restoreTrading() }
+    }
   }
 
   private companion object {

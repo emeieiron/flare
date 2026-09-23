@@ -33,9 +33,12 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
+import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.Position
+import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.CompactActionButton
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
@@ -103,43 +106,68 @@ fun PortfolioScreen(
       Modifier.padding(top = 8.dp),
       style = MaterialTheme.typography.displayMedium,
     )
-    if (overview != null || state.spotHoldings.isNotEmpty()) {
+    if (
+      overview != null ||
+        state.spotHoldings.isNotEmpty() ||
+        state.accountVaults.isNotEmpty() ||
+        state.vaults.isNotEmpty()
+    ) {
       Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
       ) {
-        if (state.selectedTab == PortfolioTab.POSITIONS) {
-          PortfolioMetric(
-            "Unrealized P&L",
-            overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "$0.00",
-            Modifier.weight(1f),
-          )
-          PortfolioMetric(
-            "Available",
-            overview?.availableToTrade?.let(::formatBalance) ?: "$0.00",
-            Modifier.weight(1f),
-          )
-          PortfolioMetric(
-            "Margin ratio",
-            overview?.let { "${(it.crossMarginRatio * 100).toInt()}%" } ?: "0%",
-            Modifier.weight(1f),
-          )
-        } else {
-          PortfolioMetric(
-            "USDC Cash",
-            formatBalance(state.collateralBalance),
-            Modifier.weight(1f),
-          )
-          PortfolioMetric(
-            "Spot assets",
-            formatBalance(state.totalSpotValue),
-            Modifier.weight(1f),
-          )
-          PortfolioMetric(
-            "Assets",
-            "${state.spotHoldings.size}",
-            Modifier.weight(1f),
-          )
+        when (state.selectedTab) {
+          PortfolioTab.POSITIONS -> {
+            PortfolioMetric(
+              "Unrealized P&L",
+              overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "$0.00",
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Available",
+              overview?.availableToTrade?.let(::formatBalance) ?: "$0.00",
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Margin ratio",
+              overview?.let { "${(it.crossMarginRatio * 100).toInt()}%" } ?: "0%",
+              Modifier.weight(1f),
+            )
+          }
+          PortfolioTab.HOLDINGS -> {
+            PortfolioMetric(
+              "USDC Cash",
+              formatBalance(state.collateralBalance),
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Spot assets",
+              formatBalance(state.totalSpotValue),
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Assets",
+              "${state.spotHoldings.size}",
+              Modifier.weight(1f),
+            )
+          }
+          PortfolioTab.VAULTS -> {
+            PortfolioMetric(
+              "Vault equity",
+              formatBalance(state.accountVaults.sumOf { it.currentValue }),
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Total DLP AUM",
+              formatBalance(state.vaults.sumOf { it.totalAum }),
+              Modifier.weight(1f),
+            )
+            PortfolioMetric(
+              "Active vaults",
+              "${state.vaults.size}",
+              Modifier.weight(1f),
+            )
+          }
         }
       }
     }
@@ -202,58 +230,68 @@ fun PortfolioScreen(
       label = { it.title },
     )
     Spacer(Modifier.height(16.dp))
-    if (state.selectedTab == PortfolioTab.POSITIONS) {
-      HorizontalDivider(color = FlareColors.BorderSubtle)
-      when {
-        state.account.positions.isNotEmpty() ->
-          state.account.positions.forEach { position ->
-            PositionRow(
-              position = position,
-              symbol = state.marketSymbols[position.market] ?: shortAddress(position.market),
-              markPrice = state.markPrices[position.market],
-              enabled = !state.busy,
-              onClick = { onIntent(PortfolioIntent.ManagePosition(position.market)) },
+    when (state.selectedTab) {
+      PortfolioTab.POSITIONS -> {
+        HorizontalDivider(color = FlareColors.BorderSubtle)
+        when {
+          state.account.positions.isNotEmpty() ->
+            state.account.positions.forEach { position ->
+              PositionRow(
+                position = position,
+                symbol = state.marketSymbols[position.market] ?: shortAddress(position.market),
+                markPrice = state.markPrices[position.market],
+                enabled = !state.busy,
+                onClick = { onIntent(PortfolioIntent.ManagePosition(position.market)) },
+              )
+              HorizontalDivider(color = FlareColors.BorderSubtle)
+            }
+          state.isLive ->
+            EmptyState(
+              title = "No open positions",
+              message = "Positions will appear here after an order fills.",
             )
-            HorizontalDivider(color = FlareColors.BorderSubtle)
-          }
-        state.isLive ->
-          EmptyState(
-            title = "No open positions",
-            message = "Positions will appear here after an order fills.",
-          )
-        else ->
-          EmptyState(
-            title = "Positions are on their way",
-            message = "They appear as soon as your account reconnects.",
-          )
+          else ->
+            EmptyState(
+              title = "Positions are on their way",
+              message = "They appear as soon as your account reconnects.",
+            )
+        }
       }
-    } else {
-      HorizontalDivider(color = FlareColors.BorderSubtle)
-      when {
-        state.spotHoldings.isNotEmpty() ->
-          state.spotHoldings.forEach { holding ->
-            HoldingRow(
-              holding = holding,
-              enabled = holding.marketAddress != null && !state.busy,
-              onClick = { holding.marketAddress?.let(onMarketClick) },
+      PortfolioTab.HOLDINGS -> {
+        HorizontalDivider(color = FlareColors.BorderSubtle)
+        when {
+          state.spotHoldings.isNotEmpty() ->
+            state.spotHoldings.forEach { holding ->
+              HoldingRow(
+                holding = holding,
+                enabled = holding.marketAddress != null && !state.busy,
+                onClick = { holding.marketAddress?.let(onMarketClick) },
+              )
+              HorizontalDivider(color = FlareColors.BorderSubtle)
+            }
+          state.isLive ->
+            EmptyState(
+              title = "No assets held",
+              message = "Deposit funds or trade spot to build your portfolio.",
             )
-            HorizontalDivider(color = FlareColors.BorderSubtle)
-          }
-        state.isLive ->
-          EmptyState(
-            title = "No assets held",
-            message = "Deposit funds or trade spot to build your portfolio.",
-          )
-        else ->
-          EmptyState(
-            title = "Holdings are on their way",
-            message = "They appear as soon as your account reconnects.",
-          )
+          else ->
+            EmptyState(
+              title = "Holdings are on their way",
+              message = "They appear as soon as your account reconnects.",
+            )
+        }
+      }
+      PortfolioTab.VAULTS -> {
+        VaultsSection(
+          state = state,
+          onIntent = onIntent,
+        )
       }
     }
   }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
   if (state.managedPositionMarket != null) PositionSheet(state, onIntent)
+  if (state.vaultAction != null && state.selectedVault != null) VaultActionSheet(state, onIntent)
 }
 
 /** One tappable summary per position: what it is, what it is worth, where it opened. */
@@ -384,5 +422,150 @@ private fun PortfolioMetric(label: String, value: String, modifier: Modifier = M
       style = MaterialTheme.typography.labelSmall,
     )
     Text(value, style = MaterialTheme.typography.labelMedium)
+  }
+}
+
+@Composable
+private fun VaultsSection(
+  state: PortfolioUiState,
+  onIntent: (PortfolioIntent) -> Unit,
+) {
+  if (state.accountVaults.isEmpty() && state.vaults.isEmpty()) {
+    HorizontalDivider(color = FlareColors.BorderSubtle)
+    EmptyState(
+      title = "No DLP vaults available",
+      message = "Decibel Liquidity Provider earn vaults will appear here.",
+    )
+    return
+  }
+
+  if (state.accountVaults.isNotEmpty()) {
+    Text(
+      text = "Your Vault Positions",
+      style = MaterialTheme.typography.titleSmall,
+      color = FlareColors.TextSecondary,
+      modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+    )
+    HorizontalDivider(color = FlareColors.BorderSubtle)
+    state.accountVaults.forEach { performance ->
+      VaultPerformanceRow(
+        performance = performance,
+        enabled = !state.busy,
+        onRedeem = {
+          onIntent(PortfolioIntent.OpenVaultAction(performance.vault, VaultActionMode.REDEEM))
+        },
+      )
+      HorizontalDivider(color = FlareColors.BorderSubtle)
+    }
+    Spacer(Modifier.height(16.dp))
+  }
+
+  Text(
+    text = "Available Vaults",
+    style = MaterialTheme.typography.titleSmall,
+    color = FlareColors.TextSecondary,
+    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+  )
+  HorizontalDivider(color = FlareColors.BorderSubtle)
+  state.vaults.forEach { vault ->
+    val userPosition = state.accountVaults.firstOrNull { it.vault.address == vault.address }
+    VaultRow(
+      vault = vault,
+      userShares = userPosition?.currentNumShares,
+      enabled = !state.busy,
+      onDeposit = {
+        onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT))
+      },
+      onRedeem = {
+        onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM))
+      },
+    )
+    HorizontalDivider(color = FlareColors.BorderSubtle)
+  }
+}
+
+@Composable
+private fun VaultPerformanceRow(
+  performance: AccountVaultPerformance,
+  enabled: Boolean,
+  onRedeem: () -> Unit,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text(
+        performance.vault.name.ifBlank { "DLP Vault" },
+        style = MaterialTheme.typography.labelLarge,
+      )
+      Text(
+        "${formatQuantity(performance.currentNumShares, 4)} shares · ${formatPrice(performance.vault.sharePrice)}/sh",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    Column(horizontalAlignment = Alignment.End) {
+      Text(
+        formatBalance(performance.currentValue),
+        style = MaterialTheme.typography.labelLarge,
+      )
+      val returns = performance.returnsPercent
+      Text(
+        "${if (returns >= 0) "+" else ""}${formatPrice(returns)}%",
+        color = if (returns >= 0) FlareColors.Positive else FlareColors.Negative,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    CompactActionButton(
+      text = "Redeem",
+      positive = false,
+      onClick = onRedeem,
+      enabled = enabled,
+    )
+  }
+}
+
+@Composable
+private fun VaultRow(
+  vault: VaultInfo,
+  userShares: Double?,
+  enabled: Boolean,
+  onDeposit: () -> Unit,
+  onRedeem: () -> Unit,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text(
+        vault.name.ifBlank { "DLP Vault" },
+        style = MaterialTheme.typography.labelLarge,
+      )
+      Text(
+        "AUM ${formatBalance(vault.totalAum)} · Fee ${(vault.performanceFeeBps / 100.0)}%",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      if (userShares != null && userShares > 0.0) {
+        CompactActionButton(
+          text = "Redeem",
+          positive = false,
+          onClick = onRedeem,
+          enabled = enabled,
+        )
+      }
+      CompactActionButton(
+        text = "Deposit",
+        positive = true,
+        onClick = onDeposit,
+        enabled = enabled,
+      )
+    }
   }
 }

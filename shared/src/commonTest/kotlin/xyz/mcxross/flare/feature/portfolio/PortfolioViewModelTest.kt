@@ -115,7 +115,7 @@ class PortfolioViewModelTest {
       ),
     )
 
-  private class FakeAccountRepository(initialSnapshot: AccountSnapshot) : AccountRepository {
+  private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) : AccountRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(initialSnapshot)
     override val history: StateFlow<AccountHistorySnapshot> =
       MutableStateFlow(AccountHistorySnapshot())
@@ -200,6 +200,20 @@ class PortfolioViewModelTest {
     override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> = emptyList()
 
     override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> = emptyList()
+
+    override fun contributeToVault(
+      vaultAddress: String,
+      amount: String,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): Flow<TransactionState> = emptyFlow()
+
+    override fun redeemFromVault(
+      vaultAddress: String,
+      shares: String,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): Flow<TransactionState> = emptyFlow()
 
     override fun startLive() {}
   }
@@ -409,5 +423,66 @@ class PortfolioViewModelTest {
     val state = vm.uiState.first { it.account.positions.isNotEmpty() }
     assertEquals(1, state.account.positions.size)
     assertEquals("0xbtc_perp", state.account.positions.first().market)
+  }
+
+  @Test
+  fun vaultsTabAndActionFlow() = runTest {
+    val snapshot = AccountSnapshot(account = "0xsubaccount", stale = false)
+    val testVault =
+      xyz.mcxross.flare.decibel.model.VaultInfo(
+        address = "0xvault1",
+        name = "Decibel Liquidity Pool",
+        totalAum = 500_000.0,
+        sharePrice = 1.05,
+      )
+    val fakeAccounts =
+      object : FakeAccountRepository(snapshot) {
+        override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> =
+          listOf(testVault)
+
+        override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> =
+          listOf(
+            xyz.mcxross.flare.decibel.model.AccountVaultPerformance(
+              vault = testVault,
+              currentNumShares = 100.0,
+              currentValue = 105.0,
+              returnsPercent = 5.0,
+            )
+          )
+      }
+
+    val vm =
+      PortfolioViewModel(
+        accounts = fakeAccounts,
+        wallets = FakeWalletRepository(),
+        preferences = AppPreferences(MemoryPreferences()),
+        trading = FakeTradingRepository(),
+        markets = FakeMarketsRepository(quotes),
+        marketDetails = FakeMarketDetailsRepository(),
+        assetCatalog = FakeAssetCatalogRepository(),
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.SelectTab(PortfolioTab.VAULTS))
+    val vaultsState =
+      vm.uiState.first { it.selectedTab == PortfolioTab.VAULTS && it.vaults.isNotEmpty() }
+    assertEquals(1, vaultsState.vaults.size)
+    assertEquals("Decibel Liquidity Pool", vaultsState.vaults.first().name)
+    assertEquals(1, vaultsState.accountVaults.size)
+    assertEquals(105.0, vaultsState.accountVaults.first().currentValue)
+
+    // Test opening deposit action
+    vm.onIntent(PortfolioIntent.OpenVaultAction(testVault, VaultActionMode.DEPOSIT))
+    val depositSheetState = vm.uiState.first { it.selectedVault != null }
+    assertEquals("0xvault1", depositSheetState.selectedVault?.address)
+    assertEquals(VaultActionMode.DEPOSIT, depositSheetState.vaultAction)
+
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("50.0"))
+    assertEquals("50.0", vm.uiState.first().vaultAmountInput)
+
+    vm.onIntent(PortfolioIntent.DismissVaultAction)
+    val dismissedState = vm.uiState.first { it.selectedVault == null }
+    kotlin.test.assertNull(dismissedState.selectedVault)
+    kotlin.test.assertNull(dismissedState.vaultAction)
   }
 }
