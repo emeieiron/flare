@@ -49,6 +49,10 @@ private fun failureCause(detail: String): String? =
     detail.isBlank() -> null
     detail.mentions("INSUFFICIENT_COLLATERAL", "INSUFFICIENT_MARGIN", "EINSUFFICIENT_EQUITY") ->
       "There isn’t enough available margin for it."
+    detail.mentions("ECONTRIBUTION_AMOUNT_TOO_LOW") ->
+      "The minimum deposit for DLP vaults is 10 USDC."
+    detail.mentions("EREDEMPTION_AMOUNT_TOO_LOW") ->
+      "The minimum redemption for DLP vaults is 5 USDC."
     detail.mentions("INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE", "OUT_OF_GAS") ->
       "The network fee couldn’t be covered."
     detail.mentions("INSUFFICIENT_BALANCE", "INSUFFICIENT_FUNDS") -> "The balance is too low."

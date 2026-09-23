@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
+import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
@@ -81,7 +83,16 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         value = state.vaultAmountInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeVaultAmount(it)) },
         label = {
-          Text(if (mode == VaultActionMode.DEPOSIT) "Amount in USDC" else "Shares to redeem")
+          Text(if (mode == VaultActionMode.DEPOSIT) "Amount in USDC (min. 10)" else "Shares to redeem")
+        },
+        supportingText = {
+          if (mode == VaultActionMode.DEPOSIT) {
+            Text(
+              "Decibel protocol requires a minimum deposit of 10 USDC.",
+              style = MaterialTheme.typography.labelSmall,
+              color = FlareColors.TextTertiary,
+            )
+          }
         },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
