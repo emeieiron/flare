@@ -477,6 +477,13 @@ class PortfolioViewModelTest {
     assertEquals("0xvault1", depositSheetState.selectedVault?.address)
     assertEquals(VaultActionMode.DEPOSIT, depositSheetState.vaultAction)
 
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("5.0"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    assertEquals(
+      "The minimum deposit for DLP vaults is 10 USDC.",
+      vm.uiState.first().actionError,
+    )
+
     vm.onIntent(PortfolioIntent.ChangeVaultAmount("50.0"))
     assertEquals("50.0", vm.uiState.first().vaultAmountInput)
 

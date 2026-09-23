@@ -702,8 +702,13 @@ class PortfolioViewModel(
     val vault = state.selectedVault ?: return
     val mode = state.vaultAction ?: return
     val amount = state.vaultAmountInput.trim()
-    if (amount.isBlank() || (amount.toDoubleOrNull() ?: 0.0) <= 0.0) {
+    val parsedAmount = amount.toDoubleOrNull() ?: 0.0
+    if (amount.isBlank() || parsedAmount <= 0.0) {
       local.update { it.copy(actionError = "Enter a valid positive amount") }
+      return
+    }
+    if (mode == VaultActionMode.DEPOSIT && parsedAmount < 10.0) {
+      local.update { it.copy(actionError = "The minimum deposit for DLP vaults is 10 USDC.") }
       return
     }
     launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
