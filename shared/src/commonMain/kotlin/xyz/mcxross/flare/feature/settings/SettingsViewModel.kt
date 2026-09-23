@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +29,7 @@ data class SettingsUiState(
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
   val proxyUrl: String = "",
+  val defaultBuilderAddress: String = "",
   val revealedSecretLabel: String? = null,
   val revealedSecret: String? = null,
   val delegations: List<Delegation> = emptyList(),
@@ -45,6 +47,12 @@ sealed interface SettingsIntent {
 
   data class SetSlippage(val basisPoints: Int) : SettingsIntent
 
+  data class SetBuilderFeeBps(val basisPoints: Int) : SettingsIntent
+
+  data object ApproveBuilderFee : SettingsIntent
+
+  data object RevokeBuilderFee : SettingsIntent
+
   data object ExportOwner : SettingsIntent
 
   data object ExportApi : SettingsIntent
@@ -61,9 +69,15 @@ class SettingsViewModel(
   private val wallets: WalletRepository,
   private val accounts: AccountRepository,
   private val sessions: SessionRepository,
-  runtime: FlareRuntimeConfig,
+  private val runtime: FlareRuntimeConfig,
 ) : ViewModel() {
-  private val local = MutableStateFlow(SettingsUiState(proxyUrl = runtime.workerBaseUrl))
+  private val local =
+    MutableStateFlow(
+      SettingsUiState(
+        proxyUrl = runtime.workerBaseUrl,
+        defaultBuilderAddress = runtime.defaultBuilderAddress,
+      )
+    )
   private var secretClearJob: Job? = null
 
   val uiState: StateFlow<SettingsUiState> =
@@ -100,6 +114,58 @@ class SettingsViewModel(
       is SettingsIntent.SetSlippage ->
         launchAction("Your slippage setting didn’t change.") {
           preferences.setSlippageBps(intent.basisPoints)
+        }
+      is SettingsIntent.SetBuilderFeeBps ->
+        launchAction("Your builder fee setting didn’t change.") {
+          val current = preferences.values.first()
+          val targetAddress = runtime.defaultBuilderAddress
+          if (intent.basisPoints == 0) {
+            preferences.setBuilderFeeBps(0)
+          } else {
+            if (!current.builderApproved) {
+              val result =
+                accounts.approveBuilderFee(
+                  builderAddress = targetAddress,
+                  feeBps = 10u,
+                  prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
+                )
+              check(result is TransactionState.Committed) {
+                (result as? TransactionState.Failed)?.message
+                  ?: "Approving builder support failed. Try again."
+              }
+            }
+            preferences.setBuilderFeeBps(intent.basisPoints)
+          }
+        }
+      SettingsIntent.ApproveBuilderFee ->
+        launchAction("Builder support wasn’t approved.") {
+          val current = preferences.values.first()
+          val targetAddress = runtime.defaultBuilderAddress
+          val result =
+            accounts.approveBuilderFee(
+              builderAddress = targetAddress,
+              feeBps = 10u,
+              prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
+            )
+          check(result is TransactionState.Committed) {
+            (result as? TransactionState.Failed)?.message
+              ?: "Approving builder support failed. Try again."
+          }
+          preferences.setBuilderFeeBps(if (current.builderFeeBps > 0) current.builderFeeBps else 5)
+        }
+      SettingsIntent.RevokeBuilderFee ->
+        launchAction("Builder support wasn’t revoked.") {
+          val current = preferences.values.first()
+          val targetAddress = current.builderAddress ?: runtime.defaultBuilderAddress
+          val result =
+            accounts.revokeBuilderFee(
+              builderAddress = targetAddress,
+              prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
+            )
+          check(result is TransactionState.Committed) {
+            (result as? TransactionState.Failed)?.message
+              ?: "Revoking builder support failed. Try again."
+          }
         }
       SettingsIntent.ExportOwner ->
         reveal("Recovery phrase") {

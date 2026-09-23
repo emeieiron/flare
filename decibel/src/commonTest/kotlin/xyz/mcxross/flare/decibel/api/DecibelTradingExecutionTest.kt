@@ -262,6 +262,8 @@ class DecibelTradingExecutionTest {
         DecibelCommand.CancelSpotOrder("0x11", "0x22", "340282366920938463463374607431768211455"),
         DecibelCommand.SetPositionTpSl("0x11", "0x22", stopLossTrigger = 1uL),
         DecibelCommand.CancelPositionTpSl("0x11", "0x22", "1"),
+        DecibelCommand.ApproveMaxBuilderFee("0x11", "0x55", 500uL),
+        DecibelCommand.RevokeMaxBuilderFee("0x11", "0x55"),
       )
     for (command in commands) fixture { f ->
       assertIs<TransactionState.Committed>(f.execute(command = command).last())

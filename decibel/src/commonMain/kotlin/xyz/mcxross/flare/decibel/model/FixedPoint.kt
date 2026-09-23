@@ -191,9 +191,46 @@ fun OrderDraft.validate(
         field to units
       }
 
+  val rawBuilderAddress = builderAddress
+  val parsedBuilderAddress: String? =
+    if (rawBuilderAddress != null && rawBuilderAddress.isNotBlank()) {
+      runCatching { AccountAddress.fromString(rawBuilderAddress).toStringLong() }
+        .getOrElse {
+          errors +=
+            OrderValidationError.InvalidBuilderAddress(
+              field = "builder address",
+              reason = it.message ?: "Invalid Aptos address",
+            )
+          null
+        }
+    } else {
+      null
+    }
+
+  val validatedFeeUnits: ULong? =
+    if (builderFeeBps != null) {
+      if (builderFeeBps > 10u) {
+        errors +=
+          OrderValidationError.InvalidBuilderFee(
+            field = "builder fee",
+            reason = "Builder fee cannot exceed 10 bps (0.10%)",
+          )
+        null
+      } else if (builderFeeBps > 0u && parsedBuilderAddress != null) {
+        builderFeeBps.toULong() * 100uL
+      } else {
+        null
+      }
+    } else {
+      null
+    }
+
   if (errors.isNotEmpty() || priceUnits == null || sizeUnits == null) {
     return OrderValidationResult(errors = errors)
   }
+  val finalBuilderAddress =
+    if (validatedFeeUnits != null && parsedBuilderAddress != null) parsedBuilderAddress else null
+  val finalBuilderFeeUnits = if (finalBuilderAddress != null) validatedFeeUnits else null
   return OrderValidationResult(
     value =
       ValidatedOrder(
@@ -210,6 +247,8 @@ fun OrderDraft.validate(
         takeProfitLimitPrice = optionalPrices["take-profit limit"],
         stopLossTriggerPrice = optionalPrices["stop-loss trigger"],
         stopLossLimitPrice = optionalPrices["stop-loss limit"],
+        builderAddress = finalBuilderAddress,
+        builderFeeUnits = finalBuilderFeeUnits,
       )
   )
 }

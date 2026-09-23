@@ -159,6 +159,19 @@ class PortfolioViewModelTest {
       feePayment: FeePayment,
     ): Flow<TransactionState> = emptyFlow()
 
+    override suspend fun approveBuilderFee(
+      builderAddress: String,
+      feeBps: UInt,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): TransactionState = TransactionState.Committed("0x")
+
+    override suspend fun revokeBuilderFee(
+      builderAddress: String,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): TransactionState = TransactionState.Committed("0x")
+
     override suspend fun refresh() {}
 
     override suspend fun refreshHistory() {}

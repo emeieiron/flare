@@ -126,6 +126,19 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<TransactionState>
 
+  suspend fun approveBuilderFee(
+    builderAddress: String,
+    feeBps: UInt,
+    prompt: VaultPrompt,
+    feePayment: FeePayment = FeePayment.SPONSORED,
+  ): TransactionState
+
+  suspend fun revokeBuilderFee(
+    builderAddress: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment = FeePayment.SPONSORED,
+  ): TransactionState
+
   suspend fun refresh()
 
   suspend fun refreshHistory()
@@ -334,6 +347,73 @@ class DefaultAccountRepository(
           this@DefaultAccountRepository.verifyTradingKey(subaccount, prompt)
       }
     )
+  }
+
+  private suspend fun resolveBuilderAddress(builderAddress: String): String {
+    val trimmed = builderAddress.trim()
+    if (trimmed.isBlank()) return trimmed
+    return runCatching {
+      val subaccounts = client.accounts.subaccounts(trimmed)
+      subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
+        ?: subaccounts.firstOrNull { it.isActive }?.address
+        ?: subaccounts.firstOrNull()?.address
+        ?: trimmed
+    }.getOrDefault(trimmed)
+  }
+
+  override suspend fun approveBuilderFee(
+    builderAddress: String,
+    feeBps: UInt,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): TransactionState {
+    require(feeBps in 1u..10u) { "Builder fee must be between 1 and 10 bps (up to 0.10%)" }
+    val saved = preferences.values.first()
+    val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
+    val resolvedBuilder = resolveBuilderAddress(builderAddress)
+    val units = feeBps.toULong() * 100uL
+    var terminal: TransactionState = TransactionState.Failed("Approval transaction did not start")
+    trading
+      .execute(
+        command = DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units),
+        prompt = prompt.copy(requireFreshAuthorization = true),
+        feePayment = feePayment,
+      )
+      .collect { state -> terminal = state }
+    if (terminal is TransactionState.Committed) {
+      preferences.setBuilderSupport(
+        builderAddress = resolvedBuilder,
+        builderFeeBps = feeBps.toInt(),
+        builderApproved = true,
+      )
+    }
+    return terminal
+  }
+
+  override suspend fun revokeBuilderFee(
+    builderAddress: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): TransactionState {
+    val saved = preferences.values.first()
+    val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
+    val resolvedBuilder = resolveBuilderAddress(builderAddress)
+    var terminal: TransactionState = TransactionState.Failed("Revocation transaction did not start")
+    trading
+      .execute(
+        command = DecibelCommand.RevokeMaxBuilderFee(subaccount, resolvedBuilder),
+        prompt = prompt.copy(requireFreshAuthorization = true),
+        feePayment = feePayment,
+      )
+      .collect { state -> terminal = state }
+    if (terminal is TransactionState.Committed) {
+      preferences.setBuilderSupport(
+        builderAddress = resolvedBuilder,
+        builderFeeBps = 0,
+        builderApproved = false,
+      )
+    }
+    return terminal
   }
 
   override fun depositUsdc(

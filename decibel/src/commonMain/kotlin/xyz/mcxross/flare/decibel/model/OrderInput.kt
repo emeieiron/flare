@@ -71,6 +71,8 @@ data class OrderDraft(
   val takeProfitLimitPrice: DecimalInput? = null,
   val stopLossTriggerPrice: DecimalInput? = null,
   val stopLossLimitPrice: DecimalInput? = null,
+  val builderAddress: String? = null,
+  val builderFeeBps: UInt? = null,
 )
 
 @Serializable
@@ -87,12 +89,18 @@ data class ValidatedOrder(
   val takeProfitLimitPrice: ULong?,
   val stopLossTriggerPrice: ULong?,
   val stopLossLimitPrice: ULong?,
+  val builderAddress: String? = null,
+  val builderFeeUnits: ULong? = null,
 )
 
 sealed interface OrderValidationError {
   data class InvalidDecimal(val field: String, val reason: String) : OrderValidationError
 
   data class InvalidMarketAddress(val field: String, val reason: String) : OrderValidationError
+
+  data class InvalidBuilderAddress(val field: String, val reason: String) : OrderValidationError
+
+  data class InvalidBuilderFee(val field: String, val reason: String) : OrderValidationError
 
   data class MarketMismatch(val field: String, val expected: String, val actual: String) :
     OrderValidationError

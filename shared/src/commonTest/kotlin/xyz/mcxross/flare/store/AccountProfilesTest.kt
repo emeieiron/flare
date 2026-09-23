@@ -86,6 +86,35 @@ class AccountProfilesTest {
       preferences.values.first().profiles.first { it.id == "first" }.withdrawal,
     )
   }
+
+  @Test
+  fun builderSupportPreferencesArePersistedPerProfile() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    preferences.setBuilderSupport("0xbuilder1", 5, true)
+
+    val saved1 = preferences.values.first()
+    assertEquals("0xbuilder1", saved1.builderAddress)
+    assertEquals(5, saved1.builderFeeBps)
+    assertTrue(saved1.builderApproved)
+
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x2"))
+    preferences.activateProfile("second")
+    val saved2 = preferences.values.first()
+    assertNull(saved2.builderAddress)
+    assertFalse(saved2.builderApproved)
+
+    preferences.activateProfile("first")
+    preferences.setBuilderFeeBps(10)
+    preferences.setBuilderAddress("0xcustom")
+    val updated1 = preferences.values.first()
+    assertEquals("0xcustom", updated1.builderAddress)
+    assertEquals(10, updated1.builderFeeBps)
+    assertTrue(updated1.builderApproved)
+
+    preferences.setBuilderApproved(false)
+    assertFalse(preferences.values.first().builderApproved)
+  }
 }
 
 private class MemoryPreferences(initial: Preferences = emptyPreferences()) :

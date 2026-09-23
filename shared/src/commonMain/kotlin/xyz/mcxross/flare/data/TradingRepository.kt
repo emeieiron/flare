@@ -668,7 +668,9 @@ internal fun DecibelCommand.requiredSigner(): TradingSigner =
     is DecibelCommand.Withdraw,
     is DecibelCommand.TransferCollateral,
     is DecibelCommand.DelegateTrading,
-    is DecibelCommand.RevokeDelegation -> TradingSigner.OWNER
+    is DecibelCommand.RevokeDelegation,
+    is DecibelCommand.ApproveMaxBuilderFee,
+    is DecibelCommand.RevokeMaxBuilderFee -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
     is DecibelCommand.PlaceOrder,
     is DecibelCommand.PlaceSpotOrder,
@@ -693,6 +695,8 @@ private fun DecibelCommand.journalName(): String =
     is DecibelCommand.CancelSpotOrder -> "CANCEL_SPOT_ORDER"
     is DecibelCommand.CancelPositionTpSl -> "CANCEL_POSITION_TP_SL"
     is DecibelCommand.SetPositionTpSl -> "SET_POSITION_TP_SL"
+    is DecibelCommand.ApproveMaxBuilderFee -> "APPROVE_MAX_BUILDER_FEE"
+    is DecibelCommand.RevokeMaxBuilderFee -> "REVOKE_MAX_BUILDER_FEE"
   }
 
 private fun PendingTransactionEntity.toDomain(): PendingTransaction =
@@ -720,4 +724,6 @@ internal fun DecibelCommand.subaccountAddress(): String? =
     is DecibelCommand.CancelSpotOrder -> subaccount
     is DecibelCommand.CancelPositionTpSl -> subaccount
     is DecibelCommand.SetPositionTpSl -> subaccount
+    is DecibelCommand.ApproveMaxBuilderFee -> subaccount
+    is DecibelCommand.RevokeMaxBuilderFee -> subaccount
   }

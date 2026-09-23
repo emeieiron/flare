@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
@@ -47,6 +48,7 @@ import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.FlareButton
+import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
@@ -75,6 +77,8 @@ fun SettingsScreen(
   modifier: Modifier = Modifier,
 ) {
   var showAccess by remember { mutableStateOf(false) }
+  var showBuilderSheet by remember { mutableStateOf(false) }
+  var showRevokeConfirm by remember { mutableStateOf(false) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
@@ -154,7 +158,7 @@ fun SettingsScreen(
     }
     if (connected) {
       SectionLabel("Manage")
-      if (state.profile.ownerAddress != null)
+      if (state.profile.ownerAddress != null) {
         ActionRow(
           "Trading access",
           "Devices and keys that can place orders",
@@ -164,6 +168,20 @@ fun SettingsScreen(
             onIntent(SettingsIntent.LoadDelegations)
           },
         )
+        val builderStatus =
+          if (state.preferences.builderApproved && state.preferences.builderFeeBps > 0) {
+            val bpsDouble = state.preferences.builderFeeBps / 100.0
+            "$bpsDouble% active"
+          } else {
+            "Off"
+          }
+        ActionRow(
+          "Builder support",
+          builderStatus,
+          Icons.Outlined.CardGiftcard,
+          onClick = { showBuilderSheet = true },
+        )
+      }
       ActionRow(
         "Account setup",
         "Add an account or finish setup",
@@ -327,6 +345,102 @@ fun SettingsScreen(
         }
       },
       dismissButton = { TextButton({ removal = null }) { Text("Cancel") } },
+      containerColor = FlareColors.Surface,
+    )
+  }
+  if (showBuilderSheet)
+    FlareSheet("Builder support", { showBuilderSheet = false }) {
+      Text(
+        "Support Flare development with a small contribution on orders " +
+          "(capped at 0.10% by Decibel protocol rule). You can adjust your rate or revoke approval on-chain at any time.",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      Spacer(Modifier.height(16.dp))
+      Text("Support rate", style = MaterialTheme.typography.titleSmall)
+      Spacer(Modifier.height(8.dp))
+      Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        listOf(0 to "Off", 2 to "0.02%", 5 to "0.05%", 10 to "0.10%").forEach { (bps, label) ->
+          val selected =
+            (state.preferences.builderFeeBps == bps) &&
+              (bps == 0 || state.preferences.builderApproved)
+          FlareChip(
+            label,
+            selected,
+            { onIntent(SettingsIntent.SetBuilderFeeBps(bps)) },
+            Modifier.weight(1f),
+            enabled = !state.busy,
+          )
+        }
+      }
+      Spacer(Modifier.height(20.dp))
+      Text("Builder address", style = MaterialTheme.typography.titleSmall)
+      Text(
+        "Contributions are directed to Flare’s builder address configured for this build.",
+        Modifier.padding(top = 4.dp, bottom = 6.dp),
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Text(
+        shortAddress(state.defaultBuilderAddress),
+        style = MaterialTheme.typography.bodyMedium,
+        color = FlareColors.TextPrimary,
+      )
+      Spacer(Modifier.height(20.dp))
+      Text("On-chain approval", style = MaterialTheme.typography.titleSmall)
+      Spacer(Modifier.height(6.dp))
+      if (state.preferences.builderApproved) {
+        ActionNotice(
+          "Approved on-chain. Decibel allows builder fees up to 0.10% for your subaccount.",
+          tone = NoticeTone.INFO,
+        )
+        Spacer(Modifier.height(12.dp))
+        FlareButton(
+          "Revoke on-chain approval",
+          { showRevokeConfirm = true },
+          Modifier.fillMaxWidth(),
+          enabled = !state.busy && state.profile.ownerAddress != null,
+          style = FlareButtonStyle.OUTLINE,
+        )
+      } else {
+        ActionNotice(
+          "Not approved on-chain. Selecting a rate above will ask your wallet to approve on-chain builder support.",
+          tone = NoticeTone.INFO,
+        )
+      }
+      if (state.busy) {
+        Spacer(Modifier.height(12.dp))
+        ActionNotice("Updating builder support…", tone = NoticeTone.PROGRESS)
+      }
+      state.error?.let {
+        Spacer(Modifier.height(12.dp))
+        ActionNotice(it, tone = NoticeTone.ALERT)
+      }
+    }
+  if (showRevokeConfirm) {
+    AlertDialog(
+      onDismissRequest = { showRevokeConfirm = false },
+      title = { Text("Revoke builder support?") },
+      text = {
+        Text(
+          "This submits an on-chain transaction revoking maximum builder fee approval for your subaccount. " +
+            "Your future orders will pay 0% builder fee."
+        )
+      },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showRevokeConfirm = false
+            onIntent(SettingsIntent.RevokeBuilderFee)
+          }
+        ) {
+          Text("Revoke", color = FlareColors.Negative)
+        }
+      },
+      dismissButton = { TextButton(onClick = { showRevokeConfirm = false }) { Text("Cancel") } },
       containerColor = FlareColors.Surface,
     )
   }

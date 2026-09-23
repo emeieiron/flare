@@ -7,6 +7,9 @@ data class FlareRuntimeConfig(
   val network: DecibelNetwork = DecibelNetwork.TESTNET,
   val workerBaseUrl: String = "http://127.0.0.1:8787",
   val appOrigin: String = "flare://mobile",
+  val defaultBuilderAddress: String =
+    "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+  val defaultBuilderFeeBps: UInt = 5u,
 ) {
   // Match the bounded settings used by the verified Decibel transaction lifecycle.
   // Kaptos' generic ceiling of 2,000,000 exceeds this app's Gas Station policy.

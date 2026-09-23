@@ -49,6 +49,11 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
   if (state.orderType == OrderType.MARKET) {
     DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
   }
+  if (estimate?.builderFeeAmount != null && estimate.builderFeeAmount > 0) {
+    val bps = estimate.builderFeeBps ?: 5
+    val percentStr = "${bps / 100.0}%"
+    DetailRow("Builder support ($percentStr)", "+${formatBalance(estimate.builderFeeAmount)}")
+  }
   // Only exits the person actually set are worth a row; the rest is noise on a confirmation screen.
   if (!isSpot) {
     OutcomeRow("Take profit", state.takeProfitInput, estimate?.profit, FlareColors.Positive)

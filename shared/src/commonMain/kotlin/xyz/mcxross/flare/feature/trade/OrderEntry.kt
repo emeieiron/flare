@@ -36,6 +36,10 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
     checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
     checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
   }
+  val activeBuilderAddress =
+    if (builderApproved && (builderFeeBps ?: 0) > 0) builderAddress else null
+  val activeBuilderFeeBps =
+    if (builderApproved && (builderFeeBps ?: 0) > 0) builderFeeBps?.toUInt() else null
   return OrderDraft(
     marketAddress = market.address,
     side = side,
@@ -47,6 +51,8 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
     takeProfitLimitPrice = takeProfit,
     stopLossTriggerPrice = stopLoss,
     stopLossLimitPrice = stopLoss,
+    builderAddress = activeBuilderAddress,
+    builderFeeBps = activeBuilderFeeBps,
   )
 }
 
@@ -70,6 +76,8 @@ internal data class OrderEstimate(
   val profit: Double?,
   val loss: Double?,
   val margin: Double,
+  val builderFeeAmount: Double? = null,
+  val builderFeeBps: Int? = null,
 )
 
 /** Gross P&L for the entered base-asset size; leverage must not multiply this value again. */
@@ -89,5 +97,15 @@ internal fun TradeUiState.orderEstimate(side: OrderSide): OrderEstimate? {
         ?.takeIf { it.isFinite() && it > 0 }
         ?.let { (it - entry) * size * direction }
         ?.takeIf(Double::isFinite)
-  return OrderEstimate(entry, value, pnl(takeProfitInput), pnl(stopLossInput), value / effLeverage)
+  val activeFeeBps = if (builderApproved && (builderFeeBps ?: 0) > 0) builderFeeBps else null
+  val builderFeeAmount = activeFeeBps?.let { bps -> value * (bps.toDouble() / 10_000.0) }
+  return OrderEstimate(
+    entryPrice = entry,
+    value = value,
+    profit = pnl(takeProfitInput),
+    loss = pnl(stopLossInput),
+    margin = value / effLeverage,
+    builderFeeAmount = builderFeeAmount,
+    builderFeeBps = activeFeeBps,
+  )
 }
