@@ -76,6 +76,7 @@ import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
 import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
+import xyz.mcxross.flare.feature.settings.AccountsRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
 import xyz.mcxross.flare.security.ForegroundWalletVault
@@ -98,6 +99,10 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 @Serializable data object OrdersDestination
 
 @Serializable data object SettingsDestination
+
+@Serializable data object AccountsDestination
+
+@Serializable data class AccountSetupDestination(val mode: String = "CREATE")
 
 @Composable
 fun App(
@@ -142,7 +147,6 @@ private fun FlareAppFlow() {
   val wallets: WalletRepository = koinInject()
   val persisted by appPreferences.values.collectAsStateWithLifecycle(initialValue = null)
   val walletProfile by wallets.profile.collectAsStateWithLifecycle(initialValue = null)
-  var forceSetup by rememberSaveable { mutableStateOf(false) }
   val hasCredentials = persisted?.profiles?.isNotEmpty() == true
   LaunchedEffect(foreground, hasCredentials, retry) {
     if (foreground && hasCredentials && !vault.unlocked.value) {
@@ -188,11 +192,6 @@ private fun FlareAppFlow() {
     }
   }
 
-  NavigationBackHandler(
-    state = rememberNavigationEventState(NavigationEventInfo.None),
-    isBackEnabled = forceSetup,
-    onBackCompleted = { forceSetup = false },
-  )
   // Submitted work settles without supervision: while anything is outstanding the app keeps
   // checking, and stops the moment the journal is clear.
   LaunchedEffect(unlocked) {
@@ -214,6 +213,11 @@ private fun FlareAppFlow() {
           backoffMs = (backoffMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
         }
       }
+  }
+  val hasCompletedProfile = persisted?.profiles?.any { it.onboardingComplete } == true
+  val lastCompletedProfileId = remember(persisted?.profiles, persisted?.activeProfileId) {
+    persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && it.onboardingComplete }?.id
+      ?: persisted?.profiles?.firstOrNull { it.onboardingComplete }?.id
   }
   val savedScreens = rememberSaveableStateHolder()
   if (persisted == null || walletProfile == null) {
@@ -241,34 +245,35 @@ private fun FlareAppFlow() {
         }
       }
     }
-  } else if (
-    persisted?.onboardingComplete != true ||
-      (walletProfile?.ownerAddress == null && walletProfile?.apiWalletAddress == null) ||
-      forceSetup
-  ) {
-    OnboardingRoute(onCompleted = { forceSetup = false })
+  } else if (!hasCompletedProfile) {
+    OnboardingRoute(onCompleted = {})
   } else {
-    key(persisted?.activeProfileId, persisted?.selectedSubaccount) {
+    key(lastCompletedProfileId, persisted?.selectedSubaccount) {
       savedScreens.SaveableStateProvider(
-        "shell:${persisted?.activeProfileId}:${persisted?.selectedSubaccount}"
+        "shell:${lastCompletedProfileId}:${persisted?.selectedSubaccount}"
       ) {
-        FlareShell(onOpenSetup = { forceSetup = true })
+        FlareShell()
       }
     }
   }
 }
 
 @Composable
-private fun FlareShell(onOpenSetup: () -> Unit) {
+private fun FlareShell() {
   val navController = rememberNavController()
   val backStack by navController.currentBackStackEntryAsState()
   val destination = backStack?.destination
-  val isMarketDetail = destination?.hasRoute<TradeDestination>() == true
+  val isDetailDestination =
+    destination?.hasRoute<TradeDestination>() == true ||
+      destination?.hasRoute<AccountsDestination>() == true ||
+      destination?.hasRoute<AccountSetupDestination>() == true
   val selectedIndex =
     when {
       destination?.hasRoute<PortfolioDestination>() == true -> 1
       destination?.hasRoute<OrdersDestination>() == true -> 2
-      destination?.hasRoute<SettingsDestination>() == true -> 3
+      destination?.hasRoute<SettingsDestination>() == true ||
+        destination?.hasRoute<AccountsDestination>() == true ||
+        destination?.hasRoute<AccountSetupDestination>() == true -> 3
       else -> 0
     }
   val navigationItems = remember {
@@ -295,10 +300,12 @@ private fun FlareShell(onOpenSetup: () -> Unit) {
     }
   }
 
+  val onOpenSetup = { navController.navigate(AccountsDestination) }
+
   Scaffold(
     contentWindowInsets = WindowInsets.safeDrawing,
     bottomBar = {
-      if (!isMarketDetail)
+      if (!isDetailDestination)
         FlareBottomNavigation(
           items = navigationItems,
           selectedIndex = selectedIndex,
@@ -339,7 +346,28 @@ private fun FlareShell(onOpenSetup: () -> Unit) {
         )
       }
       composable<OrdersDestination> { OrdersRoute(onOpenSetup) }
-      composable<SettingsDestination> { SettingsRoute(onOpenSetup) }
+      composable<SettingsDestination> {
+        SettingsRoute(
+          onOpenAccounts = { navController.navigate(AccountsDestination) },
+          onOpenSetup = onOpenSetup,
+        )
+      }
+      composable<AccountsDestination> {
+        AccountsRoute(
+          onBack = { navController.popBackStack() },
+          onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
+          onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
+          onContinueSetup = { navController.navigate(AccountSetupDestination("CONTINUE")) },
+        )
+      }
+      composable<AccountSetupDestination> { backStackEntry ->
+        val mode = backStackEntry.toRoute<AccountSetupDestination>().mode
+        OnboardingRoute(
+          initialMode = mode,
+          onCompleted = { navController.popBackStack() },
+          onBack = { navController.popBackStack() },
+        )
+      }
     }
   }
 }

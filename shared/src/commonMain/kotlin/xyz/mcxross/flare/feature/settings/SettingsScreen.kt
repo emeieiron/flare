@@ -60,6 +60,7 @@ import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun SettingsRoute(
+  onOpenAccounts: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
   modifier: Modifier = Modifier,
   viewModel: SettingsViewModel = koinViewModel(),
@@ -67,13 +68,14 @@ fun SettingsRoute(
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
-  SettingsScreen(state, viewModel::onIntent, onOpenSetup, modifier)
+  SettingsScreen(state, viewModel::onIntent, onOpenAccounts, onOpenSetup, modifier)
 }
 
 @Composable
 fun SettingsScreen(
   state: SettingsUiState,
   onIntent: (SettingsIntent) -> Unit,
+  onOpenAccounts: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
@@ -103,8 +105,15 @@ fun SettingsScreen(
     FlareTopBar("Account")
     if (connected) {
       val address = (state.profile.ownerAddress ?: state.profile.apiWalletAddress).orEmpty()
+      val completedProfiles = state.preferences.profiles.filter { it.onboardingComplete }
+      val activeIndex =
+        completedProfiles
+          .indexOfFirst { it.id == state.preferences.activeProfileId }
+          .takeIf { it >= 0 } ?: 0
+      val accountLabel = "Account ${activeIndex + 1}"
+
       Text(
-        if (state.profile.apiOnly) "Trading account" else "Your wallet",
+        accountLabel,
         style = MaterialTheme.typography.headlineMedium,
       )
       Row(
@@ -141,25 +150,19 @@ fun SettingsScreen(
       )
       FlareButton(
         "Create or import account",
-        onOpenSetup,
+        onOpenAccounts,
         Modifier.fillMaxWidth().padding(top = 24.dp),
       )
     }
-    if (state.preferences.profiles.size > 1) {
-      SectionLabel("Accounts")
-      state.preferences.profiles.forEach { profile ->
-        val selected = profile.id == state.preferences.activeProfileId
-        ActionRow(
-          shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
-          if (selected) "Selected"
-          else if (profile.ownerAddress == null) "Trading only" else "Tap to switch",
-          enabled = !state.busy && !selected,
-          onClick = { onIntent(SettingsIntent.SelectProfile(profile.id)) },
-        )
-      }
-    }
     if (connected) {
+      val completedCount = state.preferences.profiles.count { it.onboardingComplete }
       SectionLabel("Manage")
+      ActionRow(
+        "Accounts",
+        "$completedCount connected · Switch, add, or import",
+        Icons.Outlined.AccountBalanceWallet,
+        onClick = onOpenAccounts,
+      )
       if (state.profile.ownerAddress != null) {
         ActionRow(
           "Trading access",
@@ -190,12 +193,6 @@ fun SettingsScreen(
           onClick = { showReferralSheet = true },
         )
       }
-      ActionRow(
-        "Account setup",
-        "Add an account or finish setup",
-        Icons.Outlined.AccountBalanceWallet,
-        onClick = onOpenSetup,
-      )
       ActionRow(
         "Security & recovery",
         "Back up keys and manage this device",

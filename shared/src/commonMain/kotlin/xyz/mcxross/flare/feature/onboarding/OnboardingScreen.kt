@@ -20,7 +20,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -57,29 +61,54 @@ import xyz.mcxross.flare.design.shortAddress
 @Composable
 fun OnboardingRoute(
   onCompleted: () -> Unit,
+  onBack: (() -> Unit)? = null,
+  initialMode: String? = null,
   modifier: Modifier = Modifier,
   viewModel: OnboardingViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  LaunchedEffect(initialMode) {
+    if (initialMode != null) {
+      viewModel.onIntent(OnboardingIntent.InitializeMode(initialMode))
+    }
+  }
   LaunchedEffect(viewModel) {
-    viewModel.effects.collect { effect -> if (effect == OnboardingEffect.Completed) onCompleted() }
+    viewModel.effects.collect { effect ->
+      when (effect) {
+        OnboardingEffect.Completed -> onCompleted()
+        OnboardingEffect.Cancelled -> onBack?.invoke() ?: onCompleted()
+      }
+    }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     viewModel.onIntent(OnboardingIntent.ClearSensitiveState)
   }
-  OnboardingScreen(state, viewModel::onIntent, modifier)
+  OnboardingScreen(
+    state = state,
+    onIntent = viewModel::onIntent,
+    onBack = onBack,
+    initialMode = initialMode,
+    modifier = modifier,
+  )
 }
 
 @Composable
 fun OnboardingScreen(
   state: OnboardingUiState,
   onIntent: (OnboardingIntent) -> Unit,
+  onBack: (() -> Unit)? = null,
+  initialMode: String? = null,
   modifier: Modifier = Modifier,
 ) {
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
-    isBackEnabled = state.step != OnboardingStep.WELCOME,
-    onBackCompleted = { if (!state.busy) onIntent(OnboardingIntent.Back) },
+    isBackEnabled = state.step != OnboardingStep.WELCOME || onBack != null,
+    onBackCompleted = {
+      if (!state.busy) {
+        if (state.step == OnboardingStep.WELCOME && onBack != null) onBack()
+        else onIntent(OnboardingIntent.Back)
+      }
+    },
   )
   BoxWithConstraints(
     modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()
@@ -92,7 +121,16 @@ fun OnboardingScreen(
         .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
       if (state.step == OnboardingStep.WELCOME) {
-        WelcomeStep(state, onIntent)
+        if (initialMode != null) {
+          Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = pageHeight),
+            contentAlignment = Alignment.Center,
+          ) {
+            CircularProgressIndicator(strokeWidth = 2.dp)
+          }
+        } else {
+          WelcomeStep(state, onIntent, onBack)
+        }
       } else {
         BackBar("Your account", { if (!state.busy) onIntent(OnboardingIntent.Back) })
         Spacer(Modifier.height(32.dp))
@@ -133,11 +171,17 @@ fun OnboardingScreen(
 private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
   state: OnboardingUiState,
   onIntent: (OnboardingIntent) -> Unit,
+  onBack: (() -> Unit)? = null,
 ) {
   Row(
     Modifier.fillMaxWidth().padding(top = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
+    if (onBack != null) {
+      IconButton(onClick = onBack, modifier = Modifier.padding(end = 8.dp)) {
+        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+      }
+    }
     Text("flare", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.weight(1f))
     Text(
@@ -162,32 +206,11 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
     style = MaterialTheme.typography.bodyLarge,
     color = FlareColors.TextSecondary,
   )
-  if (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
-    WalletSummary(state)
-  state.profiles
-    .filter { it.id != state.activeProfileId }
-    .forEach { profile ->
-      FlareButton(
-        "Use " + shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
-        { onIntent(OnboardingIntent.SelectProfile(profile.id)) },
-        Modifier.fillMaxWidth().padding(top = 12.dp),
-        !state.busy,
-        FlareButtonStyle.OUTLINE,
-      )
-    }
   Spacer(Modifier.weight(1f))
   Spacer(Modifier.height(32.dp))
   FlareButton(
-    if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null)
-      "Create account"
-    else "Continue account setup",
-    {
-      onIntent(
-        if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null)
-          OnboardingIntent.CreateOwner
-        else OnboardingIntent.ContinueSetup
-      )
-    },
+    "Create account",
+    { onIntent(OnboardingIntent.CreateOwner) },
     Modifier.fillMaxWidth(),
     enabled = !state.busy,
   )
@@ -196,18 +219,9 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
     "Import account",
     { onIntent(OnboardingIntent.ShowImport) },
     Modifier.fillMaxWidth(),
-    !state.busy,
-    FlareButtonStyle.OUTLINE,
+    enabled = !state.busy,
+    style = FlareButtonStyle.OUTLINE,
   )
-  if (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null) {
-    FlareButton(
-      "Create another account",
-      { onIntent(OnboardingIntent.CreateOwner) },
-      Modifier.fillMaxWidth().padding(top = 12.dp),
-      !state.busy,
-      FlareButtonStyle.OUTLINE,
-    )
-  }
 }
 
 @Composable
@@ -286,26 +300,7 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
   )
 }
 
-@Composable
-private fun WalletSummary(state: OnboardingUiState) {
-  Column(
-    modifier =
-      Modifier.fillMaxWidth()
-        .padding(top = 20.dp)
-        .background(FlareColors.Surface, MaterialTheme.shapes.medium)
-        .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    state.profile.ownerAddress?.let { AddressRow("Account", it) }
-    state.profile.apiWalletAddress?.let { AddressRow("This device", it) }
-  }
-}
 
-@Composable
-private fun AddressRow(label: String, address: String) {
-  Text(label, style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
-  Text(shortAddress(address), style = MaterialTheme.typography.labelMedium)
-}
 
 @Composable
 private fun BackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {

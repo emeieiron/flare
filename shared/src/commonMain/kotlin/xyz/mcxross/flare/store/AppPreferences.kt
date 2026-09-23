@@ -235,6 +235,16 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
   }
 
+  suspend fun removeProfile(id: String) {
+    dataStore.edit { preferences ->
+      val profiles = preferences.profiles().filterNot { it.id == id }
+      preferences.writeProfiles(profiles)
+      if (preferences[ActiveProfileKey] == id) {
+        preferences[ActiveProfileKey] = profiles.firstOrNull()?.id ?: LEGACY_PROFILE_ID
+      }
+    }
+  }
+
   private suspend fun updateActiveProfile(transform: (AccountProfile) -> AccountProfile) {
     dataStore.edit { preferences ->
       val profiles = preferences.profiles()
@@ -276,6 +286,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   private fun Preferences.activeProfile(profiles: List<AccountProfile>): AccountProfile? =
     profiles.firstOrNull { it.id == this[ActiveProfileKey] } ?: profiles.firstOrNull()
+
 
   /** A profile without keys holds nothing worth remembering, so removing both removes it. */
   private fun MutablePreferences.writeProfiles(profiles: List<AccountProfile>) {
