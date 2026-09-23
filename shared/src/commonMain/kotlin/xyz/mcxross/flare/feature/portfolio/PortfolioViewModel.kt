@@ -38,6 +38,8 @@ import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.SlippageBps
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
+import xyz.mcxross.flare.decibel.model.VaultInfo
+import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.absoluteSize
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
@@ -64,9 +66,15 @@ enum class PortfolioMetric(val label: String, val wireValue: String) {
   PNL("Realized PnL", "pnl"),
 }
 
+enum class VaultActionMode {
+  DEPOSIT,
+  REDEEM,
+}
+
 enum class PortfolioTab(val title: String) {
   POSITIONS("Positions"),
   HOLDINGS("Holdings"),
+  VAULTS("Vaults"),
 }
 
 data class SpotHolding(
@@ -107,6 +115,12 @@ data class PortfolioUiState(
   val streak: TradingStreak? = null,
   val amps: AmpsBreakdown? = null,
   val tier: TierInfo? = null,
+  val vaults: List<VaultInfo> = emptyList(),
+  val accountVaults: List<AccountVaultPerformance> = emptyList(),
+  val selectedVault: VaultInfo? = null,
+  val vaultAction: VaultActionMode? = null,
+  val vaultAmountInput: String = "",
+  val vaultTransaction: TransactionState? = null,
   val busy: Boolean = false,
   val actionError: String? = null,
 ) {
@@ -117,7 +131,8 @@ data class PortfolioUiState(
     get() {
       val perpEquity = account.overview?.equityBalance ?: 0.0
       val spotAssetsValue = spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
-      return perpEquity + spotAssetsValue
+      val vaultAssetsValue = accountVaults.sumOf { it.currentValue }
+      return perpEquity + spotAssetsValue + vaultAssetsValue
     }
 
   val totalSpotValue: Double
@@ -163,6 +178,16 @@ sealed interface PortfolioIntent {
   data object ConfirmPositionSelfPay : PortfolioIntent
 
   data object TopUpApiWallet : PortfolioIntent
+
+  data class OpenVaultAction(val vault: VaultInfo, val mode: VaultActionMode) : PortfolioIntent
+
+  data class ChangeVaultAmount(val value: String) : PortfolioIntent
+
+  data object SubmitVaultAction : PortfolioIntent
+
+  data object DismissVaultAction : PortfolioIntent
+
+  data object RefreshVaults : PortfolioIntent
 }
 
 class PortfolioViewModel(
@@ -190,6 +215,7 @@ class PortfolioViewModel(
           fetchSpotBalances(subaccount)
           fetchPortfolioChart()
           fetchStreaksAndAmps()
+          refreshVaults()
         }
     }
     viewModelScope.launch {
@@ -316,7 +342,12 @@ class PortfolioViewModel(
 
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
-      is PortfolioIntent.SelectTab -> local.update { it.copy(selectedTab = intent.tab) }
+      is PortfolioIntent.SelectTab -> {
+        local.update { it.copy(selectedTab = intent.tab) }
+        if (intent.tab == PortfolioTab.VAULTS) {
+          refreshVaults()
+        }
+      }
       is PortfolioIntent.SelectChartRange -> {
         local.update { it.copy(chartRange = intent.range) }
         fetchPortfolioChart()
@@ -333,6 +364,7 @@ class PortfolioViewModel(
             accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
             fetchPortfolioChart()
             fetchStreaksAndAmps()
+            refreshVaults()
           }
         }
       is PortfolioIntent.ChangeWithdrawalDestination ->
@@ -411,6 +443,36 @@ class PortfolioViewModel(
       PortfolioIntent.ConfirmPositionSelfPay ->
         lastPositionCommand?.let { executePositionCommand(it, FeePayment.SELF_PAY) }
       PortfolioIntent.TopUpApiWallet -> topUpApiWallet()
+      is PortfolioIntent.OpenVaultAction ->
+        local.update {
+          it.copy(
+            selectedVault = intent.vault,
+            vaultAction = intent.mode,
+            vaultAmountInput = "",
+            vaultTransaction = null,
+            actionError = null,
+          )
+        }
+      is PortfolioIntent.ChangeVaultAmount ->
+        local.update {
+          it.copy(
+            vaultAmountInput = decimalCharacters(intent.value),
+            vaultTransaction = null,
+            actionError = null,
+          )
+        }
+      PortfolioIntent.SubmitVaultAction -> submitVaultAction()
+      PortfolioIntent.DismissVaultAction ->
+        local.update {
+          it.copy(
+            selectedVault = null,
+            vaultAction = null,
+            vaultAmountInput = "",
+            vaultTransaction = null,
+            actionError = null,
+          )
+        }
+      PortfolioIntent.RefreshVaults -> refreshVaults()
     }
   }
 
@@ -623,6 +685,50 @@ class PortfolioViewModel(
           }
       } finally {
         local.update { it.copy(busy = false) }
+      }
+    }
+  }
+
+  fun refreshVaults() {
+    viewModelScope.launch {
+      val v = runCatching { accounts.vaults() }.getOrDefault(emptyList())
+      val perf = runCatching { accounts.accountVaultPerformance() }.getOrDefault(emptyList())
+      local.update { it.copy(vaults = v, accountVaults = perf) }
+    }
+  }
+
+  private fun submitVaultAction() {
+    val state = local.value
+    val vault = state.selectedVault ?: return
+    val mode = state.vaultAction ?: return
+    val amount = state.vaultAmountInput.trim()
+    if (amount.isBlank() || (amount.toDoubleOrNull() ?: 0.0) <= 0.0) {
+      local.update { it.copy(actionError = "Enter a valid positive amount") }
+      return
+    }
+    launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
+      val prompt =
+        VaultPrompt(
+          title = if (mode == VaultActionMode.DEPOSIT) "Contribute to ${vault.name}" else "Redeem from ${vault.name}",
+          subtitle = "Confirm with owner wallet",
+        )
+      val flow =
+        if (mode == VaultActionMode.DEPOSIT) {
+          accounts.contributeToVault(vault.address, amount, prompt)
+        } else {
+          accounts.redeemFromVault(vault.address, amount, prompt)
+        }
+      flow.collect { transaction ->
+        local.update { it.copy(vaultTransaction = transaction) }
+      }
+      when (val terminal = local.value.vaultTransaction) {
+        is TransactionState.Committed -> {
+          refreshVaults()
+          accounts.refresh()
+          local.update { it.copy(selectedVault = null, vaultAction = null, vaultAmountInput = "") }
+        }
+        is TransactionState.Failed -> error(terminal.message)
+        else -> Unit
       }
     }
   }
