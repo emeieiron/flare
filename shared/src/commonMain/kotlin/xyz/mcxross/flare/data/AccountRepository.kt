@@ -106,6 +106,8 @@ interface AccountRepository {
 
   suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount>
 
+  suspend fun subaccounts(owner: String): List<Subaccount>
+
   /** Selects the trading account to use and loads it with whichever key this device holds. */
   suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt)
 
@@ -275,8 +277,11 @@ class DefaultAccountRepository(
       wallets.profile.first().ownerAddress
         ?: error("An owner wallet is required to discover subaccounts")
     sessions.authenticateOwner(subaccount = null, prompt = prompt)
-    return client.accounts.subaccounts(owner).filter(Subaccount::isActive)
+    return subaccounts(owner)
   }
+
+  override suspend fun subaccounts(owner: String): List<Subaccount> =
+    client.accounts.subaccounts(owner).filter(Subaccount::isActive)
 
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }
@@ -302,13 +307,17 @@ class DefaultAccountRepository(
     sessions.authenticateOwner(null, prompt.copy(requireFreshAuthorization = false))
     val reference = saved.profiles.first { it.id == saved.activeProfileId }.creationReference
     if (reference != null) {
-      val resolved = trading.transactionStatus(reference)
-      if (resolved is TransactionState.Failed && resolved.committed)
+      val isPending = trading.pendingTransactions.first().any { it.operation == "CREATE_SUBACCOUNT" }
+      if (!isPending) {
         preferences.setCreationReference(saved.activeProfileId, null)
-      return resolved
-    }
-    check(client.accounts.subaccounts(owner).none { it.isActive }) {
-      "A trading account already exists. Check accounts again."
+      } else {
+        val resolved = trading.transactionStatus(reference)
+        if (resolved is TransactionState.Committed || (resolved is TransactionState.Failed && resolved.committed)) {
+          preferences.setCreationReference(saved.activeProfileId, null)
+        } else {
+          return resolved
+        }
+      }
     }
     trading.reconcilePending()
     check(trading.pendingTransactions.first().none { it.operation == "CREATE_SUBACCOUNT" }) {
@@ -329,7 +338,7 @@ class DefaultAccountRepository(
           preferences.setCreationReference(saved.activeProfileId, null)
         }
         if (state is TransactionState.Committed) {
-          preferences.setCreationReference(saved.activeProfileId, state.hash)
+          preferences.setCreationReference(saved.activeProfileId, null)
           setupApproval =
             Triple(saved.activeProfileId, wallets.authorizationGeneration, approvalStartedAt)
         }
