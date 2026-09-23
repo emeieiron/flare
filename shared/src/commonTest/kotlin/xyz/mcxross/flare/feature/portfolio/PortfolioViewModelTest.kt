@@ -491,5 +491,33 @@ class PortfolioViewModelTest {
     val dismissedState = vm.uiState.first { it.selectedVault == null }
     kotlin.test.assertNull(dismissedState.selectedVault)
     kotlin.test.assertNull(dismissedState.vaultAction)
+
+    // Test opening redeem action
+    vm.onIntent(PortfolioIntent.OpenVaultAction(testVault, VaultActionMode.REDEEM))
+    val redeemSheetState = vm.uiState.first { it.selectedVault != null }
+    assertEquals("0xvault1", redeemSheetState.selectedVault?.address)
+    assertEquals(VaultActionMode.REDEEM, redeemSheetState.vaultAction)
+
+    // Below 5 shares minimum
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("2.0"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    assertEquals(
+      "The minimum redemption for DLP vaults is 5 shares.",
+      vm.uiState.first().actionError,
+    )
+
+    // Exceeds available shares (100)
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("150.0"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    assertEquals(
+      "You cannot redeem more than your balance of 100 shares.",
+      vm.uiState.first().actionError,
+    )
+
+    // Valid share amount
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("50.0"))
+    assertEquals("50.0", vm.uiState.first().vaultAmountInput)
+
+    vm.onIntent(PortfolioIntent.DismissVaultAction)
   }
 }

@@ -228,18 +228,116 @@ data class VaultInfo(
   val description: String = "",
   @SerialName("total_shares") val totalShares: Double = 0.0,
   @SerialName("share_price") val sharePrice: Double = 1.0,
-  @SerialName("total_aum") val totalAum: Double = 0.0,
-  @SerialName("performance_fee_bps") val performanceFeeBps: Int = 0,
-  @SerialName("lockup_seconds") val lockupSeconds: Long = 0L,
-  @SerialName("is_active") val isActive: Boolean = true,
-)
+  @SerialName("tvl") val tvl: Double? = null,
+  @SerialName("total_aum") val totalAumFallback: Double = 0.0,
+  @SerialName("profit_share") val profitShare: Double? = null,
+  @SerialName("performance_fee_bps") val performanceFeeBpsFallback: Int = 0,
+  @SerialName("lockdown_period_s") val lockdownPeriodS: Long? = null,
+  @SerialName("lockup_seconds") val lockupSecondsFallback: Long = 0L,
+  @SerialName("status") val status: String? = null,
+  @SerialName("is_active") val isActiveFallback: Boolean = true,
+) {
+  constructor(
+    address: String = "",
+    name: String = "",
+    manager: String = "",
+    description: String = "",
+    totalShares: Double = 0.0,
+    sharePrice: Double = 1.0,
+    totalAum: Double = 0.0,
+    performanceFeeBps: Int = 0,
+    lockupSeconds: Long = 0L,
+    isActive: Boolean = true,
+  ) : this(
+    address = address,
+    name = name,
+    manager = manager,
+    description = description,
+    totalShares = totalShares,
+    sharePrice = sharePrice,
+    tvl = null,
+    totalAumFallback = totalAum,
+    profitShare = null,
+    performanceFeeBpsFallback = performanceFeeBps,
+    lockdownPeriodS = null,
+    lockupSecondsFallback = lockupSeconds,
+    status = null,
+    isActiveFallback = isActive,
+  )
+
+  val totalAum: Double get() = tvl ?: totalAumFallback
+  val performanceFeeBps: Int
+    get() = if (performanceFeeBpsFallback > 0) performanceFeeBpsFallback else ((profitShare ?: 0.0) * 100.0).toInt()
+  val performanceFeePercent: Double get() = profitShare ?: (performanceFeeBpsFallback / 100.0)
+  val lockupSeconds: Long get() = lockdownPeriodS ?: lockupSecondsFallback
+  val isActive: Boolean
+    get() = if (status != null) status.equals("active", ignoreCase = true) else isActiveFallback
+}
 
 @Serializable
 data class AccountVaultPerformance(
   val vault: VaultInfo = VaultInfo(),
-  @SerialName("current_num_shares") val currentNumShares: Double = 0.0,
-  @SerialName("current_value") val currentValue: Double = 0.0,
-  @SerialName("net_deposits") val netDeposits: Double = 0.0,
-  @SerialName("realized_pnl") val realizedPnl: Double = 0.0,
-  @SerialName("returns_percent") val returnsPercent: Double = 0.0,
-)
+  @SerialName("current_num_shares") val rawShares: Double = 0.0,
+  @SerialName("current_value_of_shares") val currentValueOfShares: Double? = null,
+  @SerialName("current_value") val currentValueFallback: Double = 0.0,
+  @SerialName("total_deposited") val totalDeposited: Double = 0.0,
+  @SerialName("total_withdrawn") val totalWithdrawn: Double = 0.0,
+  @SerialName("net_deposits") val netDepositsFallback: Double = 0.0,
+  @SerialName("all_time_earned") val allTimeEarned: Double = 0.0,
+  @SerialName("realized_pnl") val realizedPnlFallback: Double = 0.0,
+  @SerialName("all_time_return") val allTimeReturn: Double? = null,
+  @SerialName("returns_percent") val returnsPercentFallback: Double = 0.0,
+  @SerialName("share_price") val positionSharePrice: Double? = null,
+) {
+  constructor(
+    vault: VaultInfo = VaultInfo(),
+    currentNumShares: Double = 0.0,
+    currentValue: Double = 0.0,
+    netDeposits: Double = 0.0,
+    realizedPnl: Double = 0.0,
+    returnsPercent: Double = 0.0,
+  ) : this(
+    vault = vault,
+    rawShares = currentNumShares,
+    currentValueOfShares = null,
+    currentValueFallback = currentValue,
+    totalDeposited = 0.0,
+    totalWithdrawn = 0.0,
+    netDepositsFallback = netDeposits,
+    allTimeEarned = 0.0,
+    realizedPnlFallback = realizedPnl,
+    allTimeReturn = null,
+    returnsPercentFallback = returnsPercent,
+    positionSharePrice = null,
+  )
+
+  /**
+   * Normalized share count. Decibel Move contracts store shares with 6 decimals (1 share = 1,000,000 base units).
+   * The Decibel indexer API returns raw integer share units (e.g. 10,000,000 for 10 shares).
+   * This property presents normalized, human-readable shares for intuitive understanding.
+   */
+  val currentNumShares: Double
+    get() = if (rawShares >= 100_000.0) {
+      rawShares / 1_000_000.0
+    } else {
+      rawShares
+    }
+
+  val rawNumShares: Long get() = rawShares.toLong()
+
+  val currentValue: Double
+    get() = currentValueOfShares ?: if (currentValueFallback > 0.0) currentValueFallback else (currentNumShares * effectiveSharePrice)
+
+  val netDeposits: Double
+    get() = if (netDepositsFallback != 0.0) netDepositsFallback else (totalDeposited - totalWithdrawn)
+
+  val realizedPnl: Double
+    get() = if (realizedPnlFallback != 0.0) realizedPnlFallback else allTimeEarned
+
+  val returnsPercent: Double
+    get() = allTimeReturn ?: returnsPercentFallback
+
+  val effectiveSharePrice: Double
+    get() = positionSharePrice ?: vault.sharePrice
+}
+

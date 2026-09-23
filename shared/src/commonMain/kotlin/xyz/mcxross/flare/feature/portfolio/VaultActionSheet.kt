@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,12 +70,16 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       DetailRow("Performance fee", "${vault.performanceFeeBps / 100.0}%")
 
       val userPerformance = state.accountVaults.firstOrNull { it.vault.address == vault.address }
+      val availableShares = userPerformance?.currentNumShares ?: 0.0
+      val effectivePrice = userPerformance?.effectiveSharePrice ?: vault.sharePrice
+      val parsedAmount = state.vaultAmountInput.toDoubleOrNull() ?: 0.0
+
       if (mode == VaultActionMode.DEPOSIT) {
         DetailRow("Available to deposit", formatBalance(state.collateralBalance))
       } else {
         DetailRow(
           "Shares held",
-          "${formatQuantity(userPerformance?.currentNumShares ?: 0.0, 4)} shares",
+          "${formatQuantity(availableShares, 4)} shares",
         )
         DetailRow("Current value", formatBalance(userPerformance?.currentValue ?: 0.0))
       }
@@ -83,12 +88,40 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         value = state.vaultAmountInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeVaultAmount(it)) },
         label = {
-          Text(if (mode == VaultActionMode.DEPOSIT) "Amount in USDC (min. 10)" else "Shares to redeem")
+          Text(if (mode == VaultActionMode.DEPOSIT) "Amount in USDC (min. 10)" else "Shares to redeem (min. 5)")
         },
+        trailingIcon =
+          if (mode == VaultActionMode.REDEEM && availableShares > 0.0) {
+            {
+              TextButton(
+                onClick = {
+                  val maxStr =
+                    if (availableShares % 1.0 == 0.0) availableShares.toLong().toString()
+                    else formatQuantity(availableShares, 4)
+                  onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
+                },
+                enabled = !state.busy,
+              ) {
+                Text("MAX", color = FlareColors.Positive, style = MaterialTheme.typography.labelMedium)
+              }
+            }
+          } else null,
         supportingText = {
           if (mode == VaultActionMode.DEPOSIT) {
             Text(
               "Decibel protocol requires a minimum deposit of 10 USDC.",
+              style = MaterialTheme.typography.labelSmall,
+              color = FlareColors.TextTertiary,
+            )
+          } else {
+            val helper =
+              when {
+                parsedAmount > 0.0 ->
+                  "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC · Min. 5 shares"
+                else -> "Decibel protocol requires a minimum redemption of 5 shares."
+              }
+            Text(
+              helper,
               style = MaterialTheme.typography.labelSmall,
               color = FlareColors.TextTertiary,
             )
