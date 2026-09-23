@@ -389,6 +389,34 @@ private fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingInt
     Modifier.padding(top = 12.dp),
     color = FlareColors.TextSecondary,
   )
+  Spacer(Modifier.height(24.dp))
+  Column(
+    Modifier.fillMaxWidth()
+      .background(FlareColors.Surface, MaterialTheme.shapes.medium)
+      .padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Column(Modifier.weight(1f)) {
+        Text("Support Flare development", style = MaterialTheme.typography.bodyLarge)
+        Text(
+          "Contribute 0.05% on trades to support Flare. You can adjust or revoke this anytime in Settings.",
+          modifier = Modifier.padding(top = 4.dp),
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+      Spacer(Modifier.size(16.dp))
+      Switch(
+        checked = state.builderOptIn,
+        onCheckedChange = { onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
+        enabled = !state.busy,
+      )
+    }
+  }
   Spacer(Modifier.height(28.dp))
   FlareButton(
     text = "Enable trading",

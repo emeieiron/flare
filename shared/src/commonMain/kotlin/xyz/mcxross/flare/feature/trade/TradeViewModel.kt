@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRange
@@ -74,6 +75,9 @@ data class TradeUiState(
   val topUpTransaction: TransactionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
+  val builderAddress: String? = null,
+  val builderFeeBps: Int? = null,
+  val builderApproved: Boolean = false,
 ) {
   fun availableDisplay(side: OrderSide): String? {
     val isSpot = quote?.market?.assetType == AssetType.SPOT
@@ -130,6 +134,7 @@ class TradeViewModel(
   private val accounts: AccountRepository,
   private val wallets: WalletRepository,
   private val preferences: AppPreferences,
+  private val runtime: FlareRuntimeConfig,
 ) : ViewModel() {
   private val mutableUiState = MutableStateFlow(TradeUiState())
   val uiState: StateFlow<TradeUiState> = mutableUiState.asStateFlow()
@@ -191,6 +196,9 @@ class TradeViewModel(
             showMacd = values.showMacd,
             slippageBps = values.slippageBps,
             tradingAccountAddress = values.selectedSubaccount,
+            builderAddress = values.builderAddress ?: runtime.defaultBuilderAddress,
+            builderFeeBps = values.builderFeeBps,
+            builderApproved = values.builderApproved,
           )
         }
         if (rangeChanged) mutableUiState.value.quote?.let { loadCandles(it, range) }
@@ -563,6 +571,8 @@ internal fun OrderValidationError.message(): String =
   when (this) {
     is OrderValidationError.InvalidDecimal -> "$field: $reason"
     is OrderValidationError.InvalidMarketAddress -> "$field: $reason"
+    is OrderValidationError.InvalidBuilderAddress -> "$field: $reason"
+    is OrderValidationError.InvalidBuilderFee -> "$field: $reason"
     is OrderValidationError.MarketMismatch -> "$field does not match the selected market"
     is OrderValidationError.Overflow -> "$field is too large"
     is OrderValidationError.TooPrecise -> "$field supports at most $allowedDecimals decimals"

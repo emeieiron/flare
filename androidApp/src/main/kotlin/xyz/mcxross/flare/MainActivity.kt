@@ -21,7 +21,11 @@ class MainActivity : FragmentActivity() {
     val databaseBuilder = androidDatabaseBuilder(applicationContext)
     val preferences = androidPreferencesDataStore(applicationContext)
     val walletVault = AndroidWalletVault(this)
-    val runtimeConfig = FlareRuntimeConfig(workerBaseUrl = getString(R.string.flare_worker_url))
+    val runtimeConfig =
+      FlareRuntimeConfig(
+        workerBaseUrl = getString(R.string.flare_worker_url),
+        defaultBuilderAddress = getString(R.string.flare_builder_address),
+      )
 
     setContent {
       App(

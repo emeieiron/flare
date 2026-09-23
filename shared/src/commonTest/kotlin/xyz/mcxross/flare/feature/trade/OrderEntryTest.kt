@@ -102,4 +102,53 @@ class OrderEntryTest {
     assertNull(state.copy(sizeInput = "").orderEstimate(OrderSide.BUY))
     assertNull(state.copy(marketDetails = MarketDetails()).orderEstimate(OrderSide.BUY))
   }
+
+  @Test
+  fun builderFeeCalculatedWhenApprovedAndPositive() {
+    val state =
+      state()
+        .copy(
+          builderApproved = true,
+          builderFeeBps = 5,
+          builderAddress = "0x987",
+        )
+    val estimate = assertNotNull(state.orderEstimate(OrderSide.BUY))
+    assertEquals(5, estimate.builderFeeBps)
+    assertEquals(0.035, estimate.builderFeeAmount)
+
+    val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market).value)
+    assertEquals(xyz.mcxross.kaptos.model.AccountAddress.fromString("0x987").toStringLong(), order.builderAddress)
+    assertEquals(500uL, order.builderFeeUnits)
+  }
+
+  @Test
+  fun builderFeeOmittedWhenNotApprovedOrZero() {
+    val unapproved =
+      state()
+        .copy(
+          builderApproved = false,
+          builderFeeBps = 5,
+          builderAddress = "0x987",
+        )
+    val unapprovedEstimate = assertNotNull(unapproved.orderEstimate(OrderSide.BUY))
+    assertNull(unapprovedEstimate.builderFeeBps)
+    assertNull(unapprovedEstimate.builderFeeAmount)
+    val unapprovedOrder = assertNotNull(unapproved.orderDraft(OrderSide.BUY).validate(market).value)
+    assertNull(unapprovedOrder.builderAddress)
+    assertNull(unapprovedOrder.builderFeeUnits)
+
+    val zeroFee =
+      state()
+        .copy(
+          builderApproved = true,
+          builderFeeBps = 0,
+          builderAddress = "0x987",
+        )
+    val zeroEstimate = assertNotNull(zeroFee.orderEstimate(OrderSide.BUY))
+    assertNull(zeroEstimate.builderFeeBps)
+    assertNull(zeroEstimate.builderFeeAmount)
+    val zeroOrder = assertNotNull(zeroFee.orderDraft(OrderSide.BUY).validate(market).value)
+    assertNull(zeroOrder.builderAddress)
+    assertNull(zeroOrder.builderFeeUnits)
+  }
 }

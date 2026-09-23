@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
@@ -60,11 +61,14 @@ data class OnboardingUiState(
   val selectedSubaccount: String? = null,
   val setupTransaction: TransactionState? = null,
   val setupOperation: SetupOperation? = null,
+  val builderOptIn: Boolean = true,
   val busy: Boolean = false,
   val error: String? = null,
 )
 
 sealed interface OnboardingIntent {
+  data class SetBuilderOptIn(val enabled: Boolean) : OnboardingIntent
+
   data class ChangeTradingAccount(val value: String) : OnboardingIntent
 
   data class SelectProfile(val id: String) : OnboardingIntent
@@ -112,6 +116,7 @@ class OnboardingViewModel(
   private val wallets: WalletRepository,
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
+  private val runtime: FlareRuntimeConfig,
 ) : ViewModel() {
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
@@ -135,6 +140,8 @@ class OnboardingViewModel(
 
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
+      is OnboardingIntent.SetBuilderOptIn ->
+        local.value = local.value.copy(builderOptIn = intent.enabled, error = null)
       is OnboardingIntent.SelectProfile ->
         launchAction("That account couldn’t be opened.") {
           clearSensitiveState()
@@ -318,6 +325,11 @@ class OnboardingViewModel(
         local.value.tradingAccountInput.trim(),
         VaultPrompt("Import trading account", "Confirm your identity"),
       )
+      preferences.setBuilderSupport(
+        builderAddress = runtime.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderFeeBps = 0,
+        builderApproved = false,
+      )
       finishSetupInternal()
     }
 
@@ -334,6 +346,30 @@ class OnboardingViewModel(
       VaultPrompt(title = "Enable trading", subtitle = "Confirm your identity"),
       feePayment = feePayment,
     )
+    if (local.value.builderOptIn && runtime.defaultBuilderAddress.isNotBlank()) {
+      runSuspendCatching {
+        accounts.approveBuilderFee(
+          builderAddress = runtime.defaultBuilderAddress,
+          feeBps = 10u,
+          prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
+          feePayment = feePayment,
+        )
+      }.onSuccess {
+        preferences.setBuilderFeeBps(runtime.defaultBuilderFeeBps.toInt())
+      }.onFailure {
+        preferences.setBuilderSupport(
+          builderAddress = runtime.defaultBuilderAddress,
+          builderFeeBps = 0,
+          builderApproved = false,
+        )
+      }
+    } else {
+      preferences.setBuilderSupport(
+        builderAddress = runtime.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderFeeBps = 0,
+        builderApproved = false,
+      )
+    }
     finishSetupInternal()
   }
 
@@ -354,7 +390,12 @@ class OnboardingViewModel(
 
   private fun clearSensitiveState(step: OnboardingStep = OnboardingStep.WELCOME) {
     local.value =
-      OnboardingUiState(step = step, profile = local.value.profile, busy = local.value.busy)
+      OnboardingUiState(
+        step = step,
+        profile = local.value.profile,
+        busy = local.value.busy,
+        builderOptIn = local.value.builderOptIn,
+      )
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */

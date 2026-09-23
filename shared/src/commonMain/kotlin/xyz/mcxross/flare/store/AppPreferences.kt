@@ -44,6 +44,9 @@ data class AccountProfile(
   val ownerBackupConfirmed: Boolean = false,
   val selectedSubaccount: String? = null,
   val onboardingComplete: Boolean = false,
+  val builderAddress: String? = null,
+  val builderFeeBps: Int = 5,
+  val builderApproved: Boolean = false,
 )
 
 data class FlarePreferences(
@@ -64,6 +67,9 @@ data class FlarePreferences(
   val apiWalletAddress: String? = null,
   val ownerBackupConfirmed: Boolean = false,
   val selectedSubaccount: String? = null,
+  val builderAddress: String? = null,
+  val builderFeeBps: Int = 5,
+  val builderApproved: Boolean = false,
 )
 
 /**
@@ -96,6 +102,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         ownerBackupConfirmed = active?.ownerBackupConfirmed ?: false,
         selectedSubaccount = active?.selectedSubaccount,
         onboardingComplete = active?.onboardingComplete ?: false,
+        builderAddress = active?.builderAddress,
+        builderFeeBps = active?.builderFeeBps ?: 5,
+        builderApproved = active?.builderApproved ?: false,
       )
     }
 
@@ -173,6 +182,30 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   suspend fun setOnboardingComplete(complete: Boolean) = updateActiveProfile {
     it.copy(onboardingComplete = complete)
+  }
+
+  suspend fun setBuilderSupport(
+    builderAddress: String?,
+    builderFeeBps: Int,
+    builderApproved: Boolean,
+  ) = updateActiveProfile {
+    it.copy(
+      builderAddress = builderAddress,
+      builderFeeBps = builderFeeBps.coerceIn(0, 10),
+      builderApproved = builderApproved,
+    )
+  }
+
+  suspend fun setBuilderFeeBps(feeBps: Int) = updateActiveProfile {
+    it.copy(builderFeeBps = feeBps.coerceIn(0, 10))
+  }
+
+  suspend fun setBuilderAddress(address: String?) = updateActiveProfile {
+    it.copy(builderAddress = address)
+  }
+
+  suspend fun setBuilderApproved(approved: Boolean) = updateActiveProfile {
+    it.copy(builderApproved = approved)
   }
 
   suspend fun setCreationReference(profileId: String, reference: String?) =

@@ -71,6 +71,19 @@ sealed interface DecibelCommand {
     val stopLossTrigger: ULong? = null,
     val stopLossLimit: ULong? = null,
     val stopLossSize: ULong? = null,
+    val builderAddress: String? = null,
+    val builderFeeUnits: ULong? = null,
+  ) : DecibelCommand
+
+  data class ApproveMaxBuilderFee(
+    val subaccount: String,
+    val builder: String,
+    val maxFeeUnits: ULong,
+  ) : DecibelCommand
+
+  data class RevokeMaxBuilderFee(
+    val subaccount: String,
+    val builder: String,
   ) : DecibelCommand
 }
 
@@ -222,8 +235,17 @@ internal class DefaultDecibelTradingService(
             option(order.takeProfitLimitPrice?.let(MoveArgument::U64)),
             option(order.stopLossTriggerPrice?.let(MoveArgument::U64)),
             option(order.stopLossLimitPrice?.let(MoveArgument::U64)),
-            option(null),
-            option(null),
+            option(
+              order.builderAddress?.let {
+                if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
+                else null
+              }
+            ),
+            option(
+              order.builderFeeUnits?.let {
+                if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
+              }
+            ),
           )
       }
       is DecibelCommand.PlaceSpotOrder -> {
@@ -239,8 +261,17 @@ internal class DefaultDecibelTradingService(
             MoveArgument.U64(order.size),
             MoveArgument.Bool(order.side == xyz.mcxross.flare.decibel.model.OrderSide.BUY),
             MoveArgument.U8(order.timeInForce.chainValue),
-            option(null),
-            option(null),
+            option(
+              order.builderAddress?.let {
+                if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
+                else null
+              }
+            ),
+            option(
+              order.builderFeeUnits?.let {
+                if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
+              }
+            ),
           )
       }
       is DecibelCommand.CancelOrder -> {
@@ -285,8 +316,37 @@ internal class DefaultDecibelTradingService(
             option(command.stopLossTrigger?.let(MoveArgument::U64)),
             option(command.stopLossLimit?.let(MoveArgument::U64)),
             option(command.stopLossSize?.let(MoveArgument::U64)),
-            option(null),
-            option(null),
+            option(
+              command.builderAddress?.let {
+                if (command.builderFeeUnits != null && command.builderFeeUnits > 0uL) address(it)
+                else null
+              }
+            ),
+            option(
+              command.builderFeeUnits?.let {
+                if (it > 0uL && command.builderAddress != null) MoveArgument.U64(it) else null
+              }
+            ),
+          )
+      }
+      is DecibelCommand.ApproveMaxBuilderFee -> {
+        require(command.maxFeeUnits in 1uL..1_000uL) {
+          "Max builder fee must be between 1 and 1,000 units (up to 10 bps / 0.10%)"
+        }
+        function = "$packageAddress::dex_accounts_entry::approve_max_builder_fee_for_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.builder),
+            MoveArgument.U64(command.maxFeeUnits),
+          )
+      }
+      is DecibelCommand.RevokeMaxBuilderFee -> {
+        function = "$packageAddress::dex_accounts_entry::revoke_max_builder_fee_for_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.builder),
           )
       }
     }

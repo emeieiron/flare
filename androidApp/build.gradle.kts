@@ -7,6 +7,11 @@ val flareWorkerUrl =
     // 127.0.0.1 here would address the emulator itself.
     .orElse("http://10.0.2.2:8787")
 
+val flareBuilderAddress =
+  providers
+    .gradleProperty("flareBuilderAddress")
+    .orElse("0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b")
+
 plugins {
   alias(libs.plugins.androidApplication)
   alias(libs.plugins.composeCompiler)
@@ -51,6 +56,7 @@ android {
     versionCode = 1
     versionName = "1.0"
     resValue("string", "flare_worker_url", flareWorkerUrl.get())
+    resValue("string", "flare_builder_address", flareBuilderAddress.get())
   }
   packaging {
     resources {

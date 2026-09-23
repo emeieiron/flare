@@ -57,6 +57,10 @@ class DecibelTradingPayloadTest {
             market = MARKET,
             takeProfitTrigger = 21uL,
           ) to ("dex_accounts_entry" to "place_tp_sl_order_for_position"),
+          DecibelCommand.ApproveMaxBuilderFee(SUBACCOUNT, BUILDER, 500uL) to
+            ("dex_accounts_entry" to "approve_max_builder_fee_for_subaccount"),
+          DecibelCommand.RevokeMaxBuilderFee(SUBACCOUNT, BUILDER) to
+            ("dex_accounts_entry" to "revoke_max_builder_fee_for_subaccount"),
         )
 
       commands.forEach { (command, target) ->
@@ -67,6 +71,50 @@ class DecibelTradingPayloadTest {
         assertEquals(function, payload.call.function.toString())
         assertEquals(emptyList(), payload.call.typeArguments)
       }
+    }
+  }
+
+  @Test
+  fun approveAndRevokeBuilderFeeEncodingMatchesAbi() = runTest {
+    withService { service ->
+      val approve =
+        service.payload(DecibelCommand.ApproveMaxBuilderFee(SUBACCOUNT, BUILDER, 500uL)).success()
+      assertEquals(
+        listOf(
+          addressHex(SUBACCOUNT),
+          addressHex(BUILDER),
+          "f401000000000000",
+        ),
+        approve.argumentHex(),
+      )
+
+      val revoke =
+        service.payload(DecibelCommand.RevokeMaxBuilderFee(SUBACCOUNT, BUILDER)).success()
+      assertEquals(
+        listOf(
+          addressHex(SUBACCOUNT),
+          addressHex(BUILDER),
+        ),
+        revoke.argumentHex(),
+      )
+    }
+  }
+
+  @Test
+  fun placeOrderWithBuilderFeeEncodesBuilderAddressAndUnits() = runTest {
+    withService { service ->
+      val orderWithBuilder = order().copy(builderAddress = BUILDER, builderFeeUnits = 500uL)
+      val perpPayload =
+        service.payload(DecibelCommand.PlaceOrder(SUBACCOUNT, orderWithBuilder)).success()
+      val perpArgs = perpPayload.argumentHex()
+      assertEquals("01" + addressHex(BUILDER), perpArgs[13])
+      assertEquals("01f401000000000000", perpArgs[14])
+
+      val spotPayload =
+        service.payload(DecibelCommand.PlaceSpotOrder(SUBACCOUNT, orderWithBuilder)).success()
+      val spotArgs = spotPayload.argumentHex()
+      assertEquals("01" + addressHex(BUILDER), spotArgs[6])
+      assertEquals("01f401000000000000", spotArgs[7])
     }
   }
 
@@ -306,6 +354,7 @@ private const val SUBACCOUNT = "0x11"
 private const val MARKET = "0x22"
 private const val ASSET = "0x33"
 private const val DELEGATE = "0x44"
+private const val BUILDER = "0x55"
 private const val MAX_U128 = "340282366920938463463374607431768211455"
 
 internal val DECIBEL_ENTRY_ABI =
@@ -339,6 +388,17 @@ internal val DECIBEL_ENTRY_ABI =
             ),
             function(
               "revoke_delegation",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
+            ),
+            function(
+              "approve_max_builder_fee_for_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
+              "u64",
+            ),
+            function(
+              "revoke_max_builder_fee_for_subaccount",
               "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
               "address",
             ),
