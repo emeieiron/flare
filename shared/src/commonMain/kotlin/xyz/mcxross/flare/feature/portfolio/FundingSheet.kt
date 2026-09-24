@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,6 +35,7 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
@@ -181,13 +181,12 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         }
       }
 
-      OutlinedTextField(
+      FlareAmountField(
         value = state.fundingAmount,
         onValueChange = { onIntent(PortfolioIntent.ChangeFundingAmount(it)) },
-        label = { Text("Amount (USDC)") },
-        placeholder = { Text("0.00") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        label = "Amount",
+        unit = "USDC",
+        placeholder = "0.00",
         enabled = !state.busy && state.pendingWithdrawal == null,
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
       )

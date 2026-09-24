@@ -26,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,6 +54,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareLogo
+import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 
@@ -234,26 +234,25 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
     style = MaterialTheme.typography.bodyLarge,
     color = FlareColors.TextSecondary,
   )
-  OutlinedTextField(
+  FlareTextField(
     value = state.input,
     onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
     modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
-    label = { Text("Recovery phrase or private key") },
-    supportingText = {
-      Text(
-        when (format) {
-          CredentialFormat.RECOVERY_PHRASE ->
-            if (state.apiImport) "A trading key is a private key, not a phrase."
-            else "Recovery phrase recognized"
-          CredentialFormat.PRIVATE_KEY -> "Private key recognized"
-          CredentialFormat.UNKNOWN -> "12–24 words, hex, or ed25519-priv-…"
-        }
-      )
-    },
+    label = "Recovery phrase or private key",
+    placeholder = "12–24 words, hex, or ed25519-priv-…",
+    supportingText =
+      when (format) {
+        CredentialFormat.RECOVERY_PHRASE ->
+          if (state.apiImport) "A trading key is a private key, not a phrase."
+          else "Recovery phrase recognized"
+        CredentialFormat.PRIVATE_KEY -> "Private key recognized"
+        CredentialFormat.UNKNOWN -> "12–24 words, hex, or ed25519-priv-…"
+      },
     visualTransformation = PasswordVisualTransformation(),
     keyboardOptions =
       KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
     minLines = 4,
+    singleLine = false,
     enabled = !state.busy,
   )
   if (format == CredentialFormat.PRIVATE_KEY || state.apiImport) {
@@ -274,11 +273,12 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
     }
   }
   if (state.apiImport) {
-    OutlinedTextField(
-      state.tradingAccountInput,
-      { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
-      Modifier.fillMaxWidth().padding(top = 16.dp),
-      label = { Text("Trading-account address") },
+    FlareTextField(
+      value = state.tradingAccountInput,
+      onValueChange = { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
+      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+      label = "Trading-account address",
+      placeholder = "0x...",
       singleLine = true,
       enabled = !state.busy,
     )
@@ -355,13 +355,15 @@ private fun ConfirmBackupStep(state: OnboardingUiState, onIntent: (OnboardingInt
     style = MaterialTheme.typography.titleLarge,
   )
   state.confirmationIndices.forEach { index ->
-    OutlinedTextField(
+    FlareTextField(
       value = state.confirmations[index].orEmpty(),
       onValueChange = { onIntent(OnboardingIntent.ChangeConfirmation(index, it)) },
       modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-      label = { Text("Word ${index + 1}") },
+      label = "Word ${index + 1}",
+      placeholder = "Enter word ${index + 1}",
       keyboardOptions =
         KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+      visualTransformation = PasswordVisualTransformation(),
       singleLine = true,
       enabled = !state.busy,
     )
@@ -461,11 +463,12 @@ private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent
       }
     }
   } else if (!ownerMode) {
-    OutlinedTextField(
+    FlareTextField(
       value = state.input,
       onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
       modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-      label = { Text("Trading-account address") },
+      label = "Trading-account address",
+      placeholder = "0x...",
       singleLine = true,
       enabled = !state.busy,
     )

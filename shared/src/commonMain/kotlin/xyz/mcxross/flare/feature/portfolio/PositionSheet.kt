@@ -9,7 +9,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,6 +28,7 @@ import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
+import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
@@ -73,23 +73,23 @@ fun PositionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) 
         Modifier.padding(top = 24.dp),
         style = MaterialTheme.typography.titleMedium,
       )
-      OutlinedTextField(
+      FlareAmountField(
         value = state.takeProfitInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeTakeProfit(it)) },
-        label = { Text("Take-profit price") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        label = "Take-profit price",
+        unit = "USD",
+        placeholder = "0.00",
         enabled = !state.busy,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
       )
-      OutlinedTextField(
+      FlareAmountField(
         value = state.stopLossInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeStopLoss(it)) },
-        label = { Text("Stop-loss price") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        label = "Stop-loss price",
+        unit = "USD",
+        placeholder = "0.00",
         enabled = !state.busy,
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
       )
       Text(
         "Leverage and margin mode can only change once this position is closed.",

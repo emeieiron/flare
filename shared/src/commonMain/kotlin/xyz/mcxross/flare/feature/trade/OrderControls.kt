@@ -6,11 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -22,7 +19,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
@@ -30,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 
@@ -44,48 +41,14 @@ internal fun OrderAmountField(
   enabled: Boolean = true,
   optional: Boolean = false,
 ) {
-  val interactions = remember { MutableInteractionSource() }
-  val focused by interactions.collectIsFocusedAsState()
-  BasicTextField(
+  FlareAmountField(
     value = value,
     onValueChange = onValueChange,
+    label = label,
+    unit = unit,
+    placeholder = if (optional) "Optional" else "0",
     enabled = enabled,
-    singleLine = true,
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-    interactionSource = interactions,
-    textStyle = MaterialTheme.typography.titleLarge.copy(color = FlareColors.TextPrimary),
-    cursorBrush = SolidColor(FlareColors.Positive),
-    modifier =
-      modifier
-        .background(FlareColors.Elevated, RoundedCornerShape(16.dp))
-        .border(
-          1.dp,
-          if (focused) FlareColors.Positive else FlareColors.Elevated,
-          RoundedCornerShape(16.dp),
-        )
-        .semantics { contentDescription = "$label ($unit)" }
-        .padding(16.dp),
-    decorationBox = { input ->
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-          Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = FlareColors.TextSecondary,
-          )
-          Text(unit, style = MaterialTheme.typography.labelSmall, color = FlareColors.TextTertiary)
-        }
-        Box {
-          if (value.isBlank())
-            Text(
-              if (optional) "Optional" else "0",
-              style = MaterialTheme.typography.titleLarge,
-              color = FlareColors.TextTertiary,
-            )
-          input()
-        }
-      }
-    },
+    modifier = modifier,
   )
 }
 
