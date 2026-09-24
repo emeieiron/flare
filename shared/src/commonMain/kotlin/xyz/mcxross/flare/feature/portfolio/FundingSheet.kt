@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.feature.portfolio
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,10 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -22,14 +29,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
@@ -56,78 +62,134 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       )
       return@FlareSheet
     }
-    Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
-      // Direction selector: To subaccount | To primary
-      Row(
-        modifier =
-          Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(FlareColors.Canvas)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .clip(RoundedCornerShape(6.dp))
-              .background(if (mode == FundingMode.DEPOSIT) FlareColors.Elevated else Color.Transparent)
-              .clickable(enabled = !state.busy) {
-                if (mode != FundingMode.DEPOSIT) onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
-              }
-              .padding(vertical = 8.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            "To subaccount",
-            style = MaterialTheme.typography.labelMedium,
-            color = if (mode == FundingMode.DEPOSIT) FlareColors.TextPrimary else FlareColors.TextSecondary,
-          )
-        }
-        Box(
-          modifier =
-            Modifier.weight(1f)
-              .clip(RoundedCornerShape(6.dp))
-              .background(if (mode == FundingMode.WITHDRAW) FlareColors.Elevated else Color.Transparent)
-              .clickable(enabled = !state.busy) {
-                if (mode != FundingMode.WITHDRAW) onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW))
-              }
-              .padding(vertical = 8.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text(
-            "To primary",
-            style = MaterialTheme.typography.labelMedium,
-            color = if (mode == FundingMode.WITHDRAW) FlareColors.TextPrimary else FlareColors.TextSecondary,
-          )
-        }
+
+    val isDeposit = mode == FundingMode.DEPOSIT
+    val fromLabel = if (isDeposit) "Primary Account" else "Trading Subaccount"
+    val fromAddress =
+      if (isDeposit) state.profile.ownerAddress.orEmpty() else state.account.account.orEmpty()
+    val toLabel = if (isDeposit) "Trading Subaccount" else "Primary Account"
+    val toAddress =
+      if (isDeposit) state.account.account.orEmpty() else state.profile.ownerAddress.orEmpty()
+    val availableBalance =
+      state.account.overview?.let {
+        "${formatQuantity(it.crossWithdrawableBalance, 6)} USDC"
       }
 
-      Spacer(Modifier.height(16.dp))
+    Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
+      // Intuitive From -> To direction card with switcher button
+      Column(
+        modifier =
+          Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(FlareColors.Elevated)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+      ) {
+        // From section
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = "From",
+              style = MaterialTheme.typography.labelSmall,
+              color = FlareColors.TextSecondary,
+            )
+            if (!isDeposit && availableBalance != null) {
+              Text(
+                text = "Available: $availableBalance",
+                style = MaterialTheme.typography.labelSmall,
+                color = FlareColors.Positive,
+              )
+            }
+          }
+          Spacer(Modifier.height(4.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = fromLabel,
+              style = MaterialTheme.typography.titleMedium,
+              color = FlareColors.TextPrimary,
+            )
+            Text(
+              text = shortAddress(fromAddress),
+              style = MaterialTheme.typography.bodySmall,
+              color = FlareColors.TextTertiary,
+            )
+          }
+        }
 
-      Text("USDC on Aptos", style = MaterialTheme.typography.titleMedium)
+        // Switcher button centered on divider
+        Box(
+          modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          HorizontalDivider(color = FlareColors.BorderSubtle)
+          Box(
+            modifier =
+              Modifier.size(40.dp)
+                .clip(CircleShape)
+                .background(FlareColors.Surface)
+                .border(1.dp, FlareColors.BorderDefault, CircleShape)
+                .clickable(
+                  enabled = !state.busy,
+                  role = Role.Button,
+                  onClick = {
+                    val next = if (isDeposit) FundingMode.WITHDRAW else FundingMode.DEPOSIT
+                    onIntent(PortfolioIntent.OpenFunding(next))
+                  },
+                ),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Outlined.SwapVert,
+              contentDescription = "Switch transfer direction",
+              tint = FlareColors.Positive,
+              modifier = Modifier.size(22.dp),
+            )
+          }
+        }
 
-      if (mode == FundingMode.DEPOSIT) {
-        DetailRow("From", "Primary (${shortAddress(state.profile.ownerAddress.orEmpty())})")
-        DetailRow("To", "Trading (${shortAddress(state.account.account.orEmpty())})")
-      } else {
-        DetailRow("From", "Trading (${shortAddress(state.account.account.orEmpty())})")
-        DetailRow("To", "Primary (${shortAddress(state.profile.ownerAddress.orEmpty())})")
-        state.account.overview?.let {
-          DetailRow(
-            if (state.account.stale) "Last available balance" else "Available to transfer",
-            "${formatQuantity(it.crossWithdrawableBalance, 6)} USDC",
+        // To section
+        Column(modifier = Modifier.fillMaxWidth()) {
+          Text(
+            text = "To",
+            style = MaterialTheme.typography.labelSmall,
+            color = FlareColors.TextSecondary,
           )
+          Spacer(Modifier.height(4.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = toLabel,
+              style = MaterialTheme.typography.titleMedium,
+              color = FlareColors.TextPrimary,
+            )
+            Text(
+              text = shortAddress(toAddress),
+              style = MaterialTheme.typography.bodySmall,
+              color = FlareColors.TextTertiary,
+            )
+          }
         }
       }
 
       OutlinedTextField(
         value = state.fundingAmount,
         onValueChange = { onIntent(PortfolioIntent.ChangeFundingAmount(it)) },
-        label = { Text("Amount in USDC") },
+        label = { Text("Amount (USDC)") },
+        placeholder = { Text("0.00") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         enabled = !state.busy && state.pendingWithdrawal == null,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
       )
       state.actionError?.let { error ->
         ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
