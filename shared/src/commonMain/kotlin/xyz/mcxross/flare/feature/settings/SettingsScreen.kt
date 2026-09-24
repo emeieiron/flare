@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,11 +53,13 @@ import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.DetailRow
+import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
@@ -467,10 +468,10 @@ fun SettingsScreen(
         style = MaterialTheme.typography.bodyMedium,
       )
       Spacer(Modifier.height(16.dp))
-      OutlinedTextField(
+      FlareTextField(
         value = state.referralCodeInput,
         onValueChange = { onIntent(SettingsIntent.ChangeReferralCode(it)) },
-        placeholder = { Text("e.g. FLARE2026") },
+        placeholder = "e.g. FLARE2026",
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
       )
@@ -637,24 +638,23 @@ private fun WithdrawSheet(
     DetailRow("Asset", "USDC (Aptos)")
     DetailRow("Network fee", "Sponsored by Flare")
     Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
+    FlareTextField(
       value = state.withdrawDestination,
       onValueChange = { onIntent(SettingsIntent.ChangeWithdrawDestination(it)) },
-      label = { Text("Recipient Aptos address") },
-      placeholder = { Text("0x...") },
+      label = "Recipient Aptos address",
+      placeholder = "0x...",
       modifier = Modifier.fillMaxWidth(),
       singleLine = true,
       enabled = !state.withdrawing,
     )
     Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
+    FlareAmountField(
       value = state.withdrawAmount,
       onValueChange = { onIntent(SettingsIntent.ChangeWithdrawAmount(it)) },
-      label = { Text("Amount (USDC)") },
-      placeholder = { Text("0.00") },
+      label = "Amount",
+      unit = "USDC",
+      placeholder = "0.00",
       modifier = Modifier.fillMaxWidth(),
-      singleLine = true,
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       enabled = !state.withdrawing,
     )
     state.withdrawError?.let { err ->

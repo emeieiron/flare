@@ -8,9 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -21,6 +19,7 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
+import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
@@ -84,53 +83,37 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         DetailRow("Current value", formatBalance(userPerformance?.currentValue ?: 0.0))
       }
 
-      OutlinedTextField(
+      val maxClick: (() -> Unit)? =
+        if (mode == VaultActionMode.REDEEM && availableShares > 0.0) {
+          {
+            val maxStr =
+              if (availableShares % 1.0 == 0.0) availableShares.toLong().toString()
+              else formatQuantity(availableShares, 4)
+            onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
+          }
+        } else null
+
+      val supportingText =
+        if (mode == VaultActionMode.DEPOSIT) {
+          "Decibel protocol requires a minimum deposit of 10 USDC."
+        } else {
+          when {
+            parsedAmount > 0.0 ->
+              "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC · Min. 5 shares"
+            else -> "Decibel protocol requires a minimum redemption of 5 shares."
+          }
+        }
+
+      FlareAmountField(
         value = state.vaultAmountInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeVaultAmount(it)) },
-        label = {
-          Text(if (mode == VaultActionMode.DEPOSIT) "Amount in USDC (min. 10)" else "Shares to redeem (min. 5)")
-        },
-        trailingIcon =
-          if (mode == VaultActionMode.REDEEM && availableShares > 0.0) {
-            {
-              TextButton(
-                onClick = {
-                  val maxStr =
-                    if (availableShares % 1.0 == 0.0) availableShares.toLong().toString()
-                    else formatQuantity(availableShares, 4)
-                  onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
-                },
-                enabled = !state.busy,
-              ) {
-                Text("MAX", color = FlareColors.Positive, style = MaterialTheme.typography.labelMedium)
-              }
-            }
-          } else null,
-        supportingText = {
-          if (mode == VaultActionMode.DEPOSIT) {
-            Text(
-              "Decibel protocol requires a minimum deposit of 10 USDC.",
-              style = MaterialTheme.typography.labelSmall,
-              color = FlareColors.TextTertiary,
-            )
-          } else {
-            val helper =
-              when {
-                parsedAmount > 0.0 ->
-                  "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC · Min. 5 shares"
-                else -> "Decibel protocol requires a minimum redemption of 5 shares."
-              }
-            Text(
-              helper,
-              style = MaterialTheme.typography.labelSmall,
-              color = FlareColors.TextTertiary,
-            )
-          }
-        },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        label = if (mode == VaultActionMode.DEPOSIT) "Amount" else "Shares to redeem",
+        unit = if (mode == VaultActionMode.DEPOSIT) "USDC" else "shares",
+        placeholder = if (mode == VaultActionMode.DEPOSIT) "10.00" else "5",
+        onMaxClick = maxClick,
+        supportingText = supportingText,
         enabled = !state.busy,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
       )
 
       state.actionError?.let { error ->

@@ -18,9 +18,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Star
@@ -32,16 +37,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -51,6 +56,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,6 +72,258 @@ enum class FlareButtonStyle {
   SELL,
 }
 
+/**
+ * A uniform, elevated input field matching Flare's dark-mode fintech design system.
+ * Eliminates generic Android outline styling and floating notch cuts.
+ */
+@Composable
+fun FlareTextField(
+  value: String,
+  onValueChange: (String) -> Unit,
+  modifier: Modifier = Modifier,
+  label: String? = null,
+  placeholder: String? = null,
+  leadingIcon: (@Composable () -> Unit)? = null,
+  trailingIcon: (@Composable () -> Unit)? = null,
+  supportingText: String? = null,
+  isError: Boolean = false,
+  enabled: Boolean = true,
+  readOnly: Boolean = false,
+  singleLine: Boolean = true,
+  minLines: Int = 1,
+  maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+  keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+  keyboardActions: KeyboardActions = KeyboardActions.Default,
+  visualTransformation: VisualTransformation = VisualTransformation.None,
+  interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+) {
+  val focused by interactionSource.collectIsFocusedAsState()
+  val borderColor by animateColorAsState(
+    when {
+      !enabled -> FlareColors.BorderSubtle.copy(alpha = 0.5f)
+      isError -> FlareColors.Negative
+      focused -> FlareColors.Positive
+      else -> FlareColors.BorderSubtle
+    }
+  )
+  val containerColor = if (enabled) FlareColors.Elevated else FlareColors.Surface
+
+  Column(
+    modifier = modifier,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    if (label != null) {
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = when {
+          !enabled -> FlareColors.TextDisabled
+          isError -> FlareColors.Negative
+          focused -> FlareColors.TextPrimary
+          else -> FlareColors.TextSecondary
+        },
+      )
+    }
+    BasicTextField(
+      value = value,
+      onValueChange = onValueChange,
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(14.dp))
+        .background(containerColor)
+        .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+        .padding(horizontal = 14.dp, vertical = if (singleLine) 14.dp else 12.dp),
+      enabled = enabled,
+      readOnly = readOnly,
+      singleLine = singleLine,
+      minLines = minLines,
+      maxLines = maxLines,
+      keyboardOptions = keyboardOptions,
+      keyboardActions = keyboardActions,
+      visualTransformation = visualTransformation,
+      interactionSource = interactionSource,
+      textStyle = MaterialTheme.typography.bodyLarge.copy(
+        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+      ),
+      cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
+      decorationBox = { innerTextField ->
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = if (singleLine) Alignment.CenterVertically else Alignment.Top,
+        ) {
+          if (leadingIcon != null) {
+            Box(modifier = Modifier.padding(end = 10.dp), contentAlignment = Alignment.Center) {
+              leadingIcon()
+            }
+          }
+          Box(modifier = Modifier.weight(1f)) {
+            if (value.isEmpty() && placeholder != null) {
+              Text(
+                text = placeholder,
+                style = MaterialTheme.typography.bodyLarge,
+                color = FlareColors.TextTertiary,
+              )
+            }
+            innerTextField()
+          }
+          if (trailingIcon != null) {
+            Box(modifier = Modifier.padding(start = 10.dp), contentAlignment = Alignment.Center) {
+              trailingIcon()
+            }
+          }
+        }
+      },
+    )
+    if (supportingText != null) {
+      Text(
+        text = supportingText,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isError) FlareColors.Negative else FlareColors.TextSecondary,
+      )
+    }
+  }
+}
+
+/**
+ * A dedicated financial amount input matching Flare's trading card aesthetic.
+ * Integrates label, available balance, numeric field, unit badge, and optional MAX button.
+ */
+@Composable
+fun FlareAmountField(
+  value: String,
+  onValueChange: (String) -> Unit,
+  modifier: Modifier = Modifier,
+  label: String = "Amount",
+  unit: String? = null,
+  availableText: String? = null,
+  onMaxClick: (() -> Unit)? = null,
+  placeholder: String = "0.00",
+  supportingText: String? = null,
+  isError: Boolean = false,
+  enabled: Boolean = true,
+  interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+) {
+  val focused by interactionSource.collectIsFocusedAsState()
+  val borderColor by animateColorAsState(
+    when {
+      !enabled -> FlareColors.BorderSubtle.copy(alpha = 0.5f)
+      isError -> FlareColors.Negative
+      focused -> FlareColors.Positive
+      else -> FlareColors.BorderSubtle
+    }
+  )
+  val containerColor = if (enabled) FlareColors.Elevated else FlareColors.Surface
+
+  Column(
+    modifier = modifier,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    BasicTextField(
+      value = value,
+      onValueChange = onValueChange,
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(16.dp))
+        .background(containerColor)
+        .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+        .padding(16.dp),
+      enabled = enabled,
+      singleLine = true,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+      interactionSource = interactionSource,
+      textStyle = MaterialTheme.typography.titleLarge.copy(
+        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+      ),
+      cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
+      decorationBox = { innerTextField ->
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          // Top metadata row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = label,
+              style = MaterialTheme.typography.labelSmall,
+              color = when {
+                !enabled -> FlareColors.TextDisabled
+                isError -> FlareColors.Negative
+                focused -> FlareColors.TextPrimary
+                else -> FlareColors.TextSecondary
+              },
+            )
+            if (availableText != null) {
+              Text(
+                text = availableText,
+                style = MaterialTheme.typography.labelSmall,
+                color = FlareColors.Positive,
+              )
+            }
+          }
+          // Main input row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(modifier = Modifier.weight(1f)) {
+              if (value.isBlank()) {
+                Text(
+                  text = placeholder,
+                  style = MaterialTheme.typography.titleLarge,
+                  color = FlareColors.TextTertiary,
+                )
+              }
+              innerTextField()
+            }
+            if (onMaxClick != null || unit != null) {
+              Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 12.dp),
+              ) {
+                if (onMaxClick != null) {
+                  Box(
+                    modifier = Modifier
+                      .clip(RoundedCornerShape(8.dp))
+                      .background(FlareColors.Surface)
+                      .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
+                      .clickable(enabled = enabled, onClick = onMaxClick)
+                      .padding(horizontal = 10.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Text(
+                      text = "MAX",
+                      style = MaterialTheme.typography.labelMedium,
+                      color = FlareColors.Positive,
+                      fontWeight = FontWeight.SemiBold,
+                    )
+                  }
+                }
+                if (unit != null) {
+                  Text(
+                    text = unit,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = FlareColors.TextSecondary,
+                    fontWeight = FontWeight.Medium,
+                  )
+                }
+              }
+            }
+          }
+        }
+      },
+    )
+    if (supportingText != null) {
+      Text(
+        text = supportingText,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (isError) FlareColors.Negative else FlareColors.TextSecondary,
+      )
+    }
+  }
+}
+
 @Composable
 fun FlareSearchField(
   value: String,
@@ -73,27 +332,22 @@ fun FlareSearchField(
   leadingIcon: ImageVector,
   modifier: Modifier = Modifier,
 ) {
-  OutlinedTextField(
+  FlareTextField(
     value = value,
     onValueChange = onValueChange,
-    modifier = modifier.heightIn(min = 52.dp),
-    placeholder = { Text(placeholder) },
-    leadingIcon = { Icon(leadingIcon, contentDescription = null) },
+    placeholder = placeholder,
+    leadingIcon = {
+      Icon(leadingIcon, contentDescription = null, tint = FlareColors.TextSecondary, modifier = Modifier.size(20.dp))
+    },
     trailingIcon = {
-      if (value.isNotEmpty())
-        IconButton(onClick = { onValueChange("") }) {
-          Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+      if (value.isNotEmpty()) {
+        IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(24.dp)) {
+          Icon(Icons.Outlined.Close, contentDescription = "Clear search", tint = FlareColors.TextSecondary, modifier = Modifier.size(18.dp))
         }
+      }
     },
     singleLine = true,
-    shape = MaterialTheme.shapes.small,
-    colors =
-      OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = FlareColors.Elevated,
-        unfocusedContainerColor = FlareColors.Elevated,
-        focusedBorderColor = Color.Transparent,
-        unfocusedBorderColor = Color.Transparent,
-      ),
+    modifier = modifier,
   )
 }
 
