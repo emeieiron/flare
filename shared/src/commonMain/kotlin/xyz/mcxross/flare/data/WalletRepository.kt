@@ -93,8 +93,7 @@ class DefaultWalletRepository(
       val address = account.accountAddress.toString()
       val id = "owner_$address"
       storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), phrase, prompt, scoped = true)
-      preferences.registerProfile(AccountProfile(id, ownerAddress = address))
-      preferences.setOwnerWallet(address, backupConfirmed = false)
+      preferences.registerProfile(AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false))
       OwnerBackup(address, phrase.split(' '))
     } finally {
       account.close()
@@ -109,10 +108,10 @@ class DefaultWalletRepository(
       val saved = preferences.values.first().profiles.firstOrNull { it.ownerAddress == address }
       val id = saved?.id ?: "owner_$address"
       storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), credential, prompt, scoped = true)
-      preferences.registerProfile(saved ?: AccountProfile(id, ownerAddress = address))
-      account.accountAddress.toString().also {
-        preferences.setOwnerWallet(it, backupConfirmed = true)
-      }
+      preferences.registerProfile(
+        (saved ?: AccountProfile(id)).copy(ownerAddress = address, ownerBackupConfirmed = true)
+      )
+      address
     } finally {
       account.close()
     }
@@ -228,6 +227,13 @@ class DefaultWalletRepository(
     val generation = authorizationGeneration
     val account = open(readText(slot, prompt))
     return try {
+      if (slot == WalletSecretSlot.OWNER_MNEMONIC) {
+        val actualAddress = account.accountAddress.toString()
+        val current = preferences.values.first()
+        if (current.ownerAddress != actualAddress && current.activeProfileId.startsWith("owner_")) {
+          preferences.setOwnerWallet(actualAddress, current.ownerBackupConfirmed)
+        }
+      }
       vault.whileAuthorized(generation) { block(account) }
     } finally {
       account.close()
