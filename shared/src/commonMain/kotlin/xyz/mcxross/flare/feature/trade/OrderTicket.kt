@@ -62,14 +62,14 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
     }
   val isSpot = quote.market.assetType == AssetType.SPOT
   FlareSheet(
-    if (committed != null) "Order placed"
+    if (committed != null) "Order submitted"
     else if (reviewing) "Review order"
     else if (isSpot) "Trade ${quote.market.name}" else "Trade ${quote.market.symbol}",
     dismiss,
   ) {
     if (committed != null) {
       TransactionReceipt(
-        "Your order is with the market. Follow fills and open orders in Activity.",
+        "Your transaction is confirmed. Check Activity for order status and fills.",
         committed.hash,
         dismiss,
         enabled = !state.orderBusy,

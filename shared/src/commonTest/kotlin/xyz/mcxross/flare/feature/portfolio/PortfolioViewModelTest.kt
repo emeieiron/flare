@@ -337,7 +337,8 @@ class PortfolioViewModelTest {
         crossMarginRatio = 0.0,
         maintenanceMargin = 0.0,
         totalMargin = 0.0,
-        crossWithdrawableBalance = 9.51,
+        crossWithdrawableBalance = 5.0,
+        crossUsdcBalance = 9.51,
         isolatedWithdrawableBalance = 0.0,
         availableToTrade = 9.51,
       )
@@ -363,7 +364,7 @@ class PortfolioViewModelTest {
 
     assertTrue(usdcHolding.isCollateral)
     assertEquals(9.51, usdcHolding.quantity)
-    assertEquals("CASH", usdcHolding.badge)
+    assertEquals("MARGIN", usdcHolding.badge)
 
     assertFalse(aptHolding.isCollateral)
     assertEquals(10.979, aptHolding.quantity)

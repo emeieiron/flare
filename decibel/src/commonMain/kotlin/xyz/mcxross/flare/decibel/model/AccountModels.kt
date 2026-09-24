@@ -25,7 +25,44 @@ data class AccountOverview(
   @SerialName("usdc_isolated_withdrawable_balance") val isolatedWithdrawableBalance: Double,
   @SerialName("margin_deficit") val marginDeficit: Double = 0.0,
   @SerialName("cross_available_to_trade") val availableToTrade: Double = 0.0,
+  @SerialName("usdc_cross_balance") val crossUsdcBalance: Double? = null,
+  @SerialName("free_vault_equity") val freeVaultEquity: Double? = null,
+  val spot: SpotOverview? = null,
 )
+
+@Serializable
+data class SpotOverview(
+  val positions: List<SpotAssetBalance> = emptyList(),
+  @SerialName("in_flight_orders") val reservations: List<SpotReservation> = emptyList(),
+  @SerialName("total_usd") val totalUsd: Double = 0.0,
+)
+
+@Serializable
+data class SpotAssetBalance(
+  @SerialName("asset_addr") val assetAddress: String,
+  @SerialName("asset_symbol") val symbol: String = "",
+  val amount: Double,
+  @SerialName("usd_value") val valueUsd: Double,
+)
+
+@Serializable
+data class SpotReservation(
+  @SerialName("market_addr") val market: String,
+  @SerialName("order_id") val orderId: String,
+  @SerialName("is_bid") val isBuy: Boolean,
+  @SerialName("reserved_asset") val assetAddress: String,
+  @SerialName("reserved_amount") val amount: Double,
+  @SerialName("reserved_usd_value") val valueUsd: Double,
+)
+
+@Serializable
+data class ProductFees(
+  @SerialName("user_maker_rate") val makerRate: Double,
+  @SerialName("user_taker_rate") val takerRate: Double,
+)
+
+@Serializable
+data class AccountFees(val perp: ProductFees? = null, val spot: ProductFees? = null)
 
 @Serializable
 data class Position(
@@ -340,4 +377,3 @@ data class AccountVaultPerformance(
   val effectiveSharePrice: Double
     get() = positionSharePrice ?: vault.sharePrice
 }
-

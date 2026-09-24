@@ -50,6 +50,9 @@ fun PortfolioPerformanceChart(
   onRangeSelect: (PortfolioChartRange) -> Unit,
   onMetricSelect: (PortfolioMetric) -> Unit,
   modifier: Modifier = Modifier,
+  loading: Boolean = false,
+  error: String? = null,
+  onRetry: () -> Unit = {},
 ) {
   Column(
     modifier =
@@ -84,7 +87,18 @@ fun PortfolioPerformanceChart(
       }
     }
 
-    if (points.size >= 2) {
+    Text("Trading account history", style = MaterialTheme.typography.labelMedium)
+    Text(
+      if (metric == PortfolioMetric.EQUITY) "Net deposits and realized P&L. Excludes unrealized P&L."
+      else "Realized P&L from completed trades.",
+      color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall,
+    )
+    if (loading) {
+      androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+    } else if (error != null) {
+      Text(error, color = FlareColors.TextSecondary)
+      androidx.compose.material3.TextButton(onRetry) { Text("Retry") }
+    } else if (points.size >= 2) {
       val values = points.map { pt ->
         when (metric) {
           PortfolioMetric.EQUITY -> pt.accountValue ?: pt.value
@@ -135,7 +149,7 @@ fun PortfolioPerformanceChart(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          "Performance history building as you trade",
+          "No history for this period",
           color = FlareColors.TextTertiary,
           style = MaterialTheme.typography.bodySmall,
         )
@@ -191,7 +205,7 @@ fun TradingRewardsCard(
     amps?.let {
       Column(horizontalAlignment = Alignment.End) {
         Text(
-          text = "⚡ ${formatBalance(it.totalAmps)} Amps",
+          text = "⚡ ${xyz.mcxross.flare.data.formatQuantity(it.totalAmps, 0)} Amps",
           style = MaterialTheme.typography.labelLarge,
           color = FlareColors.Positive,
         )

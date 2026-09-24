@@ -158,6 +158,8 @@ interface AccountRepository {
     metric: String = "account_value",
   ): List<PortfolioChartPoint>
 
+  suspend fun fees(): xyz.mcxross.flare.decibel.model.AccountFees? = null
+
   suspend fun tradingStreak(): TradingStreak?
 
   suspend fun ampsBreakdown(): AmpsBreakdown?
@@ -978,6 +980,11 @@ class DefaultAccountRepository(
   ): List<PortfolioChartPoint> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
     return client.accounts.portfolioChart(account, timeRange, metric)
+  }
+
+  override suspend fun fees(): xyz.mcxross.flare.decibel.model.AccountFees? {
+    val account = preferences.values.first().selectedSubaccount ?: return null
+    return client.accounts.fees(account)
   }
 
   override suspend fun tradingStreak(): TradingStreak? {

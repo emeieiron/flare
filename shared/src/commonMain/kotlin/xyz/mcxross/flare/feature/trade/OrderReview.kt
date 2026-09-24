@@ -53,10 +53,20 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
     DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
     DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
   }
+  val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
+  if (productFees != null && estimate != null) {
+    val takerFee = estimate.value * productFees.takerRate
+    val makerFee = estimate.value * productFees.makerRate
+    val feeText = if (state.orderType == OrderType.MARKET) formatBalance(takerFee)
+      else "${formatBalance(minOf(makerFee, takerFee))}–${formatBalance(maxOf(makerFee, takerFee))}"
+    DetailRow(if (isSpot) "Trading fee (USD estimate)" else "Estimated trading fee", feeText)
+  } else {
+    DetailRow("Trading fee", "Unavailable")
+  }
   if (estimate?.builderFeeAmount != null && estimate.builderFeeAmount > 0) {
     val bps = estimate.builderFeeBps ?: 5
     val percentStr = "${bps / 100.0}%"
-    DetailRow("Builder support ($percentStr)", "+${formatBalance(estimate.builderFeeAmount)}")
+    DetailRow("Builder fee ($percentStr)", "+${formatBalance(estimate.builderFeeAmount)}")
   }
   // Only exits the person actually set are worth a row; the rest is noise on a confirmation screen.
   if (!isSpot) {
@@ -75,7 +85,7 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
   }
   Text(
     if (isSpot) {
-      "Estimates assume a full fill at the price shown, before network and trading fees."
+      "Fees are deducted from the asset you receive. USD estimates assume a full fill at the price shown; final fees depend on execution."
     } else if (exits) {
       "Estimates assume a full fill at the prices shown, before fees and funding. An exit places a " +
         "limit order when it triggers, so execution is not guaranteed."
