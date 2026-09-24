@@ -76,7 +76,7 @@ import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
 import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
-import xyz.mcxross.flare.feature.settings.AccountsRoute
+import xyz.mcxross.flare.feature.settings.AccountRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
 import xyz.mcxross.flare.security.ForegroundWalletVault
@@ -98,9 +98,9 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 
 @Serializable data object OrdersDestination
 
-@Serializable data object SettingsDestination
+@Serializable data object AccountDestination
 
-@Serializable data object AccountsDestination
+@Serializable data object SettingsDestination
 
 @Serializable data class AccountSetupDestination(val mode: String = "CREATE")
 
@@ -265,14 +265,14 @@ private fun FlareShell() {
   val destination = backStack?.destination
   val isDetailDestination =
     destination?.hasRoute<TradeDestination>() == true ||
-      destination?.hasRoute<AccountsDestination>() == true ||
+      destination?.hasRoute<SettingsDestination>() == true ||
       destination?.hasRoute<AccountSetupDestination>() == true
   val selectedIndex =
     when {
       destination?.hasRoute<PortfolioDestination>() == true -> 1
       destination?.hasRoute<OrdersDestination>() == true -> 2
-      destination?.hasRoute<SettingsDestination>() == true ||
-        destination?.hasRoute<AccountsDestination>() == true ||
+      destination?.hasRoute<AccountDestination>() == true ||
+        destination?.hasRoute<SettingsDestination>() == true ||
         destination?.hasRoute<AccountSetupDestination>() == true -> 3
       else -> 0
     }
@@ -291,7 +291,7 @@ private fun FlareShell() {
         0 -> MarketsDestination
         1 -> PortfolioDestination
         2 -> OrdersDestination
-        else -> SettingsDestination
+        else -> AccountDestination
       }
     navController.navigate(route) {
       popUpTo(navController.graph.startDestinationId) { saveState = true }
@@ -300,7 +300,7 @@ private fun FlareShell() {
     }
   }
 
-  val onOpenSetup = { navController.navigate(AccountsDestination) }
+  val onOpenSetup = { navController.navigate(AccountDestination) }
 
   Scaffold(
     contentWindowInsets = WindowInsets.safeDrawing,
@@ -346,18 +346,17 @@ private fun FlareShell() {
         )
       }
       composable<OrdersDestination> { OrdersRoute(onOpenSetup) }
-      composable<SettingsDestination> {
-        SettingsRoute(
-          onOpenAccounts = { navController.navigate(AccountsDestination) },
-          onOpenSetup = onOpenSetup,
-        )
-      }
-      composable<AccountsDestination> {
-        AccountsRoute(
-          onBack = { navController.popBackStack() },
+      composable<AccountDestination> {
+        AccountRoute(
+          onOpenSettings = { navController.navigate(SettingsDestination) },
           onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
           onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
           onContinueSetup = { navController.navigate(AccountSetupDestination("CONTINUE")) },
+        )
+      }
+      composable<SettingsDestination> {
+        SettingsRoute(
+          onBack = { navController.popBackStack() },
         )
       }
       composable<AccountSetupDestination> { backStackEntry ->
