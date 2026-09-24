@@ -171,23 +171,13 @@ fun PortfolioScreen(
         }
       }
     }
-    if (state.profile.ownerAddress != null)
-      Row(
+    if (state.profile.ownerAddress != null) {
+      FlareButton(
+        text = "Transfer",
+        onClick = { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) },
         modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        FlareButton(
-          "Deposit",
-          { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) },
-          Modifier.weight(1f),
-        )
-        FlareButton(
-          "Withdraw",
-          { onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW)) },
-          Modifier.weight(1f),
-          style = FlareButtonStyle.OUTLINE,
-        )
-      }
+      )
+    }
 
     if (state.streak != null || state.amps != null || state.tier != null) {
       TradingRewardsCard(
