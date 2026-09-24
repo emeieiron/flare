@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,81 +9,62 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CardGiftcard
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
-import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
+import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
-import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
-import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
-import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun SettingsRoute(
-  onOpenAccounts: () -> Unit = {},
-  onOpenSetup: () -> Unit = {},
+  onBack: () -> Unit,
   modifier: Modifier = Modifier,
   viewModel: SettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
-  SettingsScreen(state, viewModel::onIntent, onOpenAccounts, onOpenSetup, modifier)
+  SettingsScreen(state, viewModel::onIntent, onBack, modifier)
 }
 
 @Composable
 fun SettingsScreen(
   state: SettingsUiState,
   onIntent: (SettingsIntent) -> Unit,
-  onOpenAccounts: () -> Unit = {},
-  onOpenSetup: () -> Unit = {},
+  onBack: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var showAccess by remember { mutableStateOf(false) }
@@ -94,32 +74,7 @@ fun SettingsScreen(
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
-  var copied by remember { mutableStateOf(false) }
-  var showDepositSheet by remember { mutableStateOf(false) }
-  var showWithdrawSheet by remember { mutableStateOf(false) }
-  var depositCopied by remember { mutableStateOf(false) }
-  val clipboard = LocalClipboardManager.current
-  val connected = state.profile.ownerAddress != null || state.profile.apiWalletAddress != null
-  val address = (state.profile.ownerAddress ?: state.profile.apiWalletAddress).orEmpty()
-  val completedProfiles = state.preferences.profiles.filter { it.onboardingComplete }
-  val activeIndex =
-    completedProfiles
-      .indexOfFirst { it.id == state.preferences.activeProfileId }
-      .takeIf { it >= 0 } ?: 0
-  val accountLabel = "Account ${activeIndex + 1}"
 
-  LaunchedEffect(copied) {
-    if (copied) {
-      delay(COPIED_CONFIRMATION_MS)
-      copied = false
-    }
-  }
-  LaunchedEffect(depositCopied) {
-    if (depositCopied) {
-      delay(COPIED_CONFIRMATION_MS)
-      depositCopied = false
-    }
-  }
   Column(
     modifier
       .fillMaxSize()
@@ -127,115 +82,9 @@ fun SettingsScreen(
       .verticalScroll(rememberScrollState())
       .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar("Account")
-    if (connected) {
-      Text(
-        accountLabel,
-        style = MaterialTheme.typography.headlineMedium,
-      )
-      Row(
-        Modifier.fillMaxWidth()
-          .clickable(role = Role.Button) {
-            clipboard.setText(AnnotatedString(address))
-            copied = true
-          }
-          .padding(top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        Text(
-          shortAddress(address),
-          color = FlareColors.TextSecondary,
-          style = MaterialTheme.typography.bodyLarge,
-        )
-        Icon(
-          Icons.Outlined.ContentCopy,
-          contentDescription = "Copy your address",
-          tint = FlareColors.TextTertiary,
-          modifier = Modifier.size(16.dp),
-        )
-        if (copied)
-          Text("Copied", color = FlareColors.Positive, style = MaterialTheme.typography.labelSmall)
-      }
-      if (state.profile.ownerAddress != null) {
-        Row(
-          Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          FlareButton(
-            "Deposit",
-            { showDepositSheet = true },
-            Modifier.weight(1f),
-          )
-          FlareButton(
-            "Withdraw",
-            { showWithdrawSheet = true },
-            Modifier.weight(1f),
-            style = FlareButtonStyle.OUTLINE,
-          )
-        }
-      }
-    } else {
-      Text("Your account,\nyour control.", style = MaterialTheme.typography.headlineLarge)
-      Text(
-        "Create an account or bring the one you already use.",
-        Modifier.padding(top = 12.dp),
-        color = FlareColors.TextSecondary,
-        style = MaterialTheme.typography.bodyLarge,
-      )
-      FlareButton(
-        "Create or import account",
-        onOpenAccounts,
-        Modifier.fillMaxWidth().padding(top = 24.dp),
-      )
-    }
-    if (connected) {
-      val completedCount = state.preferences.profiles.count { it.onboardingComplete }
-      SectionLabel("Manage")
-      ActionRow(
-        "Accounts",
-        "$completedCount connected · Switch, add, or import",
-        Icons.Outlined.AccountBalanceWallet,
-        onClick = onOpenAccounts,
-      )
-      if (state.profile.ownerAddress != null) {
-        ActionRow(
-          "Trading access",
-          "Devices and keys that can place orders",
-          Icons.Outlined.PhonelinkLock,
-          onClick = {
-            showAccess = true
-            onIntent(SettingsIntent.LoadDelegations)
-          },
-        )
-        val builderStatus =
-          if (state.preferences.builderApproved && state.preferences.builderFeeBps > 0) {
-            val bpsDouble = state.preferences.builderFeeBps / 100.0
-            "$bpsDouble% active"
-          } else {
-            "Off"
-          }
-        ActionRow(
-          "Builder support",
-          builderStatus,
-          Icons.Outlined.CardGiftcard,
-          onClick = { showBuilderSheet = true },
-        )
-        ActionRow(
-          "Referral code",
-          if (state.referralRedeemed) "Code active" else "Enter a referral code",
-          Icons.Outlined.CardGiftcard,
-          onClick = { showReferralSheet = true },
-        )
-      }
-      ActionRow(
-        "Security & recovery",
-        "Back up keys and manage this device",
-        Icons.Outlined.Key,
-        onClick = { showSecurity = true },
-      )
-    }
-    SectionLabel("Preferences")
+    BackBar(title = "Settings", onBack = onBack)
+
+    SectionLabel("Trading")
     Text(
       "Maximum slippage",
       Modifier.padding(top = 4.dp),
@@ -260,9 +109,60 @@ fun SettingsScreen(
         )
       }
     }
-    state.error?.let { ActionNotice(it, Modifier.padding(bottom = 24.dp), NoticeTone.ALERT) }
+
+    Spacer(Modifier.height(16.dp))
+
+    ActionRow(
+      "Trading access",
+      "Devices and keys that can place orders",
+      Icons.Outlined.PhonelinkLock,
+      onClick = {
+        showAccess = true
+        onIntent(SettingsIntent.LoadDelegations)
+      },
+    )
+
+    if (state.profile.ownerAddress != null) {
+      val builderStatus =
+        if (state.preferences.builderApproved && state.preferences.builderFeeBps > 0) {
+          val bpsDouble = state.preferences.builderFeeBps / 100.0
+          "$bpsDouble% active"
+        } else {
+          "Off"
+        }
+      SectionLabel("Protocol & Rewards")
+      ActionRow(
+        "Builder support",
+        builderStatus,
+        Icons.Outlined.CardGiftcard,
+        onClick = { showBuilderSheet = true },
+      )
+      ActionRow(
+        "Referral code",
+        if (state.referralRedeemed) "Code active" else "Enter a referral code",
+        Icons.Outlined.CardGiftcard,
+        onClick = { showReferralSheet = true },
+      )
+    }
+
+    SectionLabel("Security & Recovery")
+    ActionRow(
+      "Security & recovery",
+      "Back up keys and manage this device",
+      Icons.Outlined.Key,
+      onClick = { showSecurity = true },
+    )
+
+    SectionLabel("About")
+    DetailRow("Network", "Aptos Testnet")
+    DetailRow("DEX Protocol", "Decibel")
+    DetailRow("Version", "1.0.0 (Flare)")
+
+    state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT) }
+    Spacer(Modifier.height(24.dp))
   }
-  if (showAccess)
+
+  if (showAccess) {
     FlareSheet("Trading access", { showAccess = false }) {
       Text(
         "These keys can place and cancel orders for your trading account. Only your wallet can " +
@@ -280,16 +180,20 @@ fun SettingsScreen(
           onClick = { revokeAddress = delegation.delegate },
         )
       }
-      if (state.delegationsLoaded && state.delegations.isEmpty())
+      if (state.delegationsLoaded && state.delegations.isEmpty()) {
         Text("Nothing can trade for this account yet.")
-      if (!state.delegationsLoaded || state.busy)
+      }
+      if (!state.delegationsLoaded || state.busy) {
         ActionNotice(
           "Checking authorized keys…",
           Modifier.padding(top = 12.dp),
           NoticeTone.PROGRESS,
         )
+      }
       state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
     }
+  }
+
   revokeAddress?.let { address ->
     val thisDevice = address == state.profile.apiWalletAddress
     AlertDialog(
@@ -319,7 +223,8 @@ fun SettingsScreen(
       containerColor = FlareColors.Surface,
     )
   }
-  if (showSecurity && state.revealedSecret == null)
+
+  if (showSecurity && state.revealedSecret == null) {
     FlareSheet("Security & recovery", { showSecurity = false }) {
       if (state.profile.ownerAddress != null) {
         ActionRow(
@@ -349,14 +254,17 @@ fun SettingsScreen(
           onClick = { removal = SettingsIntent.RemoveOwner },
         )
       }
-      if (state.profile.apiOnly)
+      if (state.profile.apiOnly) {
         Text(
           "Deposits and withdrawals require your main wallet.",
           Modifier.padding(top = 16.dp),
           color = FlareColors.TextSecondary,
           style = MaterialTheme.typography.bodyMedium,
         )
+      }
     }
+  }
+
   state.revealedSecret?.let { secret ->
     FlareSheet(state.revealedSecretLabel.orEmpty(), { onIntent(SettingsIntent.HideSecret) }) {
       Text(
@@ -370,6 +278,7 @@ fun SettingsScreen(
       FlareButton("Done", { onIntent(SettingsIntent.HideSecret) }, Modifier.fillMaxWidth())
     }
   }
+
   removal?.let { intent ->
     AlertDialog(
       onDismissRequest = { removal = null },
@@ -388,7 +297,8 @@ fun SettingsScreen(
       containerColor = FlareColors.Surface,
     )
   }
-  if (showBuilderSheet)
+
+  if (showBuilderSheet) {
     FlareSheet("Builder support", { showBuilderSheet = false }) {
       Text(
         "Support Flare development with a small contribution on orders " +
@@ -460,7 +370,9 @@ fun SettingsScreen(
         ActionNotice(it, tone = NoticeTone.ALERT)
       }
     }
-  if (showReferralSheet)
+  }
+
+  if (showReferralSheet) {
     FlareSheet("Referral code", { showReferralSheet = false }) {
       Text(
         "Enter a Decibel referral code to link your account and earn trading fee discounts.",
@@ -490,6 +402,8 @@ fun SettingsScreen(
         enabled = !state.busy && state.referralCodeInput.isNotBlank() && !state.referralRedeemed,
       )
     }
+  }
+
   if (showRevokeConfirm) {
     AlertDialog(
       onDismissRequest = { showRevokeConfirm = false },
@@ -514,164 +428,6 @@ fun SettingsScreen(
       containerColor = FlareColors.Surface,
     )
   }
-  if (showDepositSheet) {
-    DepositSheet(
-      accountLabel = accountLabel,
-      address = address,
-      copied = depositCopied,
-      onCopy = {
-        clipboard.setText(AnnotatedString(address))
-        depositCopied = true
-      },
-      onDismiss = { showDepositSheet = false },
-    )
-  }
-  if (showWithdrawSheet) {
-    WithdrawSheet(
-      state = state,
-      address = address,
-      onIntent = onIntent,
-      onDismiss = {
-        showWithdrawSheet = false
-        onIntent(SettingsIntent.DismissWithdraw)
-      },
-    )
-  }
-}
-
-@Composable
-private fun DepositSheet(
-  accountLabel: String,
-  address: String,
-  copied: Boolean,
-  onCopy: () -> Unit,
-  onDismiss: () -> Unit,
-) {
-  FlareSheet("Deposit", onDismiss) {
-    Text(
-      "Deposit funds into your primary account on Aptos. Once deposited, you can transfer funds to your trading subaccounts.",
-      color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodyMedium,
-    )
-    Spacer(Modifier.height(16.dp))
-    DetailRow("Network", "Aptos")
-    DetailRow("Account", accountLabel)
-    DetailRow("Supported assets", "USDC, APT")
-    Spacer(Modifier.height(16.dp))
-    Text("Your Aptos address", style = MaterialTheme.typography.titleSmall)
-    Spacer(Modifier.height(8.dp))
-    Column(
-      Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(12.dp))
-        .background(FlareColors.Elevated)
-        .clickable(role = Role.Button, onClick = onCopy)
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      SelectionContainer {
-        Text(
-          address,
-          style = MaterialTheme.typography.bodySmall,
-          color = FlareColors.TextPrimary,
-        )
-      }
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        Icon(
-          Icons.Outlined.ContentCopy,
-          contentDescription = null,
-          tint = if (copied) FlareColors.Positive else FlareColors.TextSecondary,
-          modifier = Modifier.size(14.dp),
-        )
-        Text(
-          if (copied) "Address copied!" else "Tap to copy",
-          style = MaterialTheme.typography.labelSmall,
-          color = if (copied) FlareColors.Positive else FlareColors.TextSecondary,
-        )
-      }
-    }
-    Spacer(Modifier.height(16.dp))
-    ActionNotice(
-      "Only send Aptos-native USDC and APT to this address. Sending assets from other networks may result in permanent loss.",
-      tone = NoticeTone.INFO,
-    )
-    Spacer(Modifier.height(20.dp))
-    FlareButton(
-      text = if (copied) "Copied!" else "Copy address",
-      onClick = onCopy,
-      modifier = Modifier.fillMaxWidth(),
-    )
-  }
-}
-
-@Composable
-private fun WithdrawSheet(
-  state: SettingsUiState,
-  address: String,
-  onIntent: (SettingsIntent) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  val committed = state.withdrawTransaction as? TransactionState.Committed
-  FlareSheet(
-    title = if (committed != null) "Withdraw complete" else "Withdraw",
-    onDismiss = onDismiss,
-  ) {
-    if (committed != null) {
-      TransactionReceipt(
-        message = "Successfully withdrew ${state.withdrawAmount} USDC to ${shortAddress(state.withdrawDestination)}.",
-        hash = committed.hash,
-        onDone = onDismiss,
-        enabled = !state.withdrawing,
-      )
-      return@FlareSheet
-    }
-    Text(
-      "Withdraw USDC from your account to an external Aptos address.",
-      color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodyMedium,
-    )
-    Spacer(Modifier.height(16.dp))
-    DetailRow("From", "Primary (${shortAddress(address)})")
-    DetailRow("Asset", "USDC (Aptos)")
-    DetailRow("Network fee", "Sponsored by Flare")
-    Spacer(Modifier.height(12.dp))
-    FlareTextField(
-      value = state.withdrawDestination,
-      onValueChange = { onIntent(SettingsIntent.ChangeWithdrawDestination(it)) },
-      label = "Recipient Aptos address",
-      placeholder = "0x...",
-      modifier = Modifier.fillMaxWidth(),
-      singleLine = true,
-      enabled = !state.withdrawing,
-    )
-    Spacer(Modifier.height(12.dp))
-    FlareAmountField(
-      value = state.withdrawAmount,
-      onValueChange = { onIntent(SettingsIntent.ChangeWithdrawAmount(it)) },
-      label = "Amount",
-      unit = "USDC",
-      placeholder = "0.00",
-      modifier = Modifier.fillMaxWidth(),
-      enabled = !state.withdrawing,
-    )
-    state.withdrawError?.let { err ->
-      ActionNotice(err, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
-    }
-    if (state.withdrawing) {
-      ActionNotice("Withdrawing USDC…", Modifier.padding(top = 12.dp), NoticeTone.PROGRESS)
-    }
-    Spacer(Modifier.height(20.dp))
-    FlareButton(
-      text = if (state.withdrawing) "Withdrawing…" else "Withdraw USDC",
-      onClick = { onIntent(SettingsIntent.SubmitWithdraw) },
-      modifier = Modifier.fillMaxWidth(),
-      enabled = !state.withdrawing && state.withdrawDestination.isNotBlank() && state.withdrawAmount.isNotBlank(),
-      working = state.withdrawing,
-    )
-  }
 }
 
 /** What a delegation actually permits, in place of the raw permission type. */
@@ -684,5 +440,3 @@ private fun delegationSummary(delegation: Delegation): String {
     delegation.expirationTimeSeconds?.let { " · expires ${formatCalendarDate(it * 1_000L)}" }
   return scope + expiry.orEmpty()
 }
-
-private const val COPIED_CONFIRMATION_MS = 2_000L
