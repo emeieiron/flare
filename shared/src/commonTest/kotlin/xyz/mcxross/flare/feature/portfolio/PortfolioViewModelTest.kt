@@ -522,4 +522,39 @@ class PortfolioViewModelTest {
 
     vm.onIntent(PortfolioIntent.DismissVaultAction)
   }
+
+  @Test
+  fun transferFundingModeAndDirectionToggle() = runTest {
+    val fakeAccounts = FakeAccountRepository(AccountSnapshot())
+    val vm =
+      PortfolioViewModel(
+        accounts = fakeAccounts,
+        wallets = FakeWalletRepository(),
+        preferences = AppPreferences(MemoryPreferences()),
+        trading = FakeTradingRepository(),
+        markets = FakeMarketsRepository(quotes),
+        marketDetails = FakeMarketDetailsRepository(),
+        assetCatalog = FakeAssetCatalogRepository(),
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    // Open transfer (defaults to deposit into subaccount)
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    val depositState = vm.uiState.first { it.fundingMode != null }
+    assertEquals(FundingMode.DEPOSIT, depositState.fundingMode)
+
+    // Switch to withdraw (to primary)
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW))
+    val withdrawState = vm.uiState.first { it.fundingMode == FundingMode.WITHDRAW }
+    assertEquals(FundingMode.WITHDRAW, withdrawState.fundingMode)
+
+    // Change amount
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("100"))
+    assertEquals("100", vm.uiState.first().fundingAmount)
+
+    // Close funding
+    vm.onIntent(PortfolioIntent.CloseFunding)
+    val closedState = vm.uiState.first { it.fundingMode == null }
+    kotlin.test.assertNull(closedState.fundingMode)
+  }
 }

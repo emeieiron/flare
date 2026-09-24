@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
@@ -46,6 +47,11 @@ data class SettingsUiState(
   val streak: TradingStreak? = null,
   val amps: AmpsBreakdown? = null,
   val tier: TierInfo? = null,
+  val withdrawDestination: String = "",
+  val withdrawAmount: String = "",
+  val withdrawTransaction: TransactionState? = null,
+  val withdrawing: Boolean = false,
+  val withdrawError: String? = null,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -62,6 +68,14 @@ sealed interface SettingsIntent {
   data class SelectSubaccount(val profileId: String, val subaccountAddress: String) : SettingsIntent
 
   data object CreateSubaccountForActiveProfile : SettingsIntent
+
+  data class ChangeWithdrawDestination(val address: String) : SettingsIntent
+
+  data class ChangeWithdrawAmount(val amount: String) : SettingsIntent
+
+  data object SubmitWithdraw : SettingsIntent
+
+  data object DismissWithdraw : SettingsIntent
 
   data class SetSlippage(val basisPoints: Int) : SettingsIntent
 
@@ -211,6 +225,61 @@ class SettingsViewModel(
             local.update { it.copy(creatingSubaccount = false) }
           }
         }
+      is SettingsIntent.ChangeWithdrawDestination ->
+        local.update { it.copy(withdrawDestination = intent.address, withdrawError = null) }
+      is SettingsIntent.ChangeWithdrawAmount ->
+        local.update {
+          it.copy(
+            withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' },
+            withdrawError = null,
+          )
+        }
+      SettingsIntent.DismissWithdraw ->
+        local.update {
+          it.copy(
+            withdrawDestination = "",
+            withdrawAmount = "",
+            withdrawTransaction = null,
+            withdrawError = null,
+            withdrawing = false,
+          )
+        }
+      SettingsIntent.SubmitWithdraw -> {
+        val dest = local.value.withdrawDestination.trim()
+        val amt = local.value.withdrawAmount.trim()
+        if (dest.isBlank()) {
+          local.update { it.copy(withdrawError = "Enter a recipient Aptos address") }
+          return
+        }
+        if (amt.isBlank() || amt.toDoubleOrNull()?.let { it <= 0 } == true) {
+          local.update { it.copy(withdrawError = "Enter an amount greater than zero") }
+          return
+        }
+        viewModelScope.launch {
+          local.update { it.copy(withdrawing = true, withdrawError = null) }
+          try {
+            val prompt = VaultPrompt("Withdraw USDC", "Confirm your identity")
+            accounts.withdrawUsdc(amt, dest, prompt, FeePayment.SPONSORED)
+              .collect { tx ->
+                local.update { it.copy(withdrawTransaction = tx) }
+              }
+            when (val terminal = local.value.withdrawTransaction) {
+              is TransactionState.Committed -> {
+                accounts.refresh()
+                loadSubaccounts()
+              }
+              is TransactionState.Failed -> {
+                local.update { it.copy(withdrawError = terminal.message) }
+              }
+              else -> Unit
+            }
+          } catch (e: Exception) {
+            local.update { it.copy(withdrawError = e.message ?: "Withdrawal failed") }
+          } finally {
+            local.update { it.copy(withdrawing = false) }
+          }
+        }
+      }
       is SettingsIntent.SetSlippage ->
         launchAction("Your slippage setting didn’t change.") {
           preferences.setSlippageBps(intent.basisPoints)
