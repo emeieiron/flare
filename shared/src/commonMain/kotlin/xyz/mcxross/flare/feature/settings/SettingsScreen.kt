@@ -145,7 +145,6 @@ fun SettingsScreen(
       )
     }
 
-    SectionLabel("Security & Recovery")
     ActionRow(
       "Security & recovery",
       "Back up keys and manage this device",

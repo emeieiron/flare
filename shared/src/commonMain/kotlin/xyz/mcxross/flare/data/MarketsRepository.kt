@@ -42,6 +42,7 @@ data class MarketQuote(
   val volume24h: Double,
   val openInterest: Double,
   val favorite: Boolean = false,
+  val fundingRateBps: Double? = null,
 )
 
 data class MarketCatalog(
@@ -109,6 +110,7 @@ class DefaultMarketsRepository(
               changePercent24h = context?.priceChangePercent24h ?: 0.0,
               volume24h = context?.volume24h ?: 0.0,
               openInterest = context?.openInterest ?: price?.openInterest ?: 0.0,
+              fundingRateBps = price?.fundingRateBps,
               favorite = market.address in favorites,
             )
           }
@@ -234,6 +236,7 @@ class DefaultMarketsRepository(
                       quote.copy(
                         markPrice = price.markPrice,
                         openInterest = price.openInterest,
+                        fundingRateBps = price.fundingRateBps,
                       )
                     }
                   },

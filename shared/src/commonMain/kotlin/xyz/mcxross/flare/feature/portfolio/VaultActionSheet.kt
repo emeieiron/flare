@@ -5,13 +5,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
@@ -21,7 +19,6 @@ import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
-import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.NoticeTone
@@ -67,6 +64,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       DetailRow("Total AUM", formatBalance(vault.totalAum))
       DetailRow("Share price", formatPrice(vault.sharePrice))
       DetailRow("Performance fee", "${vault.performanceFeeBps / 100.0}%")
+      DetailRow("Deposit lockup", if (vault.lockupSeconds > 0)
+        "${formatQuantity(vault.lockupSeconds / 3600.0, 1)} hours" else if (vault.lockdownPeriodS == 0L) "None" else "Not available")
 
       val userPerformance = state.accountVaults.firstOrNull { it.vault.address == vault.address }
       val availableShares = userPerformance?.currentNumShares ?: 0.0
@@ -81,6 +80,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
           "${formatQuantity(availableShares, 4)} shares",
         )
         DetailRow("Current value", formatBalance(userPerformance?.currentValue ?: 0.0))
+        Text("Redemption depends on unlocked shares. Locked or pledged shares may be unavailable.",
+          style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
       }
 
       val maxClick: (() -> Unit)? =
@@ -123,7 +124,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         unit = if (mode == VaultActionMode.DEPOSIT) "USDC" else "shares",
         availableText =
           if (mode == VaultActionMode.DEPOSIT) "Available: ${formatBalance(state.collateralBalance)}"
-          else "Available: ${formatQuantity(availableShares, 4)} shares",
+          else "Held: ${formatQuantity(availableShares, 4)} shares",
         placeholder = if (mode == VaultActionMode.DEPOSIT) "10.00" else "5",
         onMaxClick = maxClick,
         supportingText = supportingText,

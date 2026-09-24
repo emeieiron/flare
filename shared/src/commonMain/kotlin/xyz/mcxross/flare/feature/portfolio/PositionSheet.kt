@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -17,7 +16,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
@@ -28,7 +26,7 @@ import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
-import xyz.mcxross.flare.design.FlareAmountField
+import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
@@ -73,23 +71,11 @@ fun PositionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) 
         Modifier.padding(top = 24.dp),
         style = MaterialTheme.typography.titleMedium,
       )
-      FlareAmountField(
-        value = state.takeProfitInput,
-        onValueChange = { onIntent(PortfolioIntent.ChangeTakeProfit(it)) },
-        label = "Take-profit price",
-        unit = "USD",
-        placeholder = "0.00",
-        enabled = !state.busy,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-      )
-      FlareAmountField(
-        value = state.stopLossInput,
-        onValueChange = { onIntent(PortfolioIntent.ChangeStopLoss(it)) },
-        label = "Stop-loss price",
-        unit = "USD",
-        placeholder = "0.00",
-        enabled = !state.busy,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+      ExitPriceFields(
+        state.takeProfitInput, state.stopLossInput,
+        { onIntent(PortfolioIntent.ChangeTakeProfit(it)) },
+        { onIntent(PortfolioIntent.ChangeStopLoss(it)) },
+        Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !state.busy,
       )
       Text(
         "Leverage and margin mode can only change once this position is closed.",

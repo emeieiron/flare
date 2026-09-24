@@ -28,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,9 +44,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import androidx.navigationevent.NavigationEventInfo
-import androidx.navigationevent.compose.NavigationBackHandler
-import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.room3.RoomDatabase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -340,7 +336,11 @@ private fun FlareShell() {
       }
       composable<TradeDestination> { backStackEntry ->
         TradeRoute(
-          backStackEntry.toRoute<TradeDestination>().marketAddress,
+          onOpenActivity = {
+            navController.popBackStack()
+            navController.navigate(OrdersDestination) { launchSingleTop = true }
+          },
+          marketAddress = backStackEntry.toRoute<TradeDestination>().marketAddress,
           onBack = { navController.popBackStack() },
           onOpenSetup = onOpenSetup,
         )

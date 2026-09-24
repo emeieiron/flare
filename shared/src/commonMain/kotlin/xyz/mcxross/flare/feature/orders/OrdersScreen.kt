@@ -15,6 +15,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,7 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatRelativeTime
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
@@ -34,6 +38,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.NoticeTone
@@ -56,6 +61,7 @@ fun OrdersScreen(
   onOpenSetup: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  var historySelected by rememberSaveable { mutableStateOf(state.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP)) }
   Column(
     modifier =
       modifier
@@ -65,14 +71,24 @@ fun OrdersScreen(
         .padding(horizontal = 24.dp)
   ) {
     FlareTopBar("Activity", subtitle = if (state.account.stale) "Reconnecting…" else null)
+    FlareSegmentedControl(
+      listOf(false, true), historySelected,
+      { history ->
+        historySelected = history
+        onIntent(OrdersIntent.SelectSection(if (history) OrdersSection.ORDERS else OrdersSection.OPEN))
+      }, { if (it) "History" else "Open" }, Modifier.padding(bottom = 12.dp),
+    )
     Row(
       modifier =
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 16.dp),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      OrdersSection.entries.forEach { section ->
+      val sections = if (historySelected)
+        listOf(OrdersSection.ORDERS, OrdersSection.TRADES, OrdersSection.FUNDING, OrdersSection.TRANSFERS, OrdersSection.TWAP)
+        else listOf(OrdersSection.OPEN, OrdersSection.TWAP)
+      sections.forEach { section ->
         FlareChip(
-          text = section.label,
+          text = if (section == OrdersSection.OPEN) "Orders" else section.label,
           selected = state.section == section,
           onClick = { onIntent(OrdersIntent.SelectSection(section)) },
         )
@@ -122,7 +138,7 @@ fun OrdersScreen(
                 color = FlareColors.TextSecondary,
               )
               CompactActionButton(
-                text = "Cancel All",
+                text = "Cancel all",
                 positive = false,
                 onClick = { onIntent(OrdersIntent.CancelAll) },
                 enabled = !state.busy,
@@ -149,6 +165,7 @@ fun OrdersScreen(
                       InstrumentBadge("SPOT")
                     }
                   }
+                  OrderConditions(order)
                   Text(
                     "${if (order.isBuy) "Buy" else "Sell"} " +
                       "${order.remainingSize?.let { formatQuantity(it) } ?: "—"} · " +
@@ -189,8 +206,8 @@ fun OrdersScreen(
         }
       OrdersSection.TWAP ->
         when {
-          state.activeTwaps.isNotEmpty() || state.twapHistory.isNotEmpty() -> {
-            if (state.activeTwaps.isNotEmpty()) {
+          (!historySelected && state.activeTwaps.isNotEmpty()) || (historySelected && state.twapHistory.isNotEmpty()) -> {
+            if (!historySelected && state.activeTwaps.isNotEmpty()) {
               Text(
                 "Active TWAPs",
                 style = MaterialTheme.typography.titleSmall,
@@ -228,7 +245,7 @@ fun OrdersScreen(
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
             }
-            if (state.twapHistory.isNotEmpty()) {
+            if (historySelected && state.twapHistory.isNotEmpty()) {
               Text(
                 "Past TWAPs",
                 style = MaterialTheme.typography.titleSmall,
@@ -286,6 +303,12 @@ fun OrdersScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                   )
+                  OrderConditions(order)
+                  order.originalSize?.let { size ->
+                    Text("${formatQuantity(size)} ordered · ${order.remainingSize?.let { formatQuantity(it) } ?: "—"} remaining",
+                      style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+                  }
+
                 }
                 Column(horizontalAlignment = Alignment.End) {
                   Text(order.price?.let(::formatPrice) ?: "Market")
@@ -463,3 +486,15 @@ private fun tradeActionLabel(action: String): String =
     "CloseShort" -> "Closed short"
     else -> action.ifBlank { "Fill" }
   }
+
+@Composable
+private fun OrderConditions(order: Order) {
+  val conditions = buildList {
+    order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
+    order.takeProfitTriggerPrice?.let { add("TP ${formatPrice(it)}") }
+    order.stopLossTriggerPrice?.let { add("SL ${formatPrice(it)}") }
+    if (order.isReduceOnly) add("Reduce only")
+  }
+  if (conditions.isNotEmpty()) Text(conditions.joinToString(" · "),
+    style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+}

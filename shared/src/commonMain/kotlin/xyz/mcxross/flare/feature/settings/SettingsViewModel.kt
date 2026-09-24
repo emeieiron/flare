@@ -236,7 +236,7 @@ class SettingsViewModel(
         }
       SettingsIntent.DismissWithdraw ->
         local.update {
-          it.copy(
+          if (it.withdrawing) it else it.copy(
             withdrawDestination = "",
             withdrawAmount = "",
             withdrawTransaction = null,
@@ -245,13 +245,14 @@ class SettingsViewModel(
           )
         }
       SettingsIntent.SubmitWithdraw -> {
+        if (local.value.withdrawing || local.value.withdrawTransaction is TransactionState.Committed) return
         val dest = local.value.withdrawDestination.trim()
         val amt = local.value.withdrawAmount.trim()
         if (dest.isBlank()) {
           local.update { it.copy(withdrawError = "Enter a recipient Aptos address") }
           return
         }
-        if (amt.isBlank() || amt.toDoubleOrNull()?.let { it <= 0 } == true) {
+        if (amt.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true) {
           local.update { it.copy(withdrawError = "Enter an amount greater than zero") }
           return
         }

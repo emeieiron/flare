@@ -21,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
@@ -34,7 +36,7 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 
 @Composable
-fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss: () -> Unit) {
+fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss: () -> Unit, onOpenActivity: (() -> Unit)? = null) {
   val quote = state.quote ?: return
   val committed = state.transaction as? TransactionState.Committed
   val dismiss = {
@@ -43,6 +45,7 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
       onDismiss()
     }
   }
+  var showExits by rememberSaveable { mutableStateOf(false) }
   var side by rememberSaveable { mutableStateOf(OrderSide.BUY) }
   val estimate = state.orderEstimate(side)
   val inputError = state.orderInputError(side)
@@ -68,6 +71,9 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
     dismiss,
   ) {
     if (committed != null) {
+      onOpenActivity?.let { openActivity ->
+        FlareButton("View Activity", { dismiss(); openActivity() }, Modifier.fillMaxWidth())
+      }
       TransactionReceipt(
         "Your transaction is confirmed. Check Activity for order status and fills.",
         committed.hash,
@@ -228,32 +234,18 @@ fun OrderTicket(state: TradeUiState, onIntent: (TradeIntent) -> Unit, onDismiss:
         )
       }
       if (!isSpot && state.orderType != OrderType.TWAP) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OrderAmountField(
-            "Take profit",
-            "USDC",
-            state.takeProfitInput,
+        val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
+        TextButton({ showExits = !showExits }, enabled = !state.orderBusy) {
+          Text(if (showExits || hasExits) "Take profit / stop loss" else "Add take profit / stop loss")
+        }
+        if (showExits || hasExits) {
+          ExitPriceFields(
+            state.takeProfitInput, state.stopLossInput,
             { onIntent(TradeIntent.SetTakeProfit(it)) },
-            Modifier.weight(1f),
-            enabled = !state.orderBusy,
-            optional = true,
-          )
-          OrderAmountField(
-            "Stop loss",
-            "USDC",
-            state.stopLossInput,
             { onIntent(TradeIntent.SetStopLoss(it)) },
-            Modifier.weight(1f),
             enabled = !state.orderBusy,
-            optional = true,
           )
         }
-        Text(
-          "Optional exits, included with your order.",
-          style = MaterialTheme.typography.bodySmall,
-          color = FlareColors.TextSecondary,
-          modifier = Modifier.padding(top = 8.dp),
-        )
       }
     }
     if (state.sizeInput.isNotBlank() && inputError != null) {

@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -41,7 +42,6 @@ import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
-import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
@@ -78,7 +78,7 @@ fun PortfolioScreen(
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar("Portfolio", subtitle = if (state.isLive) null else "Reconnecting…")
+    FlareTopBar("Portfolio")
     if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null) {
       Spacer(Modifier.height(48.dp))
       Text("Room for your\nnext move.", style = MaterialTheme.typography.displaySmall)
@@ -121,17 +121,17 @@ fun PortfolioScreen(
           PortfolioTab.POSITIONS -> {
             PortfolioMetric(
               "Unrealized P&L",
-              overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "$0.00",
+              overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—",
               Modifier.weight(1f),
             )
             PortfolioMetric(
               "Available to trade",
-              overview?.availableToTrade?.let(::formatBalance) ?: "$0.00",
+              overview?.availableToTrade?.let(::formatBalance) ?: "—",
               Modifier.weight(1f),
             )
             PortfolioMetric(
               "Margin ratio",
-              overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "0%",
+              overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "—",
               Modifier.weight(1f),
             )
           }
@@ -180,15 +180,6 @@ fun PortfolioScreen(
       )
     }
 
-    if (state.streak != null || state.amps != null || state.tier != null) {
-      TradingRewardsCard(
-        streak = state.streak,
-        amps = state.amps,
-        tier = state.tier,
-        modifier = Modifier.padding(top = 16.dp),
-      )
-    }
-
     if (overview != null || state.chartPoints.isNotEmpty()) {
       PortfolioPerformanceChart(
         points = state.chartPoints,
@@ -208,7 +199,7 @@ fun PortfolioScreen(
         (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
     ) {
       ActionNotice(
-        "Showing your last account update.",
+        "Reconnecting. Showing your last account update.",
         Modifier.padding(top = 16.dp),
         NoticeTone.PROGRESS,
       )
@@ -288,6 +279,16 @@ fun PortfolioScreen(
         )
       }
     }
+    if (state.streak != null || state.amps != null || state.tier != null) {
+      TradingRewardsCard(
+        streak = state.streak,
+        amps = state.amps,
+        tier = state.tier,
+        modifier = Modifier.padding(top = 16.dp),
+      )
+    }
+
+
   }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
   if (state.managedPositionMarket != null) PositionSheet(state, onIntent)
@@ -435,7 +436,15 @@ private fun VaultsSection(
   state: PortfolioUiState,
   onIntent: (PortfolioIntent) -> Unit,
 ) {
+  if (state.vaultsLoading) {
+    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+  }
+  state.vaultsError?.let {
+    ActionNotice(it, tone = NoticeTone.ALERT)
+    androidx.compose.material3.TextButton({ onIntent(PortfolioIntent.RefreshVaults) }) { Text("Retry") }
+  }
   if (state.accountVaults.isEmpty() && state.vaults.isEmpty()) {
+    if (state.vaultsLoading || state.vaultsError != null) return
     HorizontalDivider(color = FlareColors.BorderSubtle)
     EmptyState(
       title = "No DLP vaults available",
@@ -446,7 +455,7 @@ private fun VaultsSection(
 
   if (state.accountVaults.isNotEmpty()) {
     Text(
-      text = "Your Vault Positions",
+      text = "Your vault positions",
       style = MaterialTheme.typography.titleSmall,
       color = FlareColors.TextSecondary,
       modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
@@ -466,7 +475,7 @@ private fun VaultsSection(
   }
 
   Text(
-    text = "Available Vaults",
+    text = "Available vaults",
     style = MaterialTheme.typography.titleSmall,
     color = FlareColors.TextSecondary,
     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
