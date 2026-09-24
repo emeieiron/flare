@@ -258,6 +258,12 @@ fun FlareAmountField(
                 text = availableText,
                 style = MaterialTheme.typography.labelSmall,
                 color = FlareColors.Positive,
+                modifier =
+                  if (onMaxClick != null) {
+                    Modifier.clip(RoundedCornerShape(4.dp)).clickable(enabled = enabled, onClick = onMaxClick)
+                  } else {
+                    Modifier
+                  },
               )
             }
           }

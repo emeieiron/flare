@@ -531,7 +531,7 @@ class PortfolioViewModelTest {
         accounts = fakeAccounts,
         wallets = FakeWalletRepository(),
         preferences = AppPreferences(MemoryPreferences()),
-        trading = FakeTradingRepository(),
+        trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 42.5)),
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
         assetCatalog = FakeAssetCatalogRepository(),
@@ -540,8 +540,9 @@ class PortfolioViewModelTest {
 
     // Open transfer (defaults to deposit into subaccount)
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
-    val depositState = vm.uiState.first { it.fundingMode != null }
+    val depositState = vm.uiState.first { it.fundingMode != null && it.primaryUsdcBalance > 0.0 }
     assertEquals(FundingMode.DEPOSIT, depositState.fundingMode)
+    assertEquals(42.5, depositState.primaryUsdcBalance)
 
     // Switch to withdraw (to primary)
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW))
