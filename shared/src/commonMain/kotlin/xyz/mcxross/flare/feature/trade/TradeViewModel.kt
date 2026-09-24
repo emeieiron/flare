@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.feature.trade
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -29,6 +31,7 @@ import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
+import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
@@ -335,7 +338,10 @@ class TradeViewModel(
       }
       is TradeIntent.SetOrderType ->
         mutableUiState.update {
-          it.copy(orderType = intent.type, orderError = null).withTradingEnabled()
+          it.copy(orderType = intent.type, orderError = null,
+            takeProfitInput = if (intent.type == OrderType.TWAP) "" else it.takeProfitInput,
+            stopLossInput = if (intent.type == OrderType.TWAP) "" else it.stopLossInput,
+          ).withTradingEnabled()
         }
       is TradeIntent.SetSize ->
         mutableUiState.update {

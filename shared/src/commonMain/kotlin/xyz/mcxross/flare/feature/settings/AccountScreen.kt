@@ -3,7 +3,6 @@ package xyz.mcxross.flare.feature.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,8 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -24,8 +23,6 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,7 +60,6 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
-import xyz.mcxross.flare.store.AccountProfile
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
 
@@ -106,6 +102,7 @@ fun AccountScreen(
   var showDeposit by remember { mutableStateOf(false) }
   var showWithdraw by remember { mutableStateOf(false) }
   var copied by remember { mutableStateOf(false) }
+  var detailTitle by remember { mutableStateOf("Trading account address") }
   var detailAddress by remember { mutableStateOf<String?>(null) }
   val clipboard = LocalClipboardManager.current
   val profiles = state.preferences.profiles
@@ -152,7 +149,7 @@ fun AccountScreen(
       SectionLabel("Trading accounts")
       subaccounts.forEachIndexed { index, account ->
         val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
-        Row(Modifier.fillMaxWidth().clickable(enabled = !state.busy && !selected, role = Role.RadioButton) {
+        Row(Modifier.fillMaxWidth().selectable(selected = selected, enabled = !state.busy, role = Role.RadioButton) {
           onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
         }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
           Column(Modifier.weight(1f)) {
@@ -163,7 +160,7 @@ fun AccountScreen(
           }
           if (selected) Icon(Icons.Outlined.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
             modifier = Modifier.size(20.dp))
-          IconButton(onClick = { detailAddress = account.address }) {
+          IconButton(onClick = { detailTitle = "Trading account address"; detailAddress = account.address }) {
             Icon(Icons.Outlined.ContentCopy, "Show trading account address", tint = FlareColors.TextSecondary,
               modifier = Modifier.size(18.dp))
           }
@@ -175,9 +172,6 @@ fun AccountScreen(
           icon = Icons.Outlined.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })
       }
-      Spacer(Modifier.height(24.dp))
-      ActionRow("Manage wallets", icon = Icons.Outlined.AccountBalanceWallet,
-        onClick = { showWallets = true }, enabled = !state.busy)
     }
     Spacer(Modifier.height(32.dp))
   }
@@ -194,6 +188,10 @@ fun AccountScreen(
             else onContinueSetup(profile.id)
           })
       }
+      if (walletAddress.isNotBlank()) ActionRow("Wallet address", subtitle = shortAddress(walletAddress),
+        icon = Icons.Outlined.ContentCopy, onClick = {
+          showWallets = false; detailTitle = "Wallet address"; detailAddress = walletAddress
+        })
       ActionRow("Add wallet", icon = Icons.Outlined.Add, onClick = { showWallets = false; showAddWallet = true })
     }
   }
@@ -204,7 +202,7 @@ fun AccountScreen(
       icon = Icons.Outlined.AccountBalanceWallet, onClick = { showAddWallet = false; onImportAccount() })
   }
   detailAddress?.let { address ->
-    FlareSheet("Trading account address", { detailAddress = null }) {
+    FlareSheet(detailTitle, { detailAddress = null }) {
       SelectionContainer { Text(address, style = MaterialTheme.typography.bodyMedium) }
       Spacer(Modifier.height(24.dp))
       FlareButton(if (copied) "Copied" else "Copy address", {
@@ -216,7 +214,7 @@ fun AccountScreen(
     clipboard.setText(AnnotatedString(walletAddress)); copied = true
   }, { showDeposit = false })
   if (showWithdraw && active?.selectedSubaccount != null) WithdrawSheet(state, active.selectedSubaccount,
-    onIntent, { showWithdraw = false; onIntent(SettingsIntent.DismissWithdraw) })
+    onIntent, { if (!state.withdrawing) { showWithdraw = false; onIntent(SettingsIntent.DismissWithdraw) } })
 }
 
 @Composable

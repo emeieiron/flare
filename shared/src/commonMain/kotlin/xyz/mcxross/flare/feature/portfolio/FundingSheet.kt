@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SwapVert
@@ -29,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
@@ -54,8 +52,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   ) {
     if (committed != null) {
       TransactionReceipt(
-        if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading subaccount."
-        else "Your USDC is now in your primary account.",
+        if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading account."
+        else "Your USDC is now in your wallet.",
         committed.hash,
         { onIntent(PortfolioIntent.CloseFunding) },
         enabled = !state.busy,
@@ -64,10 +62,10 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     }
 
     val isDeposit = mode == FundingMode.DEPOSIT
-    val fromLabel = if (isDeposit) "Primary Account" else "Trading Subaccount"
+    val fromLabel = if (isDeposit) "Wallet" else "Trading account"
     val fromAddress =
       if (isDeposit) state.profile.ownerAddress.orEmpty() else state.account.account.orEmpty()
-    val toLabel = if (isDeposit) "Trading Subaccount" else "Primary Account"
+    val toLabel = if (isDeposit) "Trading account" else "Wallet"
     val toAddress =
       if (isDeposit) state.account.account.orEmpty() else state.profile.ownerAddress.orEmpty()
     val availableUsdc =
@@ -212,8 +210,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         text =
           when {
             state.busy -> "Transferring…"
-            mode == FundingMode.DEPOSIT -> "Transfer to subaccount"
-            else -> "Transfer to primary"
+            mode == FundingMode.DEPOSIT -> "Transfer to trading account"
+            else -> "Transfer to wallet"
           },
         onClick = { onIntent(PortfolioIntent.SubmitFunding) },
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),

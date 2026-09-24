@@ -6,6 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -499,7 +500,7 @@ fun FlareChip(
   Box(
     modifier =
       modifier
-        .heightIn(min = 44.dp)
+        .heightIn(min = 48.dp)
         .clip(shape)
         .background(background)
         .selectable(selected = selected, enabled = enabled, role = Role.Tab, onClick = onClick)
@@ -533,6 +534,7 @@ fun <T> FlareSegmentedControl(
   onOptionSelected: (T) -> Unit,
   label: (T) -> String,
   modifier: Modifier = Modifier,
+  enabled: Boolean = true,
 ) {
   Row(
     modifier =
@@ -552,10 +554,10 @@ fun <T> FlareSegmentedControl(
       Box(
         modifier =
           Modifier.weight(1f)
-            .height(36.dp)
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(background)
-            .clickable { onOptionSelected(option) },
+            .selectable(selected = selected, enabled = enabled, role = Role.Tab) { onOptionSelected(option) },
         contentAlignment = Alignment.Center,
       ) {
         Text(
@@ -592,11 +594,11 @@ fun <T> TimeRangeSelector(
         Text(
           label(value),
           Modifier.background(
-              if (active) FlareColors.Positive else Color.Transparent,
+              if (active) FlareColors.Elevated else Color.Transparent,
               MaterialTheme.shapes.extraSmall,
             )
             .padding(horizontal = 6.dp, vertical = 5.dp),
-          color = if (active) FlareColors.Canvas else FlareColors.TextSecondary,
+          color = if (active) FlareColors.TextPrimary else FlareColors.TextSecondary,
           style = MaterialTheme.typography.labelSmall,
         )
       }
@@ -618,7 +620,7 @@ fun CompactActionButton(
   Box(
     modifier =
       modifier
-        .heightIn(min = 44.dp)
+        .heightIn(min = 48.dp)
         .background(if (enabled) background else FlareColors.Surface, CircleShape)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .padding(horizontal = 12.dp),

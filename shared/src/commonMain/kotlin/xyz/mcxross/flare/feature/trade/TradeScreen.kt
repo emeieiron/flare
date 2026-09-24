@@ -61,13 +61,14 @@ fun TradeRoute(
   modifier: Modifier = Modifier,
   onBack: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
+  onOpenActivity: (() -> Unit)? = null,
   viewModel: TradeViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val assetCatalog: AssetCatalogRepository = koinInject()
   val assets by assetCatalog.assets.collectAsStateWithLifecycle()
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
-  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup)
+  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity)
 }
 
 @Composable
@@ -78,6 +79,7 @@ fun TradeScreen(
   modifier: Modifier = Modifier,
   onBack: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
+  onOpenActivity: (() -> Unit)? = null,
 ) {
   var showTools by rememberSaveable { mutableStateOf(false) }
   var showTicket by rememberSaveable { mutableStateOf(false) }
@@ -144,13 +146,15 @@ fun TradeScreen(
       }
       SectionLabel("Market stats")
       if (isSpot) {
-        DetailRow("Market type", "Spot")
         DetailRow("24h volume", formatCompact(quote.volume24h))
         DetailRow("Base asset", quote.market.symbol)
         DetailRow("Quote asset", quote.market.name.substringAfter('/', "USDC").trim())
       } else {
         DetailRow("24h volume", formatCompact(quote.volume24h))
         DetailRow("Open interest", formatCompact(quote.openInterest))
+        DetailRow("Funding rate", quote.fundingRateBps?.let {
+          "${formatQuantity(it / 100.0, 4)}%"
+        } ?: "—")
         DetailRow("Maximum leverage", "${quote.market.maxLeverage}×")
       }
       TextButton({ showBook = !showBook }, Modifier.fillMaxWidth().padding(top = 12.dp)) {
@@ -161,7 +165,7 @@ fun TradeScreen(
           if (state.marketDetails.stale) {
             "Reconnecting to the order book…"
           } else {
-            "Live order book · best bid ${state.marketDetails.orderBook?.bestBid ?: "—"} · best ask ${state.marketDetails.orderBook?.bestAsk ?: "—"}"
+            "Live order book · best bid ${state.marketDetails.orderBook?.bestBid?.toDoubleOrNull()?.let(::formatPrice) ?: "—"} · best ask ${state.marketDetails.orderBook?.bestAsk?.toDoubleOrNull()?.let(::formatPrice) ?: "—"}"
           },
           color = FlareColors.TextSecondary,
           style = MaterialTheme.typography.bodyMedium,
@@ -209,7 +213,7 @@ fun TradeScreen(
       Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
     )
   }
-  if (showTicket) OrderTicket(state, onIntent, { if (!state.orderBusy) showTicket = false })
+  if (showTicket) OrderTicket(state, onIntent, { if (!state.orderBusy) showTicket = false }, onOpenActivity)
   if (showTools)
     FlareSheet("Chart settings", { showTools = false }) {
       Text(
@@ -274,14 +278,18 @@ private fun OrderBookSide(
 ) {
   Column(modifier) {
     Text(label, style = MaterialTheme.typography.labelMedium)
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+      Text("Price", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+      Text("Size", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+    }
     levels.forEach { level ->
       Row(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Text(level.getOrNull(0) ?: "—", style = MaterialTheme.typography.labelSmall)
+        Text(level.getOrNull(0)?.toDoubleOrNull()?.let(::formatPrice) ?: "—", style = MaterialTheme.typography.labelSmall)
         Text(
-          level.getOrNull(1) ?: "—",
+          level.getOrNull(1)?.toDoubleOrNull()?.let { formatQuantity(it) } ?: "—",
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           style = MaterialTheme.typography.labelSmall,
         )

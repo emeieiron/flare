@@ -1,12 +1,10 @@
 package xyz.mcxross.flare.feature.portfolio
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,14 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
 import com.patrykandpatrick.vico.compose.cartesian.axis.VerticalAxis
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModel
-import com.patrykandpatrick.vico.compose.cartesian.data.CartesianLayerRangeProvider
 import com.patrykandpatrick.vico.compose.cartesian.data.LineCartesianLayerModel
 import com.patrykandpatrick.vico.compose.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
@@ -34,13 +29,14 @@ import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
 import com.patrykandpatrick.vico.compose.common.Fill
 import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
-import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
-import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareSegmentedControl
+import xyz.mcxross.flare.design.TimeRangeSelector
 
 @Composable
 fun PortfolioPerformanceChart(
@@ -57,35 +53,13 @@ fun PortfolioPerformanceChart(
   Column(
     modifier =
       modifier
-        .fillMaxWidth()
-        .background(FlareColors.Surface, RoundedCornerShape(16.dp))
-        .padding(16.dp),
+        .fillMaxWidth(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        PortfolioMetric.entries.forEach { m ->
-          FlareChip(
-            text = m.label,
-            selected = metric == m,
-            onClick = { onMetricSelect(m) },
-          )
-        }
-      }
-      Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        PortfolioChartRange.entries.forEach { r ->
-          FlareChip(
-            text = r.label,
-            selected = range == r,
-            onClick = { onRangeSelect(r) },
-          )
-        }
-      }
-    }
+    FlareSegmentedControl(
+      PortfolioMetric.entries, metric, onMetricSelect, { it.label })
+    TimeRangeSelector(
+      PortfolioChartRange.entries, range, { it.label }, onRangeSelect)
 
     Text("Trading account history", style = MaterialTheme.typography.labelMedium)
     Text(
@@ -145,7 +119,7 @@ fun PortfolioPerformanceChart(
       )
     } else {
       Box(
-        modifier = Modifier.fillMaxWidth().height(120.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
         contentAlignment = Alignment.Center,
       ) {
         Text(
@@ -183,7 +157,7 @@ fun TradingRewardsCard(
       ) {
         val streakCount = streak?.streakCount ?: 0
         Text(
-          text = if (streakCount > 0) "🔥 $streakCount-Day Streak" else "🔥 Start Streak",
+          text = if (streakCount > 0) "$streakCount-day streak" else "No active streak",
           style = MaterialTheme.typography.labelLarge,
           color = if (streakCount > 0) FlareColors.Positive else FlareColors.TextPrimary,
         )
@@ -196,7 +170,7 @@ fun TradingRewardsCard(
         }
       }
       Text(
-        text = tier?.let { "${it.tier} Tier" } ?: "Trade daily to maintain streak",
+        text = tier?.let { "${it.tier} tier" } ?: "Trading rewards",
         style = MaterialTheme.typography.bodySmall,
         color = FlareColors.TextSecondary,
       )
@@ -205,7 +179,7 @@ fun TradingRewardsCard(
     amps?.let {
       Column(horizontalAlignment = Alignment.End) {
         Text(
-          text = "⚡ ${xyz.mcxross.flare.data.formatQuantity(it.totalAmps, 0)} Amps",
+          text = "${formatQuantity(it.totalAmps, 0)} Amps",
           style = MaterialTheme.typography.labelLarge,
           color = FlareColors.Positive,
         )

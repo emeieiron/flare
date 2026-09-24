@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -54,6 +55,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareLogo
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
@@ -257,21 +259,12 @@ private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingInt
     enabled = !state.busy,
   )
   if (format == CredentialFormat.PRIVATE_KEY || state.apiImport) {
-    Row(
-      Modifier.fillMaxWidth().padding(top = 16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        if (state.apiImport) "Trading key" else "Owner key",
-        Modifier.weight(1f),
-        style = MaterialTheme.typography.bodyLarge,
-      )
-      Switch(
-        state.apiImport,
-        { onIntent(OnboardingIntent.SetApiImport(it)) },
-        enabled = !state.busy,
-      )
-    }
+    FlareSegmentedControl(
+      listOf(false, true), state.apiImport,
+      { onIntent(OnboardingIntent.SetApiImport(it)) },
+      { if (it) "Trading key" else "Owner key" },
+      Modifier.fillMaxWidth().padding(top = 16.dp), enabled = !state.busy,
+    )
   }
   if (state.apiImport) {
     FlareTextField(
