@@ -99,6 +99,7 @@ data class PortfolioUiState(
   val spotHoldings: List<SpotHolding> = emptyList(),
   val fundingMode: FundingMode? = null,
   val fundingAmount: String = "",
+  val primaryUsdcBalance: Double = 0.0,
   val withdrawalDestination: String = "",
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val fundingTransaction: TransactionState? = null,
@@ -202,11 +203,20 @@ class PortfolioViewModel(
 ) : ViewModel() {
   private val local = MutableStateFlow(PortfolioUiState())
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
+  private val primaryUsdcBalance = MutableStateFlow(0.0)
   private var lastPositionCommand: DecibelCommand? = null
 
   init {
     viewModelScope.launch {
       runSuspendCatching { accounts.refresh() }
+    }
+    viewModelScope.launch {
+      wallets.profile
+        .mapNotNull { it.ownerAddress }
+        .distinctUntilChanged()
+        .collect { owner ->
+          fetchPrimaryUsdcBalance(owner)
+        }
     }
     viewModelScope.launch {
       accounts.snapshot
@@ -249,12 +259,18 @@ class PortfolioViewModel(
   }
 
   val uiState: StateFlow<PortfolioUiState> =
-    combine(local, wallets.profile, accounts.snapshot, trading.pendingTransactions) {
+    combine(local, wallets.profile, accounts.snapshot, trading.pendingTransactions, primaryUsdcBalance) {
         state,
         profile,
         account,
-        pending ->
-        state.copy(profile = profile, account = account, pendingTransactions = pending)
+        pending,
+        primaryUsdc ->
+        state.copy(
+          profile = profile,
+          account = account,
+          pendingTransactions = pending,
+          primaryUsdcBalance = primaryUsdc,
+        )
       }
       .combine(preferences.values) { state, saved ->
         state.copy(
@@ -363,6 +379,7 @@ class PortfolioViewModel(
             accounts.refresh()
             markets.refresh()
             accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
+            uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
             fetchPortfolioChart()
             fetchStreaksAndAmps()
             refreshVaults()
@@ -380,6 +397,9 @@ class PortfolioViewModel(
             fundingTransaction = null,
             actionError = null,
           )
+        }
+        uiState.value.profile.ownerAddress?.let { owner ->
+          viewModelScope.launch { fetchPrimaryUsdcBalance(owner) }
         }
         viewModelScope.launch { runSuspendCatching { accounts.restoreTrading() } }
       }
@@ -626,6 +646,7 @@ class PortfolioViewModel(
     when (val terminal = local.value.fundingTransaction) {
       is TransactionState.Committed -> {
         accounts.refresh()
+        uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
         local.update { it.copy(fundingAmount = "") }
       }
       is TransactionState.Failed -> {
@@ -633,6 +654,13 @@ class PortfolioViewModel(
       }
       else -> Unit
     }
+  }
+
+  private suspend fun fetchPrimaryUsdcBalance(ownerAddress: String) {
+    val balance = runSuspendCatching {
+      trading.baseAssetBalance(ownerAddress, "USDC")
+    }.getOrDefault(0.0)
+    primaryUsdcBalance.value = balance
   }
 
   private suspend fun fetchSpotBalances(subaccount: String) {

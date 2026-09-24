@@ -84,14 +84,26 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       }
 
       val maxClick: (() -> Unit)? =
-        if (mode == VaultActionMode.REDEEM && availableShares > 0.0) {
-          {
-            val maxStr =
-              if (availableShares % 1.0 == 0.0) availableShares.toLong().toString()
-              else formatQuantity(availableShares, 4)
-            onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
-          }
-        } else null
+        when (mode) {
+          VaultActionMode.DEPOSIT ->
+            if (state.collateralBalance > 0.0) {
+              {
+                val maxStr =
+                  if (state.collateralBalance % 1.0 == 0.0) state.collateralBalance.toLong().toString()
+                  else formatQuantity(state.collateralBalance, 2)
+                onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
+              }
+            } else null
+          VaultActionMode.REDEEM ->
+            if (availableShares > 0.0) {
+              {
+                val maxStr =
+                  if (availableShares % 1.0 == 0.0) availableShares.toLong().toString()
+                  else formatQuantity(availableShares, 4)
+                onIntent(PortfolioIntent.ChangeVaultAmount(maxStr))
+              }
+            } else null
+        }
 
       val supportingText =
         if (mode == VaultActionMode.DEPOSIT) {
@@ -109,6 +121,9 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         onValueChange = { onIntent(PortfolioIntent.ChangeVaultAmount(it)) },
         label = if (mode == VaultActionMode.DEPOSIT) "Amount" else "Shares to redeem",
         unit = if (mode == VaultActionMode.DEPOSIT) "USDC" else "shares",
+        availableText =
+          if (mode == VaultActionMode.DEPOSIT) "Available: ${formatBalance(state.collateralBalance)}"
+          else "Available: ${formatQuantity(availableShares, 4)} shares",
         placeholder = if (mode == VaultActionMode.DEPOSIT) "10.00" else "5",
         onMaxClick = maxClick,
         supportingText = supportingText,

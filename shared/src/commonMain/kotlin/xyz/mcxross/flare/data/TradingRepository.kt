@@ -356,6 +356,18 @@ class DefaultTradingRepository(
             balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] ?: 0.0 }
           }
         }
+      } else if (token.equals("USDC", ignoreCase = true)) {
+        val asset = AccountAsset.fungibleAsset(AccountAddress.fromString(client.config.deployment.usdcMetadataAddress))
+        when (val result = aptos.accounts.getBalance(address, asset)) {
+          is AptosResult.Success -> {
+            val balance = result.value.toDouble() / 1_000_000.0
+            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] = balance }
+            balance
+          }
+          is AptosResult.Failure -> {
+            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] ?: 0.0 }
+          }
+        }
       } else {
         0.0
       }

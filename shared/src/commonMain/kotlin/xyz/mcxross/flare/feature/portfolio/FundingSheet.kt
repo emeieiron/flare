@@ -70,10 +70,22 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     val toLabel = if (isDeposit) "Trading Subaccount" else "Primary Account"
     val toAddress =
       if (isDeposit) state.account.account.orEmpty() else state.profile.ownerAddress.orEmpty()
-    val availableBalance =
-      state.account.overview?.let {
-        "${formatQuantity(it.crossWithdrawableBalance, 6)} USDC"
+    val availableUsdc =
+      if (isDeposit) {
+        state.primaryUsdcBalance
+      } else {
+        state.account.overview?.crossWithdrawableBalance ?: 0.0
       }
+    val availableText = "Available: ${formatQuantity(availableUsdc, 2)} USDC"
+    val maxClick: (() -> Unit)? =
+      if (availableUsdc > 0.0) {
+        {
+          val maxStr =
+            if (availableUsdc % 1.0 == 0.0) availableUsdc.toLong().toString()
+            else formatQuantity(availableUsdc, 6)
+          onIntent(PortfolioIntent.ChangeFundingAmount(maxStr))
+        }
+      } else null
 
     Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
       // Intuitive From -> To direction card with switcher button
@@ -86,24 +98,11 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       ) {
         // From section
         Column(modifier = Modifier.fillMaxWidth()) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Text(
-              text = "From",
-              style = MaterialTheme.typography.labelSmall,
-              color = FlareColors.TextSecondary,
-            )
-            if (!isDeposit && availableBalance != null) {
-              Text(
-                text = "Available: $availableBalance",
-                style = MaterialTheme.typography.labelSmall,
-                color = FlareColors.Positive,
-              )
-            }
-          }
+          Text(
+            text = "From",
+            style = MaterialTheme.typography.labelSmall,
+            color = FlareColors.TextSecondary,
+          )
           Spacer(Modifier.height(4.dp))
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -186,6 +185,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         onValueChange = { onIntent(PortfolioIntent.ChangeFundingAmount(it)) },
         label = "Amount",
         unit = "USDC",
+        availableText = availableText,
+        onMaxClick = maxClick,
         placeholder = "0.00",
         enabled = !state.busy && state.pendingWithdrawal == null,
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
