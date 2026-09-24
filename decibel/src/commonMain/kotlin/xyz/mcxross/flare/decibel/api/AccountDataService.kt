@@ -28,6 +28,8 @@ import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.decibel.model.VaultInfo
 
 interface AccountDataService {
+  suspend fun fees(account: String): xyz.mcxross.flare.decibel.model.AccountFees? = null
+
   suspend fun overview(account: String): AccountOverview
 
   suspend fun positions(account: String, market: String? = null): List<Position>
@@ -95,6 +97,9 @@ interface AccountDataService {
 }
 
 internal class DefaultAccountDataService(private val api: DecibelApi) : AccountDataService {
+  override suspend fun fees(account: String): xyz.mcxross.flare.decibel.model.AccountFees =
+    api.get("user_fee_rates") { parameter("account", account) }
+
   override suspend fun overview(account: String): AccountOverview =
     api.get("account_overviews") { parameter("account", account) }
 
@@ -178,7 +183,7 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
     timeRange: String,
     metric: String,
   ): List<PortfolioChartPoint> =
-    runCatching {
+    run {
       val rangeParam = when (timeRange.uppercase()) {
         "1D", "DAY", "DAY_1", "24H" -> "24h"
         "1W", "WEEK", "WEEK_1", "7D" -> "7d"
@@ -192,8 +197,6 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         parameter("range", rangeParam)
         parameter("data_type", dataType)
       }
-    }.getOrElse {
-      emptyList()
     }
 
   override suspend fun fundHistory(
@@ -277,7 +280,7 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
     }.getOrElse { emptyList() }
 
   override suspend fun vaults(limit: Int): List<VaultInfo> =
-    runCatching<List<VaultInfo>> {
+    run {
       val element = api.get<JsonElement>("vaults") {
         parameter("limit", limit.coerceIn(1, 100))
       }
@@ -289,10 +292,10 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         }
         else -> emptyList()
       }
-    }.getOrElse { emptyList() }
+    }
 
   override suspend fun accountVaultPerformance(account: String): List<AccountVaultPerformance> =
-    runCatching<List<AccountVaultPerformance>> {
+    run {
       val element = api.get<JsonElement>("account_vault_performance") {
         parameter("account", account)
       }
@@ -304,5 +307,5 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         }
         else -> emptyList()
       }
-    }.getOrElse { emptyList() }
+    }
 }

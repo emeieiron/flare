@@ -96,7 +96,8 @@ fun PortfolioScreen(
       return@Column
     }
     Text(
-      if (state.account.stale && overview != null) "Last known balance" else "Total balance",
+      if (state.account.stale && overview != null) "Last known account value"
+      else if (state.balanceIncomplete) "Known account value" else "Account value",
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
     )
@@ -124,20 +125,20 @@ fun PortfolioScreen(
               Modifier.weight(1f),
             )
             PortfolioMetric(
-              "Available",
+              "Available to trade",
               overview?.availableToTrade?.let(::formatBalance) ?: "$0.00",
               Modifier.weight(1f),
             )
             PortfolioMetric(
               "Margin ratio",
-              overview?.let { "${(it.crossMarginRatio * 100).toInt()}%" } ?: "0%",
+              overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "0%",
               Modifier.weight(1f),
             )
           }
           PortfolioTab.HOLDINGS -> {
             PortfolioMetric(
-              "USDC Cash",
-              formatBalance(state.collateralBalance),
+              "USDC collateral",
+              overview?.crossUsdcBalance?.let(::formatBalance) ?: "—",
               Modifier.weight(1f),
             )
             PortfolioMetric(
@@ -193,6 +194,9 @@ fun PortfolioScreen(
         points = state.chartPoints,
         range = state.chartRange,
         metric = state.chartMetric,
+        loading = state.chartLoading,
+        error = state.chartError,
+        onRetry = { onIntent(PortfolioIntent.SelectChartRange(state.chartRange)) },
         onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
         onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
         modifier = Modifier.padding(top = 16.dp),
@@ -204,9 +208,15 @@ fun PortfolioScreen(
         (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
     ) {
       ActionNotice(
-        "Reconnecting to your account…",
+        "Showing your last account update.",
         Modifier.padding(top = 16.dp),
         NoticeTone.PROGRESS,
+      )
+    }
+    if (state.balanceIncomplete && state.isLive) {
+      ActionNotice(
+        state.holdingsError ?: "Some balances are unavailable. The value above includes confirmed data only.",
+        Modifier.padding(top = 12.dp),
       )
     }
     settlingNotice(state.pendingTransactions)?.let { notice ->
@@ -372,11 +382,16 @@ private fun HoldingRow(
     }
     Column(horizontalAlignment = Alignment.End) {
       Text(
-        formatBalance(holding.valueUsd),
+        if (holding.markPrice > 0 || holding.isCollateral) formatBalance(holding.valueUsd) else "—",
         style = MaterialTheme.typography.labelLarge,
       )
+      if (holding.reservedQuantity > 0) Text(
+        "${formatQuantity(holding.reservedQuantity)} reserved",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelSmall,
+      )
       Text(
-        "${formatQuantity(holding.quantity, 4)} ${holding.symbol}",
+        "${formatQuantity(holding.quantity)} ${holding.symbol}",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )

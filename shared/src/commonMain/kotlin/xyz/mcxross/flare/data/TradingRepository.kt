@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.data
 
 import kotlin.time.Clock
+import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -94,8 +95,6 @@ class DefaultTradingRepository(
 ) : TradingRepository {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = Mutex()
-  private val balanceCacheMutex = Mutex()
-  private val baseAssetBalanceCache = mutableMapOf<String, Double>()
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
     journal
@@ -340,42 +339,27 @@ class DefaultTradingRepository(
     }
   }
 
-  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
-    runSuspendCatching {
-      val address = AccountAddress.fromString(accountAddress)
-      val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
-      val cacheKey = "$accountAddress:$token"
-      if (token.equals("APT", ignoreCase = true)) {
-        when (val result = aptos.accounts.getBalance(address, AccountAsset.coin(APTOS_COIN))) {
-          is AptosResult.Success -> {
-            val balance = result.value.toDouble() / 100_000_000.0
-            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] = balance }
-            balance
-          }
-          is AptosResult.Failure -> {
-            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] ?: 0.0 }
-          }
-        }
-      } else if (token.equals("USDC", ignoreCase = true)) {
-        val asset = AccountAsset.fungibleAsset(AccountAddress.fromString(client.config.deployment.usdcMetadataAddress))
-        when (val result = aptos.accounts.getBalance(address, asset)) {
-          is AptosResult.Success -> {
-            val balance = result.value.toDouble() / 1_000_000.0
-            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] = balance }
-            balance
-          }
-          is AptosResult.Failure -> {
-            balanceCacheMutex.withLock { baseAssetBalanceCache[cacheKey] ?: 0.0 }
-          }
-        }
-      } else {
-        0.0
-      }
+  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double {
+    val token = symbol.substringBefore('/').trim().uppercase()
+    val address = AccountAddress.fromString(accountAddress)
+    val asset: AccountAsset
+    val decimals: Int
+    if (token == "USDC") {
+      asset = AccountAsset.fungibleAsset(client.config.deployment.usdcMetadataAddress)
+      decimals = 6
+    } else {
+      val context = client.markets.spotAssetContexts().firstOrNull {
+        it.name.substringBefore('/').trim().equals(token, ignoreCase = true)
+      } ?: error("Balance information for $token is unavailable")
+      asset = AccountAsset.fungibleAsset(context.baseAssetAddress)
+      decimals = context.baseDecimals
     }
-    .getOrElse {
-      val token = symbol.split("/").firstOrNull()?.trim() ?: symbol
-      balanceCacheMutex.withLock { baseAssetBalanceCache["$accountAddress:$token"] ?: 0.0 }
+    require(decimals in 0..18) { "Unsupported asset precision" }
+    return when (val result = aptos.accounts.getBalance(address, asset)) {
+      is AptosResult.Success -> result.value.toDouble() / 10.0.pow(decimals)
+      is AptosResult.Failure -> error("Couldn’t update your $token balance")
     }
+  }
 
   override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
     flow {

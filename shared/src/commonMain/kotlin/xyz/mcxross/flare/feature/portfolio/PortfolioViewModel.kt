@@ -2,6 +2,9 @@ package xyz.mcxross.flare.feature.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -63,8 +66,8 @@ enum class PortfolioChartRange(val label: String, val wireValue: String) {
 }
 
 enum class PortfolioMetric(val label: String, val wireValue: String) {
-  EQUITY("Equity", "account_value"),
-  PNL("Realized PnL", "pnl"),
+  EQUITY("Net value", "account_value"),
+  PNL("Realized P&L", "pnl"),
 }
 
 enum class VaultActionMode {
@@ -87,6 +90,7 @@ data class SpotHolding(
   val valueUsd: Double,
   val isCollateral: Boolean = false,
   val badge: String? = null,
+  val reservedQuantity: Double = 0.0,
 )
 
 data class PortfolioUiState(
@@ -114,6 +118,10 @@ data class PortfolioUiState(
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
   val chartLoading: Boolean = false,
+  val chartError: String? = null,
+  val holdingsError: String? = null,
+  val vaultsLoading: Boolean = false,
+  val vaultsError: String? = null,
   val streak: TradingStreak? = null,
   val amps: AmpsBreakdown? = null,
   val tier: TierInfo? = null,
@@ -132,13 +140,18 @@ data class PortfolioUiState(
   val totalBalance: Double
     get() {
       val perpEquity = account.overview?.equityBalance ?: 0.0
-      val spotAssetsValue = spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
-      val vaultAssetsValue = accountVaults.sumOf { it.currentValue }
+      val spotAssetsValue = totalSpotValue
+      val vaultAssetsValue = account.overview?.freeVaultEquity ?: 0.0
       return perpEquity + spotAssetsValue + vaultAssetsValue
     }
 
   val totalSpotValue: Double
-    get() = spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
+    get() = account.overview?.spot?.totalUsd
+      ?: spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
+
+  val balanceIncomplete: Boolean
+    get() = account.overview?.spot == null || holdingsError != null ||
+      (account.overview?.freeVaultEquity == null && accountVaults.isNotEmpty()) || vaultsError != null
 
   val collateralBalance: Double
     get() = account.overview?.crossWithdrawableBalance ?: account.overview?.availableToTrade ?: 0.0
@@ -204,6 +217,8 @@ class PortfolioViewModel(
   private val local = MutableStateFlow(PortfolioUiState())
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private val primaryUsdcBalance = MutableStateFlow(0.0)
+  private var chartJob: Job? = null
+  private val balanceMutex = Mutex()
   private var lastPositionCommand: DecibelCommand? = null
 
   init {
@@ -291,55 +306,46 @@ class PortfolioViewModel(
 
         val holdings = mutableListOf<SpotHolding>()
 
-        // 1. Collateral (USDC Cash)
-        val usdcBalance =
-          state.account.overview?.crossWithdrawableBalance
-            ?: state.account.overview?.availableToTrade
-            ?: 0.0
-        if (usdcBalance > 0.0 || state.account.overview != null) {
-          holdings.add(
-            SpotHolding(
-              symbol = "USDC",
-              name = "USD Coin",
-              marketAddress = null,
-              quantity = usdcBalance,
-              markPrice = 1.0,
-              valueUsd = usdcBalance,
-              isCollateral = true,
-              badge = "CASH",
-            )
-          )
+        // Collateral is an owned balance, not the amount currently available to withdraw.
+        state.account.overview?.crossUsdcBalance?.let { cash ->
+          holdings.add(SpotHolding("USDC", "Trading collateral", quantity = cash,
+            markPrice = 1.0, valueUsd = cash, isCollateral = true, badge = "MARGIN"))
         }
-
-        // 2. Spot crypto assets
-        for ((symbol, quantity) in balances) {
-          if (quantity > 0.0) {
-            val spotQuote =
-              catalog.quotes.firstOrNull { quote ->
-                quote.market.assetType == AssetType.SPOT &&
-                  (quote.market.symbol
-                    .split("/")
-                    .firstOrNull()
-                    ?.trim()
-                    ?.equals(symbol, ignoreCase = true) == true ||
-                    quote.market.symbol.equals(symbol, ignoreCase = true))
-              }
-            val mark = spotQuote?.markPrice ?: 0.0
-            val metadata = assetCatalog?.assetFor(symbol)
-            holdings.add(
-              SpotHolding(
-                symbol = symbol,
-                name =
-                  metadata?.name
-                    ?: if (symbol.equals("APT", ignoreCase = true)) "Aptos" else symbol,
-                marketAddress = spotQuote?.market?.address,
-                quantity = quantity,
-                markPrice = mark,
-                valueUsd = quantity * mark,
-                isCollateral = false,
-                badge = "SPOT",
-              )
-            )
+        val spot = state.account.overview?.spot
+        if (spot != null) {
+          val assets = (spot.positions.map { it.assetAddress } +
+            spot.reservations.map { it.assetAddress }).distinct()
+          assets.forEach { address ->
+            val position = spot.positions.firstOrNull { it.assetAddress == address }
+            val reserved = spot.reservations.filter { it.assetAddress == address }
+            val reservationMarket = reserved.firstOrNull()?.let { item ->
+              catalog.quotes.firstOrNull { it.market.address == item.market }
+            }
+            val symbol = position?.symbol?.takeIf { it.isNotBlank() }
+              ?: if (reserved.firstOrNull()?.isBuy == true) "USDC"
+              else reservationMarket?.market?.symbol ?: xyz.mcxross.flare.design.shortAddress(address)
+            val quote = catalog.quotes.firstOrNull {
+              it.market.assetType == AssetType.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
+            }
+            val reservedQuantity = reserved.sumOf { it.amount }
+            val quantity = (position?.amount ?: 0.0) + reservedQuantity
+            if (quantity > 0) {
+              val value = (position?.valueUsd ?: 0.0) + reserved.sumOf { it.valueUsd }
+              holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
+                marketAddress = quote?.market?.address, quantity = quantity,
+                markPrice = if (quantity > 0) value / quantity else 0.0, valueUsd = value,
+                badge = "SPOT", reservedQuantity = reservedQuantity))
+            }
+          }
+        } else {
+          balances.filterValues { it > 0 }.forEach { (symbol, quantity) ->
+            val quote = catalog.quotes.firstOrNull {
+              it.market.assetType == AssetType.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
+            }
+            val price = if (symbol == "USDC") 1.0 else quote?.markPrice ?: 0.0
+            holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
+              marketAddress = quote?.market?.address, quantity = quantity,
+              markPrice = price, valueUsd = quantity * price, badge = "SPOT"))
           }
         }
 
@@ -663,33 +669,38 @@ class PortfolioViewModel(
     primaryUsdcBalance.value = balance
   }
 
-  private suspend fun fetchSpotBalances(subaccount: String) {
-    val spotSymbols =
-      markets.catalog.value.quotes
-        .filter { it.market.assetType == AssetType.SPOT }
-        .mapNotNull { it.market.symbol.split("/").firstOrNull()?.trim() }
-        .distinct()
-        .ifEmpty { listOf("APT") }
-
-    val updated = spotBalances.value.toMutableMap()
-    for (symbol in spotSymbols) {
-      val balance = trading.baseAssetBalance(subaccount, symbol)
-      updated[symbol] = balance
+  private suspend fun fetchSpotBalances(subaccount: String) = balanceMutex.withLock {
+    if (accounts.snapshot.value.overview?.spot != null) {
+      local.update { it.copy(holdingsError = null) }
+      return@withLock
     }
-    spotBalances.value = updated.filterValues { it > 0.0 }
+    val symbols = markets.catalog.value.quotes
+      .filter { it.market.assetType == AssetType.SPOT }
+      .map { it.market.symbol }.distinct() + "USDC"
+    val result = runSuspendCatching {
+      symbols.associateWith { trading.baseAssetBalance(subaccount, it) }
+    }
+    if (accounts.snapshot.value.account != subaccount) return@withLock
+    result.onSuccess { values ->
+      spotBalances.value = values.filterValues { it > 0.0 }
+      local.update { it.copy(holdingsError = null) }
+    }.onFailure {
+      local.update { it.copy(holdingsError = "Some holdings couldn’t be updated.") }
+    }
   }
 
   private fun fetchPortfolioChart() {
-    viewModelScope.launch {
-      local.update { it.copy(chartLoading = true) }
-      val points =
-        runSuspendCatching {
-          accounts.portfolioChart(
-            timeRange = local.value.chartRange.wireValue,
-            metric = local.value.chartMetric.wireValue,
-          )
-        }.getOrDefault(emptyList())
-      local.update { it.copy(chartPoints = points, chartLoading = false) }
+    chartJob?.cancel()
+    val range = local.value.chartRange
+    val metric = local.value.chartMetric
+    chartJob = viewModelScope.launch {
+      local.update { it.copy(chartLoading = true, chartError = null, chartPoints = emptyList()) }
+      runSuspendCatching { accounts.portfolioChart(range.wireValue, metric.wireValue) }
+        .onSuccess { points ->
+          local.update { it.copy(chartPoints = points, chartLoading = false) }
+        }.onFailure {
+          local.update { it.copy(chartLoading = false, chartError = "History is unavailable. Try again.") }
+        }
     }
   }
 
@@ -720,9 +731,15 @@ class PortfolioViewModel(
 
   fun refreshVaults() {
     viewModelScope.launch {
-      val v = runCatching { accounts.vaults() }.getOrDefault(emptyList())
-      val perf = runCatching { accounts.accountVaultPerformance() }.getOrDefault(emptyList())
-      local.update { it.copy(vaults = v, accountVaults = perf) }
+      local.update { it.copy(vaultsLoading = true, vaultsError = null) }
+      runSuspendCatching {
+        val vaults = accounts.vaults()
+        val positions = accounts.accountVaultPerformance()
+        local.update { it.copy(vaults = vaults, accountVaults = positions) }
+      }.onFailure {
+        local.update { it.copy(vaultsError = "Couldn’t update vault balances. Try again.") }
+      }
+      local.update { it.copy(vaultsLoading = false) }
     }
   }
 
@@ -776,7 +793,7 @@ class PortfolioViewModel(
         is TransactionState.Committed -> {
           refreshVaults()
           accounts.refresh()
-          local.update { it.copy(selectedVault = null, vaultAction = null, vaultAmountInput = "") }
+          // Keep the committed action visible until the receipt is dismissed.
         }
         is TransactionState.Failed -> error(terminal.message)
         else -> Unit

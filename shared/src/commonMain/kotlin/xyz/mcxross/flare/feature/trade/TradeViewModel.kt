@@ -76,6 +76,7 @@ data class TradeUiState(
   val topUpTransaction: TransactionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
+  val fees: xyz.mcxross.flare.decibel.model.AccountFees? = null,
   val builderAddress: String? = null,
   val builderFeeBps: Int? = null,
   val builderApproved: Boolean = false,
@@ -151,6 +152,7 @@ class TradeViewModel(
   private var marketDetailsJob: Job? = null
   private var baseBalanceJob: Job? = null
   private var lastBaseBalanceKey: String? = null
+  private var feeAccount: String? = null
 
   init {
     viewModelScope.launch {
@@ -250,23 +252,47 @@ class TradeViewModel(
   private fun syncBalances(forceBase: Boolean = false) {
     val snapshot = accounts.snapshot.value
     val quote = mutableUiState.value.quote
-    val usdc =
-      snapshot.overview?.availableToTrade ?: snapshot.overview?.crossWithdrawableBalance ?: 0.0
-    mutableUiState.update { it.copy(quoteBalance = usdc) }
+    val subaccount = snapshot.account
+    if (subaccount != null && subaccount != feeAccount) {
+      feeAccount = subaccount
+      mutableUiState.update { it.copy(fees = null) }
+      viewModelScope.launch {
+        val fees = runSuspendCatching { accounts.fees() }.getOrNull()
+        if (accounts.snapshot.value.account == subaccount) {
+          mutableUiState.update { it.copy(fees = fees) }
+        }
+      }
+    }
     if (quote?.market?.assetType == AssetType.SPOT) {
-      val subaccount = snapshot.account ?: mutableUiState.value.tradingAccountAddress
+      val spot = snapshot.overview?.spot
+      val availableCash = spot?.positions?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
+      mutableUiState.update {
+        it.copy(quoteBalance = availableCash?.plus(snapshot.overview?.crossWithdrawableBalance ?: 0.0))
+      }
+      val base = spot?.positions?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
+      if (spot != null) {
+        baseBalanceJob?.cancel()
+        mutableUiState.update { it.copy(baseBalance = base) }
+        return
+      }
       val key = "$subaccount:${quote.market.address}"
       if (subaccount != null && (forceBase || key != lastBaseBalanceKey)) {
         lastBaseBalanceKey = key
         baseBalanceJob?.cancel()
+        mutableUiState.update { it.copy(baseBalance = null, quoteBalance = null) }
         baseBalanceJob = viewModelScope.launch {
-          val base = trading.baseAssetBalance(subaccount, quote.market.symbol)
-          mutableUiState.update { it.copy(baseBalance = base) }
+          val availableBase = runSuspendCatching { trading.baseAssetBalance(subaccount, quote.market.symbol) }.getOrNull()
+          val cash = runSuspendCatching { trading.baseAssetBalance(subaccount, "USDC") }.getOrNull()
+          mutableUiState.update {
+            it.copy(baseBalance = availableBase,
+              quoteBalance = cash?.plus(snapshot.overview?.crossWithdrawableBalance ?: 0.0))
+          }
         }
       }
     } else {
       lastBaseBalanceKey = null
       baseBalanceJob?.cancel()
+      mutableUiState.update { it.copy(quoteBalance = snapshot.overview?.availableToTrade) }
     }
   }
 
