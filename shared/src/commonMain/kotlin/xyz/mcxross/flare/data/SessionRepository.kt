@@ -238,7 +238,7 @@ class WorkerSessionRepository(
       }
     val response =
       try {
-        client
+        val result = client
           .post("${runtime.workerBaseUrl.trimEnd('/')}/v1/auth/session") {
             contentType(ContentType.Application.Json)
             setBody(
@@ -249,7 +249,14 @@ class WorkerSessionRepository(
               )
             )
           }
-          .body<WorkerSession>()
+        check(result.status.value in 200..299) {
+          when (result.status.value) {
+            403 -> "This wallet is not authorized for the selected trading account."
+            401 -> "Wallet authentication expired. Unlock the wallet and try again."
+            else -> "Wallet authentication failed (HTTP ${result.status.value})."
+          }
+        }
+        result.body<WorkerSession>()
       } finally {
         publicKey.fill(0)
         signature.fill(0)

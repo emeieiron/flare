@@ -74,6 +74,8 @@ sealed interface OrdersIntent {
   data object TopUpApiWallet : OrdersIntent
 
   data object RefreshTwaps : OrdersIntent
+
+  data object RetryAccount : OrdersIntent
 }
 
 class OrdersViewModel(
@@ -116,6 +118,9 @@ class OrdersViewModel(
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
+      OrdersIntent.RetryAccount -> viewModelScope.launch {
+        runSuspendCatching { accounts.restoreTrading() }
+      }
       is OrdersIntent.SelectSection -> {
         local.update { it.copy(section = intent.section) }
         if (intent.section == OrdersSection.TWAP) {
