@@ -102,7 +102,7 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 
 @Serializable data object SettingsDestination
 
-@Serializable data class AccountSetupDestination(val mode: String = "CREATE")
+@Serializable data class AccountSetupDestination(val mode: String = "CREATE", val profileId: String? = null)
 
 @Composable
 fun App(
@@ -351,7 +351,7 @@ private fun FlareShell() {
           onOpenSettings = { navController.navigate(SettingsDestination) },
           onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
           onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
-          onContinueSetup = { navController.navigate(AccountSetupDestination("CONTINUE")) },
+          onContinueSetup = { id -> navController.navigate(AccountSetupDestination("CONTINUE", id)) },
         )
       }
       composable<SettingsDestination> {
@@ -360,9 +360,10 @@ private fun FlareShell() {
         )
       }
       composable<AccountSetupDestination> { backStackEntry ->
-        val mode = backStackEntry.toRoute<AccountSetupDestination>().mode
+        val setup = backStackEntry.toRoute<AccountSetupDestination>()
         OnboardingRoute(
-          initialMode = mode,
+          initialMode = setup.mode,
+          profileId = setup.profileId,
           onCompleted = { navController.popBackStack() },
           onBack = { navController.popBackStack() },
         )

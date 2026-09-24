@@ -86,12 +86,15 @@ fun MarketsScreen(
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       item {
+        FlareChip("All", !state.favoritesOnly && state.selectedCategory == null,
+          { onIntent(MarketsIntent.SetCategory(null)) })
+      }
+      item {
         FlareChip(
           text = "Watchlist",
           selected = state.favoritesOnly,
           onClick = {
             onIntent(MarketsIntent.SetFavoritesOnly(true))
-            onIntent(MarketsIntent.SetCategory(null))
           },
         )
       }
@@ -102,7 +105,6 @@ fun MarketsScreen(
           selected = isCategorySelected,
           onClick = {
             if (isCategorySelected) {
-              onIntent(MarketsIntent.SetFavoritesOnly(true))
               onIntent(MarketsIntent.SetCategory(null))
             } else {
               onIntent(MarketsIntent.SetFavoritesOnly(false))
@@ -198,5 +200,5 @@ internal fun marketSectionTitle(state: MarketsUiState): String =
     state.query.isNotBlank() -> "Search results"
     state.favoritesOnly -> "Your watchlist"
     state.selectedCategory != null -> marketCategoryLabel(state.selectedCategory)
-    else -> "Your watchlist"
+    else -> "All markets"
   }
