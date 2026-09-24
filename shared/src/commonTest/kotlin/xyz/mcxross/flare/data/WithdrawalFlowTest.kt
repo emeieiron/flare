@@ -99,13 +99,16 @@ class WithdrawalFlowTest {
   }
 
   @Test
-  fun anOwnerActionHandsTheTradingSessionBackWithoutAnotherPrompt() = runTest {
+  fun ownedAccountRefreshDoesNotRequireADeviceTradingDelegation() = runTest {
     fixture { f ->
       f.preferences.setApiWallet("0x9")
 
       f.accounts.withdrawUsdc("10", null, prompt).toList()
 
-      assertEquals(listOf(false), f.sessions.tradingPrompts.map { it.requireFreshAuthorization })
+      assertTrue(f.sessions.tradingPrompts.isEmpty())
+      assertEquals(100.0, f.accounts.snapshot.value.overview?.equityBalance)
+      assertFalse(f.accounts.snapshot.value.stale)
+      assertTrue(f.sessions.boundRoles.all { it == SessionRole.OWNER })
     }
   }
 
@@ -137,9 +140,13 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
   )
   val http =
     HttpClient(
-      MockEngine {
-        respond(
-          """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}""",
+      MockEngine { request ->
+        val body = when (request.url.encodedPath.substringAfterLast('/')) {
+          "account_positions" -> "[]"
+          "open_orders", "order_history", "trade_history", "funding_rate_history", "account_fund_history" -> """{"items":[],"total_count":0}"""
+          else -> """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}"""
+        }
+        respond(body,
           headers = headersOf(HttpHeaders.ContentType, "application/json"),
         )
       }
@@ -174,11 +181,15 @@ private class WithdrawalFixture(
 
 private class WithdrawalSessions : SessionRepository {
   val tradingPrompts = mutableListOf<VaultPrompt>()
+  val boundRoles = mutableListOf<SessionRole>()
 
   override val status =
     MutableStateFlow<SessionStatus?>(SessionStatus(SessionRole.OWNER, "0x1", "0x2", Long.MAX_VALUE))
 
-  override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
+  override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> {
+    boundRoles += status.role
+    return operation
+  }
 
   override suspend fun accessToken() = "test"
 

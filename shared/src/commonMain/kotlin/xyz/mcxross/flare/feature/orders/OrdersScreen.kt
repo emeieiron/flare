@@ -70,7 +70,11 @@ fun OrdersScreen(
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar("Activity", subtitle = if (state.account.stale) "Reconnecting…" else null)
+    FlareTopBar("Activity", subtitle = when {
+      state.account.error != null -> "Account data unavailable"
+      state.account.stale -> "Connecting…"
+      else -> null
+    })
     FlareSegmentedControl(
       listOf(false, true), historySelected,
       { history ->
@@ -93,6 +97,12 @@ fun OrdersScreen(
           onClick = { onIntent(OrdersIntent.SelectSection(section)) },
         )
       }
+    }
+    val readError = if (historySelected) state.history.error else state.account.error
+    if (readError != null) {
+      ActionNotice("Account data couldn’t be loaded. Check your connection and account access.",
+        Modifier.padding(bottom = 8.dp), NoticeTone.ALERT)
+      androidx.compose.material3.TextButton({ onIntent(OrdersIntent.RetryAccount) }) { Text("Retry") }
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
     (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
@@ -188,10 +198,14 @@ fun OrdersScreen(
           }
           state.profile.ownerAddress != null || state.profile.apiWalletAddress != null ->
             EmptyState(
-              title = if (state.account.stale) "Orders are on their way" else "No open orders",
+              title = when {
+                state.account.error != null -> "Orders unavailable"
+                state.account.stale -> "Loading orders"
+                else -> "No open orders"
+              },
               message =
                 if (state.account.stale) {
-                  "They appear as soon as your account reconnects."
+                  "Your orders will appear when account access is restored."
                 } else {
                   "Working orders will appear here after submission."
                 },

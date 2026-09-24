@@ -212,6 +212,7 @@ class DefaultAccountRepository(
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
   private val refreshMutex = Mutex()
+  private val readSessionMutex = Mutex()
   private val historyMutex = Mutex()
   // Scoped to the reviewed create-and-enable operation, never a general owner unlock.
   private var setupApproval: Triple<String, Long, Long>? = null
@@ -259,11 +260,18 @@ class DefaultAccountRepository(
       mutableSnapshot.value = AccountSnapshot(account = subaccount)
       mutableHistory.value = AccountHistorySnapshot(account = subaccount)
     }
-    if (saved.apiWalletAddress != null) sessions.ensureTrading(subaccount, prompt)
-    else sessions.authenticateOwner(subaccount, prompt)
-    refresh()
-    refreshHistory()
-    startLive()
+    try {
+      ensureReadSession(subaccount)
+      refresh()
+      refreshHistory()
+      startLive()
+    } catch (error: Exception) {
+      if (error is kotlinx.coroutines.CancellationException) throw error
+      val message = "Account access could not be restored. Check the selected wallet and trading account."
+      mutableSnapshot.update { it.copy(account = subaccount, loading = false, stale = true, error = message) }
+      mutableHistory.update { it.copy(account = subaccount, loading = false, stale = true, error = message) }
+      throw error
+    }
   }
 
   override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {
@@ -683,22 +691,28 @@ class DefaultAccountRepository(
     return sessions.bind(status, flow { emit(trading.transactionStatus(reference)) }).first()
   }
 
-  private suspend fun ensureReadSession(account: String) {
+  private suspend fun ensureReadSession(account: String): SessionStatus = readSessionMutex.withLock {
     val saved = preferences.values.first()
     val current = sessions.status.value
-    val expected =
-      if (current?.role == SessionRole.API) saved.apiWalletAddress else saved.ownerAddress
+    // Reading an owned account must not depend on a device trading key's delegation.
+    val expectedRole = if (saved.ownerAddress != null) SessionRole.OWNER else SessionRole.API
+    val expected = saved.ownerAddress ?: saved.apiWalletAddress
     if (
-      expected != null &&
-        current?.walletAddress?.sameAptosAddress(expected) == true &&
+      expected != null && current?.role == expectedRole &&
+        current.walletAddress?.sameAptosAddress(expected) == true &&
         current.subaccount?.sameAptosAddress(account) == true &&
         current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
     )
-      return
+      return@withLock current
     wallets.requireAuthorization(wallets.authorizationGeneration)
     val prompt = VaultPrompt("Open Flare", "Confirm your identity")
-    if (saved.apiWalletAddress != null) sessions.ensureTrading(account, prompt)
-    else sessions.authenticateOwner(account, prompt)
+    if (saved.ownerAddress != null) sessions.authenticateOwner(account, prompt)
+    else sessions.ensureTrading(account, prompt)
+  }
+
+  private suspend fun <T> readAccount(account: String, request: suspend () -> T): T {
+    val session = ensureReadSession(account)
+    return sessions.bind(session, flow { emit(request()) }).first()
   }
 
   override suspend fun refresh() = refreshMutex.withLock {
@@ -707,19 +721,26 @@ class DefaultAccountRepository(
       mutableSnapshot.value = AccountSnapshot(error = "No trading account is selected")
       return@withLock
     }
-    if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
-      mutableSnapshot.value =
-        AccountSnapshot(account = account, error = "Account data is unavailable. Try again.")
+    val readSession = runSuspendCatching { ensureReadSession(account) }.getOrNull()
+    if (readSession == null) {
+      mutableSnapshot.update {
+        (if (it.account == account) it else AccountSnapshot(account = account)).copy(
+          loading = false, stale = true,
+          error = "Account access is unavailable. Check the selected wallet and trading account.",
+        )
+      }
       return@withLock
     }
     mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
     runSuspendCatching {
-      coroutineScope {
-        val overview = async { client.accounts.overview(account) }
-        val positions = async { client.accounts.positions(account) }
-        val orders = async { client.accounts.openOrders(account) }
-        Triple(overview.await(), positions.await(), orders.await())
-      }
+      sessions.bind(readSession, flow {
+        emit(coroutineScope {
+          val overview = async { client.accounts.overview(account) }
+          val positions = async { client.accounts.positions(account) }
+          val orders = async { client.accounts.openOrders(account) }
+          Triple(overview.await(), positions.await(), orders.await())
+        })
+      }).first()
     }
       .onSuccess { (overview, positions, orders) ->
         if (preferences.values.first().selectedSubaccount != account) return@onSuccess
@@ -749,28 +770,32 @@ class DefaultAccountRepository(
       mutableHistory.value = AccountHistorySnapshot(error = "No trading account is selected")
       return@withLock
     }
-    if (runSuspendCatching { ensureReadSession(account) }.isFailure) {
-      mutableHistory.value =
-        AccountHistorySnapshot(
-          account = account,
-          error = "Account history is unavailable. Try again.",
+    val readSession = runSuspendCatching { ensureReadSession(account) }.getOrNull()
+    if (readSession == null) {
+      mutableHistory.update {
+        (if (it.account == account) it else AccountHistorySnapshot(account = account)).copy(
+          loading = false, stale = true,
+          error = "Account access is unavailable. Check the selected wallet and trading account.",
         )
+      }
       return@withLock
     }
     mutableHistory.update { it.copy(account = account, loading = true, error = null) }
     runSuspendCatching {
-      coroutineScope {
-        val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
-        val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
-        val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
-        val transfers = async { client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0) }
-        object {
-          val orders = orders
-          val trades = trades
-          val funding = funding
-          val transfers = transfers
-        }
-      }
+      sessions.bind(readSession, flow {
+        emit(coroutineScope {
+          val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
+          val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
+          val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
+          val transfers = async { client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0) }
+          object {
+            val orders = orders
+            val trades = trades
+            val funding = funding
+            val transfers = transfers
+          }
+        })
+      }).first()
     }
       .onSuccess { data ->
         val orders = data.orders.await()
@@ -979,27 +1004,36 @@ class DefaultAccountRepository(
     metric: String,
   ): List<PortfolioChartPoint> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
-    return client.accounts.portfolioChart(account, timeRange, metric)
+    return readAccount(account) { client.accounts.portfolioChart(account, timeRange, metric) }
   }
 
   override suspend fun fees(): xyz.mcxross.flare.decibel.model.AccountFees? {
     val account = preferences.values.first().selectedSubaccount ?: return null
-    return client.accounts.fees(account)
+    return readAccount(account) { client.accounts.fees(account) }
   }
 
   override suspend fun tradingStreak(): TradingStreak? {
     val account = preferences.values.first().selectedSubaccount ?: return null
-    return client.accounts.streak(account)
+    return readAccount(account) { client.accounts.streak(account) }
   }
 
   override suspend fun ampsBreakdown(): AmpsBreakdown? {
     val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
-    return client.accounts.amps(owner)
+    val account = preferences.values.first().selectedSubaccount
+    val current = sessions.status.value
+    val session = if (current?.role == SessionRole.OWNER &&
+      current.walletAddress?.sameAptosAddress(owner) == true &&
+      current.subaccount == account &&
+      current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+    ) current else sessions.authenticateOwner(
+      account, VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
+    )
+    return sessions.bind(session, flow { emit(client.accounts.amps(owner)) }).first()
   }
 
   override suspend fun tierInfo(): TierInfo? {
     val account = preferences.values.first().selectedSubaccount ?: return null
-    return client.accounts.tier(account)
+    return readAccount(account) { client.accounts.tier(account) }
   }
 
   override suspend fun verifyReferralCode(code: String): ReferralCodeInfo? =
@@ -1012,12 +1046,12 @@ class DefaultAccountRepository(
 
   override suspend fun activeTwaps(): List<TwapOrder> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
-    return client.accounts.activeTwaps(account)
+    return readAccount(account) { client.accounts.activeTwaps(account) }
   }
 
   override suspend fun twapHistory(limit: Int): List<TwapOrder> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
-    return client.accounts.twapHistory(account, limit)
+    return readAccount(account) { client.accounts.twapHistory(account, limit) }
   }
 
   override suspend fun vaults(limit: Int): List<VaultInfo> {
@@ -1026,7 +1060,7 @@ class DefaultAccountRepository(
 
   override suspend fun accountVaultPerformance(): List<AccountVaultPerformance> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
-    return client.accounts.accountVaultPerformance(account)
+    return readAccount(account) { client.accounts.accountVaultPerformance(account) }
   }
 
   override fun contributeToVault(

@@ -96,7 +96,8 @@ fun PortfolioScreen(
       return@Column
     }
     Text(
-      if (state.account.stale && overview != null) "Last known account value"
+      if (overview == null) "Account value"
+      else if (state.account.stale) "Last known account value"
       else if (state.balanceIncomplete) "Known account value" else "Account value",
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
@@ -199,10 +200,17 @@ fun PortfolioScreen(
         (state.profile.ownerAddress != null || state.profile.apiWalletAddress != null)
     ) {
       ActionNotice(
-        "Reconnecting. Showing your last account update.",
+        when {
+          state.account.error != null -> "Account data couldn’t be loaded. Check your connection and account access."
+          overview != null -> "Reconnecting. Showing your last account update."
+          else -> "Connecting to your account…"
+        },
         Modifier.padding(top = 16.dp),
-        NoticeTone.PROGRESS,
+        if (state.account.error != null) NoticeTone.ALERT else NoticeTone.PROGRESS,
       )
+    }
+    if (state.account.error != null && !state.account.loading) {
+      androidx.compose.material3.TextButton({ onIntent(PortfolioIntent.Refresh) }) { Text("Retry") }
     }
     if (state.balanceIncomplete && state.isLive) {
       ActionNotice(
@@ -243,8 +251,8 @@ fun PortfolioScreen(
             )
           else ->
             EmptyState(
-              title = "Positions are on their way",
-              message = "They appear as soon as your account reconnects.",
+              title = if (state.account.error != null) "Positions unavailable" else "Loading positions",
+              message = "Your positions will appear when account access is restored.",
             )
         }
       }
@@ -267,8 +275,8 @@ fun PortfolioScreen(
             )
           else ->
             EmptyState(
-              title = "Holdings are on their way",
-              message = "They appear as soon as your account reconnects.",
+              title = if (state.account.error != null) "Holdings unavailable" else "Loading holdings",
+              message = "Your holdings will appear when account access is restored.",
             )
         }
       }
