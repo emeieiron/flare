@@ -165,7 +165,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   }
 
   suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) = updateActiveProfile {
-    it.copy(ownerAddress = address, ownerBackupConfirmed = address != null && backupConfirmed)
+    val resolvedAddress =
+      if (address != null && it.id.startsWith("owner_")) it.id.removePrefix("owner_") else address
+    it.copy(ownerAddress = resolvedAddress, ownerBackupConfirmed = resolvedAddress != null && backupConfirmed)
   }
 
   suspend fun setOwnerBackupConfirmed(confirmed: Boolean) = updateActiveProfile {
@@ -268,7 +270,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
    */
   private fun Preferences.profiles(): List<AccountProfile> =
     this[ProfilesKey]?.let { Json.decodeFromString<List<AccountProfile>>(it) }
+      ?.map(::sanitizeProfile)
       ?: listOfNotNull(migratedProfile())
+
+  private fun sanitizeProfile(profile: AccountProfile): AccountProfile {
+    if (profile.id.startsWith("owner_")) {
+      val expectedAddress = profile.id.removePrefix("owner_")
+      if (profile.ownerAddress != null && profile.ownerAddress != expectedAddress) {
+        return profile.copy(ownerAddress = expectedAddress)
+      }
+    }
+    return profile
+  }
 
   private fun Preferences.migratedProfile(): AccountProfile? {
     val owner = this[OwnerAddressKey]
@@ -290,9 +303,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   /** A profile without keys holds nothing worth remembering, so removing both removes it. */
   private fun MutablePreferences.writeProfiles(profiles: List<AccountProfile>) {
+    val sanitized = profiles.map(::sanitizeProfile)
     this[ProfilesKey] =
       Json.encodeToString(
-        profiles.filter { it.ownerAddress != null || it.apiWalletAddress != null }
+        sanitized.filter { it.ownerAddress != null || it.apiWalletAddress != null }
       )
     listOf(OwnerAddressKey, ApiWalletAddressKey, SelectedSubaccountKey).forEach(::remove)
     listOf(OwnerBackupConfirmedKey, OnboardingCompleteKey).forEach(::remove)

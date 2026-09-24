@@ -115,6 +115,25 @@ class AccountProfilesTest {
     preferences.setBuilderApproved(false)
     assertFalse(preferences.values.first().builderApproved)
   }
+
+  @Test
+  fun ownerProfileAddressIsSanitizedFromIdWhenCorrupted() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner_0xreal", ownerAddress = "0xcorrupted"))
+    val saved = preferences.values.first()
+    assertEquals("0xreal", saved.ownerAddress)
+    assertEquals("0xreal", saved.profiles.first().ownerAddress)
+  }
+
+  @Test
+  fun setOwnerWalletDoesNotOverwriteOwnerProfileAddressWithForeignAddress() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner_0xreal", ownerAddress = "0xreal"))
+    preferences.setOwnerWallet("0xforeign", backupConfirmed = true)
+    val saved = preferences.values.first()
+    assertEquals("0xreal", saved.ownerAddress)
+    assertTrue(saved.ownerBackupConfirmed)
+  }
 }
 
 private class MemoryPreferences(initial: Preferences = emptyPreferences()) :
