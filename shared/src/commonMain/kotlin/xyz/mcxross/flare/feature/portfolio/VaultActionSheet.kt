@@ -150,14 +150,6 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         enabled = state.vaultAmountInput.isNotBlank() && !state.busy,
         working = state.busy,
       )
-
-      FlareButton(
-        text = "Close",
-        onClick = { onIntent(PortfolioIntent.DismissVaultAction) },
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        enabled = !state.busy,
-        style = FlareButtonStyle.OUTLINE,
-      )
     }
   }
 }

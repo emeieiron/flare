@@ -130,13 +130,6 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         enabled = state.fundingAmount.isNotBlank(),
         working = state.busy,
       )
-      FlareButton(
-        "Close",
-        { onIntent(PortfolioIntent.CloseFunding) },
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        enabled = !state.busy,
-        style = FlareButtonStyle.OUTLINE,
-      )
     }
   }
 }
