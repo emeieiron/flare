@@ -63,13 +63,14 @@ fun OnboardingRoute(
   onCompleted: () -> Unit,
   onBack: (() -> Unit)? = null,
   initialMode: String? = null,
+  profileId: String? = null,
   modifier: Modifier = Modifier,
   viewModel: OnboardingViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
-  LaunchedEffect(initialMode) {
+  LaunchedEffect(initialMode, profileId) {
     if (initialMode != null) {
-      viewModel.onIntent(OnboardingIntent.InitializeMode(initialMode))
+      viewModel.onIntent(OnboardingIntent.InitializeMode(initialMode, profileId))
     }
   }
   LaunchedEffect(viewModel) {

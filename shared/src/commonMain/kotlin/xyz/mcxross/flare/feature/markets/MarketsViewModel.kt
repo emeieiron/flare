@@ -65,7 +65,7 @@ class MarketsViewModel(
         filter,
       ) { catalog, assets, f ->
         val normalized = f.query.trim().lowercase()
-        val effectiveFavoritesOnly = if (f.category == null) true else f.favoritesOnly
+        val effectiveFavoritesOnly = f.favoritesOnly
         val categories =
           when (f.instrument) {
             MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
@@ -88,7 +88,8 @@ class MarketsViewModel(
               matchesInstrument &&
                 (normalized.isNotEmpty() || !effectiveFavoritesOnly || it.favorite) &&
                 (f.category == null ||
-                  assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory() == f.category) &&
+                  (assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory()
+                    ?: it.market.category.normalizedCategory()) == f.category) &&
                 (normalized.isEmpty() ||
                   it.market.symbol.lowercase().contains(normalized) ||
                   it.market.name.lowercase().contains(normalized) ||
@@ -117,29 +118,13 @@ class MarketsViewModel(
 
   fun onIntent(intent: MarketsIntent) {
     when (intent) {
-      is MarketsIntent.Search -> filter.update { it.copy(query = intent.value) }
+      is MarketsIntent.Search -> filter.update { it.copy(query = intent.value, favoritesOnly = false, category = null) }
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly ->
-        filter.update { current ->
-          if (intent.enabled) {
-            current.copy(favoritesOnly = true, category = null)
-          } else {
-            if (current.category == null) {
-              current.copy(favoritesOnly = true)
-            } else {
-              current.copy(favoritesOnly = false)
-            }
-          }
-        }
+        filter.update { it.copy(favoritesOnly = intent.enabled, category = null, query = "") }
       is MarketsIntent.SetCategory ->
-        filter.update { current ->
-          if (intent.category == null) {
-            current.copy(category = null, favoritesOnly = true)
-          } else {
-            current.copy(category = intent.category, favoritesOnly = false)
-          }
-        }
+        filter.update { it.copy(category = intent.category, favoritesOnly = false, query = "") }
       is MarketsIntent.SetInstrument ->
         filter.update { current ->
           current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)

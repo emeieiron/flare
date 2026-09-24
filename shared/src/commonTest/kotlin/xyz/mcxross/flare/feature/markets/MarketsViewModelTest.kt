@@ -178,7 +178,7 @@ class MarketsViewModelTest {
   }
 
   @Test
-  fun perpetualsTabDefaultsToWatchlistAndNeverShowsAllPerpsWithoutCategory() = runTest {
+  fun perpetualsTabDefaultsToWatchlist() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
@@ -236,20 +236,20 @@ class MarketsViewModelTest {
   }
 
   @Test
-  fun perpetualsCannotHaveFavoritesOnlyFalseWhenCategoryIsNull() = runTest {
+  fun allPerpetualsIncludeNonFavorites() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
     val initial = vm.uiState.first { it.quotes.isNotEmpty() }
 
-    // Attempt to set favoritesOnly = false without category on Perpetuals
+    // All includes markets outside the watchlist.
     vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
-    val state = vm.uiState.value
+    val state = vm.uiState.first { !it.favoritesOnly }
 
-    assertTrue(state.favoritesOnly)
+    assertFalse(state.favoritesOnly)
     assertEquals(null, state.selectedCategory)
-    assertEquals("Your watchlist", marketSectionTitle(state))
-    assertEquals(listOf("BTC", "GOLD"), state.quotes.map { it.market.symbol })
+    assertEquals("All markets", marketSectionTitle(state))
+    assertEquals(listOf("BTC", "ADA", "GOLD"), state.quotes.map { it.market.symbol })
   }
 
   @Test
@@ -284,7 +284,7 @@ class MarketsViewModelTest {
   }
 
   @Test
-  fun spotCategoryFilteringAndToggleBackToWatchlist() = runTest {
+  fun deselectingSpotCategoryShowsAllMarkets() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
@@ -302,19 +302,19 @@ class MarketsViewModelTest {
     assertEquals("Crypto", marketSectionTitle(state))
     assertEquals(listOf("APT", "USDC"), state.quotes.map { it.market.symbol })
 
-    // Deselect category back to Watchlist
+    // Deselecting a category returns to All.
     vm.onIntent(MarketsIntent.SetCategory(null))
     val watchlistState =
       vm.uiState.first {
         it.selectedCategory == null && it.selectedInstrument == MarketInstrumentFilter.SPOT
       }
-    assertTrue(watchlistState.favoritesOnly)
-    assertEquals("Your watchlist", marketSectionTitle(watchlistState))
-    assertEquals(listOf("APT"), watchlistState.quotes.map { it.market.symbol })
+    assertFalse(watchlistState.favoritesOnly)
+    assertEquals("All markets", marketSectionTitle(watchlistState))
+    assertEquals(listOf("APT", "USDC"), watchlistState.quotes.map { it.market.symbol })
   }
 
   @Test
-  fun spotCannotHaveFavoritesOnlyFalseWhenCategoryIsNull() = runTest {
+  fun allSpotMarketsIncludeNonFavorites() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
@@ -324,11 +324,11 @@ class MarketsViewModelTest {
     val state = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.SPOT }
 
     vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
-    val currentState = vm.uiState.value
+    val currentState = vm.uiState.first { !it.favoritesOnly }
 
-    assertTrue(currentState.favoritesOnly)
+    assertFalse(currentState.favoritesOnly)
     assertEquals(null, currentState.selectedCategory)
-    assertEquals("Your watchlist", marketSectionTitle(currentState))
-    assertEquals(listOf("APT"), currentState.quotes.map { it.market.symbol })
+    assertEquals("All markets", marketSectionTitle(currentState))
+    assertEquals(listOf("APT", "USDC"), currentState.quotes.map { it.market.symbol })
   }
 }

@@ -99,7 +99,7 @@ sealed interface OnboardingIntent {
 
   data object ContinueSetup : OnboardingIntent
 
-  data class InitializeMode(val mode: String) : OnboardingIntent
+  data class InitializeMode(val mode: String, val profileId: String? = null) : OnboardingIntent
 
   data object ClearSensitiveState : OnboardingIntent
 
@@ -154,7 +154,10 @@ class OnboardingViewModel(
             when (intent.mode.uppercase()) {
               "CREATE" -> createOwner()
               "IMPORT" -> show(OnboardingStep.IMPORT)
-              "CONTINUE" -> prepareOwnerAccount()
+              "CONTINUE" -> {
+                intent.profileId?.let { preferences.activateProfile(it) }
+                prepareOwnerAccount()
+              }
             }
           }
         }
