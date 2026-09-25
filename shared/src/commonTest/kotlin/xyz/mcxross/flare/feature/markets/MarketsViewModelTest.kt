@@ -214,26 +214,24 @@ class MarketsViewModelTest {
   }
 
   @Test
-  fun switchingFromSpotBackToPerpetualsResetsToWatchlist() = runTest {
+  fun switchingInstrumentsKeepsEachPagesSelection() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.SetCategory("crypto"))
 
-    // Switch to Spot
+    // Spot starts on its own watchlist; the perpetual selection is untouched.
     vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
     val spotState = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.SPOT }
-    assertEquals(MarketInstrumentFilter.SPOT, spotState.selectedInstrument)
+    assertTrue(spotState.favoritesOnly)
 
-    // Switch back to Perpetuals
     vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.PERPETUALS))
     val perpState = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.PERPETUALS }
-
-    assertTrue(perpState.favoritesOnly)
-    assertEquals(null, perpState.selectedCategory)
-    assertEquals("Your watchlist", marketSectionTitle(perpState))
-    assertEquals(listOf("BTC", "GOLD"), perpState.quotes.map { it.market.symbol })
+    assertEquals("crypto", perpState.selectedCategory)
+    assertEquals("Crypto", marketSectionTitle(perpState))
   }
+
 
   @Test
   fun allPerpetualsIncludeNonFavorites() = runTest {

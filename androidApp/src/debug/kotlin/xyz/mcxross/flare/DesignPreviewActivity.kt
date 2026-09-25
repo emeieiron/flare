@@ -102,6 +102,18 @@ private fun PreviewScreens(initialScreen: String) {
               quotes = quotes.filter { !favorites || it.favorite },
               searching = searching,
               searchResults = if (searching) searchMarkets(quotes, emptyMap(), query) else MarketSearchResults(),
+              pages = mapOf(
+                MarketInstrumentFilter.PERPETUALS to MarketPage(
+                  favoritesOnly = favorites,
+                  categories = listOf("commodity", "crypto", "equity"),
+                  quotes = quotes.filter { it.market.assetType == AssetType.PERP && (!favorites || it.favorite) },
+                ),
+                MarketInstrumentFilter.SPOT to MarketPage(
+                  favoritesOnly = false,
+                  categories = listOf("crypto"),
+                  quotes = quotes.filter { it.market.assetType == AssetType.SPOT },
+                ),
+              ),
             ),
             { intent ->
               when (intent) {
