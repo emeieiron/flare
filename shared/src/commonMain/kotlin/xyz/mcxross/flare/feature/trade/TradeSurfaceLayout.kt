@@ -33,6 +33,7 @@ internal fun TradeSurfaceLayout(
   stage: TradeStage,
   modifier: Modifier = Modifier,
   compactContext: Boolean = false,
+  pullOffset: () -> Float = { 0f },
   context: @Composable () -> Unit,
   body: @Composable () -> Unit,
   action: @Composable () -> Unit,
@@ -68,11 +69,13 @@ internal fun TradeSurfaceLayout(
     val footer = measurables[2].measure(Constraints(minWidth = width, maxWidth = width, maxHeight = height))
     val remaining = (height - footer.height).coerceAtLeast(0)
     val contextHeight = minOf(contextLimit.dp.roundToPx(), (remaining * contextFraction).roundToInt())
-    val header = measurables[0].measure(Constraints.fixed(width, contextHeight))
+    // A pull grows the chart and slides the body down without resizing it, so the form never reflows.
+    val pull = pullOffset().roundToInt().coerceIn(0, remaining - contextHeight)
+    val header = measurables[0].measure(Constraints.fixed(width, contextHeight + pull))
     val content = measurables[1].measure(Constraints.fixed(width, remaining - contextHeight))
     layout(width, height) {
       header.placeRelative(0, 0)
-      content.placeRelative(0, contextHeight)
+      content.placeRelative(0, contextHeight + pull)
       footer.placeRelative(0, remaining)
     }
   }
