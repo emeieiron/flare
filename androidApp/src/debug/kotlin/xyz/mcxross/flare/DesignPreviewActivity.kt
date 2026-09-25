@@ -122,7 +122,7 @@ private fun PreviewScreens(initialScreen: String) {
           )
         "chart",
         "candles",
-        "ticket", "trade-success", "trade-failure", "trade-busy", "trade-offline" ->
+        "ticket", "trade-success", "trade-failure", "trade-busy", "trade-offline", "trade-selfpay" ->
           TradeScreen(
             trade,
             { intent ->
@@ -140,16 +140,26 @@ private fun PreviewScreens(initialScreen: String) {
                   is TradeIntent.SetOrderType -> trade.copy(orderType = intent.type)
                   is TradeIntent.SetTwapDurationMinutes -> trade.copy(twapDurationMinutesInput = intent.value)
                   is TradeIntent.SetTwapFrequencyMinutes -> trade.copy(twapFrequencyMinutesInput = intent.value)
+                  TradeIntent.ConfirmSelfPay -> trade.copy(transaction = TransactionState.Committed("preview-only"))
                   TradeIntent.DismissOrderReceipt -> trade.copy(transaction = null, sizeInput = "", orderError = null)
                   is TradeIntent.Submit -> when (initialScreen) {
                     "trade-success" -> trade.copy(transaction = TransactionState.Committed("preview-only"))
                     "trade-busy" -> trade.copy(orderBusy = true)
+                    "trade-selfpay" -> trade.copy(
+                      transaction = TransactionState.Failed(
+                        "Sponsorship unavailable",
+                        selfPayEstimateOctas = 2_400uL,
+                      ),
+                      apiWalletNeedsTopUp = true,
+                      suggestedTopUpOctas = 50_000uL,
+                    )
                     else -> trade.copy(orderError = "Preview only. No order was placed.")
                   }
                   else -> trade
                 }
             },
             onBack = { screen = "markets" },
+            onOpenActivity = { screen = "activity" },
           )
         "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many" ->
           PortfolioScreen(portfolio, { intent ->
