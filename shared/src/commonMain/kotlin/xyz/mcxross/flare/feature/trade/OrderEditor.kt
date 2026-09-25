@@ -29,15 +29,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.data.formatBalance
@@ -57,143 +57,186 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
 
 @Composable
-internal fun OrderEditor(state: TradeUiState, side: OrderSide, onSideChange: (OrderSide) -> Unit, onIntent: (TradeIntent) -> Unit) {
+internal fun OrderEditor(
+  state: TradeUiState,
+  side: OrderSide,
+  onSideChange: (OrderSide) -> Unit,
+  onIntent: (TradeIntent) -> Unit,
+  exitsOpen: Boolean,
+  onExitsOpenChange: (Boolean) -> Unit,
+  minHeight: Dp,
+) {
   val quote = state.quote ?: return
   val isSpot = quote.market.assetType == AssetType.SPOT
   val estimate = state.orderEstimate(side)
   val inputError = state.orderInputError(side)
   val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
-  var showExits by rememberSaveable { mutableStateOf(hasExits) }
-  Column {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      OrderSide.entries.forEach { value ->
-        FlareChip(
-          if (isSpot) {
-            if (value == OrderSide.BUY) "Buy" else "Sell"
-          } else {
-            if (value == OrderSide.BUY) "Buy / Long" else "Sell / Short"
-          },
-          side == value,
-          { onSideChange(value) },
-          Modifier.weight(1f),
-          semanticColor =
-            if (value == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
-          enabled = !state.orderBusy,
-        )
+  val showNotices =
+    (state.sizeInput.isNotBlank() && inputError != null) || state.orderError != null || !state.tradingEnabled
+  SpacedGroups(minHeight) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OrderSide.entries.forEach { value ->
+          FlareChip(
+            if (isSpot) {
+              if (value == OrderSide.BUY) "Buy" else "Sell"
+            } else {
+              if (value == OrderSide.BUY) "Buy / Long" else "Sell / Short"
+            },
+            side == value,
+            { onSideChange(value) },
+            Modifier.weight(1f),
+            semanticColor =
+              if (value == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
+            enabled = !state.orderBusy,
+          )
+        }
+      }
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val orderTypes =
+          if (isSpot) listOf(OrderType.MARKET, OrderType.LIMIT)
+          else listOf(OrderType.MARKET, OrderType.LIMIT, OrderType.TWAP)
+        orderTypes.forEach { type ->
+          FlareChip(
+            text = if (type == OrderType.TWAP) "TWAP" else type.name.lowercase().replaceFirstChar(Char::uppercase),
+            selected = state.orderType == type,
+            onClick = { onIntent(TradeIntent.SetOrderType(type)) },
+            modifier = Modifier.weight(1f),
+            enabled = !state.orderBusy,
+          )
+        }
       }
     }
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      val orderTypes =
-        if (isSpot) listOf(OrderType.MARKET, OrderType.LIMIT)
-        else listOf(OrderType.MARKET, OrderType.LIMIT, OrderType.TWAP)
-      orderTypes.forEach { type ->
-        FlareChip(
-          text = if (type == OrderType.TWAP) "TWAP" else type.name.lowercase().replaceFirstChar(Char::uppercase),
-          selected = state.orderType == type,
-          onClick = { onIntent(TradeIntent.SetOrderType(type)) },
-          modifier = Modifier.weight(1f),
-          enabled = !state.orderBusy,
-        )
-      }
-    }
-    OrderAmountField(
-      "Size",
-      quote.market.symbol,
-      state.sizeInput,
-      { onIntent(TradeIntent.SetSize(it)) },
-      Modifier.fillMaxWidth().padding(top = 16.dp),
-      enabled = !state.orderBusy,
-      valueHint = "≈ " + when {
-        state.sizeInput.isBlank() -> formatBalance(0.0)
-        else -> estimate?.value?.let(::formatBalance) ?: "—"
-      },
-    )
-    FlowRow(
-      modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-      horizontalArrangement = Arrangement.spacedBy(16.dp),
-      verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-      Text(
-        "Minimum ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
-        style = MaterialTheme.typography.labelSmall,
-        color = FlareColors.TextSecondary,
+    Column {
+      OrderAmountField(
+        "Size",
+        quote.market.symbol,
+        state.sizeInput,
+        { onIntent(TradeIntent.SetSize(it)) },
+        Modifier.fillMaxWidth(),
+        enabled = !state.orderBusy,
+        valueHint = "≈ " + when {
+          state.sizeInput.isBlank() -> formatBalance(0.0)
+          else -> estimate?.value?.let(::formatBalance) ?: "—"
+        },
       )
-      state.availableDisplay(side)?.let { available ->
+      FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
         Text(
-          "Available $available",
+          "Minimum ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
           style = MaterialTheme.typography.labelSmall,
           color = FlareColors.TextSecondary,
+        )
+        state.availableDisplay(side)?.let { available ->
+          Text(
+            "Available $available",
+            style = MaterialTheme.typography.labelSmall,
+            color = FlareColors.TextSecondary,
+          )
+        }
+      }
+      if (state.orderType == OrderType.LIMIT) {
+        OrderAmountField(
+          "Limit price",
+          "USDC",
+          state.limitPriceInput,
+          { onIntent(TradeIntent.SetLimitPrice(it)) },
+          Modifier.fillMaxWidth().padding(top = 12.dp),
+          enabled = !state.orderBusy,
+        )
+      }
+      if (state.orderType == OrderType.TWAP) {
+        Row(
+          Modifier.fillMaxWidth().padding(top = 12.dp),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          OrderAmountField(
+            "Duration",
+            "min",
+            state.twapDurationMinutesInput,
+            { onIntent(TradeIntent.SetTwapDurationMinutes(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+          )
+          OrderAmountField(
+            "Interval",
+            "min",
+            state.twapFrequencyMinutesInput,
+            { onIntent(TradeIntent.SetTwapFrequencyMinutes(it)) },
+            Modifier.weight(1f),
+            enabled = !state.orderBusy,
+          )
+        }
+        Text(
+          "TWAP divides the order into regular slices across the duration.",
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+          modifier = Modifier.padding(top = 6.dp),
         )
       }
     }
     if (!isSpot) {
       LeverageControl(state, estimate?.margin) { onIntent(TradeIntent.SetLeverage(it)) }
     }
-    if (state.orderType == OrderType.TWAP) {
-      Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        OrderAmountField(
-          "Duration",
-          "min",
-          state.twapDurationMinutesInput,
-          { onIntent(TradeIntent.SetTwapDurationMinutes(it)) },
-          Modifier.weight(1f),
-          enabled = !state.orderBusy,
-        )
-        OrderAmountField(
-          "Interval",
-          "min",
-          state.twapFrequencyMinutesInput,
-          { onIntent(TradeIntent.SetTwapFrequencyMinutes(it)) },
-          Modifier.weight(1f),
-          enabled = !state.orderBusy,
-        )
-      }
-      Text(
-        "TWAP divides the order into regular slices across the duration.",
-        style = MaterialTheme.typography.bodySmall,
-        color = FlareColors.TextSecondary,
-        modifier = Modifier.padding(top = 6.dp),
-      )
-    }
-    if (state.orderType == OrderType.LIMIT) {
-      OrderAmountField(
-        "Limit price",
-        "USDC",
-        state.limitPriceInput,
-        { onIntent(TradeIntent.SetLimitPrice(it)) },
-        Modifier.fillMaxWidth()
-          .padding(top = if (isSpot) 16.dp else 0.dp, bottom = if (isSpot) 0.dp else 16.dp),
-        enabled = !state.orderBusy,
-      )
-    }
     if (!isSpot && state.orderType != OrderType.TWAP) {
-      ExitsDisclosure(showExits, hasExits, !state.orderBusy) { showExits = !showExits }
-      AnimatedVisibility(
-        showExits,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut(),
-      ) {
-        ExitPriceFields(
-          state.takeProfitInput, state.stopLossInput,
-          { onIntent(TradeIntent.SetTakeProfit(it)) },
-          { onIntent(TradeIntent.SetStopLoss(it)) },
-          Modifier.fillMaxWidth().padding(top = 12.dp),
-          enabled = !state.orderBusy,
-        )
+      Column {
+        ExitsDisclosure(exitsOpen, hasExits, !state.orderBusy) { onExitsOpenChange(!exitsOpen) }
+        AnimatedVisibility(
+          exitsOpen,
+          enter = expandVertically() + fadeIn(),
+          exit = shrinkVertically() + fadeOut(),
+        ) {
+          ExitPriceFields(
+            state.takeProfitInput, state.stopLossInput,
+            { onIntent(TradeIntent.SetTakeProfit(it)) },
+            { onIntent(TradeIntent.SetStopLoss(it)) },
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            enabled = !state.orderBusy,
+          )
+        }
       }
     }
-    if (state.sizeInput.isNotBlank() && inputError != null) {
-      ActionNotice(inputError, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
+    if (showNotices) {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (state.sizeInput.isNotBlank() && inputError != null) {
+          ActionNotice(inputError, tone = NoticeTone.ALERT)
+        }
+        state.orderError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
+        if (!state.tradingEnabled) {
+          OrderConnectionNotice()
+        }
+      }
     }
-    state.orderError?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
-    if (!state.tradingEnabled) {
-      OrderConnectionNotice()
+  }
+}
+
+private val MinGroupGap = 16.dp
+private val MaxGroupGap = 28.dp
+
+/**
+ * Stacks the form's groups with gaps that open up to [MaxGroupGap] when the viewport has room
+ * and close to [MinGroupGap] as the form grows. A gap also leads the first group.
+ */
+@Composable
+private fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
+  Layout(content, Modifier.fillMaxWidth()) { measurables, constraints ->
+    val placeables = measurables.map {
+      it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+    }
+    val gaps = placeables.size
+    val used = placeables.sumOf { it.height }
+    val gap =
+      if (gaps == 0) 0
+      else ((minHeight.roundToPx() - used) / gaps).coerceIn(MinGroupGap.roundToPx(), MaxGroupGap.roundToPx())
+    layout(constraints.maxWidth, used + gap * gaps) {
+      var y = gap
+      placeables.forEach {
+        it.placeRelative(0, y)
+        y += it.height + gap
+      }
     }
   }
 }
@@ -290,7 +333,7 @@ private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean,
 
 @Composable
 private fun OrderConnectionNotice() {
-  Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+  Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     FlareSkeletonBox(Modifier.width(40.dp).height(3.dp).shimmer(rememberFlareShimmer()))
     Text("Reconnecting to live prices. Trading resumes automatically.",
       color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)

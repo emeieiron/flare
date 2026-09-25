@@ -4,6 +4,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -95,6 +96,9 @@ fun TradeScreen(
   var showBook by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
   var trading by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
   var side by rememberSaveable(quote?.market?.address) { mutableStateOf(OrderSide.BUY) }
+  var exitsOpen by rememberSaveable(quote?.market?.address) {
+    mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
+  }
   var reviewing by rememberSaveable(
     quote?.market?.address, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
     state.stopLossInput, state.orderType, state.leverage,
@@ -160,38 +164,48 @@ fun TradeScreen(
       else TradeScreenSkeleton(chartStyle = state.chartStyle)
       return@Column
     }
+    val exitsAvailable = quote.market.assetType != AssetType.SPOT && state.orderType != OrderType.TWAP
     TradeSurfaceLayout(
       stage = stage,
       modifier = Modifier.weight(1f),
+      compactContext = exitsOpen && exitsAvailable,
       context = { MarketContext(state, assets, stage) },
       body = {
         Crossfade(stage, animationSpec = tween(180), label = "tradeContent") { displayed ->
-          Column(
-            Modifier.fillMaxSize().verticalScroll(when (displayed) {
-              TradeStage.MARKET -> marketScroll
-              TradeStage.EDIT -> editorScroll
-              else -> reviewScroll
-            }).padding(horizontal = 24.dp).padding(top = 16.dp, bottom = 24.dp),
-          ) {
-            when (displayed) {
-              TradeStage.MARKET -> {
-                TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
-                  { onIntent(TradeIntent.SelectRange(it)) }, Modifier.fillMaxWidth())
-                FlareIndicatorCharts(state.candles, state.showRsi, state.showMacd, Modifier.fillMaxWidth())
-                if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
-                MarketInformation(state, showBook, { showBook = !showBook })
-              }
-              TradeStage.EDIT -> OrderEditor(state, side, { side = it }, onIntent)
-              TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent)
-              TradeStage.RESULT -> if (committed != null) {
-                Text("Order submitted", style = MaterialTheme.typography.headlineMedium)
-                Text("Your transaction is confirmed. Check Activity for order status and fills.",
-                  Modifier.padding(top = 12.dp, bottom = 20.dp), color = FlareColors.TextSecondary)
-                val explorer = LocalTransactionExplorer.current
-                val browser = LocalUriHandler.current
-                ActionRow("View transaction", onClick = { runCatching { browser.openUri(explorer.url(committed.hash)) } })
-                onOpenActivity?.let { open ->
-                  ActionRow("View Activity", onClick = { returnToMarket(); open() })
+          // The editor spaces its own groups from the top, so it only needs the bottom inset.
+          val topInset = if (displayed == TradeStage.EDIT) 0.dp else 16.dp
+          BoxWithConstraints(Modifier.fillMaxSize()) {
+            val editorHeight = maxHeight - 24.dp
+            Column(
+              Modifier.fillMaxSize().verticalScroll(when (displayed) {
+                TradeStage.MARKET -> marketScroll
+                TradeStage.EDIT -> editorScroll
+                else -> reviewScroll
+              }).padding(horizontal = 24.dp).padding(top = topInset, bottom = 24.dp),
+            ) {
+              when (displayed) {
+                TradeStage.MARKET -> {
+                  TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
+                    { onIntent(TradeIntent.SelectRange(it)) }, Modifier.fillMaxWidth())
+                  FlareIndicatorCharts(state.candles, state.showRsi, state.showMacd, Modifier.fillMaxWidth())
+                  if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                  MarketInformation(state, showBook, { showBook = !showBook })
+                }
+                TradeStage.EDIT -> OrderEditor(
+                  state, side, { side = it }, onIntent,
+                  exitsOpen, { exitsOpen = it }, editorHeight,
+                )
+                TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent)
+                TradeStage.RESULT -> if (committed != null) {
+                  Text("Order submitted", style = MaterialTheme.typography.headlineMedium)
+                  Text("Your transaction is confirmed. Check Activity for order status and fills.",
+                    Modifier.padding(top = 12.dp, bottom = 20.dp), color = FlareColors.TextSecondary)
+                  val explorer = LocalTransactionExplorer.current
+                  val browser = LocalUriHandler.current
+                  ActionRow("View transaction", onClick = { runCatching { browser.openUri(explorer.url(committed.hash)) } })
+                  onOpenActivity?.let { open ->
+                    ActionRow("View Activity", onClick = { returnToMarket(); open() })
+                  }
                 }
               }
             }
