@@ -50,7 +50,6 @@ import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
@@ -156,6 +155,7 @@ fun TradeScreen(
       },
       back,
       Modifier.padding(horizontal = 8.dp),
+      backEnabled = !state.orderBusy,
       action = {
         if (stage == TradeStage.MARKET) {
           IconButton({ showTools = true }) { Icon(Icons.Outlined.Tune, "Chart settings") }
@@ -183,8 +183,8 @@ fun TradeScreen(
           animationSpec = tween(180),
           label = "tradeContent",
         ) { displayed ->
-          // The editor spaces its own groups from the top, so it only needs the bottom inset.
-          val topInset = if (displayed == TradeStage.EDIT) 0.dp else 16.dp
+          // Trading stages space their own groups from the top, so they only need the bottom inset.
+          val topInset = if (displayed == TradeStage.MARKET) 16.dp else 0.dp
           BoxWithConstraints(Modifier.fillMaxSize()) {
             val editorHeight = maxHeight - 24.dp
             Column(
@@ -206,17 +206,15 @@ fun TradeScreen(
                   state, side, { side = it }, onIntent,
                   exitsOpen, { exitsOpen = it }, editorHeight,
                 )
-                TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent)
+                TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
                 TradeStage.RESULT -> if (committed != null) {
-                  Text("Order submitted", style = MaterialTheme.typography.headlineMedium)
-                  Text("Your transaction is confirmed. Check Activity for order status and fills.",
-                    Modifier.padding(top = 12.dp, bottom = 20.dp), color = FlareColors.TextSecondary)
                   val explorer = LocalTransactionExplorer.current
                   val browser = LocalUriHandler.current
-                  ActionRow("View transaction", onClick = { runCatching { browser.openUri(explorer.url(committed.hash)) } })
-                  onOpenActivity?.let { open ->
-                    ActionRow("View Activity", onClick = { returnToMarket(); open() })
-                  }
+                  OrderResult(
+                    state, side, editorHeight,
+                    onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
+                    onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.hash)) } },
+                  )
                 }
               }
             }
@@ -225,6 +223,8 @@ fun TradeScreen(
       },
       action = {
         val inputError = state.orderInputError(side)
+        // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
+        val selfPayOffered = (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas != null
         val enabled = when (stage) {
           TradeStage.MARKET, TradeStage.RESULT -> !state.orderBusy
           else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() &&
@@ -236,7 +236,11 @@ fun TradeScreen(
             when (stage) {
               TradeStage.MARKET -> "Trade ${quote.market.symbol}"
               TradeStage.EDIT -> "Review order"
-              TradeStage.REVIEW -> if (state.orderBusy) "Placing your order…" else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
+              TradeStage.REVIEW -> when {
+                state.orderBusy -> "Placing your order…"
+                selfPayOffered -> "Pay fee and confirm"
+                else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
+              }
               TradeStage.RESULT -> "Done"
             },
             {
@@ -244,7 +248,8 @@ fun TradeScreen(
               when (stage) {
                 TradeStage.MARKET -> if (state.tradingKeyAddress == null) onOpenSetup() else trading = true
                 TradeStage.EDIT -> reviewing = true
-                TradeStage.REVIEW -> onIntent(TradeIntent.Submit(side))
+                TradeStage.REVIEW ->
+                  onIntent(if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side))
                 TradeStage.RESULT -> returnToMarket()
               }
             },

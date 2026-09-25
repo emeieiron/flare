@@ -18,86 +18,112 @@ import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
 
+/** "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and result. */
+internal fun TradeUiState.orderSummary(side: OrderSide): Pair<String, String> {
+  val market = quote?.market
+  val isSpot = market?.assetType == AssetType.SPOT
+  val title = "${if (side == OrderSide.BUY) "Buy" else "Sell"} $sizeInput ${market?.symbol.orEmpty()}".trim()
+  val typeLabel =
+    if (orderType == OrderType.TWAP) "TWAP"
+    else orderType.name.lowercase().replaceFirstChar(Char::uppercase)
+  val margin = if (positionIsolated ?: market?.isIsolatedOnly == true) "isolated" else "cross"
+  val subtitle =
+    if (isSpot) "$typeLabel · Spot"
+    else "$typeLabel · ${if (side == OrderSide.BUY) "Long" else "Short"} · $leverage× $margin"
+  return title to subtitle
+}
+
 @Composable
-internal fun OrderReview(state: TradeUiState, side: OrderSide) {
+internal fun ReviewHeading(state: TradeUiState, side: OrderSide) {
+  val (title, subtitle) = state.orderSummary(side)
+  Column {
+    Text(
+      title,
+      style = MaterialTheme.typography.titleLarge,
+      color = if (side == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
+    )
+    Text(subtitle, Modifier.padding(top = 4.dp), color = FlareColors.TextSecondary)
+  }
+}
+
+@Composable
+internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
   val quote = state.quote ?: return
   val estimate = state.orderEstimate(side)
   val isSpot = quote.market.assetType == AssetType.SPOT
-  val exits = !isSpot && (state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
-  Text(
-    "${if (side == OrderSide.BUY) "Buy" else "Sell"} ${state.sizeInput} ${quote.market.symbol}",
-    style = MaterialTheme.typography.titleLarge,
-    color = if (side == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
-  )
-  val typeLabel = if (state.orderType == OrderType.TWAP) "TWAP" else state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)
-  val subtitle =
-    if (isSpot) "$typeLabel · Spot"
-    else
-      "$typeLabel · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
-  Text(
-    subtitle,
-    color = FlareColors.TextSecondary,
-    modifier = Modifier.padding(top = 4.dp),
-  )
-  DetailRow(
-    if (state.orderType == OrderType.LIMIT) "Limit price" else "Estimated entry",
-    estimate?.entryPrice?.let(::formatPrice) ?: "—",
-  )
-  DetailRow("Order value", estimate?.value?.let(::formatBalance) ?: "—")
-  if (!isSpot) {
-    DetailRow("Estimated margin", estimate?.margin?.let(::formatBalance) ?: "—")
+  Column {
+    DetailRow(
+      if (state.orderType == OrderType.LIMIT) "Limit price" else "Estimated entry",
+      estimate?.entryPrice?.let(::formatPrice) ?: "—",
+    )
+    DetailRow("Order value", estimate?.value?.let(::formatBalance) ?: "—")
+    if (!isSpot) {
+      DetailRow("Estimated margin", estimate?.margin?.let(::formatBalance) ?: "—")
+    }
+    if (state.orderType == OrderType.MARKET) {
+      DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
+    }
+    if (state.orderType == OrderType.TWAP) {
+      DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
+      DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
+    }
+    val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
+    if (productFees != null && estimate != null) {
+      val takerFee = estimate.value * productFees.takerRate
+      val makerFee = estimate.value * productFees.makerRate
+      val feeText = if (state.orderType == OrderType.MARKET) formatBalance(takerFee)
+        else "${formatBalance(minOf(makerFee, takerFee))}–${formatBalance(maxOf(makerFee, takerFee))}"
+      DetailRow(if (isSpot) "Trading fee (USD estimate)" else "Estimated trading fee", feeText)
+    } else {
+      DetailRow("Trading fee", "Unavailable")
+    }
+    if (estimate?.builderFeeAmount != null && estimate.builderFeeAmount > 0) {
+      val bps = estimate.builderFeeBps ?: 5
+      val amount = formatBalance(estimate.builderFeeAmount)
+      // "<$0.01" already reads as a small addition; a leading plus only clutters it.
+      DetailRow("Builder fee (${bps / 100.0}%)", if (amount.startsWith("<")) amount else "+$amount")
+    }
   }
-  if (state.orderType == OrderType.MARKET) {
-    DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
-  }
-  if (state.orderType == OrderType.TWAP) {
-    DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
-    DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
-  }
-  val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
-  if (productFees != null && estimate != null) {
-    val takerFee = estimate.value * productFees.takerRate
-    val makerFee = estimate.value * productFees.makerRate
-    val feeText = if (state.orderType == OrderType.MARKET) formatBalance(takerFee)
-      else "${formatBalance(minOf(makerFee, takerFee))}–${formatBalance(maxOf(makerFee, takerFee))}"
-    DetailRow(if (isSpot) "Trading fee (USD estimate)" else "Estimated trading fee", feeText)
-  } else {
-    DetailRow("Trading fee", "Unavailable")
-  }
-  if (estimate?.builderFeeAmount != null && estimate.builderFeeAmount > 0) {
-    val bps = estimate.builderFeeBps ?: 5
-    val percentStr = "${bps / 100.0}%"
-    DetailRow("Builder fee ($percentStr)", "+${formatBalance(estimate.builderFeeAmount)}")
-  }
-  // Only exits the person actually set are worth a row; the rest is noise on a confirmation screen.
-  if (!isSpot) {
+}
+
+/** Only exits the person actually set are worth a row; the rest is noise on a confirmation screen. */
+@Composable
+internal fun ReviewExits(state: TradeUiState, side: OrderSide) {
+  val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+  if (isSpot || (state.takeProfitInput.isBlank() && state.stopLossInput.isBlank())) return
+  val estimate = state.orderEstimate(side)
+  Column {
     OutcomeRow("Take profit", state.takeProfitInput, estimate?.profit, FlareColors.Positive)
     OutcomeRow("Stop loss", state.stopLossInput, estimate?.loss, FlareColors.Negative)
   }
-  state.limitDistanceFromMark(side)?.let { distance ->
+}
+
+@Composable
+internal fun ReviewFootnote(state: TradeUiState, side: OrderSide) {
+  val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+  val exits = !isSpot && (state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    state.limitDistanceFromMark(side)?.let { distance ->
+      Text(
+        "This limit price is ${formatPercent(distance * 100)} " +
+          "${if (distance < 0) "below" else "above"} the current price, so the order may rest " +
+          "unfilled.",
+        color = FlareColors.Negative,
+        style = MaterialTheme.typography.bodySmall,
+      )
+    }
     Text(
-      "This limit price is ${formatPercent(distance * 100)} " +
-        "${if (distance < 0) "below" else "above"} the current price, so the order may rest " +
-        "unfilled.",
-      color = FlareColors.Negative,
+      when {
+        isSpot -> "Fees are deducted from the asset you receive. Final fees depend on execution."
+        exits ->
+          "Estimates assume a full fill at the price shown. Exits place a limit order when " +
+            "triggered, so execution isn’t guaranteed."
+        else -> "Estimates assume a full fill at the price shown, before fees and funding."
+      },
+      color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodySmall,
-      modifier = Modifier.padding(top = 12.dp),
     )
   }
-  Text(
-    if (isSpot) {
-      "Fees are deducted from the asset you receive. USD estimates assume a full fill at the price shown; final fees depend on execution."
-    } else if (exits) {
-      "Estimates assume a full fill at the prices shown, before fees and funding. An exit places a " +
-        "limit order when it triggers, so execution is not guaranteed."
-    } else {
-      "Estimates assume a full fill at the price shown, before fees and funding. You can add exits " +
-        "later from Portfolio."
-    },
-    color = FlareColors.TextSecondary,
-    style = MaterialTheme.typography.bodySmall,
-    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
-  )
 }
 
 /** How far a resting limit price sits from the mark, once it is far enough to be worth saying. */
