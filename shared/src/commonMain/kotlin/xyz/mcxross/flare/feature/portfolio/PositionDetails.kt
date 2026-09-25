@@ -66,7 +66,7 @@ fun PositionManagementSheet(state: PortfolioUiState, onIntent: (PortfolioIntent)
     ModalBottomSheet(
       onDismissRequest = { if (!busy) dismiss() },
       sheetState = sheetState,
-      sheetGesturesEnabled = false,
+      sheetGesturesEnabled = !state.busy,
       shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
       containerColor = FlareColors.Surface,
       contentColor = FlareColors.TextPrimary,
