@@ -32,6 +32,7 @@ import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
@@ -147,11 +148,13 @@ class SettingsViewModelTest {
       feeBps: UInt,
       prompt: VaultPrompt,
       feePayment: FeePayment,
+      product: AssetType,
     ): TransactionState = TransactionState.Committed("0x")
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
+      product: AssetType,
     ): TransactionState = TransactionState.Committed("0x")
     override suspend fun refresh() {}
     override suspend fun refreshHistory() {}

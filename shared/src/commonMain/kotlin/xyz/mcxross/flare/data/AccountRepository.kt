@@ -32,6 +32,7 @@ import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AccountOverview
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.FundMovement
@@ -140,17 +141,20 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<TransactionState>
 
+  /** Perpetuals and spot keep separate on-chain approvals; [product] picks which one. */
   suspend fun approveBuilderFee(
     builderAddress: String,
     feeBps: UInt,
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
+    product: AssetType = AssetType.PERP,
   ): TransactionState
 
   suspend fun revokeBuilderFee(
     builderAddress: String,
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
+    product: AssetType = AssetType.PERP,
   ): TransactionState
 
   suspend fun portfolioChart(
@@ -434,26 +438,36 @@ class DefaultAccountRepository(
     feeBps: UInt,
     prompt: VaultPrompt,
     feePayment: FeePayment,
+    product: AssetType,
   ): TransactionState {
     require(feeBps in 1u..10u) { "Builder fee must be between 1 and 10 bps (up to 0.10%)" }
     val saved = preferences.values.first()
     val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
     val resolvedBuilder = resolveBuilderAddress(builderAddress)
     val units = feeBps.toULong() * 100uL
+    val command =
+      when (product) {
+        AssetType.PERP -> DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units)
+        AssetType.SPOT -> DecibelCommand.ApproveMaxSpotBuilderFee(subaccount, resolvedBuilder, units)
+      }
     var terminal: TransactionState = TransactionState.Failed("Approval transaction did not start")
     trading
       .execute(
-        command = DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units),
+        command = command,
         prompt = prompt.copy(requireFreshAuthorization = true),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
     if (terminal is TransactionState.Committed) {
-      preferences.setBuilderSupport(
-        builderAddress = resolvedBuilder,
-        builderFeeBps = feeBps.toInt(),
-        builderApproved = true,
-      )
+      when (product) {
+        AssetType.PERP ->
+          preferences.setBuilderSupport(
+            builderAddress = resolvedBuilder,
+            builderFeeBps = feeBps.toInt(),
+            builderApproved = true,
+          )
+        AssetType.SPOT -> preferences.setSpotBuilderApproved(true, resolvedBuilder)
+      }
     }
     return terminal
   }
@@ -462,24 +476,30 @@ class DefaultAccountRepository(
     builderAddress: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
+    product: AssetType,
   ): TransactionState {
     val saved = preferences.values.first()
     val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
     val resolvedBuilder = resolveBuilderAddress(builderAddress)
+    val command =
+      when (product) {
+        AssetType.PERP -> DecibelCommand.RevokeMaxBuilderFee(subaccount, resolvedBuilder)
+        AssetType.SPOT -> DecibelCommand.RevokeMaxSpotBuilderFee(subaccount, resolvedBuilder)
+      }
     var terminal: TransactionState = TransactionState.Failed("Revocation transaction did not start")
     trading
       .execute(
-        command = DecibelCommand.RevokeMaxBuilderFee(subaccount, resolvedBuilder),
+        command = command,
         prompt = prompt.copy(requireFreshAuthorization = true),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
+    // The rate stays: it still applies to the other product, and returns if this one is approved again.
     if (terminal is TransactionState.Committed) {
-      preferences.setBuilderSupport(
-        builderAddress = resolvedBuilder,
-        builderFeeBps = 0,
-        builderApproved = false,
-      )
+      when (product) {
+        AssetType.PERP -> preferences.setBuilderApproved(false)
+        AssetType.SPOT -> preferences.setSpotBuilderApproved(false, resolvedBuilder)
+      }
     }
     return terminal
   }

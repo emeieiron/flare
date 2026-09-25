@@ -37,9 +37,8 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
     checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
     checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
   }
-  val charged = builderFeeCharged(market.assetType == AssetType.SPOT)
-  val activeBuilderAddress = if (charged) builderAddress else null
-  val activeBuilderFeeBps = if (charged) builderFeeBps?.toUInt() else null
+  val activeBuilderFeeBps = builderFeeFor(market.assetType == AssetType.SPOT)?.toUInt()
+  val activeBuilderAddress = if (activeBuilderFeeBps != null) builderAddress else null
   return OrderDraft(
     marketAddress = market.address,
     side = side,
@@ -107,7 +106,7 @@ internal fun TradeUiState.orderEstimate(side: OrderSide): OrderEstimate? {
         ?.takeIf { it.isFinite() && it > 0 }
         ?.let { (it - entry) * size * direction }
         ?.takeIf(Double::isFinite)
-  val activeFeeBps = if (builderFeeCharged(isSpot)) builderFeeBps else null
+  val activeFeeBps = builderFeeFor(isSpot)
   val builderFeeAmount = activeFeeBps?.let { bps -> value * (bps.toDouble() / 10_000.0) }
   return OrderEstimate(
     entryPrice = entry,
@@ -121,9 +120,12 @@ internal fun TradeUiState.orderEstimate(side: OrderSide): OrderEstimate? {
 }
 
 /**
- * Spot and perpetuals keep separate on-chain builder approvals. Flare approves the perpetual one
- * only, and a spot order naming an unapproved builder is rejected outright, so spot orders carry no
- * builder fee.
+ * The builder fee an order carries, in bps. Spot and perpetuals keep separate on-chain approvals
+ * and their own rates, and an order naming a builder its product hasn't approved is rejected
+ * outright, so each product carries its fee only once approved.
  */
-internal fun TradeUiState.builderFeeCharged(isSpot: Boolean): Boolean =
-  !isSpot && builderApproved && (builderFeeBps ?: 0) > 0
+internal fun TradeUiState.builderFeeFor(isSpot: Boolean): Int? {
+  val approved = if (isSpot) spotBuilderApproved else builderApproved
+  val bps = if (isSpot) spotBuilderFeeBps else builderFeeBps
+  return bps?.takeIf { approved && it > 0 }
+}

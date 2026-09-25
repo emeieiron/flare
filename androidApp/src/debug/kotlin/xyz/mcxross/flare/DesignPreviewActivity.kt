@@ -21,6 +21,7 @@ import xyz.mcxross.flare.feature.orders.*
 import xyz.mcxross.flare.feature.portfolio.*
 import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
+import xyz.mcxross.flare.store.FlarePreferences
 
 /** Offline design harness. Debug source set only; no repositories, keys, or transactions. */
 class DesignPreviewActivity : FragmentActivity() {
@@ -62,7 +63,7 @@ private fun PreviewScreens(initialScreen: String) {
     )
   }
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
-  var settings by remember { mutableStateOf(SettingsUiState()) }
+  var settings by remember { mutableStateOf(previewSettingsState(initialScreen)) }
   var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
     Text(
@@ -192,15 +193,37 @@ private fun PreviewScreens(initialScreen: String) {
             },
             { screen = "welcome" },
           )
-        "account" ->
+        "account", "account-owner" ->
           SettingsScreen(
             settings,
             { intent ->
-              if (intent is SettingsIntent.SetSlippage)
-                settings =
-                  settings.copy(
-                    preferences = settings.preferences.copy(slippageBps = intent.basisPoints)
-                  )
+              val prefs = settings.preferences
+              settings =
+                when (intent) {
+                  is SettingsIntent.SetSlippage ->
+                    settings.copy(preferences = prefs.copy(slippageBps = intent.basisPoints))
+                  is SettingsIntent.SetBuilderFeeBps ->
+                    settings.copy(
+                      preferences =
+                        if (intent.product == AssetType.PERP)
+                          prefs.copy(
+                            builderFeeBps = intent.basisPoints,
+                            builderApproved = prefs.builderApproved || intent.basisPoints > 0,
+                          )
+                        else
+                          prefs.copy(
+                            spotBuilderFeeBps = intent.basisPoints,
+                            spotBuilderApproved = prefs.spotBuilderApproved || intent.basisPoints > 0,
+                          )
+                    )
+                  is SettingsIntent.RevokeBuilderFee ->
+                    settings.copy(
+                      preferences =
+                        if (intent.product == AssetType.PERP) prefs.copy(builderApproved = false)
+                        else prefs.copy(spotBuilderApproved = false)
+                    )
+                  else -> settings
+                }
             },
             { screen = "welcome" },
           )
@@ -208,6 +231,16 @@ private fun PreviewScreens(initialScreen: String) {
     }
   }
 }
+
+/** "account-owner" signs in with an owner key, which unlocks the builder approvals. */
+private fun previewSettingsState(screen: String): SettingsUiState =
+  if (screen != "account-owner") SettingsUiState()
+  else
+    SettingsUiState(
+      profile = WalletProfile(ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8"),
+      defaultBuilderAddress = "0x51c0de0b7e2a4f6c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+      preferences = FlarePreferences(builderApproved = true, builderFeeBps = 5),
+    )
 
 private fun previewQuotes(): List<MarketQuote> =
   listOf(
