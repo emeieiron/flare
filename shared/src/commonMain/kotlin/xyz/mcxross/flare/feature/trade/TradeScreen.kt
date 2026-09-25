@@ -79,7 +79,7 @@ fun TradeRoute(
   TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity)
 }
 
-internal enum class TradeStage { MARKET, EDIT, REVIEW, RESULT }
+internal enum class TradeStage { MARKET, EDIT, REVIEW, RESULT, FAILURE }
 
 @Composable
 fun TradeScreen(
@@ -107,7 +107,9 @@ fun TradeScreen(
   val committed = state.transaction as? TransactionState.Committed
   val stage = when {
     committed != null -> TradeStage.RESULT
-    state.orderBusy || reviewing -> TradeStage.REVIEW
+    state.orderBusy -> TradeStage.REVIEW
+    reviewing && state.orderError != null -> TradeStage.FAILURE
+    reviewing -> TradeStage.REVIEW
     trading -> TradeStage.EDIT
     else -> TradeStage.MARKET
   }
@@ -125,7 +127,7 @@ fun TradeScreen(
       clearFocus()
       when (stage) {
         TradeStage.MARKET -> onBack()
-        TradeStage.REVIEW -> reviewing = false
+        TradeStage.REVIEW, TradeStage.FAILURE -> reviewing = false
         else -> returnToMarket()
       }
     }
@@ -143,7 +145,7 @@ fun TradeScreen(
   val editorScroll = rememberScrollState()
   val reviewScroll = rememberScrollState()
   LaunchedEffect(stage, state.orderError) {
-    if (stage == TradeStage.REVIEW || stage == TradeStage.RESULT) reviewScroll.scrollTo(0)
+    if (stage != TradeStage.MARKET && stage != TradeStage.EDIT) reviewScroll.scrollTo(0)
   }
   Column(modifier.fillMaxSize().background(FlareColors.Canvas).imePadding()) {
     BackBar(
@@ -151,7 +153,7 @@ fun TradeScreen(
         TradeStage.MARKET -> quote?.market?.symbol ?: "Market"
         TradeStage.EDIT -> "Trade ${quote?.market?.symbol.orEmpty()}"
         TradeStage.REVIEW -> if (state.orderBusy) "Submitting order" else "Review order"
-        TradeStage.RESULT -> "Trade ${quote?.market?.symbol.orEmpty()}"
+        TradeStage.RESULT, TradeStage.FAILURE -> "Trade ${quote?.market?.symbol.orEmpty()}"
       },
       back,
       Modifier.padding(horizontal = 8.dp),
@@ -207,6 +209,10 @@ fun TradeScreen(
                   exitsOpen, { exitsOpen = it }, editorHeight,
                 )
                 TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
+                TradeStage.FAILURE -> OrderFailure(state, side, editorHeight) {
+                  clearFocus()
+                  reviewing = false
+                }
                 TradeStage.RESULT -> if (committed != null) {
                   val explorer = LocalTransactionExplorer.current
                   val browser = LocalUriHandler.current
@@ -242,6 +248,7 @@ fun TradeScreen(
                 else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
               }
               TradeStage.RESULT -> "Done"
+              TradeStage.FAILURE -> "Try again"
             },
             {
               clearFocus()
@@ -251,6 +258,7 @@ fun TradeScreen(
                 TradeStage.REVIEW ->
                   onIntent(if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side))
                 TradeStage.RESULT -> returnToMarket()
+                TradeStage.FAILURE -> onIntent(TradeIntent.Submit(side))
               }
             },
             Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),

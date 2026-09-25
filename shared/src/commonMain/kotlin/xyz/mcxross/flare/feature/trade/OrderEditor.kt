@@ -257,10 +257,10 @@ internal fun OrderReviewStatus(
   val selfPayEstimate = (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas
   val topUp = state.suggestedTopUpOctas?.takeIf { state.apiWalletNeedsTopUp && selfPayEstimate != null }
   SpacedGroups(minHeight) {
-    if (inputError != null || state.orderError != null || selfPayEstimate != null) {
+    // Submission failures get their own outcome stage; only pre-flight problems belong here.
+    if (inputError != null || selfPayEstimate != null) {
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         inputError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
-        state.orderError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
         selfPayEstimate?.let { estimate ->
           ActionNotice(
             "Flare can’t cover the network fee right now. Confirming pays about " +
