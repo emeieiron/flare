@@ -26,7 +26,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -222,22 +224,35 @@ private val MinGroupGap = 16.dp
 private val MaxGroupGap = 28.dp
 
 /**
+ * Receives the height the groups need at their comfortable spacing, so the surface above can give
+ * the chart everything else.
+ */
+internal val LocalGroupsNaturalHeight = staticCompositionLocalOf<MutableIntState?> { null }
+
+/**
  * Stacks the form's groups with gaps that open up to [MaxGroupGap] when the viewport has room
- * and close to [MinGroupGap] as the form grows. A gap also leads the first group.
+ * and close to [MinGroupGap] as the form grows. A gap also leads the first group. Any height left
+ * over sits above the groups, so they stay close to the action button below.
  */
 @Composable
 internal fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
+  val natural = LocalGroupsNaturalHeight.current
   Layout(content, Modifier.fillMaxWidth()) { measurables, constraints ->
     val placeables = measurables.map {
       it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
     }
     val gaps = placeables.size
     val used = placeables.sumOf { it.height }
+    val comfortable = used + MaxGroupGap.roundToPx() * gaps
+    if (natural != null && natural.intValue != comfortable) natural.intValue = comfortable
+    val viewport = minHeight.roundToPx().coerceAtLeast(0)
     val gap =
       if (gaps == 0) 0
-      else ((minHeight.roundToPx() - used) / gaps).coerceIn(MinGroupGap.roundToPx(), MaxGroupGap.roundToPx())
-    layout(constraints.maxWidth, used + gap * gaps) {
-      var y = gap
+      else ((viewport - used) / gaps).coerceIn(MinGroupGap.roundToPx(), MaxGroupGap.roundToPx())
+    val total = used + gap * gaps
+    val height = maxOf(total, viewport)
+    layout(constraints.maxWidth, height) {
+      var y = height - total + gap
       placeables.forEach {
         it.placeRelative(0, y)
         y += it.height + gap

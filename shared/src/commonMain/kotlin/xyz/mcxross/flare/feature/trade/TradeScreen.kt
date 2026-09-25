@@ -3,7 +3,11 @@ package xyz.mcxross.flare.feature.trade
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,13 +26,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
@@ -141,6 +150,10 @@ fun TradeScreen(
     isBackEnabled = stage != TradeStage.MARKET,
     onBackCompleted = back,
   )
+  // Each stage's body reports the height it needs; the chart takes whatever is left above it.
+  val naturalHeights = remember { TradeStage.entries.associateWith { mutableIntStateOf(0) } }
+  val currentStage = rememberUpdatedState(stage)
+  val bodyInsetPx = with(LocalDensity.current) { 24.dp.roundToPx() }
   val marketScroll = rememberScrollState()
   val editorScroll = rememberScrollState()
   val reviewScroll = rememberScrollState()
@@ -171,13 +184,26 @@ fun TradeScreen(
       else TradeScreenSkeleton(chartStyle = state.chartStyle)
       return@Column
     }
-    val exitsAvailable = quote.market.assetType != AssetType.SPOT && state.orderType != OrderType.TWAP
     TradeSurfaceLayout(
       stage = stage,
       modifier = Modifier.weight(1f),
-      compactContext = exitsOpen && exitsAvailable,
+      naturalBodyHeight = {
+        naturalHeights.getValue(currentStage.value).intValue.let { if (it > 0) it + bodyInsetPx else 0 }
+      },
       pullOffset = { pullToReturn.offset },
-      context = { MarketContext(state, assets, stage) },
+      context = {
+        // The chart takes the same pull as the form, so stepping back works from anywhere above the button.
+        Box(
+          Modifier.fillMaxSize().draggable(
+            state = rememberDraggableState { pullToReturn.dragBy(it) },
+            orientation = Orientation.Vertical,
+            enabled = stage != TradeStage.MARKET && !state.orderBusy,
+            onDragStopped = { velocity -> pullToReturn.dragStopped(velocity) },
+          )
+        ) {
+          MarketContext(state, assets, stage)
+        }
+      },
       body = {
         Crossfade(
           stage,
@@ -187,40 +213,42 @@ fun TradeScreen(
         ) { displayed ->
           // Trading stages space their own groups from the top, so they only need the bottom inset.
           val topInset = if (displayed == TradeStage.MARKET) 16.dp else 0.dp
-          BoxWithConstraints(Modifier.fillMaxSize()) {
-            val editorHeight = maxHeight - 24.dp
-            Column(
-              Modifier.fillMaxSize().verticalScroll(when (displayed) {
-                TradeStage.MARKET -> marketScroll
-                TradeStage.EDIT -> editorScroll
-                else -> reviewScroll
-              }).padding(horizontal = 24.dp).padding(top = topInset, bottom = 24.dp),
-            ) {
-              when (displayed) {
-                TradeStage.MARKET -> {
-                  TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
-                    { onIntent(TradeIntent.SelectRange(it)) }, Modifier.fillMaxWidth())
-                  FlareIndicatorCharts(state.candles, state.showRsi, state.showMacd, Modifier.fillMaxWidth())
-                  if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
-                  MarketInformation(state, showBook, { showBook = !showBook })
-                }
-                TradeStage.EDIT -> OrderEditor(
-                  state, side, { side = it }, onIntent,
-                  exitsOpen, { exitsOpen = it }, editorHeight,
-                )
-                TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
-                TradeStage.FAILURE -> OrderFailure(state, side, editorHeight) {
-                  clearFocus()
-                  reviewing = false
-                }
-                TradeStage.RESULT -> if (committed != null) {
-                  val explorer = LocalTransactionExplorer.current
-                  val browser = LocalUriHandler.current
-                  OrderResult(
-                    state, side, editorHeight,
-                    onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
-                    onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.hash)) } },
+          CompositionLocalProvider(LocalGroupsNaturalHeight provides naturalHeights.getValue(displayed)) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+              val editorHeight = maxHeight - 24.dp
+              Column(
+                Modifier.fillMaxSize().verticalScroll(when (displayed) {
+                  TradeStage.MARKET -> marketScroll
+                  TradeStage.EDIT -> editorScroll
+                  else -> reviewScroll
+                }).padding(horizontal = 24.dp).padding(top = topInset, bottom = 24.dp),
+              ) {
+                when (displayed) {
+                  TradeStage.MARKET -> {
+                    TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
+                      { onIntent(TradeIntent.SelectRange(it)) }, Modifier.fillMaxWidth())
+                    FlareIndicatorCharts(state.candles, state.showRsi, state.showMacd, Modifier.fillMaxWidth())
+                    if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                    MarketInformation(state, showBook, { showBook = !showBook })
+                  }
+                  TradeStage.EDIT -> OrderEditor(
+                    state, side, { side = it }, onIntent,
+                    exitsOpen, { exitsOpen = it }, editorHeight,
                   )
+                  TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
+                  TradeStage.FAILURE -> OrderFailure(state, side, editorHeight) {
+                    clearFocus()
+                    reviewing = false
+                  }
+                  TradeStage.RESULT -> if (committed != null) {
+                    val explorer = LocalTransactionExplorer.current
+                    val browser = LocalUriHandler.current
+                    OrderResult(
+                      state, side, editorHeight,
+                      onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
+                      onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.hash)) } },
+                    )
+                  }
                 }
               }
             }

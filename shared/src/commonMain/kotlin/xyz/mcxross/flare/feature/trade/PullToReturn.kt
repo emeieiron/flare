@@ -83,6 +83,16 @@ internal class PullToReturnState(
       }
     }
 
+  /** A direct drag on surfaces that don't scroll, such as the chart above the form. */
+  fun dragBy(delta: Float) {
+    if (!enabled || (delta < 0f && offset <= 0f)) return
+    drag(delta)
+  }
+
+  fun dragStopped(velocity: Float) {
+    if (offset > 0f) release(velocity)
+  }
+
   private fun drag(delta: Float) {
     settle?.cancel()
     offset = (offset + delta * PULL_RESISTANCE).coerceAtLeast(0f)

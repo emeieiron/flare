@@ -1,21 +1,35 @@
 package xyz.mcxross.flare.feature.trade
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
@@ -27,55 +41,83 @@ import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.PriceChartSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
 
-/** Measure the action first, reserve market context, then give the form the remaining viewport. */
+/** The chart never shrinks below this, so the price and its trend stay readable. */
+private val MinContext = 120.dp
+
+/** The chart in market mode, and the most it may take while trading. */
+private val MarketContextLimit = 440.dp
+private const val MARKET_CONTEXT_FRACTION = 0.62f
+
+/**
+ * Measure the action first; in market mode the chart takes a fixed share of what remains. In the
+ * trading stages the body is anchored to the action at its natural height and the chart takes the
+ * rest, between [MinContext] and the market-mode height.
+ */
 @Composable
 internal fun TradeSurfaceLayout(
   stage: TradeStage,
   modifier: Modifier = Modifier,
-  compactContext: Boolean = false,
+  naturalBodyHeight: () -> Int = { 0 },
   pullOffset: () -> Float = { 0f },
   context: @Composable () -> Unit,
   body: @Composable () -> Unit,
   action: @Composable () -> Unit,
 ) {
-  val contextFraction by animateFloatAsState(
-    when {
-      stage == TradeStage.MARKET -> 0.62f
-      stage == TradeStage.EDIT && !compactContext -> 0.32f
-      stage == TradeStage.EDIT -> 0.18f
-      else -> 0.23f
-    },
-    tween(280), label = "marketContextFraction",
-  )
-  val contextLimit by animateFloatAsState(
-    when {
-      stage == TradeStage.MARKET -> 440f
-      stage == TradeStage.EDIT && !compactContext -> 190f
-      stage == TradeStage.EDIT -> 120f
-      else -> 140f
-    },
-    tween(280), label = "marketContextLimit",
-  )
+  val density = LocalDensity.current
+  var totalHeight by remember { mutableIntStateOf(0) }
+  var footerHeight by remember { mutableIntStateOf(0) }
+  val currentStage by rememberUpdatedState(stage)
+  val target by remember(density) {
+    derivedStateOf {
+      val remaining = (totalHeight - footerHeight).coerceAtLeast(0)
+      if (remaining == 0) return@derivedStateOf null
+      val marketCap = minOf(
+        with(density) { MarketContextLimit.roundToPx() },
+        (remaining * MARKET_CONTEXT_FRACTION).roundToInt(),
+      )
+      if (currentStage == TradeStage.MARKET) return@derivedStateOf currentStage to marketCap
+      // Until the new body has measured itself, hold the chart where it is.
+      val natural = naturalBodyHeight().takeIf { it > 0 } ?: return@derivedStateOf null
+      val floor = minOf(with(density) { MinContext.roundToPx() }, remaining / 3)
+      currentStage to (remaining - natural).coerceIn(floor, maxOf(floor, marketCap))
+    }
+  }
+  val contextHeight = remember { Animatable(-1f) }
+  LaunchedEffect(contextHeight) {
+    var lastStage: TradeStage? = null
+    snapshotFlow { target }.filterNotNull().collectLatest { (targetStage, height) ->
+      when {
+        contextHeight.value < 0f -> contextHeight.snapTo(height.toFloat())
+        // Stage changes share the pull and page timing; content growing in place follows on a spring.
+        targetStage != lastStage -> contextHeight.animateTo(height.toFloat(), tween(280))
+        else -> contextHeight.animateTo(height.toFloat(), spring(stiffness = Spring.StiffnessMediumLow))
+      }
+      lastStage = targetStage
+    }
+  }
   Layout(
-    modifier = modifier.fillMaxWidth().clipToBounds(),
+    modifier = modifier.fillMaxWidth().clipToBounds().onSizeChanged { totalHeight = it.height },
     content = {
       Box(Modifier.clipToBounds()) { context() }
       Box(Modifier.clipToBounds()) { body() }
-      Box { action() }
+      Box(Modifier.onSizeChanged { footerHeight = it.height }) { action() }
     },
   ) { measurables, constraints ->
     val width = constraints.maxWidth
     val height = constraints.maxHeight
     val footer = measurables[2].measure(Constraints(minWidth = width, maxWidth = width, maxHeight = height))
     val remaining = (height - footer.height).coerceAtLeast(0)
-    val contextHeight = minOf(contextLimit.dp.roundToPx(), (remaining * contextFraction).roundToInt())
+    val contextHeightPx =
+      if (contextHeight.value >= 0f) contextHeight.value.roundToInt()
+      else minOf(MarketContextLimit.roundToPx(), (remaining * MARKET_CONTEXT_FRACTION).roundToInt())
+    val contextH = contextHeightPx.coerceIn(0, remaining)
     // A pull grows the chart and slides the body down without resizing it, so the form never reflows.
-    val pull = pullOffset().roundToInt().coerceIn(0, remaining - contextHeight)
-    val header = measurables[0].measure(Constraints.fixed(width, contextHeight + pull))
-    val content = measurables[1].measure(Constraints.fixed(width, remaining - contextHeight))
+    val pull = pullOffset().roundToInt().coerceIn(0, remaining - contextH)
+    val header = measurables[0].measure(Constraints.fixed(width, contextH + pull))
+    val content = measurables[1].measure(Constraints.fixed(width, remaining - contextH))
     layout(width, height) {
       header.placeRelative(0, 0)
-      content.placeRelative(0, contextHeight + pull)
+      content.placeRelative(0, contextH + pull)
       footer.placeRelative(0, remaining)
     }
   }
