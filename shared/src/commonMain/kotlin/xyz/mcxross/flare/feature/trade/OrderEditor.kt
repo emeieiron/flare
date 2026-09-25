@@ -1,26 +1,46 @@
 package xyz.mcxross.flare.feature.trade
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
+import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.OrderSide
@@ -42,7 +62,8 @@ internal fun OrderEditor(state: TradeUiState, side: OrderSide, onSideChange: (Or
   val isSpot = quote.market.assetType == AssetType.SPOT
   val estimate = state.orderEstimate(side)
   val inputError = state.orderInputError(side)
-  var showExits by rememberSaveable { mutableStateOf(false) }
+  val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
+  var showExits by rememberSaveable { mutableStateOf(hasExits) }
   Column {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
       OrderSide.entries.forEach { value ->
@@ -85,6 +106,10 @@ internal fun OrderEditor(state: TradeUiState, side: OrderSide, onSideChange: (Or
       { onIntent(TradeIntent.SetSize(it)) },
       Modifier.fillMaxWidth().padding(top = 16.dp),
       enabled = !state.orderBusy,
+      valueHint = "≈ " + when {
+        state.sizeInput.isBlank() -> formatBalance(0.0)
+        else -> estimate?.value?.let(::formatBalance) ?: "—"
+      },
     )
     FlowRow(
       modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -148,19 +173,17 @@ internal fun OrderEditor(state: TradeUiState, side: OrderSide, onSideChange: (Or
       )
     }
     if (!isSpot && state.orderType != OrderType.TWAP) {
-      val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
-      TextButton(
-        { showExits = !showExits },
-        enabled = !state.orderBusy,
-        contentPadding = PaddingValues(0.dp),
+      ExitsDisclosure(showExits, hasExits, !state.orderBusy) { showExits = !showExits }
+      AnimatedVisibility(
+        showExits,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
       ) {
-        Text(if (showExits || hasExits) "Take profit / stop loss" else "Add take profit / stop loss")
-      }
-      if (showExits || hasExits) {
         ExitPriceFields(
           state.takeProfitInput, state.stopLossInput,
           { onIntent(TradeIntent.SetTakeProfit(it)) },
           { onIntent(TradeIntent.SetStopLoss(it)) },
+          Modifier.fillMaxWidth().padding(top = 12.dp),
           enabled = !state.orderBusy,
         )
       }
@@ -216,6 +239,52 @@ internal fun OrderReviewStatus(state: TradeUiState, side: OrderSide, onIntent: (
     if (!state.tradingEnabled) {
       OrderConnectionNotice()
     }
+  }
+}
+
+/** Optional exits stay one quiet row until the trader asks for them. */
+@Composable
+private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+  val rotation by animateFloatAsState(if (expanded) 45f else 0f, label = "exitsDisclosure")
+  Column(Modifier.fillMaxWidth()) {
+    HorizontalDivider(color = FlareColors.BorderSubtle)
+    Row(
+      Modifier.fillMaxWidth()
+        .heightIn(min = 56.dp)
+        .clickable(
+          enabled = enabled,
+          role = Role.Button,
+          onClickLabel = if (expanded) "Hide take profit and stop loss" else "Show take profit and stop loss",
+          onClick = onToggle,
+        )
+        .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Box(
+        Modifier.size(28.dp).background(FlareColors.Elevated, CircleShape),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          Icons.Outlined.Add,
+          contentDescription = null,
+          modifier = Modifier.size(16.dp).rotate(rotation),
+          tint = if (enabled) FlareColors.Positive else FlareColors.TextDisabled,
+        )
+      }
+      Text(
+        "Take profit and stop loss",
+        Modifier.weight(1f),
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+      )
+      Text(
+        if (added && !expanded) "Added" else "Optional",
+        style = MaterialTheme.typography.labelSmall,
+        color = if (added && !expanded) FlareColors.TextPrimary else FlareColors.TextTertiary,
+      )
+    }
+    HorizontalDivider(color = FlareColors.BorderSubtle)
   }
 }
 

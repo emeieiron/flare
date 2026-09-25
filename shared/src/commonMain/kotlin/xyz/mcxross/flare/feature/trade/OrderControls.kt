@@ -40,14 +40,16 @@ internal fun OrderAmountField(
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
   optional: Boolean = false,
+  valueHint: String? = null,
 ) {
   FlareAmountField(
     value = value,
     onValueChange = onValueChange,
     label = label,
     unit = unit,
-    placeholder = if (optional) "Optional" else "0",
+    placeholder = if (optional) "0.00" else "0",
     enabled = enabled,
+    valueHint = valueHint,
     modifier = modifier,
   )
 }
