@@ -28,11 +28,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -90,13 +88,13 @@ fun PortfolioRoute(
 
 private enum class PortfolioPage(val title: String) {
   OVERVIEW("Portfolio"), POSITIONS("Positions"), HOLDINGS("Holdings"),
-  VAULTS("Vaults"), VAULT_DETAIL("Vault details"), POSITION_DETAIL("Position"),
+  VAULTS("Vaults"), VAULT_DETAIL("Vault details"),
   HISTORY("Performance"), REWARDS("Rewards");
 
   val depth: Int
     get() = when (this) {
       OVERVIEW -> 0
-      VAULT_DETAIL, POSITION_DETAIL -> 2
+      VAULT_DETAIL -> 2
       else -> 1
     }
 }
@@ -113,14 +111,12 @@ fun PortfolioScreen(
   var showBalance by rememberSaveable { mutableStateOf(false) }
   var vaultAddress by rememberSaveable { mutableStateOf<String?>(null) }
   val savedPages = rememberSaveableStateHolder()
-  val selectedPage = rememberUpdatedState(page)
   val inspectedVault = state.accountVaults.firstOrNull { it.vault.address == vaultAddress }?.vault
     ?: state.vaults.firstOrNull { it.address == vaultAddress }
   val back: () -> Unit = {
     if (!state.busy) {
       page = when (page) {
         PortfolioPage.VAULT_DETAIL -> PortfolioPage.VAULTS
-        PortfolioPage.POSITION_DETAIL -> PortfolioPage.POSITIONS
         else -> PortfolioPage.OVERVIEW
       }
     }
@@ -136,19 +132,9 @@ fun PortfolioScreen(
   }
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
     Column(Modifier.fillMaxSize().background(FlareColors.Canvas)) {
-      if (displayedPage == PortfolioPage.POSITION_DETAIL) {
-        DisposableEffect(Unit) {
-          onDispose {
-            if (selectedPage.value != PortfolioPage.POSITION_DETAIL) {
-              onIntent(PortfolioIntent.DismissPositionManagement)
-            }
-          }
-        }
-      }
       if (displayedPage != PortfolioPage.OVERVIEW) {
         val title = when (displayedPage) {
           PortfolioPage.VAULT_DETAIL -> inspectedVault?.name ?: displayedPage.title
-          PortfolioPage.POSITION_DETAIL -> state.marketSymbols[state.managedPositionMarket] ?: displayedPage.title
           else -> displayedPage.title
         }
         BackBar(title, back)
@@ -187,7 +173,6 @@ fun PortfolioScreen(
                 PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market),
                   state.markPrices[position.market], !state.busy, {
                     onIntent(PortfolioIntent.ManagePosition(position.market))
-                    page = PortfolioPage.POSITION_DETAIL
                   })
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
@@ -255,10 +240,6 @@ fun PortfolioScreen(
               if (inspectedVault != null) Column { VaultDetails(state, inspectedVault, onIntent) }
               else QuietPortfolioMessage("This vault is no longer available")
             }
-            PortfolioPage.POSITION_DETAIL -> item {
-              if (state.account.positions.any { it.market == state.managedPositionMarket }) PositionDetails(state, onIntent)
-              else QuietPortfolioMessage("This position is no longer open")
-            }
             PortfolioPage.REWARDS -> item {
               if (state.streak != null || state.amps != null || state.tier != null) {
                 Column { RewardsDetails(state) }
@@ -271,6 +252,7 @@ fun PortfolioScreen(
       }
     }
   }
+  if (state.managedPositionMarket != null) PositionManagementSheet(state, onIntent)
   if (state.fundingMode != null) FundingSheet(state, onIntent)
   if (state.vaultAction != null && state.selectedVault != null) VaultActionSheet(state, onIntent)
 }
