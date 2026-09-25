@@ -131,13 +131,20 @@ fun BackBar(
   title: String,
   onBack: () -> Unit,
   modifier: Modifier = Modifier,
+  backEnabled: Boolean = true,
   action: (@Composable () -> Unit)? = null,
 ) {
   Row(
     modifier.fillMaxWidth().heightIn(min = 56.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+    IconButton(onClick = onBack, enabled = backEnabled) {
+      Icon(
+        Icons.AutoMirrored.Outlined.ArrowBack,
+        "Back",
+        tint = if (backEnabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+      )
+    }
     Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
     action?.invoke()
   }

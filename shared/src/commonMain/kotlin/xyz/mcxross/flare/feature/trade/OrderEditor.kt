@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -49,9 +48,8 @@ import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ExitPriceFields
-import xyz.mcxross.flare.design.FlareButton
-import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSkeletonBox
@@ -228,7 +226,7 @@ private val MaxGroupGap = 28.dp
  * and close to [MinGroupGap] as the form grows. A gap also leads the first group.
  */
 @Composable
-private fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
+internal fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
   Layout(content, Modifier.fillMaxWidth()) { measurables, constraints ->
     val placeables = measurables.map {
       it.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
@@ -249,46 +247,41 @@ private fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun OrderReviewStatus(state: TradeUiState, side: OrderSide, onIntent: (TradeIntent) -> Unit) {
+internal fun OrderReviewStatus(
+  state: TradeUiState,
+  side: OrderSide,
+  onIntent: (TradeIntent) -> Unit,
+  minHeight: Dp,
+) {
   val inputError = state.orderInputError(side)
-  Column {
-    inputError?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
-    state.orderError?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
-    (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
-      ActionNotice(
-        "Flare can’t cover the network fee right now. Your wallet would pay about " +
-          "${estimate.toDecimalString(8)} APT.",
-        Modifier.padding(top = 12.dp),
-      )
-      FlareButton(
-        "Pay the fee and continue",
-        { onIntent(TradeIntent.ConfirmSelfPay) },
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        enabled = !state.orderBusy,
-        style = FlareButtonStyle.OUTLINE,
-      )
-      if (state.apiWalletNeedsTopUp)
-        state.suggestedTopUpOctas?.let { amount ->
+  val selfPayEstimate = (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+  val topUp = state.suggestedTopUpOctas?.takeIf { state.apiWalletNeedsTopUp && selfPayEstimate != null }
+  SpacedGroups(minHeight) {
+    if (inputError != null || state.orderError != null || selfPayEstimate != null) {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        inputError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
+        state.orderError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
+        selfPayEstimate?.let { estimate ->
           ActionNotice(
-            "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
-            Modifier.padding(top = 12.dp),
-          )
-          FlareButton(
-            "Send APT from your wallet",
-            { onIntent(TradeIntent.TopUpApiWallet) },
-            Modifier.fillMaxWidth().padding(top = 8.dp),
-            enabled = !state.orderBusy,
-            style = FlareButtonStyle.OUTLINE,
+            "Flare can’t cover the network fee right now. Confirming pays about " +
+              "${estimate.toDecimalString(8)} APT from your wallet.",
           )
         }
+        topUp?.let { amount ->
+          ActionRow(
+            "Send APT from your wallet",
+            subtitle = "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
+            enabled = !state.orderBusy,
+            onClick = { onIntent(TradeIntent.TopUpApiWallet) },
+          )
+        }
+      }
     }
-    val hasNotices = inputError != null || state.orderError != null ||
-      (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas != null
-    if (hasNotices) Spacer(Modifier.height(20.dp))
-    OrderReview(state, side)
-    if (!state.tradingEnabled) {
-      OrderConnectionNotice()
-    }
+    ReviewHeading(state, side)
+    ReviewDetails(state, side)
+    ReviewExits(state, side)
+    ReviewFootnote(state, side)
+    if (!state.tradingEnabled) OrderConnectionNotice()
   }
 }
 
