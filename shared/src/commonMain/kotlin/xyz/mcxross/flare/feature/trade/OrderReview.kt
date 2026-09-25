@@ -29,10 +29,11 @@ internal fun OrderReview(state: TradeUiState, side: OrderSide) {
     style = MaterialTheme.typography.titleLarge,
     color = if (side == OrderSide.BUY) FlareColors.Positive else FlareColors.Negative,
   )
+  val typeLabel = if (state.orderType == OrderType.TWAP) "TWAP" else state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)
   val subtitle =
-    if (isSpot) "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · Spot"
+    if (isSpot) "$typeLabel · Spot"
     else
-      "${state.orderType.name.lowercase().replaceFirstChar(Char::uppercase)} · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
+      "$typeLabel · ${if (side == OrderSide.BUY) "Long" else "Short"} · ${state.leverage}× ${if (state.positionIsolated ?: quote.market.isIsolatedOnly) "isolated" else "cross"}"
   Text(
     subtitle,
     color = FlareColors.TextSecondary,
