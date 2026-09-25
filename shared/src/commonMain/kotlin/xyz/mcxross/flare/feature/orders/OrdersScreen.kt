@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.feature.orders
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,7 +35,7 @@ import xyz.mcxross.flare.design.CompactActionButton
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
-import xyz.mcxross.flare.design.FlareChip
+import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
@@ -82,22 +81,15 @@ fun OrdersScreen(
         onIntent(OrdersIntent.SelectSection(if (history) OrdersSection.ORDERS else OrdersSection.OPEN))
       }, { if (it) "History" else "Open" }, Modifier.padding(bottom = 12.dp),
     )
-    Row(
-      modifier =
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 16.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      val sections = if (historySelected)
-        listOf(OrdersSection.ORDERS, OrdersSection.TRADES, OrdersSection.FUNDING, OrdersSection.TRANSFERS, OrdersSection.TWAP)
-        else listOf(OrdersSection.OPEN, OrdersSection.TWAP)
-      sections.forEach { section ->
-        FlareChip(
-          text = if (section == OrdersSection.OPEN) "Orders" else section.label,
-          selected = state.section == section,
-          onClick = { onIntent(OrdersIntent.SelectSection(section)) },
-        )
-      }
-    }
+    val sections = if (historySelected)
+      listOf(OrdersSection.ORDERS, OrdersSection.TRADES, OrdersSection.FUNDING, OrdersSection.TRANSFERS, OrdersSection.TWAP)
+      else listOf(OrdersSection.OPEN, OrdersSection.TWAP)
+    FlareFilterChips(
+      labels = sections.map { if (it == OrdersSection.OPEN) "Orders" else it.label },
+      selectedIndex = sections.indexOf(state.section).coerceAtLeast(0),
+      onSelect = { onIntent(OrdersIntent.SelectSection(sections[it])) },
+      modifier = Modifier.padding(bottom = 12.dp),
+    )
     val readError = if (historySelected) state.history.error else state.account.error
     if (readError != null) {
       ActionNotice("Account data couldn’t be loaded. Check your connection and account access.",
