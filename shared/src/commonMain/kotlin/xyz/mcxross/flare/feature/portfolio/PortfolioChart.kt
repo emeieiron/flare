@@ -38,6 +38,7 @@ import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.TimeRangeSelector
+import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberFlareShimmer
 
 @Composable
@@ -119,7 +120,7 @@ fun PortfolioPerformanceChart(
           ),
         model = model,
         scrollState = rememberVicoScrollState(scrollEnabled = false),
-        modifier = Modifier.fillMaxWidth().height(240.dp),
+        modifier = Modifier.fullBleed().height(240.dp),
       )
     } else {
       Box(

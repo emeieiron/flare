@@ -130,7 +130,8 @@ internal fun MarketContext(
   stage: TradeStage,
 ) {
   val quote = state.quote ?: return
-  BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+  // Only the text keeps the screen gutter; the chart runs to the screen edges.
+  BoxWithConstraints(Modifier.fillMaxSize()) {
     val contextHeight = maxHeight
     val expansion by animateFloatAsState(
       if (stage == TradeStage.MARKET && contextHeight >= 280.dp) 1f else 0f,
@@ -139,7 +140,8 @@ internal fun MarketContext(
     val identity = resolveAssetIdentity(quote.market.symbol, quote.market.name, assets[assetKey(quote.market.symbol)])
     Column(Modifier.fillMaxSize()) {
       Row(
-        Modifier.fillMaxWidth().height((72 * expansion).dp).clipToBounds().graphicsLayer { alpha = expansion },
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp).height((72 * expansion).dp).clipToBounds()
+          .graphicsLayer { alpha = expansion },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
@@ -150,7 +152,7 @@ internal fun MarketContext(
         }
         InstrumentBadge(if (quote.market.assetType == AssetType.SPOT) "SPOT" else "PERP")
       }
-      Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+      Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween) {
         Text(formatPrice(quote.markPrice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge,
           fontSize = (24 + 16 * expansion).sp, maxLines = 1)
