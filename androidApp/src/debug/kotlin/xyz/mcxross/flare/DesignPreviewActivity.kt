@@ -13,6 +13,7 @@ import androidx.fragment.app.FragmentActivity
 import kotlin.math.sin
 import xyz.mcxross.flare.data.*
 import xyz.mcxross.flare.decibel.model.*
+import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.design.*
 import xyz.mcxross.flare.feature.markets.*
 import xyz.mcxross.flare.feature.onboarding.*
@@ -53,7 +54,9 @@ private fun PreviewScreens(initialScreen: String) {
         stale = false,
         chartStyle = if (initialScreen == "candles") ChartStyle.CANDLESTICK else ChartStyle.LINE,
         tradingKeyAddress = "preview",
-        tradingEnabled = true,
+        tradingEnabled = initialScreen != "trade-offline",
+        quoteBalance = 10000.0,
+        sizeInput = if (initialScreen.startsWith("trade-")) "0.01" else "",
       )
     )
   }
@@ -119,7 +122,7 @@ private fun PreviewScreens(initialScreen: String) {
           )
         "chart",
         "candles",
-        "ticket" ->
+        "ticket", "trade-success", "trade-failure", "trade-busy", "trade-offline" ->
           TradeScreen(
             trade,
             { intent ->
@@ -135,8 +138,14 @@ private fun PreviewScreens(initialScreen: String) {
                   is TradeIntent.SetStopLoss -> trade.copy(stopLossInput = intent.value)
                   is TradeIntent.SetLeverage -> trade.copy(leverage = intent.value)
                   is TradeIntent.SetOrderType -> trade.copy(orderType = intent.type)
-                  is TradeIntent.Submit ->
-                    trade.copy(orderError = "Preview only. No order was placed.")
+                  is TradeIntent.SetTwapDurationMinutes -> trade.copy(twapDurationMinutesInput = intent.value)
+                  is TradeIntent.SetTwapFrequencyMinutes -> trade.copy(twapFrequencyMinutesInput = intent.value)
+                  TradeIntent.DismissOrderReceipt -> trade.copy(transaction = null, sizeInput = "", orderError = null)
+                  is TradeIntent.Submit -> when (initialScreen) {
+                    "trade-success" -> trade.copy(transaction = TransactionState.Committed("preview-only"))
+                    "trade-busy" -> trade.copy(orderBusy = true)
+                    else -> trade.copy(orderError = "Preview only. No order was placed.")
+                  }
                   else -> trade
                 }
             },
