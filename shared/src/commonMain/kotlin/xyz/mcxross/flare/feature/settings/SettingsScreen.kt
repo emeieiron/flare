@@ -3,6 +3,7 @@ package xyz.mcxross.flare.feature.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -33,13 +36,13 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
-import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
@@ -48,6 +51,7 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.store.FlarePreferences
 
 @Composable
 fun SettingsRoute(
@@ -71,7 +75,7 @@ fun SettingsScreen(
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
   var showReferralSheet by remember { mutableStateOf(false) }
-  var showRevokeConfirm by remember { mutableStateOf(false) }
+  var revokeProduct by remember { mutableStateOf<AssetType?>(null) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
@@ -132,13 +136,7 @@ fun SettingsScreen(
     )
 
     if (state.profile.ownerAddress != null) {
-      val builderStatus =
-        if (state.preferences.builderApproved && state.preferences.builderFeeBps > 0) {
-          val bpsDouble = state.preferences.builderFeeBps / 100.0
-          "$bpsDouble% active"
-        } else {
-          "Off"
-        }
+      val builderStatus = builderStatus(state.preferences)
       SectionLabel("Protocol & Rewards")
       ActionRow(
         "Builder support",
@@ -307,74 +305,38 @@ fun SettingsScreen(
   }
 
   if (showBuilderSheet) {
+    val preferences = state.preferences
     FlareSheet("Builder support", { showBuilderSheet = false }) {
       Text(
-        "Support Flare development with a small contribution on orders " +
-          "(capped at 0.10% by Decibel protocol rule). You can adjust your rate or revoke approval on-chain at any time.",
+        "Support Flare with a small share of each order. Perpetuals and spot each have their own " +
+          "rate and on-chain approval, capped at 0.10% by Decibel.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
-      Spacer(Modifier.height(16.dp))
-      Text("Support rate", style = MaterialTheme.typography.titleSmall)
-      Spacer(Modifier.height(8.dp))
-      Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        listOf(0 to "Off", 2 to "0.02%", 5 to "0.05%", 10 to "0.10%").forEach { (bps, label) ->
-          val selected =
-            (state.preferences.builderFeeBps == bps) &&
-              (bps == 0 || state.preferences.builderApproved)
-          FlareChip(
-            label,
-            selected,
-            { onIntent(SettingsIntent.SetBuilderFeeBps(bps)) },
-            Modifier.weight(1f),
-            enabled = !state.busy,
+      listOf(
+          Triple(AssetType.PERP, preferences.builderApproved, preferences.builderFeeBps),
+          Triple(AssetType.SPOT, preferences.spotBuilderApproved, preferences.spotBuilderFeeBps),
+        )
+        .forEachIndexed { index, (product, approved, bps) ->
+          if (index > 0) HorizontalDivider(Modifier.padding(top = 24.dp), color = FlareColors.BorderSubtle)
+          BuilderProductSection(
+            title = if (product == AssetType.PERP) "Perpetuals" else "Spot",
+            approved = approved,
+            basisPoints = bps,
+            pending = state.builderPending == product,
+            enabled = !state.busy && state.profile.ownerAddress != null,
+            onRate = { onIntent(SettingsIntent.SetBuilderFeeBps(product, it)) },
+            onRevoke = { revokeProduct = product },
           )
         }
-      }
-      Spacer(Modifier.height(20.dp))
-      Text("Builder address", style = MaterialTheme.typography.titleSmall)
+      Spacer(Modifier.height(24.dp))
       Text(
-        "Contributions are directed to Flare’s builder address configured for this build.",
-        Modifier.padding(top = 4.dp, bottom = 6.dp),
-        color = FlareColors.TextSecondary,
+        "Paid to Flare’s builder address, ${shortAddress(preferences.builderAddress ?: state.defaultBuilderAddress)}",
+        color = FlareColors.TextTertiary,
         style = MaterialTheme.typography.bodySmall,
       )
-      Text(
-        shortAddress(state.defaultBuilderAddress),
-        style = MaterialTheme.typography.bodyMedium,
-        color = FlareColors.TextPrimary,
-      )
-      Spacer(Modifier.height(20.dp))
-      Text("On-chain approval", style = MaterialTheme.typography.titleSmall)
-      Spacer(Modifier.height(6.dp))
-      if (state.preferences.builderApproved) {
-        ActionNotice(
-          "Approved on-chain. Decibel allows builder fees up to 0.10% for your subaccount.",
-          tone = NoticeTone.INFO,
-        )
-        Spacer(Modifier.height(12.dp))
-        FlareButton(
-          "Revoke on-chain approval",
-          { showRevokeConfirm = true },
-          Modifier.fillMaxWidth(),
-          enabled = !state.busy && state.profile.ownerAddress != null,
-          style = FlareButtonStyle.OUTLINE,
-        )
-      } else {
-        ActionNotice(
-          "Not approved on-chain. Selecting a rate above will ask your wallet to approve on-chain builder support.",
-          tone = NoticeTone.INFO,
-        )
-      }
-      if (state.busy) {
-        Spacer(Modifier.height(12.dp))
-        ActionNotice("Updating builder support…", tone = NoticeTone.PROGRESS)
-      }
       state.error?.let {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         ActionNotice(it, tone = NoticeTone.ALERT)
       }
     }
@@ -412,29 +374,97 @@ fun SettingsScreen(
     }
   }
 
-  if (showRevokeConfirm) {
+  revokeProduct?.let { product ->
+    val name = if (product == AssetType.PERP) "perpetuals" else "spot"
     AlertDialog(
-      onDismissRequest = { showRevokeConfirm = false },
-      title = { Text("Revoke builder support?") },
+      onDismissRequest = { revokeProduct = null },
+      title = { Text("Revoke $name approval?") },
       text = {
         Text(
-          "This submits an on-chain transaction revoking maximum builder fee approval for your subaccount. " +
-            "Your future orders will pay 0% builder fee."
+          "This submits an on-chain transaction. Your $name orders will stop including the " +
+            "builder fee."
         )
       },
       confirmButton = {
         TextButton(
           onClick = {
-            showRevokeConfirm = false
-            onIntent(SettingsIntent.RevokeBuilderFee)
+            revokeProduct = null
+            onIntent(SettingsIntent.RevokeBuilderFee(product))
           }
         ) {
           Text("Revoke", color = FlareColors.Negative)
         }
       },
-      dismissButton = { TextButton(onClick = { showRevokeConfirm = false }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { revokeProduct = null }) { Text("Cancel") } },
       containerColor = FlareColors.Surface,
     )
+  }
+}
+
+private val BuilderRates = listOf(0 to "Off", 2 to "0.02%", 5 to "0.05%", 10 to "0.10%")
+
+private fun builderRateLabel(bps: Int): String =
+  BuilderRates.firstOrNull { it.first == bps }?.second ?: "${bps / 100.0}%"
+
+/** Each product's live rate, e.g. "Perpetuals 0.05% · Spot 0.02%". */
+private fun builderStatus(preferences: FlarePreferences): String =
+  listOfNotNull(
+      "Perpetuals ${builderRateLabel(preferences.builderFeeBps)}".takeIf {
+        preferences.builderApproved && preferences.builderFeeBps > 0
+      },
+      "Spot ${builderRateLabel(preferences.spotBuilderFeeBps)}".takeIf {
+        preferences.spotBuilderApproved && preferences.spotBuilderFeeBps > 0
+      },
+    )
+    .joinToString(" · ")
+    .ifEmpty { "Off" }
+
+/**
+ * One product's builder support: its approval, its own rate, and a way to revoke. Picking a rate on
+ * an unapproved product asks the wallet to approve it first.
+ */
+@Composable
+private fun BuilderProductSection(
+  title: String,
+  approved: Boolean,
+  basisPoints: Int,
+  pending: Boolean,
+  enabled: Boolean,
+  onRate: (Int) -> Unit,
+  onRevoke: () -> Unit,
+) {
+  Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.weight(1f)) {
+      Text(title, style = MaterialTheme.typography.titleSmall)
+      Text(
+        when {
+          pending -> if (approved) "Revoking on-chain…" else "Approving on-chain…"
+          approved -> "Approved on-chain up to 0.10%"
+          else -> "Not approved. Picking a rate asks your wallet to approve it."
+        },
+        Modifier.padding(top = 4.dp),
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+      )
+    }
+    if (approved) {
+      // No trailing inset, so the label lines up with the chips' right edge.
+      TextButton(onRevoke, enabled = enabled, contentPadding = PaddingValues(start = 12.dp)) {
+        Text(
+          "Revoke",
+          color = if (enabled) FlareColors.TextSecondary else FlareColors.TextDisabled,
+          style = MaterialTheme.typography.labelLarge,
+        )
+      }
+    }
+  }
+  Spacer(Modifier.height(12.dp))
+  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Nothing is charged without an approval, so the rate reads as off until one exists.
+    val effective = if (approved) basisPoints else 0
+    BuilderRates.forEach { (bps, label) ->
+      FlareChip(label, effective == bps, { onRate(bps) }, Modifier.weight(1f), enabled = enabled)
+    }
   }
 }
 

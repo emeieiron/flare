@@ -45,8 +45,11 @@ data class AccountProfile(
   val selectedSubaccount: String? = null,
   val onboardingComplete: Boolean = false,
   val builderAddress: String? = null,
+  /** Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry. */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
+  val spotBuilderFeeBps: Int = 5,
+  val spotBuilderApproved: Boolean = false,
 )
 
 data class FlarePreferences(
@@ -70,8 +73,11 @@ data class FlarePreferences(
   val ownerBackupConfirmed: Boolean = false,
   val selectedSubaccount: String? = null,
   val builderAddress: String? = null,
+  /** Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry. */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
+  val spotBuilderFeeBps: Int = 5,
+  val spotBuilderApproved: Boolean = false,
 )
 
 /**
@@ -108,6 +114,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         builderAddress = active?.builderAddress,
         builderFeeBps = active?.builderFeeBps ?: 5,
         builderApproved = active?.builderApproved ?: false,
+        spotBuilderFeeBps = active?.spotBuilderFeeBps ?: 5,
+        spotBuilderApproved = active?.spotBuilderApproved ?: false,
       )
     }
 
@@ -216,6 +224,15 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   suspend fun setBuilderApproved(approved: Boolean) = updateActiveProfile {
     it.copy(builderApproved = approved)
   }
+
+  suspend fun setSpotBuilderFeeBps(feeBps: Int) = updateActiveProfile {
+    it.copy(spotBuilderFeeBps = feeBps.coerceIn(0, 10))
+  }
+
+  suspend fun setSpotBuilderApproved(approved: Boolean, builderAddress: String) =
+    updateActiveProfile {
+      it.copy(spotBuilderApproved = approved, builderAddress = builderAddress)
+    }
 
   suspend fun setCreationReference(profileId: String, reference: String?) =
     updateProfile(profileId) { it.copy(creationReference = reference) }

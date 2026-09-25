@@ -86,6 +86,8 @@ data class TradeUiState(
   val builderAddress: String? = null,
   val builderFeeBps: Int? = null,
   val builderApproved: Boolean = false,
+  val spotBuilderFeeBps: Int? = null,
+  val spotBuilderApproved: Boolean = false,
   val twapDurationMinutesInput: String = "60",
   val twapFrequencyMinutesInput: String = "1",
 ) {
@@ -214,6 +216,8 @@ class TradeViewModel(
             builderAddress = values.builderAddress ?: runtime.defaultBuilderAddress,
             builderFeeBps = values.builderFeeBps,
             builderApproved = values.builderApproved,
+            spotBuilderFeeBps = values.spotBuilderFeeBps,
+            spotBuilderApproved = values.spotBuilderApproved,
           )
         }
         if (rangeChanged) mutableUiState.value.quote?.let { loadCandles(it, range) }

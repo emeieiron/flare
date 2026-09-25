@@ -21,6 +21,7 @@ import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
+import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
@@ -54,6 +55,8 @@ data class SettingsUiState(
   val withdrawing: Boolean = false,
   val withdrawError: String? = null,
   val busy: Boolean = false,
+  /** The product whose builder approval is being written on-chain. */
+  val builderPending: AssetType? = null,
   val error: String? = null,
 )
 
@@ -82,11 +85,10 @@ sealed interface SettingsIntent {
 
   data class SetConfirmTransactions(val confirm: Boolean) : SettingsIntent
 
-  data class SetBuilderFeeBps(val basisPoints: Int) : SettingsIntent
+  /** Perpetuals and spot each hold their own rate and on-chain approval. */
+  data class SetBuilderFeeBps(val product: AssetType, val basisPoints: Int) : SettingsIntent
 
-  data object ApproveBuilderFee : SettingsIntent
-
-  data object RevokeBuilderFee : SettingsIntent
+  data class RevokeBuilderFee(val product: AssetType) : SettingsIntent
 
   data class ChangeReferralCode(val code: String) : SettingsIntent
 
@@ -299,53 +301,30 @@ class SettingsViewModel(
       is SettingsIntent.SetBuilderFeeBps ->
         launchAction("Your builder fee setting didn’t change.") {
           val current = preferences.values.first()
-          val targetAddress = runtime.defaultBuilderAddress
-          if (intent.basisPoints == 0) {
-            preferences.setBuilderFeeBps(0)
-          } else {
-            if (!current.builderApproved) {
-              val result =
-                accounts.approveBuilderFee(
-                  builderAddress = targetAddress,
-                  feeBps = 10u,
-                  prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
-                )
-              check(result is TransactionState.Committed) {
-                (result as? TransactionState.Failed)?.message
-                  ?: "Approving builder support failed. Try again."
-              }
-            }
-            preferences.setBuilderFeeBps(intent.basisPoints)
+          val approved =
+            if (intent.product == AssetType.PERP) current.builderApproved
+            else current.spotBuilderApproved
+          // A rate only applies once its product is approved on-chain.
+          if (intent.basisPoints > 0 && !approved) approveBuilder(intent.product)
+          when (intent.product) {
+            AssetType.PERP -> preferences.setBuilderFeeBps(intent.basisPoints)
+            AssetType.SPOT -> preferences.setSpotBuilderFeeBps(intent.basisPoints)
           }
         }
-      SettingsIntent.ApproveBuilderFee ->
-        launchAction("Builder support wasn’t approved.") {
-          val current = preferences.values.first()
-          val targetAddress = runtime.defaultBuilderAddress
-          val result =
-            accounts.approveBuilderFee(
-              builderAddress = targetAddress,
-              feeBps = 10u,
-              prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
-            )
-          check(result is TransactionState.Committed) {
-            (result as? TransactionState.Failed)?.message
-              ?: "Approving builder support failed. Try again."
-          }
-          preferences.setBuilderFeeBps(if (current.builderFeeBps > 0) current.builderFeeBps else 5)
-        }
-      SettingsIntent.RevokeBuilderFee ->
+      is SettingsIntent.RevokeBuilderFee ->
         launchAction("Builder support wasn’t revoked.") {
           val current = preferences.values.first()
-          val targetAddress = current.builderAddress ?: runtime.defaultBuilderAddress
-          val result =
-            accounts.revokeBuilderFee(
-              builderAddress = targetAddress,
-              prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
-            )
-          check(result is TransactionState.Committed) {
-            (result as? TransactionState.Failed)?.message
-              ?: "Revoking builder support failed. Try again."
+          withBuilderPending(intent.product) {
+            val result =
+              accounts.revokeBuilderFee(
+                builderAddress = current.builderAddress ?: runtime.defaultBuilderAddress,
+                prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
+                product = intent.product,
+              )
+            check(result is TransactionState.Committed) {
+              (result as? TransactionState.Failed)?.message
+                ?: "Revoking builder support failed. Try again."
+            }
           }
         }
       SettingsIntent.ExportOwner ->
@@ -389,6 +368,29 @@ class SettingsViewModel(
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
+  /** Approves Flare's builder up to the protocol cap, so later rate changes need no new approval. */
+  private suspend fun approveBuilder(product: AssetType) = withBuilderPending(product) {
+    val result =
+      accounts.approveBuilderFee(
+        builderAddress = runtime.defaultBuilderAddress,
+        feeBps = 10u,
+        prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
+        product = product,
+      )
+    check(result is TransactionState.Committed) {
+      (result as? TransactionState.Failed)?.message ?: "Approving builder support failed. Try again."
+    }
+  }
+
+  private suspend fun withBuilderPending(product: AssetType, block: suspend () -> Unit) {
+    local.update { it.copy(builderPending = product) }
+    try {
+      block()
+    } finally {
+      local.update { it.copy(builderPending = null) }
+    }
+  }
+
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
     viewModelScope.launch {

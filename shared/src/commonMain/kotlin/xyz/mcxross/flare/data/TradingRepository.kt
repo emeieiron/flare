@@ -701,6 +701,8 @@ internal fun DecibelCommand.requiredSigner(): TradingSigner =
     is DecibelCommand.RevokeDelegation,
     is DecibelCommand.ApproveMaxBuilderFee,
     is DecibelCommand.RevokeMaxBuilderFee,
+    is DecibelCommand.ApproveMaxSpotBuilderFee,
+    is DecibelCommand.RevokeMaxSpotBuilderFee,
     is DecibelCommand.ContributeToVault,
     is DecibelCommand.RedeemFromVault -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
@@ -733,6 +735,8 @@ private fun DecibelCommand.journalName(): String =
     is DecibelCommand.SetPositionTpSl -> "SET_POSITION_TP_SL"
     is DecibelCommand.ApproveMaxBuilderFee -> "APPROVE_MAX_BUILDER_FEE"
     is DecibelCommand.RevokeMaxBuilderFee -> "REVOKE_MAX_BUILDER_FEE"
+    is DecibelCommand.ApproveMaxSpotBuilderFee -> "APPROVE_MAX_SPOT_BUILDER_FEE"
+    is DecibelCommand.RevokeMaxSpotBuilderFee -> "REVOKE_MAX_SPOT_BUILDER_FEE"
     is DecibelCommand.ContributeToVault -> "CONTRIBUTE_TO_VAULT"
     is DecibelCommand.RedeemFromVault -> "REDEEM_FROM_VAULT"
   }
@@ -766,6 +770,8 @@ internal fun DecibelCommand.subaccountAddress(): String? =
     is DecibelCommand.SetPositionTpSl -> subaccount
     is DecibelCommand.ApproveMaxBuilderFee -> subaccount
     is DecibelCommand.RevokeMaxBuilderFee -> subaccount
+    is DecibelCommand.ApproveMaxSpotBuilderFee -> subaccount
+    is DecibelCommand.RevokeMaxSpotBuilderFee -> subaccount
     is DecibelCommand.ContributeToVault -> subaccount
     is DecibelCommand.RedeemFromVault -> subaccount
   }

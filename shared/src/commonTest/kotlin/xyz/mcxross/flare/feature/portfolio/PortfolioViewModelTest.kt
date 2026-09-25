@@ -168,12 +168,14 @@ class PortfolioViewModelTest {
       feeBps: UInt,
       prompt: VaultPrompt,
       feePayment: FeePayment,
+      product: AssetType,
     ): TransactionState = TransactionState.Committed("0x")
 
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
+      product: AssetType,
     ): TransactionState = TransactionState.Committed("0x")
 
     override suspend fun refresh() {}

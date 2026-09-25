@@ -86,6 +86,18 @@ sealed interface DecibelCommand {
     val builder: String,
   ) : DecibelCommand
 
+  /** Spot keeps its own builder registry, so spot orders need a separate approval. */
+  data class ApproveMaxSpotBuilderFee(
+    val subaccount: String,
+    val builder: String,
+    val maxFeeUnits: ULong,
+  ) : DecibelCommand
+
+  data class RevokeMaxSpotBuilderFee(
+    val subaccount: String,
+    val builder: String,
+  ) : DecibelCommand
+
   data class PlaceTwapOrder(
     val subaccount: String,
     val order: xyz.mcxross.flare.decibel.model.ValidatedTwapOrder,
@@ -367,6 +379,28 @@ internal class DefaultDecibelTradingService(
       }
       is DecibelCommand.RevokeMaxBuilderFee -> {
         function = "$packageAddress::dex_accounts_entry::revoke_max_builder_fee_for_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.builder),
+          )
+      }
+      is DecibelCommand.ApproveMaxSpotBuilderFee -> {
+        require(command.maxFeeUnits in 1uL..1_000uL) {
+          "Max builder fee must be between 1 and 1,000 units (up to 10 bps / 0.10%)"
+        }
+        function =
+          "$packageAddress::dex_accounts_spot_entry::approve_max_spot_builder_fee_for_subaccount"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.builder),
+            MoveArgument.U64(command.maxFeeUnits),
+          )
+      }
+      is DecibelCommand.RevokeMaxSpotBuilderFee -> {
+        function =
+          "$packageAddress::dex_accounts_spot_entry::revoke_max_spot_builder_fee_for_subaccount"
         arguments =
           listOf(
             address(command.subaccount),
