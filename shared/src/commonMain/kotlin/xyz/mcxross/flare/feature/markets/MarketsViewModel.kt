@@ -25,7 +25,17 @@ internal data class MarketFilter(
   val favoritesOnly: Boolean = true,
   val instrument: MarketInstrumentFilter = MarketInstrumentFilter.PERPETUALS,
   val category: String? = null,
+  val searching: Boolean = false,
 )
+
+/** Search spans both products; each keeps its own ranked section. */
+data class MarketSearchResults(
+  val perpetuals: List<MarketQuote> = emptyList(),
+  val spot: List<MarketQuote> = emptyList(),
+) {
+  val isEmpty: Boolean
+    get() = perpetuals.isEmpty() && spot.isEmpty()
+}
 
 data class MarketsUiState(
   val loading: Boolean = true,
@@ -38,9 +48,15 @@ data class MarketsUiState(
   val stale: Boolean = true,
   val error: String? = null,
   val assets: Map<String, xyz.mcxross.flare.data.AssetMetadata> = emptyMap(),
+  val searching: Boolean = false,
+  val searchResults: MarketSearchResults = MarketSearchResults(),
 )
 
 sealed interface MarketsIntent {
+  data object OpenSearch : MarketsIntent
+
+  data object CloseSearch : MarketsIntent
+
   data class Search(val value: String) : MarketsIntent
 
   data class ToggleFavorite(val marketAddress: String) : MarketsIntent
@@ -64,7 +80,6 @@ class MarketsViewModel(
         assetCatalog.assets,
         filter,
       ) { catalog, assets, f ->
-        val normalized = f.query.trim().lowercase()
         val effectiveFavoritesOnly = f.favoritesOnly
         val categories =
           when (f.instrument) {
@@ -86,21 +101,17 @@ class MarketsViewModel(
                   MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
                 }
               matchesInstrument &&
-                (normalized.isNotEmpty() || !effectiveFavoritesOnly || it.favorite) &&
+                (!effectiveFavoritesOnly || it.favorite) &&
                 (f.category == null ||
                   (assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory()
-                    ?: it.market.category.normalizedCategory()) == f.category) &&
-                (normalized.isEmpty() ||
-                  it.market.symbol.lowercase().contains(normalized) ||
-                  it.market.name.lowercase().contains(normalized) ||
-                  assets[assetKey(it.market.symbol)]?.let { asset ->
-                    asset.name.lowercase().contains(normalized) ||
-                      asset.kind.lowercase().contains(normalized)
-                  } == true)
+                    ?: it.market.category.normalizedCategory()) == f.category)
             },
           stale = catalog.stale,
           error = catalog.error,
           assets = assets,
+          searching = f.searching,
+          searchResults =
+            if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
         )
       }
       .stateIn(
@@ -118,7 +129,10 @@ class MarketsViewModel(
 
   fun onIntent(intent: MarketsIntent) {
     when (intent) {
-      is MarketsIntent.Search -> filter.update { it.copy(query = intent.value, favoritesOnly = false, category = null) }
+      // Search is its own mode: browsing filters stay untouched so closing it returns to them.
+      MarketsIntent.OpenSearch -> filter.update { it.copy(searching = true, query = "") }
+      MarketsIntent.CloseSearch -> filter.update { it.copy(searching = false, query = "") }
+      is MarketsIntent.Search -> filter.update { it.copy(query = intent.value) }
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly ->
@@ -137,3 +151,46 @@ private fun String.normalizedCategory(): String? = trim().lowercase().takeIf { i
 
 private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
 private val spotCategoryTabs = listOf("crypto")
+
+/**
+ * Ranks every market, perpetual and spot, against [query]: exact ticker, ticker prefix, name
+ * prefix, anything containing the text, then category. An empty query lists the watchlist.
+ */
+fun searchMarkets(
+  quotes: List<MarketQuote>,
+  assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
+  query: String,
+): MarketSearchResults {
+  val normalized = query.trim().lowercase()
+  val matches =
+    if (normalized.isEmpty()) quotes.filter { it.favorite }
+    else
+      quotes
+        .mapNotNull { quote ->
+          marketMatchRank(quote, assets[assetKey(quote.market.symbol)], normalized)?.let { quote to it }
+        }
+        .sortedBy { it.second }
+        .map { it.first }
+  return MarketSearchResults(
+    perpetuals = matches.filter { it.market.assetType == AssetType.PERP },
+    spot = matches.filter { it.market.assetType == AssetType.SPOT },
+  )
+}
+
+private fun marketMatchRank(
+  quote: MarketQuote,
+  asset: xyz.mcxross.flare.data.AssetMetadata?,
+  query: String,
+): Int? {
+  val ticker = quote.market.symbol.substringBefore('/').lowercase()
+  val names = listOfNotNull(quote.market.name, asset?.name).map { it.lowercase() }
+  val kind = (asset?.kind ?: quote.market.category).lowercase()
+  return when {
+    ticker == query -> 0
+    ticker.startsWith(query) -> 1
+    names.any { it.startsWith(query) } -> 2
+    ticker.contains(query) || names.any { it.contains(query) } -> 3
+    kind.isNotBlank() && (kind.contains(query) || marketCategoryLabel(kind).lowercase().contains(query)) -> 4
+    else -> null
+  }
+}

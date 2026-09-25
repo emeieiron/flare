@@ -1,25 +1,46 @@
 package xyz.mcxross.flare.feature.markets
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import org.koin.compose.viewmodel.koinViewModel
+import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
@@ -56,137 +77,228 @@ fun MarketsScreen(
   onMarketClick: (String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val focus = LocalFocusManager.current
+  val closeSearch = {
+    focus.clearFocus()
+    onIntent(MarketsIntent.CloseSearch)
+  }
+  NavigationBackHandler(
+    state = rememberNavigationEventState(NavigationEventInfo.None),
+    isBackEnabled = state.searching,
+    onBackCompleted = closeSearch,
+  )
   Column(
     modifier = modifier.fillMaxSize().background(FlareColors.Canvas).padding(horizontal = 24.dp)
   ) {
-    FlareTopBar(title = "Markets")
-    FlareSegmentedControl(
-      options = listOf(MarketInstrumentFilter.PERPETUALS, MarketInstrumentFilter.SPOT),
-      selectedOption = state.selectedInstrument,
-      onOptionSelected = { onIntent(MarketsIntent.SetInstrument(it)) },
-      label = {
-        when (it) {
-          MarketInstrumentFilter.PERPETUALS -> "Perpetuals"
-          MarketInstrumentFilter.SPOT -> "Spot"
-        }
-      },
-      modifier = Modifier.padding(bottom = 12.dp),
-    )
-    FlareSearchField(
-      value = state.query,
-      onValueChange = { onIntent(MarketsIntent.Search(it)) },
-      modifier = Modifier.fillMaxWidth(),
-      placeholder =
-        if (state.selectedInstrument == MarketInstrumentFilter.SPOT) "Search spot markets"
-        else "Search perpetuals",
-      leadingIcon = Icons.Outlined.Search,
-    )
-    LazyRow(
-      modifier = Modifier.padding(vertical = 12.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    if (state.searching) {
+      MarketSearchBar(state.query, { onIntent(MarketsIntent.Search(it)) }, closeSearch)
+    } else {
+      FlareTopBar(
+        title = "Markets",
+        action = {
+          IconButton({ onIntent(MarketsIntent.OpenSearch) }, Modifier.size(48.dp)) {
+            Icon(Icons.Outlined.Search, "Search markets", tint = FlareColors.TextPrimary)
+          }
+        },
+      )
+    }
+    AnimatedVisibility(
+      !state.searching,
+      enter = expandVertically() + fadeIn(),
+      exit = shrinkVertically() + fadeOut(),
     ) {
-      item {
-        FlareChip("All", !state.favoritesOnly && state.selectedCategory == null,
-          { onIntent(MarketsIntent.SetCategory(null)) })
-      }
-      item {
-        FlareChip(
-          text = "Watchlist",
-          selected = state.favoritesOnly,
-          onClick = {
-            onIntent(MarketsIntent.SetFavoritesOnly(true))
-          },
-        )
-      }
-      items(state.categories, key = { it }) { category ->
-        val isCategorySelected = !state.favoritesOnly && state.selectedCategory == category
-        FlareChip(
-          text = marketCategoryLabel(category),
-          selected = isCategorySelected,
-          onClick = {
-            if (isCategorySelected) {
-              onIntent(MarketsIntent.SetCategory(null))
-            } else {
-              onIntent(MarketsIntent.SetFavoritesOnly(false))
-              onIntent(MarketsIntent.SetCategory(category))
+      Column {
+        FlareSegmentedControl(
+          options = listOf(MarketInstrumentFilter.PERPETUALS, MarketInstrumentFilter.SPOT),
+          selectedOption = state.selectedInstrument,
+          onOptionSelected = { onIntent(MarketsIntent.SetInstrument(it)) },
+          label = {
+            when (it) {
+              MarketInstrumentFilter.PERPETUALS -> "Perpetuals"
+              MarketInstrumentFilter.SPOT -> "Spot"
             }
           },
         )
+        MarketFilterChips(state, onIntent)
       }
     }
-    if (state.loading && state.quotes.isEmpty()) {
-      Row(
-        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Text(
-          marketSectionTitle(state),
-          style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-          "Price / 24h",
-          style = MaterialTheme.typography.bodySmall,
-          color = FlareColors.TextSecondary,
-        )
-      }
-      MarketListSkeleton()
-    } else if (state.quotes.isEmpty()) {
-      EmptyState(
-        title =
-          when {
-            state.error != null -> "Markets are offline"
-            state.query.isNotBlank() -> "No matching markets"
-            state.favoritesOnly -> "Your watchlist starts here"
-            else -> "No markets found"
-          },
-        message =
-          if (state.error != null) "Prices appear as soon as market data arrives."
-          else if (state.favoritesOnly && state.query.isBlank()) {
-            "Tap the star beside a market to follow it here."
-          } else {
-            "Try a different symbol or market name."
-          },
+    if (state.searching) MarketSearchResults(state, onIntent, onMarketClick)
+    else MarketBrowseList(state, onIntent, onMarketClick)
+  }
+}
+
+/** The title row becomes the field; Cancel returns to exactly where browsing left off. */
+@Composable
+private fun MarketSearchBar(query: String, onQuery: (String) -> Unit, onCancel: () -> Unit) {
+  val focusRequester = remember { FocusRequester() }
+  LaunchedEffect(Unit) { focusRequester.requestFocus() }
+  Row(
+    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp).heightIn(min = 52.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    FlareSearchField(
+      value = query,
+      onValueChange = onQuery,
+      placeholder = "Search all markets",
+      leadingIcon = Icons.Outlined.Search,
+      modifier = Modifier.weight(1f),
+      focusRequester = focusRequester,
+    )
+    TextButton(onCancel) { Text("Cancel", color = FlareColors.Positive) }
+  }
+}
+
+@Composable
+private fun MarketFilterChips(state: MarketsUiState, onIntent: (MarketsIntent) -> Unit) {
+  LazyRow(
+    modifier = Modifier.padding(vertical = 12.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    item {
+      FlareChip("All", !state.favoritesOnly && state.selectedCategory == null,
+        { onIntent(MarketsIntent.SetCategory(null)) })
+    }
+    item {
+      FlareChip(
+        text = "Watchlist",
+        selected = state.favoritesOnly,
+        onClick = { onIntent(MarketsIntent.SetFavoritesOnly(true)) },
       )
-    } else {
-      LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-          Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-          ) {
-            Text(
-              marketSectionTitle(state),
-              style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-              "Price / 24h",
-              style = MaterialTheme.typography.bodySmall,
-              color = FlareColors.TextSecondary,
-            )
+    }
+    items(state.categories, key = { it }) { category ->
+      val isCategorySelected = !state.favoritesOnly && state.selectedCategory == category
+      FlareChip(
+        text = marketCategoryLabel(category),
+        selected = isCategorySelected,
+        onClick = {
+          if (isCategorySelected) {
+            onIntent(MarketsIntent.SetCategory(null))
+          } else {
+            onIntent(MarketsIntent.SetFavoritesOnly(false))
+            onIntent(MarketsIntent.SetCategory(category))
           }
-        }
-        items(state.quotes, key = { it.market.address }) { quote ->
-          MarketListRow(
-            asset =
-              resolveAssetIdentity(
-                quote.market.symbol,
-                quote.market.name,
-                state.assets[assetKey(quote.market.symbol)],
-              ),
-            price = formatPrice(quote.markPrice),
-            delta = formatPercent(quote.changePercent24h),
-            positive = quote.changePercent24h >= 0,
-            favorite = quote.favorite,
-            onClick = { onMarketClick(quote.market.address) },
-            onFavorite = {
-              onIntent(MarketsIntent.ToggleFavorite(quote.market.address))
-            },
-            badgeText = if (quote.market.assetType == AssetType.SPOT) "SPOT" else null,
-          )
-        }
+        },
+      )
+    }
+  }
+}
+
+@Composable
+private fun MarketBrowseList(
+  state: MarketsUiState,
+  onIntent: (MarketsIntent) -> Unit,
+  onMarketClick: (String) -> Unit,
+) {
+  if (state.loading && state.quotes.isEmpty()) {
+    MarketSectionHeader(marketSectionTitle(state), showPriceLabel = true)
+    MarketListSkeleton()
+  } else if (state.quotes.isEmpty()) {
+    EmptyState(
+      title =
+        when {
+          state.error != null -> "Markets are offline"
+          state.favoritesOnly -> "Your watchlist starts here"
+          else -> "No markets found"
+        },
+      message =
+        if (state.error != null) "Prices appear as soon as market data arrives."
+        else if (state.favoritesOnly) "Tap the star beside a market to follow it here."
+        else "Try another category.",
+    )
+  } else {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+      item { MarketSectionHeader(marketSectionTitle(state), showPriceLabel = true) }
+      items(state.quotes, key = { it.market.address }) { quote ->
+        MarketQuoteRow(quote, state, onIntent, onMarketClick)
       }
     }
   }
+}
+
+/** Perpetuals then spot, each ranked; an empty query shows the watchlist across both. */
+@Composable
+private fun MarketSearchResults(
+  state: MarketsUiState,
+  onIntent: (MarketsIntent) -> Unit,
+  onMarketClick: (String) -> Unit,
+) {
+  val results = state.searchResults
+  val listState = rememberLazyListState()
+  val keyboard = LocalSoftwareKeyboardController.current
+  LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) keyboard?.hide() }
+  val query = state.query.trim()
+  if (results.isEmpty) {
+    if (state.loading && state.quotes.isEmpty()) {
+      MarketListSkeleton()
+    } else {
+      EmptyState(
+        title = if (query.isEmpty()) "Search every market" else "No markets match “$query”",
+        message = if (query.isEmpty()) "Type a ticker, name, or category. Starred markets appear here."
+          else "Try a ticker, asset name, or category.",
+      )
+    }
+    return
+  }
+  LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
+    val firstSection = if (results.perpetuals.isNotEmpty()) "Perpetuals" else "Spot"
+    if (query.isEmpty()) item { MarketSectionHeader("Your watchlist", showPriceLabel = true) }
+    listOf("Perpetuals" to results.perpetuals, "Spot" to results.spot).forEach { (title, quotes) ->
+      if (quotes.isEmpty()) return@forEach
+      item(key = "section-$title") {
+        MarketSectionHeader(
+          title,
+          showPriceLabel = query.isNotEmpty() && title == firstSection,
+          subdued = query.isEmpty(),
+        )
+      }
+      items(quotes, key = { "search-${it.market.address}" }) { quote ->
+        MarketQuoteRow(quote, state, onIntent, onMarketClick)
+      }
+    }
+  }
+}
+
+@Composable
+private fun MarketSectionHeader(title: String, showPriceLabel: Boolean, subdued: Boolean = false) {
+  Row(
+    Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.Bottom,
+  ) {
+    Text(
+      title,
+      style = if (subdued) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
+      color = if (subdued) FlareColors.TextSecondary else FlareColors.TextPrimary,
+    )
+    if (showPriceLabel) {
+      Text("Price / 24h", style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    }
+  }
+}
+
+@Composable
+private fun MarketQuoteRow(
+  quote: MarketQuote,
+  state: MarketsUiState,
+  onIntent: (MarketsIntent) -> Unit,
+  onMarketClick: (String) -> Unit,
+) {
+  MarketListRow(
+    asset =
+      resolveAssetIdentity(
+        quote.market.symbol,
+        quote.market.name,
+        state.assets[assetKey(quote.market.symbol)],
+      ),
+    price = formatPrice(quote.markPrice),
+    delta = formatPercent(quote.changePercent24h),
+    positive = quote.changePercent24h >= 0,
+    favorite = quote.favorite,
+    onClick = { onMarketClick(quote.market.address) },
+    onFavorite = { onIntent(MarketsIntent.ToggleFavorite(quote.market.address)) },
+    badgeText = if (quote.market.assetType == AssetType.SPOT) "SPOT" else null,
+  )
 }
 
 internal fun marketCategoryLabel(category: String): String =
@@ -197,7 +309,6 @@ internal fun marketCategoryLabel(category: String): String =
 
 internal fun marketSectionTitle(state: MarketsUiState): String =
   when {
-    state.query.isNotBlank() -> "Search results"
     state.favoritesOnly -> "Your watchlist"
     state.selectedCategory != null -> marketCategoryLabel(state.selectedCategory)
     else -> "All markets"
