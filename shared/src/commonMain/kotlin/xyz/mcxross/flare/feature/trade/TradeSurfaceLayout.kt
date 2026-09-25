@@ -5,6 +5,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -128,6 +134,7 @@ internal fun MarketContext(
   state: TradeUiState,
   assets: Map<String, AssetMetadata>,
   stage: TradeStage,
+  onToggleStyle: () -> Unit = {},
 ) {
   val quote = state.quote ?: return
   // Only the text keeps the screen gutter; the chart runs to the screen edges.
@@ -159,10 +166,45 @@ internal fun MarketContext(
         Text(formatPercent(quote.changePercent24h), style = MaterialTheme.typography.labelMedium,
           color = if (quote.changePercent24h >= 0) FlareColors.Positive else FlareColors.Negative)
       }
-      Box(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
+      Box(
+        Modifier.fillMaxWidth().weight(1f).clipToBounds().then(
+          if (stage == TradeStage.MARKET) Modifier.onDoubleTap(onToggleStyle) else Modifier
+        )
+      ) {
         if (state.chartLoading) PriceChartSkeleton(Modifier.fillMaxSize(), chartStyle = state.chartStyle)
         else FlarePriceChart(state.candles, state.chartStyle, Modifier.fillMaxSize())
       }
+    }
+  }
+}
+
+/**
+ * A double-tap switches line and candles, a shortcut for the toggle under the chart. The chart
+ * consumes its own touches for scrubbing, so taps are watched on the way down, before it sees them,
+ * and left unconsumed.
+ */
+@Composable
+private fun Modifier.onDoubleTap(action: () -> Unit): Modifier {
+  // Live prices recompose this often; the gesture must survive that between two taps.
+  val currentAction by rememberUpdatedState(action)
+  return pointerInput(Unit) { detectDoubleTap { currentAction() } }
+}
+
+private suspend fun PointerInputScope.detectDoubleTap(action: () -> Unit) {
+  var lastTapUp = 0L
+  awaitEachGesture {
+    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+    val up = waitForUpOrCancellation(PointerEventPass.Initial) ?: return@awaitEachGesture
+    val isTap =
+      up.uptimeMillis - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis &&
+        (up.position - down.position).getDistance() < viewConfiguration.touchSlop
+    if (!isTap) {
+      lastTapUp = 0L
+    } else if (down.uptimeMillis - lastTapUp <= viewConfiguration.doubleTapTimeoutMillis) {
+      lastTapUp = 0L
+      action()
+    } else {
+      lastTapUp = up.uptimeMillis
     }
   }
 }
