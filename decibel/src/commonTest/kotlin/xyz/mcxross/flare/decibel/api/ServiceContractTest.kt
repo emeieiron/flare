@@ -109,17 +109,16 @@ class ServiceContractTest {
       HttpClient(
         MockEngine {
           respondJson(
-            """[{"timestamp":1735758000000,"value":1250.5,"account_value":1250.5,"realized_pnl":150.5}]"""
+            """[{"timestamp":1735758000000,"data_points":1250.5}]"""
           )
         }
       )
     val service = DefaultAccountDataService(api(http))
 
-    val points = service.portfolioChart("0x22", "1D", "account_value")
+    val points = service.portfolioChart("0x22", "24h", "account_value")
 
     assertEquals(1, points.size)
-    assertEquals(1250.5, points.first().accountValue)
-    assertEquals(150.5, points.first().realizedPnl)
+    assertEquals(1250.5, points.first().dataPoints)
   }
 
   @Test

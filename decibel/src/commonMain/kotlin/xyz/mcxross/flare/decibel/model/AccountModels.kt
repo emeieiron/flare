@@ -177,6 +177,7 @@ data class FundingPayment(
 data class PortfolioChartPoint(
   val timestamp: Long = 0L,
   val value: Double = 0.0,
+  @SerialName("data_points") val dataPoints: Double? = null,
   @SerialName("account_value") val accountValue: Double? = null,
   @SerialName("realized_pnl") val realizedPnl: Double? = null,
 )
