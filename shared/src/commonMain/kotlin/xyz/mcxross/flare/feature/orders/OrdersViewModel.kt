@@ -26,6 +26,7 @@ import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 
 enum class OrdersSection(val label: String) {
   OPEN("Open"),
@@ -273,27 +274,29 @@ class OrdersViewModel(
       val openOrders = uiState.value.account.openOrders
       if (openOrders.isEmpty()) return@launchAction
       val subaccount = checkNotNull(uiState.value.account.account)
-      for (order in openOrders) {
-        val isSpot =
-          markets.catalog.value.quotes
-            .firstOrNull { it.market.address == order.market }
-            ?.market
-            ?.assetType == AssetType.SPOT || order.assetType == AssetType.SPOT
-        val command =
-          if (order.isTpSl) {
-            DecibelCommand.CancelPositionTpSl(subaccount, order.market, order.orderId)
-          } else if (isSpot) {
-            DecibelCommand.CancelSpotOrder(subaccount, order.market, order.orderId)
-          } else {
-            DecibelCommand.CancelOrder(subaccount, order.market, order.orderId)
-          }
-        trading
-          .execute(
-            command,
-            VaultPrompt("Cancel order", "Confirm your identity"),
-            FeePayment.SPONSORED,
-          )
-          .collect { state -> local.update { it.copy(transaction = state) } }
+      trading.confirmedAction(VaultPrompt("Cancel all orders", "Confirm your identity")) {
+        for (order in openOrders) {
+          val isSpot =
+            markets.catalog.value.quotes
+              .firstOrNull { it.market.address == order.market }
+              ?.market
+              ?.assetType == AssetType.SPOT || order.assetType == AssetType.SPOT
+          val command =
+            if (order.isTpSl) {
+              DecibelCommand.CancelPositionTpSl(subaccount, order.market, order.orderId)
+            } else if (isSpot) {
+              DecibelCommand.CancelSpotOrder(subaccount, order.market, order.orderId)
+            } else {
+              DecibelCommand.CancelOrder(subaccount, order.market, order.orderId)
+            }
+          trading
+            .execute(
+              command,
+              VaultPrompt("Cancel order", "Confirm your identity"),
+              FeePayment.SPONSORED,
+            )
+            .collect { state -> local.update { it.copy(transaction = state) } }
+        }
       }
       accounts.refresh()
       accounts.refreshHistory()
@@ -315,7 +318,8 @@ class OrdersViewModel(
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(error = actionFailure(error.message, outcome)) }
+            if (!error.isAuthorizationCancelled())
+              local.update { it.copy(error = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }

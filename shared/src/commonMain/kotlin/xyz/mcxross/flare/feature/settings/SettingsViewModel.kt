@@ -27,6 +27,7 @@ import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
 
@@ -78,6 +79,8 @@ sealed interface SettingsIntent {
   data object DismissWithdraw : SettingsIntent
 
   data class SetSlippage(val basisPoints: Int) : SettingsIntent
+
+  data class SetConfirmTransactions(val confirm: Boolean) : SettingsIntent
 
   data class SetBuilderFeeBps(val basisPoints: Int) : SettingsIntent
 
@@ -281,6 +284,14 @@ class SettingsViewModel(
           }
         }
       }
+      is SettingsIntent.SetConfirmTransactions ->
+        launchAction("Your confirmation setting didn’t change.") {
+          // Relaxing protection needs the person present; turning it back on never does.
+          if (!intent.confirm) {
+            wallets.confirmIdentity(VaultPrompt("Turn off confirmations", "Confirm your identity"))
+          }
+          preferences.setConfirmTransactions(intent.confirm)
+        }
       is SettingsIntent.SetSlippage ->
         launchAction("Your slippage setting didn’t change.") {
           preferences.setSlippageBps(intent.basisPoints)
@@ -385,7 +396,8 @@ class SettingsViewModel(
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(error = actionFailure(error.message, outcome)) }
+            if (!error.isAuthorizationCancelled())
+              local.update { it.copy(error = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }

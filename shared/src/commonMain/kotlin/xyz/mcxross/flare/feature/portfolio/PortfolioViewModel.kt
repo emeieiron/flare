@@ -53,6 +53,7 @@ import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.decibel.model.validate
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 
@@ -763,7 +764,8 @@ class PortfolioViewModel(
       try {
         runSuspendCatching { block() }
           .onFailure { error ->
-            local.update { it.copy(actionError = actionFailure(error.message, outcome)) }
+            if (!error.isAuthorizationCancelled())
+              local.update { it.copy(actionError = actionFailure(error.message, outcome)) }
           }
       } finally {
         local.update { it.copy(busy = false) }

@@ -46,9 +46,15 @@ class UnavailableWalletVault : WalletVault {
   override fun lock() = Unit
 }
 
+const val AUTHORIZATION_CANCELLED_MESSAGE = "Authorization was cancelled"
+
+/** The person dismissed an authorization prompt: nothing was signed, so there is nothing to report. */
+fun Throwable.isAuthorizationCancelled(): Boolean =
+  this is WalletVaultException.Cancelled || message == AUTHORIZATION_CANCELLED_MESSAGE
+
 sealed class WalletVaultException(message: String, cause: Throwable? = null) :
   Exception(message, cause) {
-  class Cancelled : WalletVaultException("Authorization was cancelled")
+  class Cancelled : WalletVaultException(AUTHORIZATION_CANCELLED_MESSAGE)
 
   class Unavailable(message: String) : WalletVaultException(message)
 

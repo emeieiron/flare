@@ -26,6 +26,12 @@ data class WalletProfile(
 data class OwnerBackup(val address: String, val words: List<String>)
 
 interface WalletRepository {
+  /**
+   * Asks the person to authenticate now (fingerprint, face, or passcode) with the key this device
+   * signs with. Throws [xyz.mcxross.flare.security.WalletVaultException.Cancelled] if dismissed.
+   */
+  suspend fun confirmIdentity(prompt: VaultPrompt) = Unit
+
   /** Identifies the current foreground visit; signing must not cross two of them. */
   val authorizationGeneration: Long
 
@@ -252,6 +258,14 @@ class DefaultWalletRepository(
     } finally {
       bytes.fill(0)
     }
+  }
+
+  override suspend fun confirmIdentity(prompt: VaultPrompt) {
+    val saved = preferences.values.first()
+    val signing =
+      if (saved.apiWalletAddress != null) WalletSecretSlot.API_PRIVATE_KEY
+      else WalletSecretSlot.OWNER_MNEMONIC
+    vault.read(slot(signing), prompt.copy(requireFreshAuthorization = true)).fill(0)
   }
 
   private suspend fun slot(slot: WalletSecretSlot) =

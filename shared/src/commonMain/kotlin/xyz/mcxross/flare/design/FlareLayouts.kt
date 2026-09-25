@@ -2,6 +2,7 @@ package xyz.mcxross.flare.design
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -9,6 +10,8 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -76,6 +79,54 @@ fun ActionRow(
     )
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
+}
+
+@Composable
+fun SwitchRow(
+  title: String,
+  subtitle: String?,
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+) {
+  Row(
+    modifier
+      .fillMaxWidth()
+      .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+      .padding(vertical = 16.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(16.dp),
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text(
+        title,
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+      )
+      if (subtitle != null)
+        Text(
+          subtitle,
+          Modifier.padding(top = 4.dp),
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+        )
+    }
+    Switch(
+      checked = checked,
+      onCheckedChange = null,
+      enabled = enabled,
+      colors =
+        SwitchDefaults.colors(
+          checkedThumbColor = FlareColors.Canvas,
+          checkedTrackColor = FlareColors.Positive,
+          checkedBorderColor = FlareColors.Positive,
+          uncheckedThumbColor = FlareColors.TextSecondary,
+          uncheckedTrackColor = FlareColors.Elevated,
+          uncheckedBorderColor = FlareColors.Elevated,
+        ),
+    )
+  }
 }
 
 @Composable

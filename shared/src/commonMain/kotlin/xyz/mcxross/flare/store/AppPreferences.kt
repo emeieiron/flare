@@ -58,6 +58,8 @@ data class FlarePreferences(
   val showRsi: Boolean = false,
   val showMacd: Boolean = false,
   val slippageBps: Int = 50,
+  /** Ask for a fingerprint, face, or passcode before signing each trading action. */
+  val confirmTransactions: Boolean = true,
   val onboardingComplete: Boolean = false,
   val selectedMarket: String? = null,
   val favoriteMarkets: Set<String> = emptySet(),
@@ -93,6 +95,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         showRsi = preferences[ShowRsiKey] ?: false,
         showMacd = preferences[ShowMacdKey] ?: false,
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),
+        confirmTransactions = preferences[ConfirmTransactionsKey] ?: true,
         selectedMarket = preferences[SelectedMarketKey],
         favoriteMarkets = preferences[FavoriteMarketsKey].orEmpty(),
         spotWatchlistSeeded = preferences[SpotWatchlistSeededKey] ?: false,
@@ -134,6 +137,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   suspend fun setSlippageBps(slippageBps: Int) {
     require(slippageBps in 1..1_000) { "Slippage must be between 1 and 1,000 basis points" }
     dataStore.edit { it[SlippageBpsKey] = slippageBps }
+  }
+
+  suspend fun setConfirmTransactions(confirm: Boolean) {
+    dataStore.edit { it[ConfirmTransactionsKey] = confirm }
   }
 
   suspend fun setSelectedMarket(marketAddress: String?) {
@@ -323,6 +330,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val ChartRangeKey = stringPreferencesKey("chart_range")
     val ChartStyleKey = stringPreferencesKey("chart_style")
     val ShowRsiKey = booleanPreferencesKey("show_rsi")
+    val ConfirmTransactionsKey = booleanPreferencesKey("confirm_transactions")
     val ShowMacdKey = booleanPreferencesKey("show_macd")
     val SlippageBpsKey = intPreferencesKey("slippage_bps")
     val OnboardingCompleteKey = booleanPreferencesKey("onboarding_complete")

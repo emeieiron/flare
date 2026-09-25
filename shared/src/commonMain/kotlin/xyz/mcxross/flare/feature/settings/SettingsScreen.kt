@@ -46,6 +46,7 @@ import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
+import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 
 @Composable
@@ -110,7 +111,15 @@ fun SettingsScreen(
       }
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(8.dp))
+
+    SwitchRow(
+      "Confirm transactions",
+      "Ask for your fingerprint, face, or passcode before each order, cancellation, or position change.",
+      state.preferences.confirmTransactions,
+      { onIntent(SettingsIntent.SetConfirmTransactions(it)) },
+      enabled = !state.busy,
+    )
 
     ActionRow(
       "Trading access",
