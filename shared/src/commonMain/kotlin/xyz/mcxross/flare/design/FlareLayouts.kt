@@ -1,6 +1,5 @@
 package xyz.mcxross.flare.design
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -159,7 +158,7 @@ fun FlareSheet(title: String, onDismiss: () -> Unit, content: @Composable Column
     tonalElevation = 0.dp,
     scrimColor = Color.Black.copy(alpha = 0.64f),
   ) {
-    Column(Modifier.fillMaxWidth().border(1.dp, FlareColors.BorderSubtle, FlareSheetShape)) {
+    Column(Modifier.fillMaxWidth()) {
       BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
       Column(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()

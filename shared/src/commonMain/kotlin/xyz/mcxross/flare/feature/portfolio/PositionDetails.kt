@@ -1,6 +1,5 @@
 package xyz.mcxross.flare.feature.portfolio
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -79,7 +78,7 @@ fun PositionManagementSheet(state: PortfolioUiState, onIntent: (PortfolioIntent)
         shouldDismissOnClickOutside = !state.busy,
       ),
     ) {
-      Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).border(1.dp, FlareColors.BorderSubtle, FlareSheetShape)) {
+      Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f)) {
         Row(
           Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 24.dp, end = 12.dp),
           verticalAlignment = Alignment.CenterVertically,
