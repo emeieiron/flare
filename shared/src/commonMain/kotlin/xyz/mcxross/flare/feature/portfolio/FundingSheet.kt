@@ -75,6 +75,10 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         state.account.overview?.crossWithdrawableBalance ?: 0.0
       }
     val availableText = "Available: ${formatQuantity(availableUsdc, 2)} USDC"
+    val amount = state.fundingAmount.toDoubleOrNull()
+    // Guard at the field: an amount above the balance is flagged before anything is signed.
+    val exceedsAvailable = amount != null && amount > availableUsdc + FUNDING_EPSILON
+    val canTransfer = amount != null && amount > 0.0 && !exceedsAvailable
     val maxClick: (() -> Unit)? =
       if (availableUsdc > 0.0) {
         {
@@ -187,6 +191,10 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         onMaxClick = maxClick,
         placeholder = "0.00",
         enabled = !state.busy && state.pendingWithdrawal == null,
+        isError = exceedsAvailable,
+        supportingText =
+          if (exceedsAvailable) "You can transfer up to ${formatQuantity(availableUsdc, 2)} USDC."
+          else null,
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
       )
       state.actionError?.let { error ->
@@ -215,9 +223,12 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
           },
         onClick = { onIntent(PortfolioIntent.SubmitFunding) },
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        enabled = state.fundingAmount.isNotBlank() && !state.busy,
+        enabled = canTransfer && !state.busy,
         working = state.busy,
       )
     }
   }
 }
+
+/** Tolerance for comparing a typed amount with a balance read as a double. */
+private const val FUNDING_EPSILON = 1e-9
