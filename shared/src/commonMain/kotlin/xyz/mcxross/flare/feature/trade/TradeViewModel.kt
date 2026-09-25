@@ -49,6 +49,9 @@ enum class ChartStyle {
   CANDLESTICK,
 }
 
+internal fun ChartStyle.flipped(): ChartStyle =
+  if (this == ChartStyle.LINE) ChartStyle.CANDLESTICK else ChartStyle.LINE
+
 data class TradeUiState(
   val quote: MarketQuote? = null,
   val range: ChartRange = ChartRange.DAY,

@@ -17,11 +17,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -64,9 +61,7 @@ import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
-import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
@@ -102,7 +97,6 @@ fun TradeScreen(
   onOpenActivity: (() -> Unit)? = null,
 ) {
   val quote = state.quote
-  var showTools by rememberSaveable { mutableStateOf(false) }
   var showBook by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
   var trading by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
   var side by rememberSaveable(quote?.market?.address) { mutableStateOf(OrderSide.BUY) }
@@ -177,9 +171,7 @@ fun TradeScreen(
       Modifier.padding(horizontal = 8.dp),
       backEnabled = !state.orderBusy,
       action = {
-        if (stage == TradeStage.MARKET) {
-          IconButton({ showTools = true }) { Icon(Icons.Outlined.Tune, "Chart settings") }
-        } else if (stage == TradeStage.REVIEW && !state.orderBusy) {
+        if (stage == TradeStage.REVIEW && !state.orderBusy) {
           TextButton({ clearFocus(); reviewing = false }) { Text("Edit") }
         }
       },
@@ -206,7 +198,9 @@ fun TradeScreen(
             onDragStopped = { velocity -> pullToReturn.dragStopped(velocity) },
           )
         ) {
-          MarketContext(state, assets, stage)
+          MarketContext(state, assets, stage) {
+            onIntent(TradeIntent.SelectChartStyle(state.chartStyle.flipped()))
+          }
         }
       },
       body = {
@@ -237,9 +231,16 @@ fun TradeScreen(
               ) {
                 when (displayed) {
                   TradeStage.MARKET -> {
-                    TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
-                      { onIntent(TradeIntent.SelectRange(it)) }, Modifier.fillMaxWidth())
-                    FlareIndicatorCharts(state.candles, state.showRsi, state.showMacd, Modifier.fillMaxWidth())
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      ChartStyleToggle(state.chartStyle, { onIntent(TradeIntent.SelectChartStyle(state.chartStyle.flipped())) })
+                      TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
+                        { onIntent(TradeIntent.SelectRange(it)) }, Modifier.weight(1f))
+                    }
+                    FlareIndicators(
+                      state.candles, state.showRsi, state.showMacd,
+                      { onIntent(TradeIntent.ToggleRsi) }, { onIntent(TradeIntent.ToggleMacd) },
+                      Modifier.padding(top = 8.dp),
+                    )
                     if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
                     MarketInformation(state, showBook, { showBook = !showBook })
                   }
@@ -309,33 +310,6 @@ fun TradeScreen(
       },
     )
   }
-  if (showTools)
-    FlareSheet("Chart settings", { showTools = false }) {
-      Text(
-        "Chart style",
-        style = MaterialTheme.typography.labelMedium,
-        color = FlareColors.TextSecondary,
-      )
-      Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        ChartStyle.entries.forEach { style ->
-          FlareChip(
-            if (style == ChartStyle.LINE) "Line" else "Candles",
-            state.chartStyle == style,
-            { onIntent(TradeIntent.SelectChartStyle(style)) },
-            Modifier.weight(1f),
-          )
-        }
-      }
-      SectionLabel("Indicators")
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FlareChip("RSI", state.showRsi, { onIntent(TradeIntent.ToggleRsi) })
-        FlareChip("MACD", state.showMacd, { onIntent(TradeIntent.ToggleMacd) })
-      }
-      FlareButton("Done", { showTools = false }, Modifier.fillMaxWidth().padding(top = 28.dp))
-    }
 }
 
 @Composable

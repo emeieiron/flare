@@ -1,16 +1,35 @@
 package xyz.mcxross.flare.feature.trade
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
+import androidx.compose.material.icons.outlined.CandlestickChart
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -19,9 +38,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.CartesianDrawingContext
@@ -52,24 +75,12 @@ import com.patrykandpatrick.vico.compose.common.Fill
 import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import kotlin.math.abs
+import kotlin.math.pow
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.domain.MacdPoint
 import xyz.mcxross.flare.domain.TradingIndicators
-
-@Composable
-fun FlareChartStack(
-  candles: List<Candle>,
-  style: ChartStyle,
-  showRsi: Boolean,
-  showMacd: Boolean,
-  modifier: Modifier = Modifier,
-) {
-  Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    FlarePriceChart(candles, style, Modifier.fillMaxWidth().height(280.dp))
-    FlareIndicatorCharts(candles, showRsi, showMacd, Modifier.fillMaxWidth())
-  }
-}
 
 @Composable
 fun FlarePriceChart(
@@ -208,72 +219,144 @@ fun FlarePriceChart(
   )
 }
 
+/**
+ * Flips the price chart between line and candles in one tap. The icon shows the style a tap
+ * switches to, so it reads as an action rather than a state.
+ */
 @Composable
-fun FlareIndicatorCharts(
-  candles: List<Candle>,
-  showRsi: Boolean,
-  showMacd: Boolean,
-  modifier: Modifier = Modifier,
-) {
-  if (!showRsi && !showMacd) return
-  Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    if (showRsi) {
-      val rsi = remember(candles) { TradingIndicators.rsi(candles.map(Candle::close)) }
-      val points = rsi.mapIndexedNotNull { index, value -> value?.let { index to it } }
-      IndicatorPanel(
-        title = "RSI · 14",
-        value = rsi.lastOrNull()?.let(::fixedIndicator) ?: "—",
-        description = "Relative strength index chart",
-      ) {
-        if (points.isEmpty()) {
-          ChartPlaceholder("More candles required", Modifier.fillMaxSize())
-        } else {
-          LineIndicatorChart(points, FlareColors.IndicatorCyan, Modifier.fillMaxSize())
-        }
-      }
-    }
-    if (showMacd) {
-      val macd = remember(candles) { TradingIndicators.macd(candles.map(Candle::close)) }
-      IndicatorPanel(
-        title = "MACD · 12 26 9",
-        value = macd.lastOrNull()?.histogram?.let(::fixedIndicator) ?: "—",
-        description = "Moving average convergence divergence chart",
-      ) {
-        if (macd.isEmpty()) {
-          ChartPlaceholder("More candles required", Modifier.fillMaxSize())
-        } else {
-          MacdIndicatorChart(macd, Modifier.fillMaxSize())
-        }
+fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+  val next = style.flipped()
+  val interactions = remember { MutableInteractionSource() }
+  // The touch target is 48dp; the visible circle sits on the screen gutter.
+  Box(
+    modifier
+      .size(48.dp)
+      .clickable(
+        interactionSource = interactions,
+        indication = null,
+        role = Role.Button,
+        onClickLabel = if (next == ChartStyle.LINE) "Show line chart" else "Show candles",
+        onClick = onToggle,
+      ),
+    contentAlignment = Alignment.CenterStart,
+  ) {
+    Box(
+      Modifier.size(32.dp)
+        .clip(CircleShape)
+        .background(FlareColors.Surface)
+        .indication(interactions, ripple()),
+      contentAlignment = Alignment.Center,
+    ) {
+      Crossfade(next, label = "chartStyleToggle") { target ->
+        Icon(
+          if (target == ChartStyle.LINE) Icons.AutoMirrored.Outlined.ShowChart
+          else Icons.Outlined.CandlestickChart,
+          contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
+          modifier = Modifier.size(18.dp),
+          tint = FlareColors.TextPrimary,
+        )
       }
     }
   }
 }
 
+/**
+ * RSI and MACD as rows under the chart. Each row opens its panel in place and shows the latest
+ * reading while closed.
+ */
 @Composable
-private fun IndicatorPanel(
-  title: String,
-  value: String,
-  description: String,
-  content: @Composable () -> Unit,
+fun FlareIndicators(
+  candles: List<Candle>,
+  showRsi: Boolean,
+  showMacd: Boolean,
+  onToggleRsi: () -> Unit,
+  onToggleMacd: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
-  Column(
-    Modifier.fillMaxWidth()
-      .background(FlareColors.Surface, MaterialTheme.shapes.small)
-      .padding(top = 10.dp)
-  ) {
-    Row(
-      Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
+  val closes = remember(candles) { candles.map(Candle::close) }
+  val rsi = remember(closes) { TradingIndicators.rsi(closes) }
+  val macd = remember(closes) { TradingIndicators.macd(closes) }
+  Column(modifier.fillMaxWidth()) {
+    IndicatorDisclosure(
+      name = "RSI",
+      parameters = "14",
+      reading = rsi.lastOrNull()?.let(::indicatorReading),
+      expanded = showRsi,
+      onToggle = onToggleRsi,
+      description = "Relative strength index chart",
     ) {
-      Text(title, style = MaterialTheme.typography.labelMedium)
-      Text(
-        value,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.labelMedium,
-      )
+      val points = rsi.mapIndexedNotNull { index, value -> value?.let { index to it } }
+      if (points.isEmpty()) ChartPlaceholder("More candles required", Modifier.fillMaxSize())
+      else LineIndicatorChart(points, FlareColors.IndicatorCyan, Modifier.fillMaxSize())
     }
-    Box(Modifier.fillMaxWidth().height(116.dp).semantics { contentDescription = description }) {
-      content()
+    IndicatorDisclosure(
+      name = "MACD",
+      parameters = "12 26 9",
+      reading = macd.lastOrNull()?.histogram?.let(::indicatorReading),
+      expanded = showMacd,
+      onToggle = onToggleMacd,
+      description = "Moving average convergence divergence chart",
+    ) {
+      if (macd.isEmpty()) ChartPlaceholder("More candles required", Modifier.fillMaxSize())
+      else MacdIndicatorChart(macd, Modifier.fillMaxSize())
+    }
+    HorizontalDivider(color = FlareColors.BorderSubtle)
+  }
+}
+
+@Composable
+private fun IndicatorDisclosure(
+  name: String,
+  parameters: String,
+  reading: String?,
+  expanded: Boolean,
+  onToggle: () -> Unit,
+  description: String,
+  chart: @Composable () -> Unit,
+) {
+  val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "indicatorDisclosure")
+  HorizontalDivider(color = FlareColors.BorderSubtle)
+  Row(
+    Modifier.fillMaxWidth()
+      .heightIn(min = 48.dp)
+      .clickable(
+        role = Role.Button,
+        onClickLabel = if (expanded) "Hide $name" else "Show $name",
+        onClick = onToggle,
+      )
+      .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(name, style = MaterialTheme.typography.bodyMedium)
+    Text(
+      parameters,
+      Modifier.padding(start = 8.dp).weight(1f),
+      color = FlareColors.TextTertiary,
+      style = MaterialTheme.typography.labelSmall,
+    )
+    Text(
+      reading ?: "—",
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.labelMedium,
+    )
+    Icon(
+      Icons.Outlined.KeyboardArrowDown,
+      contentDescription = null,
+      modifier = Modifier.padding(start = 8.dp).size(18.dp).rotate(rotation),
+      tint = FlareColors.TextTertiary,
+    )
+  }
+  AnimatedVisibility(
+    expanded,
+    enter = expandVertically() + fadeIn(),
+    exit = shrinkVertically() + fadeOut(),
+  ) {
+    Box(
+      Modifier.fullBleed().height(116.dp).padding(bottom = 12.dp).semantics {
+        contentDescription = description
+      }
+    ) {
+      chart()
     }
   }
 }
@@ -368,6 +451,7 @@ private fun compactEndAxis() =
     label = null,
     tick = null,
     guideline = null,
+    line = null,
   )
 
 @Composable
@@ -376,6 +460,7 @@ private fun hiddenBottomAxis() =
     label = null,
     tick = null,
     guideline = null,
+    line = null,
   )
 
 @Composable
@@ -385,9 +470,11 @@ private fun ChartPlaceholder(text: String, modifier: Modifier) {
   }
 }
 
-private fun fixedIndicator(value: Double): String {
-  val scaled = kotlin.math.round(value * 100.0).toLong()
-  val whole = scaled / 100
-  val fraction = kotlin.math.abs(scaled % 100).toString().padStart(2, '0')
-  return "$whole.$fraction"
+/** Two decimals for readings of 1 or more, four below that, so small MACD values don't read as 0. */
+private fun indicatorReading(value: Double): String {
+  val decimals = if (abs(value) >= 1.0) 2 else 4
+  val factor = 10.0.pow(decimals).toLong()
+  val scaled = kotlin.math.round(abs(value) * factor).toLong()
+  val sign = if (value < 0 && scaled != 0L) "-" else ""
+  return "$sign${scaled / factor}." + (scaled % factor).toString().padStart(decimals, '0')
 }
