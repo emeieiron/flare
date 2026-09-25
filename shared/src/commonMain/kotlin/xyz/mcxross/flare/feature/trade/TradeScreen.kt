@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -145,6 +146,10 @@ fun TradeScreen(
     enabled = stage != TradeStage.MARKET && !state.orderBusy,
     onReturn = back,
   )
+  val swipeBack = rememberSwipeBackState(
+    enabled = (stage == TradeStage.REVIEW || stage == TradeStage.FAILURE) && !state.orderBusy,
+    onBack = { clearFocus(); reviewing = false },
+  )
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = stage != TradeStage.MARKET,
@@ -207,7 +212,14 @@ fun TradeScreen(
       body = {
         Crossfade(
           stage,
-          Modifier.nestedScroll(pullToReturn.connection),
+          Modifier.nestedScroll(pullToReturn.connection)
+            .draggable(
+              state = rememberDraggableState { swipeBack.dragBy(it) },
+              orientation = Orientation.Horizontal,
+              enabled = stage == TradeStage.REVIEW || stage == TradeStage.FAILURE,
+              onDragStopped = { velocity -> swipeBack.dragStopped(velocity) },
+            )
+            .graphicsLayer { translationX = swipeBack.offset },
           animationSpec = tween(180),
           label = "tradeContent",
         ) { displayed ->

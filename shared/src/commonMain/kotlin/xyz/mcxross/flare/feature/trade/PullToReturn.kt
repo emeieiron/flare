@@ -133,3 +133,63 @@ internal fun rememberPullToReturnState(enabled: Boolean, onReturn: () -> Unit): 
   }
   return state
 }
+
+/**
+ * Swiping right steps back one stage, like the back gesture but from anywhere on the content.
+ * The content follows the finger with the same resistance as a pull.
+ */
+@Stable
+internal class SwipeBackState(
+  private val scope: CoroutineScope,
+  private val threshold: Float,
+  private val haptics: HapticFeedback,
+) {
+  var offset by mutableFloatStateOf(0f)
+    private set
+
+  internal var enabled = false
+  internal var onBack: () -> Unit = {}
+  private var settle: Job? = null
+  private var armed = false
+
+  fun dragBy(delta: Float) {
+    if (!enabled) return
+    settle?.cancel()
+    offset = (offset + delta * PULL_RESISTANCE).coerceAtLeast(0f)
+    val nowArmed = offset >= threshold
+    if (nowArmed && !armed) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+    armed = nowArmed
+  }
+
+  fun dragStopped(velocity: Float) {
+    val commit =
+      enabled && (offset >= threshold || (velocity > RETURN_FLING_VELOCITY && offset > threshold / 4))
+    armed = false
+    if (commit) onBack()
+    val from = offset
+    settle =
+      scope.launch {
+        animate(
+          from,
+          0f,
+          animationSpec =
+            if (commit) tween(RETURN_DURATION_MS) else spring(stiffness = Spring.StiffnessMediumLow),
+        ) { value, _ ->
+          offset = value
+        }
+      }
+  }
+}
+
+@Composable
+internal fun rememberSwipeBackState(enabled: Boolean, onBack: () -> Unit): SwipeBackState {
+  val scope = rememberCoroutineScope()
+  val haptics = LocalHapticFeedback.current
+  val threshold = with(LocalDensity.current) { 80.dp.toPx() }
+  val state = remember(scope, haptics, threshold) { SwipeBackState(scope, threshold, haptics) }
+  SideEffect {
+    state.enabled = enabled
+    state.onBack = onBack
+  }
+  return state
+}
