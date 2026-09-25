@@ -68,7 +68,6 @@ fun PositionManagementSheet(state: PortfolioUiState, onIntent: (PortfolioIntent)
       onDismissRequest = { if (!busy) dismiss() },
       sheetState = sheetState,
       sheetGesturesEnabled = !state.busy,
-      modifier = Modifier.border(1.dp, FlareColors.BorderSubtle, FlareSheetShape),
       shape = FlareSheetShape,
       containerColor = FlareColors.Canvas,
       contentColor = FlareColors.TextPrimary,
@@ -80,7 +79,7 @@ fun PositionManagementSheet(state: PortfolioUiState, onIntent: (PortfolioIntent)
         shouldDismissOnClickOutside = !state.busy,
       ),
     ) {
-      Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f)) {
+      Column(Modifier.fillMaxWidth().fillMaxHeight(0.94f).border(1.dp, FlareColors.BorderSubtle, FlareSheetShape)) {
         Row(
           Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 24.dp, end = 12.dp),
           verticalAlignment = Alignment.CenterVertically,

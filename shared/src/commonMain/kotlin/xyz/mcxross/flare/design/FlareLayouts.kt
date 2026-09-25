@@ -152,22 +152,25 @@ fun FlareSheet(title: String, onDismiss: () -> Unit, content: @Composable Column
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    modifier = Modifier.border(1.dp, FlareColors.BorderSubtle, FlareSheetShape),
+    dragHandle = null,
     shape = FlareSheetShape,
     containerColor = FlareColors.Canvas,
     contentColor = FlareColors.TextPrimary,
     tonalElevation = 0.dp,
     scrimColor = Color.Black.copy(alpha = 0.64f),
   ) {
-    Column(
-      Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
-    ) {
-      Text(
-        title,
-        style = MaterialTheme.typography.headlineMedium,
-        modifier = Modifier.padding(bottom = 20.dp),
-      )
-      content()
+    Column(Modifier.fillMaxWidth().border(1.dp, FlareColors.BorderSubtle, FlareSheetShape)) {
+      BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
+      Column(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
+      ) {
+        Text(
+          title,
+          style = MaterialTheme.typography.headlineMedium,
+          modifier = Modifier.padding(bottom = 20.dp),
+        )
+        content()
+      }
     }
   }
 }
