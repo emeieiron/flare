@@ -644,6 +644,14 @@ class PortfolioViewModel(
   private suspend fun submitFundingInternal(feePayment: FeePayment) {
     val state = local.value
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
+    val amount = state.fundingAmount.toDoubleOrNull()
+    require(amount != null && amount > 0.0) { "Enter an amount to transfer" }
+    val available =
+      if (mode == FundingMode.DEPOSIT) uiState.value.primaryUsdcBalance
+      else uiState.value.account.overview?.crossWithdrawableBalance ?: 0.0
+    require(amount <= available + 1e-9) {
+      "You can transfer up to ${formatQuantity(available, 2)} USDC."
+    }
     val prompt =
       VaultPrompt(
         title = if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Withdraw USDC",
