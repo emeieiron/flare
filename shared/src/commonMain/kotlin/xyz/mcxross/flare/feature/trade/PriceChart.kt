@@ -2,15 +2,13 @@ package xyz.mcxross.flare.feature.trade
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,16 +18,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.outlined.CandlestickChart
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,12 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.CartesianDrawingContext
@@ -76,8 +73,10 @@ import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import kotlin.math.abs
 import kotlin.math.pow
+import xyz.mcxross.flare.data.ChartRange
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.domain.MacdPoint
 import xyz.mcxross.flare.domain.TradingIndicators
@@ -226,137 +225,133 @@ fun FlarePriceChart(
 @Composable
 fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier = Modifier) {
   val next = style.flipped()
-  val interactions = remember { MutableInteractionSource() }
-  // The touch target is 48dp; the visible circle sits on the screen gutter.
   Box(
     modifier
-      .size(48.dp)
+      .size(32.dp)
+      .clip(CircleShape)
+      .background(FlareColors.Surface)
       .clickable(
-        interactionSource = interactions,
-        indication = null,
         role = Role.Button,
         onClickLabel = if (next == ChartStyle.LINE) "Show line chart" else "Show candles",
         onClick = onToggle,
       ),
-    contentAlignment = Alignment.CenterStart,
+    contentAlignment = Alignment.Center,
   ) {
-    Box(
-      Modifier.size(32.dp)
-        .clip(CircleShape)
-        .background(FlareColors.Surface)
-        .indication(interactions, ripple()),
-      contentAlignment = Alignment.Center,
-    ) {
-      Crossfade(next, label = "chartStyleToggle") { target ->
-        Icon(
-          if (target == ChartStyle.LINE) Icons.AutoMirrored.Outlined.ShowChart
-          else Icons.Outlined.CandlestickChart,
-          contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
-          modifier = Modifier.size(18.dp),
-          tint = FlareColors.TextPrimary,
-        )
+    Crossfade(next, label = "chartStyleToggle") { target ->
+      Icon(
+        if (target == ChartStyle.LINE) Icons.AutoMirrored.Outlined.ShowChart
+        else Icons.Outlined.CandlestickChart,
+        contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
+        modifier = Modifier.size(18.dp),
+        tint = FlareColors.TextPrimary,
+      )
+    }
+  }
+}
+
+/** Shows the chart's timeframe and opens the full list. */
+@Composable
+fun ChartRangeButton(range: ChartRange, onClick: () -> Unit, modifier: Modifier = Modifier) {
+  Row(
+    modifier
+      .height(32.dp)
+      .clip(CircleShape)
+      .background(FlareColors.Surface)
+      .clickable(role = Role.Button, onClickLabel = "Change timeframe", onClick = onClick)
+      .semantics { contentDescription = "Timeframe, ${range.title}" }
+      .padding(start = 12.dp, end = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(range.label, style = MaterialTheme.typography.labelMedium)
+    Icon(
+      Icons.Outlined.KeyboardArrowDown,
+      contentDescription = null,
+      modifier = Modifier.padding(start = 2.dp).size(18.dp),
+      tint = FlareColors.TextSecondary,
+    )
+  }
+}
+
+/** Every timeframe, closest to the thumb. Picking one applies it and closes the sheet. */
+@Composable
+fun ChartRangeSheet(selected: ChartRange, onSelect: (ChartRange) -> Unit, onDismiss: () -> Unit) {
+  FlareSheet("Timeframe", onDismiss) {
+    ChartRange.entries.forEachIndexed { index, range ->
+      if (index > 0) HorizontalDivider(color = FlareColors.BorderSubtle)
+      Row(
+        Modifier.fillMaxWidth()
+          .heightIn(min = 52.dp)
+          .selectable(range == selected, role = Role.RadioButton) { onSelect(range) },
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(range.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        if (range == selected) {
+          Icon(Icons.Outlined.Check, contentDescription = null, tint = FlareColors.Positive)
+        }
       }
     }
   }
 }
 
-/**
- * RSI and MACD as rows under the chart. Each row opens its panel in place and shows the latest
- * reading while closed.
- */
+/** The panels for the indicators that are on, each labelled with its latest reading. */
 @Composable
 fun FlareIndicators(
   candles: List<Candle>,
   showRsi: Boolean,
   showMacd: Boolean,
-  onToggleRsi: () -> Unit,
-  onToggleMacd: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val closes = remember(candles) { candles.map(Candle::close) }
   val rsi = remember(closes) { TradingIndicators.rsi(closes) }
   val macd = remember(closes) { TradingIndicators.macd(closes) }
   Column(modifier.fillMaxWidth()) {
-    IndicatorDisclosure(
-      name = "RSI",
-      parameters = "14",
+    IndicatorPanel(
+      visible = showRsi,
+      title = "RSI 14",
       reading = rsi.lastOrNull()?.let(::indicatorReading),
-      expanded = showRsi,
-      onToggle = onToggleRsi,
       description = "Relative strength index chart",
     ) {
       val points = rsi.mapIndexedNotNull { index, value -> value?.let { index to it } }
       if (points.isEmpty()) ChartPlaceholder("More candles required", Modifier.fillMaxSize())
       else LineIndicatorChart(points, FlareColors.IndicatorCyan, Modifier.fillMaxSize())
     }
-    IndicatorDisclosure(
-      name = "MACD",
-      parameters = "12 26 9",
+    IndicatorPanel(
+      visible = showMacd,
+      title = "MACD 12 26 9",
       reading = macd.lastOrNull()?.histogram?.let(::indicatorReading),
-      expanded = showMacd,
-      onToggle = onToggleMacd,
       description = "Moving average convergence divergence chart",
     ) {
       if (macd.isEmpty()) ChartPlaceholder("More candles required", Modifier.fillMaxSize())
       else MacdIndicatorChart(macd, Modifier.fillMaxSize())
     }
-    HorizontalDivider(color = FlareColors.BorderSubtle)
   }
 }
 
 @Composable
-private fun IndicatorDisclosure(
-  name: String,
-  parameters: String,
+private fun IndicatorPanel(
+  visible: Boolean,
+  title: String,
   reading: String?,
-  expanded: Boolean,
-  onToggle: () -> Unit,
   description: String,
   chart: @Composable () -> Unit,
 ) {
-  val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "indicatorDisclosure")
-  HorizontalDivider(color = FlareColors.BorderSubtle)
-  Row(
-    Modifier.fillMaxWidth()
-      .heightIn(min = 48.dp)
-      .clickable(
-        role = Role.Button,
-        onClickLabel = if (expanded) "Hide $name" else "Show $name",
-        onClick = onToggle,
-      )
-      .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(name, style = MaterialTheme.typography.bodyMedium)
-    Text(
-      parameters,
-      Modifier.padding(start = 8.dp).weight(1f),
-      color = FlareColors.TextTertiary,
-      style = MaterialTheme.typography.labelSmall,
-    )
-    Text(
-      reading ?: "—",
-      color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.labelMedium,
-    )
-    Icon(
-      Icons.Outlined.KeyboardArrowDown,
-      contentDescription = null,
-      modifier = Modifier.padding(start = 8.dp).size(18.dp).rotate(rotation),
-      tint = FlareColors.TextTertiary,
-    )
-  }
   AnimatedVisibility(
-    expanded,
+    visible,
     enter = expandVertically() + fadeIn(),
     exit = shrinkVertically() + fadeOut(),
   ) {
-    Box(
-      Modifier.fullBleed().height(116.dp).padding(bottom = 12.dp).semantics {
-        contentDescription = description
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(title, color = FlareColors.TextTertiary, style = MaterialTheme.typography.labelSmall)
+        Text(reading ?: "—", color = FlareColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
       }
-    ) {
-      chart()
+      Box(
+        Modifier.fullBleed().height(96.dp).padding(top = 4.dp).semantics {
+          contentDescription = description
+        }
+      ) {
+        chart()
+      }
     }
   }
 }

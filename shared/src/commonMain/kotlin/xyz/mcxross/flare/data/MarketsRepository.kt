@@ -318,14 +318,19 @@ class DefaultMarketsRepository(
   }
 }
 
-enum class ChartRange(val label: String, val interval: CandleInterval, val durationMs: Long?) {
-  DAY("1D", CandleInterval.ONE_MINUTE, 24L * 60 * 60 * 1_000),
-  WEEK("1W", CandleInterval.FIFTEEN_MINUTES, 7L * 24 * 60 * 60 * 1_000),
-  MONTH("1M", CandleInterval.ONE_HOUR, 30L * 24 * 60 * 60 * 1_000),
-  THREE_MONTHS("3M", CandleInterval.FOUR_HOURS, 90L * 24 * 60 * 60 * 1_000),
-  YEAR_TO_DATE("YTD", CandleInterval.FOUR_HOURS, null),
-  YEAR("1Y", CandleInterval.ONE_DAY, 365L * 24 * 60 * 60 * 1_000),
-  FIVE_YEARS("5Y", CandleInterval.ONE_DAY, 5L * 365 * 24 * 60 * 60 * 1_000),
+enum class ChartRange(
+  val label: String,
+  val title: String,
+  val interval: CandleInterval,
+  val durationMs: Long?,
+) {
+  DAY("1D", "1 day", CandleInterval.ONE_MINUTE, 24L * 60 * 60 * 1_000),
+  WEEK("1W", "1 week", CandleInterval.FIFTEEN_MINUTES, 7L * 24 * 60 * 60 * 1_000),
+  MONTH("1M", "1 month", CandleInterval.ONE_HOUR, 30L * 24 * 60 * 60 * 1_000),
+  THREE_MONTHS("3M", "3 months", CandleInterval.FOUR_HOURS, 90L * 24 * 60 * 60 * 1_000),
+  YEAR_TO_DATE("YTD", "Year to date", CandleInterval.FOUR_HOURS, null),
+  YEAR("1Y", "1 year", CandleInterval.ONE_DAY, 365L * 24 * 60 * 60 * 1_000),
+  FIVE_YEARS("5Y", "5 years", CandleInterval.ONE_DAY, 5L * 365 * 24 * 60 * 60 * 1_000),
 }
 
 data class ChartRequestSpec(
