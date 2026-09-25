@@ -84,7 +84,7 @@ internal fun LeverageControl(state: TradeUiState, margin: Double?, onChange: (In
       onChange(next)
     }
   }
-  Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
+  Column(Modifier.fillMaxWidth()) {
     Row(
       Modifier.fillMaxWidth().heightIn(min = 48.dp),
       verticalAlignment = Alignment.CenterVertically,

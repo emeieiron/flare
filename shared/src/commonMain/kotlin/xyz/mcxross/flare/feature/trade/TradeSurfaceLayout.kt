@@ -32,16 +32,27 @@ import xyz.mcxross.flare.design.resolveAssetIdentity
 internal fun TradeSurfaceLayout(
   stage: TradeStage,
   modifier: Modifier = Modifier,
+  compactContext: Boolean = false,
   context: @Composable () -> Unit,
   body: @Composable () -> Unit,
   action: @Composable () -> Unit,
 ) {
   val contextFraction by animateFloatAsState(
-    when (stage) { TradeStage.MARKET -> 0.62f; TradeStage.EDIT -> 0.32f; else -> 0.23f },
+    when {
+      stage == TradeStage.MARKET -> 0.62f
+      stage == TradeStage.EDIT && !compactContext -> 0.32f
+      stage == TradeStage.EDIT -> 0.18f
+      else -> 0.23f
+    },
     tween(280), label = "marketContextFraction",
   )
   val contextLimit by animateFloatAsState(
-    when (stage) { TradeStage.MARKET -> 440f; TradeStage.EDIT -> 190f; else -> 140f },
+    when {
+      stage == TradeStage.MARKET -> 440f
+      stage == TradeStage.EDIT && !compactContext -> 190f
+      stage == TradeStage.EDIT -> 120f
+      else -> 140f
+    },
     tween(280), label = "marketContextLimit",
   )
   Layout(
