@@ -1,14 +1,11 @@
 package xyz.mcxross.flare.feature.portfolio
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -37,11 +34,7 @@ import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
-import xyz.mcxross.flare.decibel.model.TierInfo
-import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.TimeRangeSelector
@@ -155,68 +148,5 @@ fun PortfolioPerformanceChart(
       Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodySmall,
     )
-  }
-}
-
-@Composable
-fun TradingRewardsCard(
-  streak: TradingStreak?,
-  amps: AmpsBreakdown?,
-  tier: TierInfo?,
-  modifier: Modifier = Modifier,
-) {
-  if (streak == null && amps == null && tier == null) return
-
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .background(FlareColors.Elevated, RoundedCornerShape(14.dp))
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Column {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        val streakCount = streak?.streakCount ?: 0
-        Text(
-          text = if (streakCount > 0) "$streakCount-day streak" else "No active streak",
-          style = MaterialTheme.typography.labelLarge,
-          color = if (streakCount > 0) FlareColors.Positive else FlareColors.TextPrimary,
-        )
-        streak?.graceDaysRemaining?.takeIf { it > 0 }?.let { grace ->
-          Text(
-            "· $grace grace left",
-            style = MaterialTheme.typography.labelSmall,
-            color = FlareColors.TextSecondary,
-          )
-        }
-      }
-      Text(
-        text = tier?.let { "${it.tier} tier" } ?: "Trading rewards",
-        style = MaterialTheme.typography.bodySmall,
-        color = FlareColors.TextSecondary,
-      )
-    }
-
-    amps?.let {
-      Column(horizontalAlignment = Alignment.End) {
-        Text(
-          text = "${formatQuantity(it.totalAmps, 0)} Amps",
-          style = MaterialTheme.typography.labelLarge,
-          color = FlareColors.Positive,
-        )
-        it.rank?.let { rank ->
-          Text(
-            text = "Rank #$rank",
-            style = MaterialTheme.typography.labelSmall,
-            color = FlareColors.TextTertiary,
-          )
-        }
-      }
-    }
   }
 }
