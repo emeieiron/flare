@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +35,9 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -120,21 +122,26 @@ internal fun OrderEditor(
           else -> estimate?.value?.let(::formatBalance) ?: "—"
         },
       )
-      FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+      Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
       ) {
         Text(
-          "Minimum ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
+          "Min ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
+          Modifier.weight(1f, fill = false).padding(end = 12.dp),
           style = MaterialTheme.typography.labelSmall,
           color = FlareColors.TextSecondary,
+          maxLines = 1,
         )
         state.availableDisplay(side)?.let { available ->
           Text(
-            "Available $available",
+            buildAnnotatedString {
+              append("Available ")
+              withStyle(SpanStyle(color = FlareColors.TextPrimary)) { append(available) }
+            },
             style = MaterialTheme.typography.labelSmall,
             color = FlareColors.TextSecondary,
+            maxLines = 1,
           )
         }
       }
