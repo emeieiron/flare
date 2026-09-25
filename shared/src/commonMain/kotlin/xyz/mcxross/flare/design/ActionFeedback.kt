@@ -49,6 +49,9 @@ private fun failureCause(detail: String): String? =
     detail.isBlank() -> null
     detail.mentions("INSUFFICIENT_COLLATERAL", "INSUFFICIENT_MARGIN", "EINSUFFICIENT_EQUITY") ->
       "There isn’t enough available margin for it."
+    detail.mentions("EBUILDER_NOT_REGISTERED") ->
+      "Builder fees aren’t approved for this market yet."
+    detail.mentions("EINVALID_MAX_FEE") -> "The builder fee is higher than the one you approved."
     detail.mentions("ECONTRIBUTION_AMOUNT_TOO_LOW") ->
       "The minimum deposit for DLP vaults is 10 USDC."
     detail.mentions("EREDEMPTION_AMOUNT_TOO_LOW") ->
