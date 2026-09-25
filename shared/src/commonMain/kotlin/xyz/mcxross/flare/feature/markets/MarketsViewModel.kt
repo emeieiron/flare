@@ -20,12 +20,37 @@ enum class MarketInstrumentFilter {
   SPOT,
 }
 
+/** Each product page keeps its own chip selection, so swiping between them never resets either. */
+internal data class MarketPageFilter(
+  val favoritesOnly: Boolean = true,
+  val category: String? = null,
+)
+
 internal data class MarketFilter(
   val query: String = "",
-  val favoritesOnly: Boolean = true,
   val instrument: MarketInstrumentFilter = MarketInstrumentFilter.PERPETUALS,
-  val category: String? = null,
+  val pages: Map<MarketInstrumentFilter, MarketPageFilter> =
+    MarketInstrumentFilter.entries.associateWith { MarketPageFilter() },
   val searching: Boolean = false,
+) {
+  val page: MarketPageFilter
+    get() = pages[instrument] ?: MarketPageFilter()
+
+  fun updatePage(
+    target: MarketInstrumentFilter?,
+    transform: (MarketPageFilter) -> MarketPageFilter,
+  ): MarketFilter {
+    val key = target ?: instrument
+    return copy(pages = pages + (key to transform(pages[key] ?: MarketPageFilter())))
+  }
+}
+
+/** What one product page shows: its chips, its selection, and the markets that pass it. */
+data class MarketPage(
+  val favoritesOnly: Boolean = true,
+  val category: String? = null,
+  val categories: List<String> = emptyList(),
+  val quotes: List<MarketQuote> = emptyList(),
 )
 
 /** Search spans both products; each keeps its own ranked section. */
@@ -50,7 +75,10 @@ data class MarketsUiState(
   val assets: Map<String, xyz.mcxross.flare.data.AssetMetadata> = emptyMap(),
   val searching: Boolean = false,
   val searchResults: MarketSearchResults = MarketSearchResults(),
-)
+  val pages: Map<MarketInstrumentFilter, MarketPage> = emptyMap(),
+) {
+  fun page(instrument: MarketInstrumentFilter): MarketPage = pages[instrument] ?: MarketPage()
+}
 
 sealed interface MarketsIntent {
   data object OpenSearch : MarketsIntent
@@ -61,9 +89,16 @@ sealed interface MarketsIntent {
 
   data class ToggleFavorite(val marketAddress: String) : MarketsIntent
 
-  data class SetFavoritesOnly(val enabled: Boolean) : MarketsIntent
+  /** [instrument] names the page the chip lives on; null means the page in view. */
+  data class SetFavoritesOnly(
+    val enabled: Boolean,
+    val instrument: MarketInstrumentFilter? = null,
+  ) : MarketsIntent
 
-  data class SetCategory(val category: String?) : MarketsIntent
+  data class SetCategory(
+    val category: String?,
+    val instrument: MarketInstrumentFilter? = null,
+  ) : MarketsIntent
 
   data class SetInstrument(val instrument: MarketInstrumentFilter) : MarketsIntent
 }
@@ -80,38 +115,48 @@ class MarketsViewModel(
         assetCatalog.assets,
         filter,
       ) { catalog, assets, f ->
-        val effectiveFavoritesOnly = f.favoritesOnly
-        val categories =
-          when (f.instrument) {
-            MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
-            MarketInstrumentFilter.SPOT -> spotCategoryTabs
+        val pages =
+          MarketInstrumentFilter.entries.associateWith { instrument ->
+            val page = f.pages[instrument] ?: MarketPageFilter()
+            MarketPage(
+              favoritesOnly = page.favoritesOnly,
+              category = page.category,
+              categories =
+                when (instrument) {
+                  MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
+                  MarketInstrumentFilter.SPOT -> spotCategoryTabs
+                },
+              quotes =
+                catalog.quotes.filter {
+                  val matchesInstrument =
+                    when (instrument) {
+                      MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
+                      MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
+                    }
+                  matchesInstrument &&
+                    (!page.favoritesOnly || it.favorite) &&
+                    (page.category == null ||
+                      (assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory()
+                        ?: it.market.category.normalizedCategory()) == page.category)
+                },
+            )
           }
+        val selected = pages.getValue(f.instrument)
         MarketsUiState(
           loading = catalog.loading,
           query = f.query,
-          favoritesOnly = effectiveFavoritesOnly,
+          favoritesOnly = selected.favoritesOnly,
           selectedInstrument = f.instrument,
-          selectedCategory = f.category,
-          categories = categories,
-          quotes =
-            catalog.quotes.filter {
-              val matchesInstrument =
-                when (f.instrument) {
-                  MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
-                  MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
-                }
-              matchesInstrument &&
-                (!effectiveFavoritesOnly || it.favorite) &&
-                (f.category == null ||
-                  (assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory()
-                    ?: it.market.category.normalizedCategory()) == f.category)
-            },
+          selectedCategory = selected.category,
+          categories = selected.categories,
+          quotes = selected.quotes,
           stale = catalog.stale,
           error = catalog.error,
           assets = assets,
           searching = f.searching,
           searchResults =
             if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
+          pages = pages,
         )
       }
       .stateIn(
@@ -136,13 +181,14 @@ class MarketsViewModel(
       is MarketsIntent.ToggleFavorite ->
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly ->
-        filter.update { it.copy(favoritesOnly = intent.enabled, category = null, query = "") }
-      is MarketsIntent.SetCategory ->
-        filter.update { it.copy(category = intent.category, favoritesOnly = false, query = "") }
-      is MarketsIntent.SetInstrument ->
-        filter.update { current ->
-          current.copy(instrument = intent.instrument, favoritesOnly = true, category = null)
+        filter.update { f ->
+          f.updatePage(intent.instrument) { it.copy(favoritesOnly = intent.enabled, category = null) }
         }
+      is MarketsIntent.SetCategory ->
+        filter.update { f ->
+          f.updatePage(intent.instrument) { it.copy(category = intent.category, favoritesOnly = false) }
+        }
+      is MarketsIntent.SetInstrument -> filter.update { it.copy(instrument = intent.instrument) }
     }
   }
 }

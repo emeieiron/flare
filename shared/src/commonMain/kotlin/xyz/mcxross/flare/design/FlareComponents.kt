@@ -564,6 +564,7 @@ fun <T> FlareSegmentedControl(
   label: (T) -> String,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
+  indicatorPosition: (() -> Float)? = null,
 ) {
   val index = options.indexOf(selectedOption).coerceAtLeast(0)
   val position by animateFloatAsState(
@@ -583,7 +584,8 @@ fun <T> FlareSegmentedControl(
           val height = size.height - 2 * inset
           drawRoundRect(
             FlareColors.BorderSubtle,
-            topLeft = Offset(inset + position * width, inset),
+            // A pager can drive the pill directly, so it tracks the finger mid-swipe.
+            topLeft = Offset(inset + (indicatorPosition?.invoke() ?: position) * width, inset),
             size = Size(width, height),
             cornerRadius = CornerRadius(height / 2),
           )
