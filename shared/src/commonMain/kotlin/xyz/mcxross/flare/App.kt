@@ -1,8 +1,7 @@
 package xyz.mcxross.flare
 
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,12 +31,14 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -67,6 +68,12 @@ import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.TransactionExplorer
+import xyz.mcxross.flare.design.pagePopEnter
+import xyz.mcxross.flare.design.pagePopExit
+import xyz.mcxross.flare.design.pagePredictivePopEnter
+import xyz.mcxross.flare.design.pagePredictivePopExit
+import xyz.mcxross.flare.design.pagePushEnter
+import xyz.mcxross.flare.design.pagePushExit
 import xyz.mcxross.flare.di.flareModule
 import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
@@ -259,10 +266,7 @@ private fun FlareShell() {
   val navController = rememberNavController()
   val backStack by navController.currentBackStackEntryAsState()
   val destination = backStack?.destination
-  val isDetailDestination =
-    destination?.hasRoute<TradeDestination>() == true ||
-      destination?.hasRoute<SettingsDestination>() == true ||
-      destination?.hasRoute<AccountSetupDestination>() == true
+  val isDetailDestination = destination?.isDetailPage() == true
   val selectedIndex =
     when {
       destination?.hasRoute<PortfolioDestination>() == true -> 1
@@ -313,11 +317,26 @@ private fun FlareShell() {
     NavHost(
       navController = navController,
       startDestination = MarketsDestination,
-      modifier = Modifier.padding(contentPadding),
-      enterTransition = { fadeIn(tween(180)) },
-      exitTransition = { fadeOut(tween(140)) },
-      popEnterTransition = { fadeIn(tween(180)) },
-      popExitTransition = { fadeOut(tween(140)) },
+      modifier = Modifier.fillMaxSize().padding(contentPadding).clipToBounds().background(FlareColors.Canvas),
+      enterTransition = {
+        if (targetState.destination.isDetailPage()) pagePushEnter() else EnterTransition.None
+      },
+      exitTransition = {
+        if (targetState.destination.isDetailPage()) pagePushExit() else ExitTransition.None
+      },
+      popEnterTransition = {
+        if (initialState.destination.isDetailPage()) pagePopEnter() else EnterTransition.None
+      },
+      popExitTransition = {
+        if (initialState.destination.isDetailPage()) pagePopExit() else ExitTransition.None
+      },
+      predictivePopEnterTransition = { edge ->
+        if (initialState.destination.isDetailPage()) pagePredictivePopEnter(edge) else EnterTransition.None
+      },
+      predictivePopExitTransition = { edge ->
+        if (initialState.destination.isDetailPage()) pagePredictivePopExit(edge) else ExitTransition.None
+      },
+      sizeTransform = { null },
     ) {
       composable<PortfolioDestination> {
         PortfolioRoute(
@@ -371,3 +390,6 @@ private fun FlareShell() {
     }
   }
 }
+
+private fun NavDestination.isDetailPage(): Boolean =
+  hasRoute<TradeDestination>() || hasRoute<SettingsDestination>() || hasRoute<AccountSetupDestination>()
