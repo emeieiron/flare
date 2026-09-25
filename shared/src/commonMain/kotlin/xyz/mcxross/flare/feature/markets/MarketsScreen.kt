@@ -57,7 +57,7 @@ import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.EmptyState
-import xyz.mcxross.flare.design.FlareChip
+import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSegmentedControl
@@ -156,7 +156,11 @@ fun MarketsScreen(
             start + (end - start) * (position - from)
           },
         )
-        MarketFilterChips(sequence, currentKey) { key ->
+        MarketFilterChips(
+          sequence,
+          currentKey,
+          pagerPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+        ) { key ->
           scope.launch { pagerState.animateScrollToPage(sequence.indexOf(key)) }
         }
       }
@@ -251,6 +255,7 @@ private fun MarketPageContent(
 private fun MarketFilterChips(
   sequence: List<MarketPageKey>,
   current: MarketPageKey,
+  pagerPosition: () -> Float,
   onSelect: (MarketPageKey) -> Unit,
 ) {
   AnimatedContent(
@@ -259,29 +264,24 @@ private fun MarketFilterChips(
     label = "marketChips",
   ) { instrument ->
     val chips = sequence.filter { it.instrument == instrument }
-    val rowState = rememberLazyListState()
-    LaunchedEffect(current) {
-      val index = chips.indexOf(current)
-      if (index >= 0) rowState.animateScrollToItem(index, scrollOffset = -48)
-    }
-    LazyRow(
-      state = rowState,
-      modifier = Modifier.padding(vertical = 12.dp),
+    val first = sequence.indexOfFirst { it.instrument == instrument }
+    FlareFilterChips(
+      labels = chips.map { key ->
+        when {
+          key.favoritesOnly -> "Watchlist"
+          key.category != null -> marketCategoryLabel(key.category)
+          else -> "All"
+        }
+      },
+      selectedIndex = chips.indexOf(current).coerceAtLeast(0),
+      onSelect = { onSelect(chips[it]) },
+      modifier = Modifier.padding(vertical = 4.dp),
+      // The pill edge sits on the same 24dp gutter as the switch above it.
       contentPadding = PaddingValues(horizontal = 24.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      items(chips, key = { it.toString() }) { key ->
-        FlareChip(
-          text = when {
-            key.favoritesOnly -> "Watchlist"
-            key.category != null -> marketCategoryLabel(key.category)
-            else -> "All"
-          },
-          selected = key == current,
-          onClick = { onSelect(key) },
-        )
-      }
-    }
+      // Pager position relative to this product's first chip; clamped at the crossing so the
+      // pill waits on the last chip while the switch above carries the move.
+      indicatorPosition = { pagerPosition() - first },
+    )
   }
 }
 
