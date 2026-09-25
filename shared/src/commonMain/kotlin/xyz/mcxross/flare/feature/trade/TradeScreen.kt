@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -47,7 +49,6 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.AssetCatalogRepository
-import xyz.mcxross.flare.data.ChartRange
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
@@ -62,10 +63,10 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.IndicatorChip
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
-import xyz.mcxross.flare.design.TimeRangeSelector
 import xyz.mcxross.flare.design.TradeScreenSkeleton
 
 @Composable
@@ -103,6 +104,7 @@ fun TradeScreen(
   var exitsOpen by rememberSaveable(quote?.market?.address) {
     mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
   }
+  var showRanges by rememberSaveable { mutableStateOf(false) }
   var reviewing by rememberSaveable(
     quote?.market?.address, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
     state.stopLossInput, state.orderType, state.leverage,
@@ -231,16 +233,19 @@ fun TradeScreen(
               ) {
                 when (displayed) {
                   TradeStage.MARKET -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // One line of chart controls, so market stats show without scrolling.
+                    Row(
+                      Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
                       ChartStyleToggle(state.chartStyle, { onIntent(TradeIntent.SelectChartStyle(state.chartStyle.flipped())) })
-                      TimeRangeSelector(ChartRange.entries, state.range, ChartRange::label,
-                        { onIntent(TradeIntent.SelectRange(it)) }, Modifier.weight(1f))
+                      ChartRangeButton(state.range, { showRanges = true })
+                      Spacer(Modifier.weight(1f))
+                      IndicatorChip("RSI", state.showRsi, FlareColors.IndicatorCyan, { onIntent(TradeIntent.ToggleRsi) })
+                      IndicatorChip("MACD", state.showMacd, FlareColors.IndicatorOrange, { onIntent(TradeIntent.ToggleMacd) })
                     }
-                    FlareIndicators(
-                      state.candles, state.showRsi, state.showMacd,
-                      { onIntent(TradeIntent.ToggleRsi) }, { onIntent(TradeIntent.ToggleMacd) },
-                      Modifier.padding(top = 8.dp),
-                    )
+                    FlareIndicators(state.candles, state.showRsi, state.showMacd)
                     if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
                     MarketInformation(state, showBook, { showBook = !showBook })
                   }
@@ -308,6 +313,16 @@ fun TradeScreen(
           )
         }
       },
+    )
+  }
+  if (showRanges) {
+    ChartRangeSheet(
+      state.range,
+      onSelect = {
+        onIntent(TradeIntent.SelectRange(it))
+        showRanges = false
+      },
+      onDismiss = { showRanges = false },
     )
   }
 }

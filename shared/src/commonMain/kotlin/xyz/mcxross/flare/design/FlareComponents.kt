@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -541,6 +542,10 @@ fun FlareChip(
   }
 }
 
+/**
+ * Turns a chart indicator on or off. Off is a hairline outline; on fills the pill and adds a dot in
+ * the indicator's line color, which doubles as its legend.
+ */
 @Composable
 fun IndicatorChip(
   text: String,
@@ -549,7 +554,27 @@ fun IndicatorChip(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  FlareChip(text, selected, onClick, modifier, semanticColor = color)
+  val background by animateColorAsState(if (selected) FlareColors.Elevated else Color.Transparent)
+  val border by animateColorAsState(if (selected) FlareColors.Elevated else FlareColors.BorderDefault)
+  val foreground by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
+  val dot by animateFloatAsState(if (selected) 1f else 0f, label = "indicatorDot")
+  Row(
+    modifier
+      .height(32.dp)
+      .clip(CircleShape)
+      .background(background)
+      .border(1.dp, border, CircleShape)
+      .toggleable(selected, role = Role.Switch, onValueChange = { onClick() })
+      .padding(horizontal = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(
+      Modifier.padding(end = (6 * dot).dp)
+        .size((6 * dot).dp)
+        .background(color, CircleShape)
+    )
+    Text(text, color = foreground, style = MaterialTheme.typography.labelMedium)
+  }
 }
 
 /**
