@@ -77,11 +77,11 @@ interface AccountDataService {
     offset: Int = 0,
   ): Page<FundMovement>
 
-  suspend fun streak(account: String): TradingStreak
+  suspend fun streak(account: String): TradingStreak?
 
   suspend fun amps(owner: String): AmpsBreakdown
 
-  suspend fun tier(account: String): TierInfo
+  suspend fun tier(account: String): TierInfo?
 
   suspend fun verifyReferralCode(code: String): ReferralCodeInfo
 
@@ -222,22 +222,22 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
       }.getOrDefault(Page())
     }
 
-  override suspend fun streak(account: String): TradingStreak =
-    runCatching {
+  override suspend fun streak(account: String): TradingStreak? =
+    try {
       api.get<TradingStreak>("streaks/account") { parameter("account", account) }
-    }.getOrDefault(TradingStreak())
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
 
   override suspend fun amps(owner: String): AmpsBreakdown =
-    runCatching {
-      api.get<AmpsBreakdown>("points/amps") {
-        parameter("owner", owner)
-      }
-    }.getOrDefault(AmpsBreakdown())
+    api.get("points/amps") { parameter("owner", owner) }
 
-  override suspend fun tier(account: String): TierInfo =
-    runCatching {
+  override suspend fun tier(account: String): TierInfo? =
+    try {
       api.get<TierInfo>("points/tier") { parameter("account", account) }
-    }.getOrDefault(TierInfo())
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
 
   override suspend fun verifyReferralCode(code: String): ReferralCodeInfo =
     api.get("referrals/code/$code")
