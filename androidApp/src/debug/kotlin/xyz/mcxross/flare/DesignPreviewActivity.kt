@@ -45,6 +45,7 @@ private fun PreviewScreens(initialScreen: String) {
   var quotes by remember { mutableStateOf(previewQuotes()) }
   var query by remember { mutableStateOf("") }
   var favorites by remember { mutableStateOf(false) }
+  var searching by remember { mutableStateOf(false) }
   var trade by remember {
     mutableStateOf(
       TradeUiState(
@@ -98,14 +99,15 @@ private fun PreviewScreens(initialScreen: String) {
               stale = false,
               query = query,
               favoritesOnly = favorites,
-              quotes =
-                quotes.filter {
-                  (!favorites || it.favorite) && it.market.name.contains(query, ignoreCase = true)
-                },
+              quotes = quotes.filter { !favorites || it.favorite },
+              searching = searching,
+              searchResults = if (searching) searchMarkets(quotes, emptyMap(), query) else MarketSearchResults(),
             ),
             { intent ->
               when (intent) {
                 is MarketsIntent.Search -> query = intent.value
+                MarketsIntent.OpenSearch -> { searching = true; query = "" }
+                MarketsIntent.CloseSearch -> { searching = false; query = "" }
                 is MarketsIntent.SetFavoritesOnly -> favorites = intent.enabled
                 is MarketsIntent.ToggleFavorite -> quotes = quotes.map {
                     if (it.market.address == intent.marketAddress) it.copy(favorite = !it.favorite)

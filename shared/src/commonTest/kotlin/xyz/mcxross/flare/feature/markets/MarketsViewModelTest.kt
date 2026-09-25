@@ -253,18 +253,22 @@ class MarketsViewModelTest {
   }
 
   @Test
-  fun searchReturnsMatchingMarketsAcrossEntireInstrument() = runTest {
+  fun searchSpansBothProductsAndClosingRestoresBrowsing() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.SetCategory("crypto"))
 
-    // Search for non-favorite "ADA"
+    vm.onIntent(MarketsIntent.OpenSearch)
     vm.onIntent(MarketsIntent.Search("ADA"))
-    val state = vm.uiState.first { it.query == "ADA" }
+    val searching = vm.uiState.first { it.searching && it.query == "ADA" }
+    assertEquals(listOf("ADA"), searching.searchResults.perpetuals.map { it.market.symbol })
 
-    assertEquals("Search results", marketSectionTitle(state))
-    assertEquals(listOf("ADA"), state.quotes.map { it.market.symbol })
+    vm.onIntent(MarketsIntent.CloseSearch)
+    val browsing = vm.uiState.first { !it.searching }
+    assertEquals("crypto", browsing.selectedCategory)
+    assertEquals("", browsing.query)
   }
 
   @Test
