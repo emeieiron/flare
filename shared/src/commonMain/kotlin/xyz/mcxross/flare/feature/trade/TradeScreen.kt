@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
@@ -130,6 +131,10 @@ fun TradeScreen(
       }
     }
   }
+  val pullToReturn = rememberPullToReturnState(
+    enabled = stage != TradeStage.MARKET && !state.orderBusy,
+    onReturn = back,
+  )
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = stage != TradeStage.MARKET,
@@ -169,9 +174,15 @@ fun TradeScreen(
       stage = stage,
       modifier = Modifier.weight(1f),
       compactContext = exitsOpen && exitsAvailable,
+      pullOffset = { pullToReturn.offset },
       context = { MarketContext(state, assets, stage) },
       body = {
-        Crossfade(stage, animationSpec = tween(180), label = "tradeContent") { displayed ->
+        Crossfade(
+          stage,
+          Modifier.nestedScroll(pullToReturn.connection),
+          animationSpec = tween(180),
+          label = "tradeContent",
+        ) { displayed ->
           // The editor spaces its own groups from the top, so it only needs the bottom inset.
           val topInset = if (displayed == TradeStage.EDIT) 0.dp else 16.dp
           BoxWithConstraints(Modifier.fillMaxSize()) {
