@@ -2,10 +2,7 @@ package xyz.mcxross.flare.feature.portfolio
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,12 +27,11 @@ import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 
 @Composable
-fun PositionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
+fun PositionDetails(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   val position =
     state.account.positions.firstOrNull { it.market == state.managedPositionMarket } ?: return
   val symbol = state.marketSymbols[position.market] ?: shortAddress(position.market)
@@ -43,8 +39,8 @@ fun PositionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) 
   val size = position.size.toDoubleOrNull()
   val pnl = mark?.let { price -> size?.let { (price - position.entryPrice) * it } }
   var confirmClose by remember { mutableStateOf(false) }
-  FlareSheet(symbol, { if (!state.busy) onIntent(PortfolioIntent.DismissPositionManagement) }) {
-    Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState())) {
+  Column {
+    Column {
       Text(
         "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))} · " +
           "${position.leverage}× · ${if (position.isIsolated) "isolated" else "cross"}",

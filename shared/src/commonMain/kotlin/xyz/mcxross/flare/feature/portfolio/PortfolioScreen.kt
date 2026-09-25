@@ -1,9 +1,12 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,23 +15,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -51,13 +57,12 @@ import xyz.mcxross.flare.data.formatSignedBalance
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.decibel.model.isLong
-import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
@@ -82,7 +87,8 @@ fun PortfolioRoute(
 
 private enum class PortfolioPage(val title: String) {
   OVERVIEW("Portfolio"), POSITIONS("Positions"), HOLDINGS("Holdings"),
-  VAULTS("Your vaults"), EXPLORE("Explore vaults"), HISTORY("Performance"), REWARDS("Rewards"),
+  VAULTS("Vaults"), VAULT_DETAIL("Vault details"), POSITION_DETAIL("Position"),
+  HISTORY("Performance"), REWARDS("Rewards"),
 }
 
 @Composable
@@ -95,9 +101,22 @@ fun PortfolioScreen(
 ) {
   var page by rememberSaveable { mutableStateOf(PortfolioPage.OVERVIEW) }
   var showBalance by rememberSaveable { mutableStateOf(false) }
-  var inspectedVault by remember { mutableStateOf<VaultInfo?>(null) }
-  val overview = state.account.overview
-  val back = { page = if (page == PortfolioPage.EXPLORE) PortfolioPage.VAULTS else PortfolioPage.OVERVIEW }
+  var vaultAddress by rememberSaveable { mutableStateOf<String?>(null) }
+  val savedPages = rememberSaveableStateHolder()
+  val inspectedVault = state.accountVaults.firstOrNull { it.vault.address == vaultAddress }?.vault
+    ?: state.vaults.firstOrNull { it.address == vaultAddress }
+  val back: () -> Unit = {
+    if (!state.busy) {
+      page = when (page) {
+        PortfolioPage.VAULT_DETAIL -> PortfolioPage.VAULTS
+        PortfolioPage.POSITION_DETAIL -> {
+          onIntent(PortfolioIntent.DismissPositionManagement)
+          PortfolioPage.POSITIONS
+        }
+        else -> PortfolioPage.OVERVIEW
+      }
+    }
+  }
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = page != PortfolioPage.OVERVIEW,
@@ -108,164 +127,312 @@ fun PortfolioScreen(
     if (page == PortfolioPage.VAULTS) onIntent(PortfolioIntent.RefreshVaults)
   }
   Column(modifier.fillMaxSize().background(FlareColors.Canvas)) {
-    if (page != PortfolioPage.OVERVIEW) BackBar(page.title, back)
-    key(page) {
-      Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
-        if (page == PortfolioPage.OVERVIEW) FlareTopBar("Portfolio")
+    if (page != PortfolioPage.OVERVIEW) {
+      val title = when (page) {
+        PortfolioPage.VAULT_DETAIL -> inspectedVault?.name ?: page.title
+        PortfolioPage.POSITION_DETAIL -> state.marketSymbols[state.managedPositionMarket] ?: page.title
+        else -> page.title
+      }
+      BackBar(title, back)
+    }
+    savedPages.SaveableStateProvider(page) {
+      var query by rememberSaveable { mutableStateOf("") }
+      LazyColumn(
+        state = rememberLazyListState(),
+        modifier = Modifier.fillMaxWidth().weight(1f),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
+      ) {
         if (state.profile.ownerAddress == null && state.profile.apiWalletAddress == null) {
-          Text("Your portfolio starts here", style = MaterialTheme.typography.headlineMedium)
-          Text("Connect a wallet to view your assets and positions.",
-            Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary)
-          FlareButton("Create or import wallet", onOpenSetup, Modifier.fillMaxWidth().padding(top = 24.dp))
-          return@Column
+          item {
+            FlareTopBar("Portfolio")
+            Text("Your portfolio starts here", style = MaterialTheme.typography.headlineMedium)
+            Text("Connect a wallet to view your assets and positions.",
+              Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary)
+            FlareButton("Create or import wallet", onOpenSetup, Modifier.fillMaxWidth().padding(top = 24.dp))
+          }
+          return@LazyColumn
         }
         when (page) {
-          PortfolioPage.OVERVIEW -> {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically) {
-              Text("Account value", style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
-              TextButton({ showBalance = true }) { Text("Details") }
+          PortfolioPage.OVERVIEW -> item {
+            PortfolioOverview(state, showBalance, { showBalance = !showBalance }, onIntent) { page = it }
+          }
+          PortfolioPage.POSITIONS -> {
+            val positions = state.account.positions.sortedByDescending { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
+            if (positions.size > 8 || query.isNotEmpty()) item {
+              FlareSearchField(query, { query = it }, "Search positions", Icons.Outlined.Search,
+                Modifier.padding(bottom = 16.dp))
             }
-            if (overview == null && state.account.error == null) {
-              PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
-            } else {
-              Text(if (overview != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalBalance) else "—",
-                style = MaterialTheme.typography.displayMedium)
+            val visible = positions.filter { (state.marketSymbols[it.market] ?: it.market).contains(query, true) }
+            if (positions.isEmpty()) item { PositionsEmptyState(state) }
+            else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
+            items(visible, key = { it.market }) { position ->
+              PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market),
+                state.markPrices[position.market], !state.busy, {
+                  onIntent(PortfolioIntent.ManagePosition(position.market))
+                  page = PortfolioPage.POSITION_DETAIL
+                })
+              HorizontalDivider(color = FlareColors.BorderSubtle)
             }
-            Text(
-              when {
-                overview == null && state.account.error != null -> "Account unavailable. Reconnecting automatically."
-                overview == null -> "Loading your account"
-                state.account.stale -> "Updating · showing your last balance"
-                state.balanceIncomplete -> "Partial balance · updating"
-                else -> ""
-              }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
-              color = FlareColors.TextTertiary,
+          }
+          PortfolioPage.HOLDINGS -> {
+            if (state.spotHoldings.size > 8 || query.isNotEmpty()) item {
+              FlareSearchField(query, { query = it }, "Search holdings", Icons.Outlined.Search,
+                Modifier.padding(bottom = 16.dp))
+            }
+            val visible = state.spotHoldings.filter { it.symbol.contains(query, true) || it.name.contains(query, true) }
+            if (state.spotHoldings.isEmpty()) item { HoldingsEmptyState(state) }
+            else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching holdings") }
+            items(visible) { holding ->
+              HoldingRow(holding, holding.marketAddress != null && !state.busy, { holding.marketAddress?.let(onMarketClick) })
+              HorizontalDivider(color = FlareColors.BorderSubtle)
+            }
+          }
+          PortfolioPage.HISTORY -> item {
+            PortfolioPerformanceChart(
+              points = state.chartPoints, range = state.chartRange, metric = state.chartMetric,
+              loading = state.chartLoading || (!state.chartLoaded && state.chartError == null), error = state.chartError,
+              onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
+              onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
             )
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-              PortfolioMetric("Available to trade", overview?.availableToTrade?.let(::formatBalance) ?: "—", Modifier.weight(1f))
-              PortfolioMetric("Unrealized P&L", overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—", Modifier.weight(1f))
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-              if (state.profile.ownerAddress != null) FlareButton("Transfer",
-                { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
-              FlareButton("Performance", { page = PortfolioPage.HISTORY }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
-            }
-            settlingNotice(state.pendingTransactions)?.let {
-              Text(it, Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-            }
-            PortfolioSectionHeader("Positions", state.account.positions.size > 3) { page = PortfolioPage.POSITIONS }
-            PositionsContent(state, onIntent, limit = 3)
-            PortfolioSectionHeader("Holdings", state.spotHoldings.size > 3) { page = PortfolioPage.HOLDINGS }
-            HoldingsContent(state, onMarketClick, limit = 3)
-            Spacer(Modifier.height(20.dp))
-            ActionRow("Vaults", subtitle = when {
-              state.accountVaults.isNotEmpty() -> "${formatBalance(state.accountVaults.sumOf { it.currentValue })} invested"
-              !state.vaultsLoaded -> "Explore vaults"
-              else -> "Explore vaults and manage deposits"
-            }, onClick = { page = PortfolioPage.VAULTS })
-            if (state.streak != null || state.amps != null || state.tier != null) {
-              ActionRow("Rewards", subtitle = state.amps?.let { "${formatQuantity(it.totalAmps, 0)} Amps" },
-                onClick = { page = PortfolioPage.REWARDS })
-            }
           }
-          PortfolioPage.POSITIONS -> PositionsContent(state, onIntent)
-          PortfolioPage.HOLDINGS -> HoldingsContent(state, onMarketClick)
-          PortfolioPage.HISTORY -> PortfolioPerformanceChart(
-            points = state.chartPoints, range = state.chartRange, metric = state.chartMetric,
-            loading = state.chartLoading || (!state.chartLoaded && state.chartError == null), error = state.chartError,
-            onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
-            onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
-          )
           PortfolioPage.VAULTS -> {
-            if (state.accountVaults.isNotEmpty()) {
+            val owned = state.accountVaults.map { it.vault.address }.toSet()
+            val available = state.vaults.filter { it.address !in owned }.distinctBy { it.address }
+            val ownedMatches = state.accountVaults.filter { it.vault.name.contains(query, true) }
+            val availableMatches = available.filter { it.name.contains(query, true) }
+            item {
               Text("Invested in vaults", color = FlareColors.TextSecondary)
-              Text(formatBalance(state.accountVaults.sumOf { it.currentValue }),
-                Modifier.padding(top = 8.dp, bottom = 16.dp), style = MaterialTheme.typography.displaySmall)
-              state.accountVaults.forEach { position ->
-                VaultSummaryRow(position.vault.name, formatBalance(position.currentValue),
-                  "${formatQuantity(position.currentNumShares, 4)} shares") { inspectedVault = position.vault }
-              }
-              if (state.vaultsError != null) QuietPortfolioMessage("Updating vaults · showing your last balances")
-            } else if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer()
-            else QuietPortfolioMessage(if (state.vaultsError != null) "Vaults unavailable. Reconnecting automatically." else "No vault deposits yet")
-            ActionRow("Explore vaults", onClick = { page = PortfolioPage.EXPLORE })
-          }
-          PortfolioPage.EXPLORE -> {
-            if (state.vaults.isEmpty() && !state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer()
-            else if (state.vaults.isEmpty()) QuietPortfolioMessage(
-              if (state.vaultsError != null) "Vaults unavailable. Reconnecting automatically." else "No vaults available")
-            else {
-              Text("${state.vaults.size} vaults · ${formatBalance(state.vaults.sumOf { it.totalAum })} managed",
-                Modifier.padding(bottom = 16.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-              state.vaults.forEach { vault ->
-                VaultSummaryRow(vault.name, formatBalance(vault.totalAum), "${formatQuantity(vault.performanceFeeBps / 100.0, 2)}% performance fee") {
-                  inspectedVault = vault
-                }
+              if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(balance = true)
+              else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.currentValue }) else "—",
+                Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
+              if (state.vaultsError != null) QuietPortfolioMessage(
+                if (state.vaultsLoaded) "Updating · showing your last vault balances" else "Vaults unavailable. Reconnecting automatically.")
+              if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", Icons.Outlined.Search,
+                Modifier.padding(top = 20.dp))
+              if (ownedMatches.isNotEmpty()) SectionLabel("Your deposits")
+              else if (state.vaultsLoaded && owned.isEmpty() && query.isBlank()) QuietPortfolioMessage("No vault deposits yet")
+            }
+            items(ownedMatches, key = { "owned:${it.vault.address}" }) { position ->
+              VaultSummaryRow(position.vault.name, formatBalance(position.currentValue),
+                "${formatQuantity(position.currentNumShares, 4)} shares") {
+                vaultAddress = position.vault.address
+                page = PortfolioPage.VAULT_DETAIL
               }
             }
+            if (availableMatches.isNotEmpty()) item { SectionLabel("Discover") }
+            items(availableMatches, key = { it.address }) { vault ->
+              VaultSummaryRow(vault.name, formatBalance(vault.totalAum),
+                "Assets managed · ${formatQuantity(vault.performanceFeePercent, 2)}% fee") {
+                vaultAddress = vault.address
+                page = PortfolioPage.VAULT_DETAIL
+              }
+            }
+            if (!state.vaultsLoaded && state.vaultsError == null) item { PortfolioShimmer() }
+            else if (ownedMatches.isEmpty() && availableMatches.isEmpty()) item {
+              if (query.isNotBlank()) QuietPortfolioMessage("No matching vaults")
+              else if (state.vaultsLoaded) QuietPortfolioMessage("No vaults available")
+            }
           }
-          PortfolioPage.REWARDS -> TradingRewardsCard(state.streak, state.amps, state.tier)
+          PortfolioPage.VAULT_DETAIL -> item {
+            if (inspectedVault != null) Column { VaultDetails(state, inspectedVault, onIntent) }
+            else QuietPortfolioMessage("This vault is no longer available")
+          }
+          PortfolioPage.POSITION_DETAIL -> item {
+            if (state.account.positions.any { it.market == state.managedPositionMarket }) PositionDetails(state, onIntent)
+            else QuietPortfolioMessage("This position is no longer open")
+          }
+          PortfolioPage.REWARDS -> item {
+            if (state.streak != null || state.amps != null || state.tier != null) {
+              Column { RewardsDetails(state) }
+              if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
+            } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
+            else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable. Reconnecting automatically." else "No rewards yet")
+          }
         }
-        Spacer(Modifier.height(32.dp))
-      }
-    }
-  }
-  if (showBalance) FlareSheet("Balance details", { showBalance = false }) {
-    DetailRow("Account value", if (overview != null) formatBalance(state.totalBalance) else "—")
-    DetailRow("Trading collateral", overview?.crossUsdcBalance?.let(::formatBalance) ?: "—")
-    DetailRow("Spot assets", if (overview?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
-    DetailRow("Free vault equity", overview?.freeVaultEquity?.let(::formatBalance) ?: "—")
-    DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "—")
-    Text("Collateral is included in trading equity. Available funds depend on open positions and orders.",
-      Modifier.padding(top = 16.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-  }
-  inspectedVault?.let { vault ->
-    val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
-    FlareSheet(vault.name.ifBlank { "Vault" }, { inspectedVault = null }) {
-      position?.let {
-        DetailRow("Your value", formatBalance(it.currentValue))
-        DetailRow("Your shares", formatQuantity(it.currentNumShares, 4))
-        DetailRow("Return", "${if (it.returnsPercent >= 0) "+" else ""}${formatQuantity(it.returnsPercent, 2)}%")
-      }
-      DetailRow("Share price", formatPrice(position?.effectiveSharePrice ?: vault.sharePrice))
-      DetailRow("Assets managed", formatBalance(vault.totalAum))
-      DetailRow("Performance fee", "${formatQuantity(vault.performanceFeeBps / 100.0, 2)}%")
-      Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FlareButton("Deposit", { inspectedVault = null; onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
-          Modifier.weight(1f), enabled = !state.busy)
-        if (position != null && position.currentNumShares > 0) FlareButton("Redeem",
-          { inspectedVault = null; onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
-          Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy)
       }
     }
   }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
-  if (state.managedPositionMarket != null) PositionSheet(state, onIntent)
   if (state.vaultAction != null && state.selectedVault != null) VaultActionSheet(state, onIntent)
 }
 
 @Composable
-private fun PortfolioSectionHeader(title: String, showAll: Boolean, onAll: () -> Unit) {
-  Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(title, style = MaterialTheme.typography.titleMedium)
-    if (showAll) TextButton(onAll) { Text("View all") }
+private fun PortfolioOverview(
+  state: PortfolioUiState,
+  expanded: Boolean,
+  onExpand: () -> Unit,
+  onIntent: (PortfolioIntent) -> Unit,
+  onPage: (PortfolioPage) -> Unit,
+) {
+  val overview = state.account.overview
+  FlareTopBar("Portfolio")
+  Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (expanded) "Collapse balance breakdown" else "Expand balance breakdown", onClick = onExpand)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween) {
+      Text("Account value", style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
+      Icon(if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+        contentDescription = null, tint = FlareColors.TextSecondary)
+    }
+    if (overview == null && state.account.error == null) PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
+    else Text(if (overview != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalBalance) else "—",
+      style = MaterialTheme.typography.displayMedium)
+  }
+  Text(when {
+    overview == null && state.account.error != null -> "Account unavailable. Reconnecting automatically."
+    overview == null -> "Loading your account"
+    state.account.stale -> "Updating · showing your last balance"
+    state.balanceIncomplete -> "Partial balance · updating"
+    else -> ""
+  }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
+  AnimatedVisibility(expanded) {
+    Column(Modifier.padding(top = 12.dp)) {
+      DetailRow("Trading equity", overview?.equityBalance?.let(::formatBalance) ?: "—")
+      DetailRow("Trading collateral", overview?.crossUsdcBalance?.let(::formatBalance) ?: "—")
+      DetailRow("Spot assets", if (overview?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
+      DetailRow("Free vault equity", overview?.freeVaultEquity?.let(::formatBalance) ?: "—")
+      DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "—")
+      Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
+        style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    }
+  }
+  Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    PortfolioMetric("Available to trade", overview?.availableToTrade?.let(::formatBalance) ?: "—", Modifier.weight(1f))
+    PortfolioMetric("Unrealized P&L", overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—", Modifier.weight(1f))
+  }
+  Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    if (state.profile.ownerAddress != null) FlareButton("Transfer",
+      { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
+    FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
+  }
+  settlingNotice(state.pendingTransactions)?.let {
+    Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+  }
+  val position = state.account.positions.maxByOrNull { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
+  PortfolioDestination("Positions", state.account.positions.size.takeIf { overview != null }?.toString(),
+    { onPage(PortfolioPage.POSITIONS) }) {
+    if (position != null) {
+      val size = position.size.toDoubleOrNull()
+      val pnl = state.markPrices[position.market]?.let { mark -> size?.let { (mark - position.entryPrice) * it } }
+      PreviewValue(state.marketSymbols[position.market] ?: shortAddress(position.market),
+        pnl?.let(::formatSignedBalance) ?: "—",
+        "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))}",
+        valueColor = when {
+          pnl == null || abs(pnl) < FLAT_PNL -> FlareColors.TextSecondary
+          pnl > 0 -> FlareColors.Positive
+          else -> FlareColors.Negative
+        })
+    } else PositionsEmptyState(state)
+  }
+  val usdc = state.spotHoldings.filter { it.symbol.equals("USDC", true) }
+  val assets = state.spotHoldings.filter { it.quantity > 0 }.map { it.symbol.uppercase() }.distinct().size
+  PortfolioDestination("Holdings", if (overview != null) "$assets ${if (assets == 1) "asset" else "assets"}" else null,
+    { onPage(PortfolioPage.HOLDINGS) }) {
+    if (overview == null && state.account.error == null) PortfolioShimmer(rows = 1)
+    else PreviewValue("USDC", if (usdc.isNotEmpty() || (overview != null && !state.account.stale && !state.balanceIncomplete))
+      formatBalance(usdc.sumOf { it.quantity }) else "—", "Spot and trading collateral")
+  }
+  PortfolioDestination("Vaults", state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
+    { onPage(PortfolioPage.VAULTS) }) {
+    if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
+    else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.currentValue }) else "—",
+      if (state.vaultsError != null) "Updating automatically" else null)
+  }
+  PortfolioDestination("Rewards", state.tier?.tier, { onPage(PortfolioPage.REWARDS) }) {
+    if (!state.rewardsLoaded && !state.rewardsError && state.amps == null) PortfolioShimmer(rows = 1)
+    else PreviewValue("Amps", state.amps?.let { formatQuantity(it.totalAmps, 0) } ?: "—",
+      if (state.rewardsError) "Updating automatically" else null)
+  }
+}
+
+@Composable
+private fun PortfolioDestination(title: String, count: String?, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+  Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "View $title", onClick = onClick).padding(vertical = 20.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+      if (count != null) Text(count, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+    }
+    Spacer(Modifier.height(12.dp))
+    content()
+  }
+  HorizontalDivider(color = FlareColors.BorderSubtle)
+}
+
+@Composable
+private fun PreviewValue(
+  label: String,
+  value: String,
+  subtitle: String? = null,
+  valueColor: Color = FlareColors.TextPrimary,
+) {
+  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Column(Modifier.weight(1f)) {
+      Text(label, style = MaterialTheme.typography.bodyMedium)
+      if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    }
+    Text(value, style = MaterialTheme.typography.labelLarge, color = valueColor)
+  }
+}
+
+@Composable
+private fun SectionLabel(title: String) {
+  Text(title, Modifier.padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
+}
+
+@Composable
+private fun VaultDetails(state: PortfolioUiState, vault: VaultInfo, onIntent: (PortfolioIntent) -> Unit) {
+  val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
+  if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
+  position?.let {
+    DetailRow("Your value", formatBalance(it.currentValue))
+    DetailRow("Your shares", formatQuantity(it.currentNumShares, 4))
+    DetailRow("Return", "${if (it.returnsPercent >= 0) "+" else ""}${formatQuantity(it.returnsPercent, 2)}%")
+  }
+  DetailRow("Share price", formatPrice(position?.effectiveSharePrice ?: vault.sharePrice))
+  DetailRow("Assets managed", formatBalance(vault.totalAum))
+  DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
+  Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlareButton("Deposit", { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
+      Modifier.weight(1f), enabled = !state.busy)
+    if (position != null && position.currentNumShares > 0) FlareButton("Redeem",
+      { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
+      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy)
+  }
+}
+
+@Composable
+private fun RewardsDetails(state: PortfolioUiState) {
+  Text("Total Amps", color = FlareColors.TextSecondary)
+  Text(state.amps?.let { formatQuantity(it.totalAmps, 0) } ?: "—",
+    Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+  state.tier?.let { DetailRow("Tier", it.tier) }
+  state.amps?.rank?.let { DetailRow("Rank", "#$it") }
+  state.streak?.let {
+    DetailRow("Current streak", if (it.streakCount == 0) "No active streak" else "${it.streakCount} days")
+    if (it.longestStreak > 0) DetailRow("Longest streak", "${it.longestStreak} days")
+    if (it.graceDaysRemaining > 0) DetailRow("Grace remaining", "${it.graceDaysRemaining} days")
+  }
+  state.amps?.let { amps ->
+    val breakdown = listOf("Trading" to amps.tradingAmps, "Streaks" to amps.streakAmps,
+      "Vaults" to amps.vaultAmps, "Referrals" to amps.referralAmps, "Bonuses" to amps.bonusAmps)
+      .filter { it.second > 0 }
+    if (breakdown.isNotEmpty()) SectionLabel("Amps earned")
+    breakdown.forEach { (label, value) -> DetailRow(label, formatQuantity(value, 0)) }
   }
 }
 
 @Composable
 private fun QuietPortfolioMessage(message: String) {
-  Text(message, Modifier.fillMaxWidth().padding(vertical = 16.dp),
-    color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+  Text(message, Modifier.fillMaxWidth().padding(vertical = 12.dp), color = FlareColors.TextSecondary,
+    style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable
-private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = false) {
+private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = false, rows: Int = 2) {
   Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     if (balance) FlareSkeletonBox(Modifier.width(200.dp).height(56.dp))
-    else repeat(2) {
-      Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    else repeat(rows) {
+      Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         FlareSkeletonBox(Modifier.width(120.dp).height(20.dp))
         FlareSkeletonBox(Modifier.width(72.dp).height(20.dp))
       }
@@ -274,21 +441,14 @@ private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = f
 }
 
 @Composable
-private fun PositionsContent(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit, limit: Int = Int.MAX_VALUE) {
-  if (state.account.positions.isNotEmpty()) state.account.positions.take(limit).forEach { position ->
-    PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market), state.markPrices[position.market],
-      !state.busy, { onIntent(PortfolioIntent.ManagePosition(position.market)) })
-    HorizontalDivider(color = FlareColors.BorderSubtle)
-  } else if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
+private fun PositionsEmptyState(state: PortfolioUiState) {
+  if (state.account.overview == null && state.account.error == null) PortfolioShimmer(rows = 1)
   else QuietPortfolioMessage(if (state.account.overview == null || state.account.stale) "Positions are updating" else "No open positions")
 }
 
 @Composable
-private fun HoldingsContent(state: PortfolioUiState, onMarketClick: (String) -> Unit, limit: Int = Int.MAX_VALUE) {
-  if (state.spotHoldings.isNotEmpty()) state.spotHoldings.take(limit).forEach { holding ->
-    HoldingRow(holding, holding.marketAddress != null && !state.busy, { holding.marketAddress?.let(onMarketClick) })
-    HorizontalDivider(color = FlareColors.BorderSubtle)
-  } else if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
+private fun HoldingsEmptyState(state: PortfolioUiState) {
+  if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
   else QuietPortfolioMessage(if (state.holdingsError != null || state.account.overview == null || state.account.stale) "Holdings are updating" else "No assets held")
 }
 

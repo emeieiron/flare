@@ -59,6 +59,7 @@ private fun PreviewScreens(initialScreen: String) {
   }
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
   var settings by remember { mutableStateOf(SettingsUiState()) }
+  var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
     Text(
       "DESIGN PREVIEW · SAMPLE DATA",
@@ -141,8 +142,14 @@ private fun PreviewScreens(initialScreen: String) {
             },
             onBack = { screen = "markets" },
           )
-        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable" ->
-          PortfolioScreen(previewPortfolioState(screen), {}, { screen = "welcome" })
+        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many" ->
+          PortfolioScreen(portfolio, { intent ->
+            portfolio = when (intent) {
+              is xyz.mcxross.flare.feature.portfolio.PortfolioIntent.ManagePosition -> portfolio.copy(managedPositionMarket = intent.market)
+              xyz.mcxross.flare.feature.portfolio.PortfolioIntent.DismissPositionManagement -> portfolio.copy(managedPositionMarket = null)
+              else -> portfolio
+            }
+          }, { screen = "welcome" })
         "activity" ->
           OrdersScreen(
             OrdersUiState(section = section),
@@ -280,11 +287,35 @@ private fun previewPortfolio() =
 
 /** Deterministic read states for visual checks; this activity never submits transactions. */
 private fun previewPortfolioState(screen: String): PortfolioUiState {
-  val loaded = previewPortfolio().copy(vaultsLoaded = true, chartLoaded = true)
+  val loaded = previewPortfolio().copy(vaultsLoaded = true, chartLoaded = true, rewardsLoaded = true)
   return when (screen) {
+    "portfolio-many" -> {
+      val positions = (1..24).map { index ->
+        xyz.mcxross.flare.decibel.model.Position("0xposition$index", "preview", "$index", 2, 10.0,
+          false, false, 0.0, 5.0, index.toLong(), false)
+      }
+      val vaults = (1..12).map { index ->
+        xyz.mcxross.flare.decibel.model.VaultInfo(address = "0xvault$index", name = "Vault $index",
+          totalAum = index * 100_000.0)
+      }
+      loaded.copy(
+        account = loaded.account.copy(positions = positions),
+        marketSymbols = positions.mapIndexed { index, position -> position.market to "Market ${index + 1}" }.toMap(),
+        markPrices = positions.associate { it.market to 12.0 },
+        spotHoldings = loaded.spotHoldings.take(1) + (1..47).map { index ->
+          SpotHolding("ASSET$index", "Asset $index", quantity = index.toDouble(), markPrice = 1.0, valueUsd = index.toDouble())
+        },
+        vaults = vaults,
+        accountVaults = vaults.take(3).map {
+          xyz.mcxross.flare.decibel.model.AccountVaultPerformance(vault = it, currentNumShares = 10.0, currentValue = 10.0)
+        },
+        amps = xyz.mcxross.flare.decibel.model.AmpsBreakdown(totalAmps = 2400.0, tradingAmps = 2200.0, vaultAmps = 200.0),
+        tier = xyz.mcxross.flare.decibel.model.TierInfo(tier = "Silver"),
+      )
+    }
     "portfolio-loading" -> loaded.copy(
       spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", loading = true),
-      vaultsLoaded = false, chartLoaded = false,
+      vaultsLoaded = false, chartLoaded = false, rewardsLoaded = false,
     )
     "portfolio-empty" -> loaded.copy(
       spotHoldings = emptyList(), account = loaded.account.copy(overview = loaded.account.overview!!.copy(
@@ -295,11 +326,11 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
     )
     "portfolio-stale" -> loaded.copy(
       account = loaded.account.copy(stale = true, error = "Offline"),
-      vaultsError = "Offline", chartError = "Offline",
+      vaultsError = "Offline", chartError = "Offline", rewardsError = true,
     )
     "portfolio-unavailable" -> loaded.copy(
       spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", error = "Offline"),
-      vaultsError = "Offline", chartError = "Offline",
+      vaultsError = "Offline", chartError = "Offline", rewardsError = true,
     )
     else -> loaded
   }

@@ -121,6 +121,8 @@ data class PortfolioUiState(
   val vaultsLoading: Boolean = false,
   val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
+  val rewardsLoaded: Boolean = false,
+  val rewardsError: Boolean = false,
   val streak: TradingStreak? = null,
   val amps: AmpsBreakdown? = null,
   val tier: TierInfo? = null,
@@ -218,6 +220,7 @@ class PortfolioViewModel(
   private val primaryUsdcBalance = MutableStateFlow(0.0)
   private var chartJob: Job? = null
   private var vaultsJob: Job? = null
+  private var rewardsJob: Job? = null
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var lastPositionCommand: DecibelCommand? = null
@@ -699,6 +702,7 @@ class PortfolioViewModel(
       delay(waitMs)
       val snapshot = accounts.snapshot.value
       val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
+        local.value.rewardsError || local.value.holdingsError != null ||
         (local.value.historyVisible && local.value.chartError != null)
       if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
         runSuspendCatching { accounts.restoreTrading() }
@@ -707,6 +711,7 @@ class PortfolioViewModel(
         fetchPortfolioChart()
       }
       if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
+      if (local.value.rewardsError && rewardsJob?.isActive != true) fetchStreaksAndAmps()
       if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
       waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
     }
@@ -733,11 +738,20 @@ class PortfolioViewModel(
   }
 
   private fun fetchStreaksAndAmps() {
-    viewModelScope.launch {
-      val streak = runSuspendCatching { accounts.tradingStreak() }.getOrNull()
-      val amps = runSuspendCatching { accounts.ampsBreakdown() }.getOrNull()
-      val tier = runSuspendCatching { accounts.tierInfo() }.getOrNull()
-      local.update { it.copy(streak = streak, amps = amps, tier = tier) }
+    if (rewardsJob?.isActive == true) return
+    rewardsJob = viewModelScope.launch {
+      val streak = runSuspendCatching { accounts.tradingStreak() }
+      val amps = runSuspendCatching { accounts.ampsBreakdown() }
+      val tier = runSuspendCatching { accounts.tierInfo() }
+      local.update {
+        it.copy(
+          streak = if (streak.isSuccess) streak.getOrNull() else it.streak,
+          amps = if (amps.isSuccess) amps.getOrNull() else it.amps,
+          tier = if (tier.isSuccess) tier.getOrNull() else it.tier,
+          rewardsLoaded = true,
+          rewardsError = streak.isFailure || amps.isFailure || tier.isFailure,
+        )
+      }
     }
   }
 
