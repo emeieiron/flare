@@ -3,7 +3,9 @@ package xyz.mcxross.flare.feature.trade
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -147,7 +149,11 @@ internal fun OrderEditor(state: TradeUiState, side: OrderSide, onSideChange: (Or
     }
     if (!isSpot && state.orderType != OrderType.TWAP) {
       val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
-      TextButton({ showExits = !showExits }, enabled = !state.orderBusy) {
+      TextButton(
+        { showExits = !showExits },
+        enabled = !state.orderBusy,
+        contentPadding = PaddingValues(0.dp),
+      ) {
         Text(if (showExits || hasExits) "Take profit / stop loss" else "Add take profit / stop loss")
       }
       if (showExits || hasExits) {
@@ -203,6 +209,9 @@ internal fun OrderReviewStatus(state: TradeUiState, side: OrderSide, onIntent: (
           )
         }
     }
+    val hasNotices = inputError != null || state.orderError != null ||
+      (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas != null
+    if (hasNotices) Spacer(Modifier.height(20.dp))
     OrderReview(state, side)
     if (!state.tradingEnabled) {
       OrderConnectionNotice()

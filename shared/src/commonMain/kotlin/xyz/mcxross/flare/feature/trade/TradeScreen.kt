@@ -35,7 +35,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
-import com.valentinilk.shimmer.shimmer
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.AssetCatalogRepository
@@ -62,7 +61,6 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TimeRangeSelector
 import xyz.mcxross.flare.design.TradeScreenSkeleton
-import xyz.mcxross.flare.design.rememberFlareShimmer
 
 @Composable
 fun TradeRoute(
@@ -145,7 +143,7 @@ fun TradeScreen(
         TradeStage.MARKET -> quote?.market?.symbol ?: "Market"
         TradeStage.EDIT -> "Trade ${quote?.market?.symbol.orEmpty()}"
         TradeStage.REVIEW -> if (state.orderBusy) "Submitting order" else "Review order"
-        TradeStage.RESULT -> "Order submitted"
+        TradeStage.RESULT -> "Trade ${quote?.market?.symbol.orEmpty()}"
       },
       back,
       Modifier.padding(horizontal = 8.dp),
@@ -201,7 +199,6 @@ fun TradeScreen(
         }
       },
       action = {
-        val shimmer = rememberFlareShimmer()
         val inputError = state.orderInputError(side)
         val enabled = when (stage) {
           TradeStage.MARKET, TradeStage.RESULT -> !state.orderBusy
@@ -226,9 +223,9 @@ fun TradeScreen(
                 TradeStage.RESULT -> returnToMarket()
               }
             },
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)
-              .then(if (state.orderBusy) Modifier.shimmer(shimmer) else Modifier),
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
             enabled = enabled,
+            working = state.orderBusy,
           )
         }
       },

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import com.valentinilk.shimmer.shimmer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -389,18 +390,19 @@ fun FlareButton(
   if (style == FlareButtonStyle.PRIMARY) {
     Button(
       onClick = onClick,
-      modifier = modifier.heightIn(min = 52.dp),
+      modifier = modifier.heightIn(min = 52.dp).workingShimmer(working),
       enabled = enabled && !working,
       shape = shape,
       colors =
         ButtonDefaults.buttonColors(
           containerColor = colors.positive,
           contentColor = Color.Black,
-          disabledContainerColor = FlareColors.Surface,
-          disabledContentColor = FlareColors.TextDisabled,
+          // A pending action keeps its identity; only interaction is withheld.
+          disabledContainerColor = if (working) colors.positive else FlareColors.Surface,
+          disabledContentColor = if (working) Color.Black else FlareColors.TextDisabled,
         ),
     ) {
-      ButtonContent(text, working)
+      ButtonContent(text)
     }
   } else {
     val contentColor =
@@ -411,35 +413,29 @@ fun FlareButton(
       }
     OutlinedButton(
       onClick = onClick,
-      modifier = modifier.heightIn(min = 52.dp),
+      modifier = modifier.heightIn(min = 52.dp).workingShimmer(working),
       enabled = enabled && !working,
       shape = shape,
       border = BorderStroke(1.dp, if (enabled) colors.borderDefault else colors.borderSubtle),
       colors =
         ButtonDefaults.outlinedButtonColors(
           contentColor = contentColor,
-          disabledContentColor = FlareColors.TextDisabled,
+          disabledContentColor = if (working) contentColor else FlareColors.TextDisabled,
         ),
     ) {
-      ButtonContent(text, working)
+      ButtonContent(text)
     }
   }
 }
 
 @Composable
-private fun ButtonContent(text: String, working: Boolean) {
-  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-    if (working) {
-      CircularProgressIndicator(
-        modifier = Modifier.size(16.dp),
-        color = FlareColors.TextDisabled,
-        strokeWidth = 2.dp,
-      )
-      Spacer(Modifier.width(10.dp))
-    }
-    Text(text, style = MaterialTheme.typography.labelLarge)
-  }
+private fun ButtonContent(text: String) {
+  Text(text, style = MaterialTheme.typography.labelLarge)
 }
+
+@Composable
+private fun Modifier.workingShimmer(working: Boolean): Modifier =
+  if (working) shimmer(rememberFlareShimmer()) else this
 
 /** Tone of an inline notice; the app speaks in outcomes, never in transaction states. */
 enum class NoticeTone {
