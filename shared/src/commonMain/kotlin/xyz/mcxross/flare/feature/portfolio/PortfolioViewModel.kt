@@ -3,8 +3,8 @@ package xyz.mcxross.flare.feature.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +15,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
@@ -32,6 +35,7 @@ import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
@@ -43,7 +47,6 @@ import xyz.mcxross.flare.decibel.model.SlippageBps
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.VaultInfo
-import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.absoluteSize
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
@@ -75,12 +78,6 @@ enum class VaultActionMode {
   REDEEM,
 }
 
-enum class PortfolioTab(val title: String) {
-  POSITIONS("Positions"),
-  HOLDINGS("Holdings"),
-  VAULTS("Vaults"),
-}
-
 data class SpotHolding(
   val symbol: String,
   val name: String,
@@ -99,7 +96,6 @@ data class PortfolioUiState(
   val markPrices: Map<String, Double> = emptyMap(),
   val account: AccountSnapshot = AccountSnapshot(),
   val pendingTransactions: List<PendingTransaction> = emptyList(),
-  val selectedTab: PortfolioTab = PortfolioTab.POSITIONS,
   val spotHoldings: List<SpotHolding> = emptyList(),
   val fundingMode: FundingMode? = null,
   val fundingAmount: String = "",
@@ -118,9 +114,12 @@ data class PortfolioUiState(
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
   val chartLoading: Boolean = false,
+  val chartLoaded: Boolean = false,
+  val historyVisible: Boolean = false,
   val chartError: String? = null,
   val holdingsError: String? = null,
   val vaultsLoading: Boolean = false,
+  val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
   val streak: TradingStreak? = null,
   val amps: AmpsBreakdown? = null,
@@ -158,9 +157,9 @@ data class PortfolioUiState(
 }
 
 sealed interface PortfolioIntent {
-  data class SelectTab(val tab: PortfolioTab) : PortfolioIntent
-
   data object Refresh : PortfolioIntent
+
+  data class SetHistoryVisible(val visible: Boolean) : PortfolioIntent
 
   data class SelectChartRange(val range: PortfolioChartRange) : PortfolioIntent
 
@@ -218,6 +217,8 @@ class PortfolioViewModel(
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private val primaryUsdcBalance = MutableStateFlow(0.0)
   private var chartJob: Job? = null
+  private var vaultsJob: Job? = null
+  private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var lastPositionCommand: DecibelCommand? = null
 
@@ -239,7 +240,7 @@ class PortfolioViewModel(
         .distinctUntilChanged()
         .collect { subaccount ->
           fetchSpotBalances(subaccount)
-          fetchPortfolioChart()
+          if (local.value.historyVisible) fetchPortfolioChart()
           fetchStreaksAndAmps()
           refreshVaults()
         }
@@ -365,10 +366,12 @@ class PortfolioViewModel(
 
   fun onIntent(intent: PortfolioIntent) {
     when (intent) {
-      is PortfolioIntent.SelectTab -> {
-        local.update { it.copy(selectedTab = intent.tab) }
-        if (intent.tab == PortfolioTab.VAULTS) {
-          refreshVaults()
+      is PortfolioIntent.SetHistoryVisible -> {
+        local.update { it.copy(historyVisible = intent.visible) }
+        if (intent.visible && chartJob?.isActive != true) fetchPortfolioChart()
+        if (!intent.visible) {
+          chartJob?.cancel()
+          local.update { it.copy(chartLoading = false) }
         }
       }
       is PortfolioIntent.SelectChartRange -> {
@@ -689,17 +692,42 @@ class PortfolioViewModel(
     }
   }
 
+  /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
+  suspend fun refreshWhileVisible() {
+    var waitMs = 2_000L
+    while (currentCoroutineContext().isActive) {
+      delay(waitMs)
+      val snapshot = accounts.snapshot.value
+      val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
+        (local.value.historyVisible && local.value.chartError != null)
+      if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
+        runSuspendCatching { accounts.restoreTrading() }
+      }
+      if (local.value.historyVisible && local.value.chartError != null && chartJob?.isActive != true) {
+        fetchPortfolioChart()
+      }
+      if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
+      if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
+      waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
+    }
+  }
+
   private fun fetchPortfolioChart() {
     chartJob?.cancel()
     val range = local.value.chartRange
     val metric = local.value.chartMetric
+    val sameSelection = chartKey == (range to metric)
+    chartKey = range to metric
     chartJob = viewModelScope.launch {
-      local.update { it.copy(chartLoading = true, chartError = null, chartPoints = emptyList()) }
+      local.update { it.copy(chartLoading = true,
+        chartPoints = if (sameSelection) it.chartPoints else emptyList(),
+        chartLoaded = sameSelection && it.chartLoaded,
+        chartError = if (sameSelection) it.chartError else null) }
       runSuspendCatching { accounts.portfolioChart(range.wireValue, metric.wireValue) }
         .onSuccess { points ->
-          local.update { it.copy(chartPoints = points, chartLoading = false) }
+          local.update { it.copy(chartPoints = points, chartLoading = false, chartLoaded = true, chartError = null) }
         }.onFailure {
-          local.update { it.copy(chartLoading = false, chartError = "History is unavailable. Try again.") }
+          local.update { it.copy(chartLoading = false, chartError = "History is temporarily unavailable. Reconnecting automatically.") }
         }
     }
   }
@@ -730,14 +758,15 @@ class PortfolioViewModel(
   }
 
   fun refreshVaults() {
-    viewModelScope.launch {
-      local.update { it.copy(vaultsLoading = true, vaultsError = null) }
+    if (vaultsJob?.isActive == true) return
+    vaultsJob = viewModelScope.launch {
+      local.update { it.copy(vaultsLoading = true) }
       runSuspendCatching {
         val vaults = accounts.vaults()
         val positions = accounts.accountVaultPerformance()
-        local.update { it.copy(vaults = vaults, accountVaults = positions) }
+        local.update { it.copy(vaults = vaults, accountVaults = positions, vaultsLoaded = true, vaultsError = null) }
       }.onFailure {
-        local.update { it.copy(vaultsError = "Couldn’t update vault balances. Try again.") }
+        local.update { it.copy(vaultsError = "Vaults are temporarily unavailable. Reconnecting automatically.") }
       }
       local.update { it.copy(vaultsLoading = false) }
     }

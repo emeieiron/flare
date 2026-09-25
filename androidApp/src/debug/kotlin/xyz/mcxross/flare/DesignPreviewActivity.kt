@@ -141,7 +141,8 @@ private fun PreviewScreens(initialScreen: String) {
             },
             onBack = { screen = "markets" },
           )
-        "portfolio" -> PortfolioScreen(previewPortfolio(), {}, { screen = "welcome" })
+        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable" ->
+          PortfolioScreen(previewPortfolioState(screen), {}, { screen = "welcome" })
         "activity" ->
           OrdersScreen(
             OrdersUiState(section = section),
@@ -276,3 +277,30 @@ private fun previewPortfolio() =
         stale = false,
       ),
   )
+
+/** Deterministic read states for visual checks; this activity never submits transactions. */
+private fun previewPortfolioState(screen: String): PortfolioUiState {
+  val loaded = previewPortfolio().copy(vaultsLoaded = true, chartLoaded = true)
+  return when (screen) {
+    "portfolio-loading" -> loaded.copy(
+      spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", loading = true),
+      vaultsLoaded = false, chartLoaded = false,
+    )
+    "portfolio-empty" -> loaded.copy(
+      spotHoldings = emptyList(), account = loaded.account.copy(overview = loaded.account.overview!!.copy(
+        equityBalance = 0.0, unrealizedPnl = 0.0, availableToTrade = 0.0,
+        crossWithdrawableBalance = 0.0, crossUsdcBalance = 0.0, freeVaultEquity = 0.0,
+        spot = xyz.mcxross.flare.decibel.model.SpotOverview(),
+      )),
+    )
+    "portfolio-stale" -> loaded.copy(
+      account = loaded.account.copy(stale = true, error = "Offline"),
+      vaultsError = "Offline", chartError = "Offline",
+    )
+    "portfolio-unavailable" -> loaded.copy(
+      spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", error = "Offline"),
+      vaultsError = "Offline", chartError = "Offline",
+    )
+    else -> loaded
+  }
+}

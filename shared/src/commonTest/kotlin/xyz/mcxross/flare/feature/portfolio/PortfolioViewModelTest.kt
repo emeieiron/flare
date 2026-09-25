@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import xyz.mcxross.flare.data.AccountHistoryKind
@@ -379,29 +381,38 @@ class PortfolioViewModelTest {
   }
 
   @Test
-  fun tabSwitchingUpdatesSelectedTab() = runTest {
-    val snapshot = AccountSnapshot(account = "0xsubaccount", stale = false)
-    val vm =
-      PortfolioViewModel(
-        accounts = FakeAccountRepository(snapshot),
-        wallets = FakeWalletRepository(),
-        preferences = AppPreferences(MemoryPreferences()),
-        trading = FakeTradingRepository(),
-        markets = FakeMarketsRepository(quotes),
-        marketDetails = FakeMarketDetailsRepository(),
-        assetCatalog = FakeAssetCatalogRepository(),
-      )
+  fun historyRecoversAutomaticallyAndRetainsCachedPoints() = runTest {
+    var unavailable = true
+    var reads = 0
+    val point = xyz.mcxross.flare.decibel.model.PortfolioChartPoint(timestamp = 1, dataPoints = 25.0)
+    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+      override suspend fun portfolioChart(timeRange: String, metric: String): List<xyz.mcxross.flare.decibel.model.PortfolioChartPoint> {
+        reads++
+        check(!unavailable) { "Offline" }
+        return listOf(point)
+      }
+    }
+    val vm = PortfolioViewModel(accounts, FakeWalletRepository(), AppPreferences(MemoryPreferences()),
+      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository())
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.SetHistoryVisible(true))
+    assertTrue(vm.uiState.value.chartError != null)
+    val recovery = backgroundScope.launch { vm.refreshWhileVisible() }
+    runCurrent()
+    unavailable = false
+    advanceTimeBy(2_001)
+    assertEquals(listOf(point), vm.uiState.value.chartPoints)
+    assertEquals(null, vm.uiState.value.chartError)
 
-    assertEquals(PortfolioTab.POSITIONS, vm.uiState.first().selectedTab)
-
-    vm.onIntent(PortfolioIntent.SelectTab(PortfolioTab.HOLDINGS))
-    val holdingsState = vm.uiState.first { it.selectedTab == PortfolioTab.HOLDINGS }
-    assertEquals(PortfolioTab.HOLDINGS, holdingsState.selectedTab)
-
-    vm.onIntent(PortfolioIntent.SelectTab(PortfolioTab.POSITIONS))
-    val positionsState = vm.uiState.first { it.selectedTab == PortfolioTab.POSITIONS }
-    assertEquals(PortfolioTab.POSITIONS, positionsState.selectedTab)
+    unavailable = true
+    vm.onIntent(PortfolioIntent.SelectChartRange(PortfolioChartRange.DAY_1))
+    assertTrue(vm.uiState.value.chartError != null)
+    assertEquals(listOf(point), vm.uiState.value.chartPoints)
+    vm.onIntent(PortfolioIntent.SetHistoryVisible(false))
+    val readsWhenHidden = reads
+    advanceTimeBy(30_001)
+    assertEquals(readsWhenHidden, reads)
+    recovery.cancel()
   }
 
   @Test
@@ -429,7 +440,7 @@ class PortfolioViewModelTest {
   }
 
   @Test
-  fun vaultsTabAndActionFlow() = runTest {
+  fun vaultsAndActionFlow() = runTest {
     val snapshot = AccountSnapshot(account = "0xsubaccount", stale = false)
     val testVault =
       xyz.mcxross.flare.decibel.model.VaultInfo(
@@ -466,9 +477,8 @@ class PortfolioViewModelTest {
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
-    vm.onIntent(PortfolioIntent.SelectTab(PortfolioTab.VAULTS))
     val vaultsState =
-      vm.uiState.first { it.selectedTab == PortfolioTab.VAULTS && it.vaults.isNotEmpty() }
+      vm.uiState.first { it.vaults.isNotEmpty() }
     assertEquals(1, vaultsState.vaults.size)
     assertEquals("Decibel Liquidity Pool", vaultsState.vaults.first().name)
     assertEquals(1, vaultsState.accountVaults.size)
