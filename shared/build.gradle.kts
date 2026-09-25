@@ -88,6 +88,7 @@ kotlin {
       implementation(libs.coil.network.ktor3)
       implementation(libs.coil.svg)
       implementation(libs.compose.shimmer)
+      implementation(libs.compottie)
     }
     commonTest.dependencies {
       implementation(libs.kotlin.test)
