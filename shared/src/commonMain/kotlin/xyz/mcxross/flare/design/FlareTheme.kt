@@ -1,8 +1,12 @@
 package xyz.mcxross.flare.design
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
+import androidx.compose.material3.RippleDefaults
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -181,6 +185,19 @@ private val FlareShapes =
     extraLarge = RoundedCornerShape(24.dp),
   )
 
+// Disable tap ripples without removing keyboard focus, hover, or drag indications.
+@Suppress("DEPRECATION")
+private val FlareRippleConfiguration = RippleConfiguration(
+  rippleAlpha = with(RippleDefaults.RippleAlpha) {
+    RippleAlpha(
+      draggedAlpha = draggedAlpha,
+      focusedAlpha = focusedAlpha,
+      hoveredAlpha = hoveredAlpha,
+      pressedAlpha = 0f,
+    )
+  },
+)
+
 @Composable
 fun FlareTheme(content: @Composable () -> Unit) {
   CompositionLocalProvider(
@@ -196,6 +213,7 @@ fun FlareTheme(content: @Composable () -> Unit) {
       content = {
         CompositionLocalProvider(
           LocalContentColor provides FlareColors.TextPrimary,
+          LocalRippleConfiguration provides FlareRippleConfiguration,
           content = content,
         )
       },
