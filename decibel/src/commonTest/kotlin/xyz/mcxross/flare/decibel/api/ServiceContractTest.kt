@@ -7,6 +7,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -151,7 +154,7 @@ class ServiceContractTest {
         }
       )
     val streakService = DefaultAccountDataService(api(httpStreak))
-    val streak = streakService.streak("0x22")
+    val streak = assertNotNull(streakService.streak("0x22"))
     assertEquals(5, streak.streakCount)
     assertEquals(2, streak.graceDaysRemaining)
 
@@ -184,6 +187,21 @@ class ServiceContractTest {
     assertEquals("FLARE2026", info.code)
     assertTrue(info.valid)
     assertTrue(info.active)
+  }
+
+  @Test
+  fun unavailableRewardsDoNotBecomeDefaultBalancesOrTiers() = runTest {
+    val missing = DefaultAccountDataService(api(HttpClient(MockEngine {
+      respondJson("{}", HttpStatusCode.NotFound)
+    })))
+    assertNull(missing.streak("0x22"))
+    assertNull(missing.tier("0x22"))
+    val denied = DefaultAccountDataService(api(HttpClient(MockEngine {
+      respondJson("{}", HttpStatusCode.Forbidden)
+    })))
+    assertFailsWith<DecibelApiError> { denied.amps("0xowner") }
+    assertFailsWith<DecibelApiError> { denied.streak("0x22") }
+    assertFailsWith<DecibelApiError> { denied.tier("0x22") }
   }
 
   private fun api(client: HttpClient) =
