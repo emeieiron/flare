@@ -285,6 +285,11 @@ private fun FlareShell() {
     )
   }
 
+  /**
+   * Every move to a tab goes through here, including links from inside a screen. A plain navigate
+   * would stack the tab on top of Markets, and the next tap on Markets would save that stack as
+   * Markets' own state and restore it straight back.
+   */
   fun navigateTo(index: Int) {
     val route: Any =
       when (index) {
@@ -300,7 +305,7 @@ private fun FlareShell() {
     }
   }
 
-  val onOpenSetup = { navController.navigate(AccountDestination) }
+  val onOpenSetup = { navigateTo(3) }
 
   Scaffold(
     contentWindowInsets = WindowInsets.safeDrawing,
@@ -356,8 +361,9 @@ private fun FlareShell() {
       composable<TradeDestination> { backStackEntry ->
         TradeRoute(
           onOpenActivity = {
+            // The finished order isn't kept: returning to Markets shows the list, not the receipt.
             navController.popBackStack()
-            navController.navigate(OrdersDestination) { launchSingleTop = true }
+            navigateTo(2)
           },
           marketAddress = backStackEntry.toRoute<TradeDestination>().marketAddress,
           onBack = { navController.popBackStack() },
