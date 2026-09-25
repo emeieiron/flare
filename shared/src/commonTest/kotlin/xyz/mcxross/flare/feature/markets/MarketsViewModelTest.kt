@@ -214,6 +214,20 @@ class MarketsViewModelTest {
   }
 
   @Test
+  fun swipeSequenceWalksPerpetualChipsThenSpotChips() {
+    val labels = marketPageSequence().map {
+      "${it.instrument.name.lowercase()}:${if (it.favoritesOnly) "watchlist" else it.category ?: "all"}"
+    }
+    assertEquals(
+      listOf(
+        "perpetuals:all", "perpetuals:watchlist", "perpetuals:commodity", "perpetuals:crypto",
+        "perpetuals:equity", "spot:all", "spot:watchlist", "spot:crypto",
+      ),
+      labels,
+    )
+  }
+
+  @Test
   fun switchingInstrumentsKeepsEachPagesSelection() = runTest {
     val vm =
       MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap))

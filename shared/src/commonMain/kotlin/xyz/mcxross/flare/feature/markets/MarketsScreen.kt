@@ -1,10 +1,13 @@
 package xyz.mcxross.flare.feature.markets
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -95,14 +99,17 @@ fun MarketsScreen(
     onBackCompleted = closeSearch,
   )
   val instruments = MarketInstrumentFilter.entries
-  val pagerState = rememberPagerState(initialPage = instruments.indexOf(state.selectedInstrument)) {
-    instruments.size
-  }
+  val sequence = state.pageSequence
+  val startPage = sequence.indexOf(state.currentKey(state.selectedInstrument)).coerceAtLeast(0)
+  val pagerState = rememberPagerState(initialPage = startPage) { sequence.size }
+  // Held above the pager so each page's position survives search replacing the pages.
+  val listStates = sequence.associateWith { rememberLazyListState() }
   val scope = rememberCoroutineScope()
   val intents by rememberUpdatedState(onIntent)
-  LaunchedEffect(pagerState) {
-    snapshotFlow { pagerState.settledPage }.collect { intents(MarketsIntent.SetInstrument(instruments[it])) }
+  LaunchedEffect(pagerState, sequence) {
+    snapshotFlow { pagerState.settledPage }.collect { intents(MarketsIntent.ShowPage(sequence[it])) }
   }
+  val currentKey = sequence[pagerState.currentPage.coerceIn(sequence.indices)]
   Column(modifier = modifier.fillMaxSize().background(FlareColors.Canvas)) {
     Column(Modifier.padding(horizontal = 24.dp)) {
       if (state.searching) {
@@ -117,23 +124,41 @@ fun MarketsScreen(
           },
         )
       }
-      AnimatedVisibility(
-        !state.searching,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut(),
-      ) {
+    }
+    AnimatedVisibility(
+      !state.searching,
+      enter = expandVertically() + fadeIn(),
+      exit = shrinkVertically() + fadeOut(),
+    ) {
+      Column {
         FlareSegmentedControl(
           options = instruments,
-          selectedOption = instruments[pagerState.currentPage],
-          onOptionSelected = { scope.launch { pagerState.animateScrollToPage(instruments.indexOf(it)) } },
+          selectedOption = currentKey.instrument,
+          onOptionSelected = { instrument ->
+            // Return to the chip last used for that product.
+            val target = sequence.indexOf(state.currentKey(instrument)).coerceAtLeast(0)
+            scope.launch { pagerState.animateScrollToPage(target) }
+          },
           label = {
             when (it) {
               MarketInstrumentFilter.PERPETUALS -> "Perpetuals"
               MarketInstrumentFilter.SPOT -> "Spot"
             }
           },
-          indicatorPosition = { pagerState.currentPage + pagerState.currentPageOffsetFraction },
+          modifier = Modifier.padding(horizontal = 24.dp),
+          // The pill only moves when a swipe crosses from one product's chips into the other's.
+          indicatorPosition = {
+            val position = pagerState.currentPage + pagerState.currentPageOffsetFraction
+            val from = position.toInt().coerceIn(sequence.indices)
+            val to = (from + 1).coerceAtMost(sequence.lastIndex)
+            val start = instruments.indexOf(sequence[from].instrument)
+            val end = instruments.indexOf(sequence[to].instrument)
+            start + (end - start) * (position - from)
+          },
         )
+        MarketFilterChips(sequence, currentKey) { key ->
+          scope.launch { pagerState.animateScrollToPage(sequence.indexOf(key)) }
+        }
       }
     }
     if (state.searching) {
@@ -142,10 +167,10 @@ fun MarketsScreen(
       HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        key = { instruments[it] },
+        key = { sequence[it].toString() },
       ) { index ->
-        val instrument = instruments[index]
-        MarketPageContent(state, state.page(instrument), instrument, onIntent, onMarketClick)
+        val key = sequence[index]
+        MarketPageContent(state, key, listStates.getValue(key), onIntent, onMarketClick)
       }
     }
   }
@@ -173,83 +198,89 @@ private fun MarketSearchBar(query: String, onQuery: (String) -> Unit, onCancel: 
   }
 }
 
-/** One product: its chips and its list, with its own selection and scroll position. */
+/** One stop in the sequence: a product filtered by one chip, with its own scroll position. */
 @Composable
 private fun MarketPageContent(
   state: MarketsUiState,
-  page: MarketPage,
-  instrument: MarketInstrumentFilter,
+  key: MarketPageKey,
+  listState: LazyListState,
   onIntent: (MarketsIntent) -> Unit,
   onMarketClick: (String) -> Unit,
 ) {
-  Column(Modifier.fillMaxSize()) {
-    MarketFilterChips(page, instrument, onIntent)
-    val title = marketSectionTitle(page.favoritesOnly, page.category)
-    if (state.loading && page.quotes.isEmpty()) {
-      Column(Modifier.padding(horizontal = 24.dp)) {
-        MarketSectionHeader(title, showPriceLabel = true)
-        MarketListSkeleton()
-      }
-    } else if (page.quotes.isEmpty()) {
-      Column(Modifier.padding(horizontal = 24.dp)) {
-        EmptyState(
-          title =
-            when {
-              state.error != null -> "Markets are offline"
-              page.favoritesOnly -> "Your watchlist starts here"
-              else -> "No markets found"
-            },
-          message =
-            if (state.error != null) "Prices appear as soon as market data arrives."
-            else if (page.favoritesOnly) "Tap the star beside a market to follow it here."
-            else "Try another category.",
-        )
-      }
-    } else {
-      LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 24.dp),
-      ) {
-        item { MarketSectionHeader(title, showPriceLabel = true) }
-        items(page.quotes, key = { it.market.address }) { quote ->
-          MarketQuoteRow(quote, state, onIntent, onMarketClick)
-        }
+  val quotes = state.pageQuotes[key].orEmpty()
+  val title = marketSectionTitle(key.favoritesOnly, key.category)
+  if (state.loading && quotes.isEmpty()) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+      MarketSectionHeader(title, showPriceLabel = true)
+      MarketListSkeleton()
+    }
+  } else if (quotes.isEmpty()) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+      EmptyState(
+        title =
+          when {
+            state.error != null -> "Markets are offline"
+            key.favoritesOnly -> "Your watchlist starts here"
+            else -> "No markets here yet"
+          },
+        message =
+          if (state.error != null) "Prices appear as soon as market data arrives."
+          else if (key.favoritesOnly) "Tap the star beside a market to follow it here."
+          else "Swipe to see other markets.",
+      )
+    }
+  } else {
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      state = listState,
+      contentPadding = PaddingValues(horizontal = 24.dp),
+    ) {
+      item { MarketSectionHeader(title, showPriceLabel = true) }
+      items(quotes, key = { it.market.address }) { quote ->
+        MarketQuoteRow(quote, state, onIntent, onMarketClick)
       }
     }
   }
 }
 
+/**
+ * Stays in place above the pager and acts as its indicator: the chip in view follows the swipe,
+ * and the row switches to the other product's chips as the swipe crosses into it.
+ */
 @Composable
 private fun MarketFilterChips(
-  page: MarketPage,
-  instrument: MarketInstrumentFilter,
-  onIntent: (MarketsIntent) -> Unit,
+  sequence: List<MarketPageKey>,
+  current: MarketPageKey,
+  onSelect: (MarketPageKey) -> Unit,
 ) {
-  LazyRow(
-    modifier = Modifier.padding(vertical = 12.dp),
-    contentPadding = PaddingValues(horizontal = 24.dp),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    item {
-      FlareChip("All", !page.favoritesOnly && page.category == null,
-        { onIntent(MarketsIntent.SetCategory(null, instrument)) })
+  AnimatedContent(
+    current.instrument,
+    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+    label = "marketChips",
+  ) { instrument ->
+    val chips = sequence.filter { it.instrument == instrument }
+    val rowState = rememberLazyListState()
+    LaunchedEffect(current) {
+      val index = chips.indexOf(current)
+      if (index >= 0) rowState.animateScrollToItem(index, scrollOffset = -48)
     }
-    item {
-      FlareChip(
-        text = "Watchlist",
-        selected = page.favoritesOnly,
-        onClick = { onIntent(MarketsIntent.SetFavoritesOnly(true, instrument)) },
-      )
-    }
-    items(page.categories, key = { it }) { category ->
-      val isCategorySelected = !page.favoritesOnly && page.category == category
-      FlareChip(
-        text = marketCategoryLabel(category),
-        selected = isCategorySelected,
-        onClick = {
-          onIntent(MarketsIntent.SetCategory(if (isCategorySelected) null else category, instrument))
-        },
-      )
+    LazyRow(
+      state = rowState,
+      modifier = Modifier.padding(vertical = 12.dp),
+      contentPadding = PaddingValues(horizontal = 24.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      items(chips, key = { it.toString() }) { key ->
+        FlareChip(
+          text = when {
+            key.favoritesOnly -> "Watchlist"
+            key.category != null -> marketCategoryLabel(key.category)
+            else -> "All"
+          },
+          selected = key == current,
+          onClick = { onSelect(key) },
+        )
+      }
     }
   }
 }

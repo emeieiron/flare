@@ -45,6 +45,16 @@ internal data class MarketFilter(
   }
 }
 
+/**
+ * One stop in the swipe sequence: a product and one of its chips. All, Watchlist, then each
+ * category, for perpetuals and then spot.
+ */
+data class MarketPageKey(
+  val instrument: MarketInstrumentFilter,
+  val favoritesOnly: Boolean = false,
+  val category: String? = null,
+)
+
 /** What one product page shows: its chips, its selection, and the markets that pass it. */
 data class MarketPage(
   val favoritesOnly: Boolean = true,
@@ -76,8 +86,14 @@ data class MarketsUiState(
   val searching: Boolean = false,
   val searchResults: MarketSearchResults = MarketSearchResults(),
   val pages: Map<MarketInstrumentFilter, MarketPage> = emptyMap(),
+  val pageSequence: List<MarketPageKey> = marketPageSequence(),
+  val pageQuotes: Map<MarketPageKey, List<MarketQuote>> = emptyMap(),
 ) {
   fun page(instrument: MarketInstrumentFilter): MarketPage = pages[instrument] ?: MarketPage()
+
+  /** The chip currently chosen for [instrument], as a stop in the sequence. */
+  fun currentKey(instrument: MarketInstrumentFilter): MarketPageKey =
+    page(instrument).let { MarketPageKey(instrument, it.favoritesOnly, it.category) }
 }
 
 sealed interface MarketsIntent {
@@ -101,6 +117,9 @@ sealed interface MarketsIntent {
   ) : MarketsIntent
 
   data class SetInstrument(val instrument: MarketInstrumentFilter) : MarketsIntent
+
+  /** A swipe settled on [key]: select its product and its chip together. */
+  data class ShowPage(val key: MarketPageKey) : MarketsIntent
 }
 
 class MarketsViewModel(
@@ -121,23 +140,10 @@ class MarketsViewModel(
             MarketPage(
               favoritesOnly = page.favoritesOnly,
               category = page.category,
-              categories =
-                when (instrument) {
-                  MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
-                  MarketInstrumentFilter.SPOT -> spotCategoryTabs
-                },
+              categories = marketCategories(instrument),
               quotes =
                 catalog.quotes.filter {
-                  val matchesInstrument =
-                    when (instrument) {
-                      MarketInstrumentFilter.PERPETUALS -> it.market.assetType == AssetType.PERP
-                      MarketInstrumentFilter.SPOT -> it.market.assetType == AssetType.SPOT
-                    }
-                  matchesInstrument &&
-                    (!page.favoritesOnly || it.favorite) &&
-                    (page.category == null ||
-                      (assets[assetKey(it.market.symbol)]?.kind?.normalizedCategory()
-                        ?: it.market.category.normalizedCategory()) == page.category)
+                  it.matches(MarketPageKey(instrument, page.favoritesOnly, page.category), assets)
                 },
             )
           }
@@ -157,6 +163,7 @@ class MarketsViewModel(
           searchResults =
             if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
           pages = pages,
+          pageQuotes = marketPageQuotes(catalog.quotes, assets),
         )
       }
       .stateIn(
@@ -189,11 +196,53 @@ class MarketsViewModel(
           f.updatePage(intent.instrument) { it.copy(category = intent.category, favoritesOnly = false) }
         }
       is MarketsIntent.SetInstrument -> filter.update { it.copy(instrument = intent.instrument) }
+      is MarketsIntent.ShowPage ->
+        filter.update { f ->
+          f.copy(instrument = intent.key.instrument).updatePage(intent.key.instrument) {
+            MarketPageFilter(intent.key.favoritesOnly, intent.key.category)
+          }
+        }
     }
   }
 }
 
 private fun String.normalizedCategory(): String? = trim().lowercase().takeIf { it.isNotEmpty() }
+
+private fun MarketQuote.matches(
+  key: MarketPageKey,
+  assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
+): Boolean {
+  val matchesInstrument =
+    when (key.instrument) {
+      MarketInstrumentFilter.PERPETUALS -> market.assetType == AssetType.PERP
+      MarketInstrumentFilter.SPOT -> market.assetType == AssetType.SPOT
+    }
+  return matchesInstrument &&
+    (!key.favoritesOnly || favorite) &&
+    (key.category == null ||
+      (assets[assetKey(market.symbol)]?.kind?.normalizedCategory()
+        ?: market.category.normalizedCategory()) == key.category)
+}
+
+internal fun marketCategories(instrument: MarketInstrumentFilter): List<String> =
+  when (instrument) {
+    MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
+    MarketInstrumentFilter.SPOT -> spotCategoryTabs
+  }
+
+/** The markets on every stop of the sequence, so neighbouring pages are ready mid-swipe. */
+fun marketPageQuotes(
+  quotes: List<MarketQuote>,
+  assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
+): Map<MarketPageKey, List<MarketQuote>> =
+  marketPageSequence().associateWith { key -> quotes.filter { it.matches(key, assets) } }
+
+/** Every stop a swipe passes through, in chip order: perpetuals first, then spot. */
+fun marketPageSequence(): List<MarketPageKey> =
+  MarketInstrumentFilter.entries.flatMap { instrument ->
+    listOf(MarketPageKey(instrument), MarketPageKey(instrument, favoritesOnly = true)) +
+      marketCategories(instrument).map { MarketPageKey(instrument, category = it) }
+  }
 
 private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
 private val spotCategoryTabs = listOf("crypto")
