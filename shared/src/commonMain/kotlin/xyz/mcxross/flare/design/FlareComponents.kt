@@ -203,18 +203,22 @@ fun FlareAmountField(
   supportingText: String? = null,
   isError: Boolean = false,
   enabled: Boolean = true,
+  valueHint: String? = null,
+  compact: Boolean = false,
   interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
   val focused by interactionSource.collectIsFocusedAsState()
-  val borderColor by animateColorAsState(
+  val labelColor by animateColorAsState(
     when {
-      !enabled -> FlareColors.BorderSubtle.copy(alpha = 0.5f)
+      !enabled -> FlareColors.TextDisabled
       isError -> FlareColors.Negative
-      focused -> FlareColors.Positive
-      else -> FlareColors.BorderSubtle
+      focused -> FlareColors.TextPrimary
+      else -> FlareColors.TextTertiary
     }
   )
-  val containerColor = if (enabled) FlareColors.Elevated else FlareColors.Surface
+  val shape = RoundedCornerShape(if (compact) 14.dp else 18.dp)
+  val valueStyle =
+    if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
 
   Column(
     modifier = modifier,
@@ -225,36 +229,29 @@ fun FlareAmountField(
       onValueChange = onValueChange,
       modifier = Modifier
         .fillMaxWidth()
-        .clip(RoundedCornerShape(16.dp))
-        .background(containerColor)
-        .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-        .padding(16.dp),
+        .clip(shape)
+        .background(FlareColors.Surface)
+        .then(if (isError) Modifier.border(1.dp, FlareColors.Negative, shape) else Modifier)
+        .padding(
+          horizontal = if (compact) 14.dp else 16.dp,
+          vertical = if (compact) 12.dp else 14.dp,
+        ),
       enabled = enabled,
       singleLine = true,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       interactionSource = interactionSource,
-      textStyle = MaterialTheme.typography.titleLarge.copy(
+      textStyle = valueStyle.copy(
         color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
       ),
       cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
       decorationBox = { innerTextField ->
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          // Top metadata row
+        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Text(
-              text = label,
-              style = MaterialTheme.typography.labelSmall,
-              color = when {
-                !enabled -> FlareColors.TextDisabled
-                isError -> FlareColors.Negative
-                focused -> FlareColors.TextPrimary
-                else -> FlareColors.TextSecondary
-              },
-            )
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = labelColor)
             if (availableText != null) {
               Text(
                 text = availableText,
@@ -269,55 +266,43 @@ fun FlareAmountField(
               )
             }
           }
-          // Main input row
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Box(modifier = Modifier.weight(1f)) {
-              if (value.isBlank()) {
-                Text(
-                  text = placeholder,
-                  style = MaterialTheme.typography.titleLarge,
-                  color = FlareColors.TextTertiary,
-                )
+          Row(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f).alignByBaseline()) {
+              if (value.isEmpty()) {
+                Text(text = placeholder, style = valueStyle, color = FlareColors.TextDisabled)
               }
               innerTextField()
             }
-            if (onMaxClick != null || unit != null) {
-              Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(start = 12.dp),
+            if (onMaxClick != null) {
+              Box(
+                modifier = Modifier.align(Alignment.CenterVertically)
+                  .padding(start = 10.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(FlareColors.Surface)
+                  .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
+                  .clickable(enabled = enabled, onClick = onMaxClick)
+                  .padding(horizontal = 10.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
               ) {
-                if (onMaxClick != null) {
-                  Box(
-                    modifier = Modifier
-                      .clip(RoundedCornerShape(8.dp))
-                      .background(FlareColors.Surface)
-                      .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
-                      .clickable(enabled = enabled, onClick = onMaxClick)
-                      .padding(horizontal = 10.dp, vertical = 5.dp),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    Text(
-                      text = "MAX",
-                      style = MaterialTheme.typography.labelMedium,
-                      color = FlareColors.Positive,
-                      fontWeight = FontWeight.SemiBold,
-                    )
-                  }
-                }
-                if (unit != null) {
-                  Text(
-                    text = unit,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = FlareColors.TextSecondary,
-                    fontWeight = FontWeight.Medium,
-                  )
-                }
+                Text(
+                  text = "MAX",
+                  style = MaterialTheme.typography.labelMedium,
+                  color = FlareColors.Positive,
+                  fontWeight = FontWeight.SemiBold,
+                )
               }
             }
+            if (unit != null) {
+              Text(
+                text = unit,
+                style = MaterialTheme.typography.labelMedium,
+                color = FlareColors.TextTertiary,
+                modifier = Modifier.padding(start = 10.dp).alignByBaseline(),
+              )
+            }
+          }
+          if (valueHint != null) {
+            Text(text = valueHint, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
           }
         }
       },

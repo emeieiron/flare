@@ -2,6 +2,7 @@ package xyz.mcxross.flare.design
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,11 +19,13 @@ fun ExitPriceFields(
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
 ) {
-  Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    FlareAmountField(takeProfit, onTakeProfit, label = "Take-profit price", unit = "USDC",
-      placeholder = "Optional", enabled = enabled, modifier = Modifier.fillMaxWidth())
-    FlareAmountField(stopLoss, onStopLoss, label = "Stop-loss price", unit = "USDC",
-      placeholder = "Optional", enabled = enabled, modifier = Modifier.fillMaxWidth())
+  Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      FlareAmountField(takeProfit, onTakeProfit, Modifier.weight(1f), label = "Take profit",
+        unit = "USDC", enabled = enabled, compact = true)
+      FlareAmountField(stopLoss, onStopLoss, Modifier.weight(1f), label = "Stop loss",
+        unit = "USDC", enabled = enabled, compact = true)
+    }
     Text("Exit prices trigger a closing order. Execution price can vary.",
       style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
   }
