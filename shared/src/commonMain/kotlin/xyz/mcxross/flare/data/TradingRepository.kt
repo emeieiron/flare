@@ -1,8 +1,11 @@
 package xyz.mcxross.flare.data
 
-import kotlin.time.Clock
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.math.pow
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -12,6 +15,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
@@ -81,6 +85,17 @@ interface TradingRepository {
   fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState>
 
   suspend fun reconcilePending(): ReconciliationResult
+
+  /**
+   * Confirms one user action that signs several transactions, so the person authenticates once for
+   * the action rather than once per signature.
+   */
+  suspend fun <T> confirmedAction(prompt: VaultPrompt, block: suspend () -> T): T = block()
+}
+
+/** Marks work the person already confirmed, so the signatures inside it don't ask again. */
+private class ConfirmedAction : AbstractCoroutineContextElement(ConfirmedAction) {
+  companion object Key : CoroutineContext.Key<ConfirmedAction>
 }
 
 class DefaultTradingRepository(
@@ -134,6 +149,15 @@ class DefaultTradingRepository(
         subaccount == null || selected.selectedSubaccount?.sameAptosAddress(subaccount) == true
       ) {
         "The selected account changed. Review the action again."
+      }
+      // Trading keys sign silently unless the person asked to confirm each action (the default).
+      // Owner actions already authenticate on their own, every time.
+      if (
+        signer == TradingSigner.API &&
+          selected.confirmTransactions &&
+          currentCoroutineContext()[ConfirmedAction] == null
+      ) {
+        wallets.confirmIdentity(prompt)
       }
       val activeSession =
         if (signer == TradingSigner.API) {
@@ -293,6 +317,16 @@ class DefaultTradingRepository(
         }
       } else submissionMutex.unlock()
     }
+  }
+
+  override suspend fun <T> confirmedAction(prompt: VaultPrompt, block: suspend () -> T): T {
+    if (
+      currentCoroutineContext()[ConfirmedAction] == null &&
+        preferences.values.first().confirmTransactions
+    ) {
+      wallets.confirmIdentity(prompt)
+    }
+    return withContext(ConfirmedAction()) { block() }
   }
 
   override suspend fun transactionStatus(reference: String): TransactionState {

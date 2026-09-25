@@ -39,6 +39,7 @@ import xyz.mcxross.flare.decibel.model.validate
 import xyz.mcxross.flare.decibel.model.validateTwap
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 
 enum class ChartStyle {
@@ -477,34 +478,41 @@ class TradeViewModel(
           }
           val position = snapshot.positions.firstOrNull { it.market == market.address }
           val terminal =
-            placeConfiguredOrder(
-              configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
-              entry = entryCommand,
-              execute = { command ->
-                trading.execute(
-                  command,
-                  VaultPrompt(
-                    title =
-                      if (command is DecibelCommand.ConfigureMarket)
-                        "Apply ${state.leverage}× leverage"
-                      else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
-                    subtitle = "Confirm your identity",
-                  ),
-                  if (
-                    feePayment == FeePayment.SELF_PAY &&
-                      (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
+            trading.confirmedAction(
+              VaultPrompt(
+                title = "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                subtitle = "Confirm your identity",
+              )
+            ) {
+              placeConfiguredOrder(
+                configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
+                entry = entryCommand,
+                execute = { command ->
+                  trading.execute(
+                    command,
+                    VaultPrompt(
+                      title =
+                        if (command is DecibelCommand.ConfigureMarket)
+                          "Apply ${state.leverage}× leverage"
+                        else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                      subtitle = "Confirm your identity",
+                    ),
+                    if (
+                      feePayment == FeePayment.SELF_PAY &&
+                        (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
+                    )
+                      FeePayment.SELF_PAY
+                    else FeePayment.SPONSORED,
                   )
-                    FeePayment.SELF_PAY
-                  else FeePayment.SPONSORED,
-                )
-              },
-              onState = { stage, transaction ->
-                mutableUiState.update {
-                  if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
-                  else it.copy(transaction = transaction)
-                }
-              },
-            )
+                },
+                onState = { stage, transaction ->
+                  mutableUiState.update {
+                    if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
+                    else it.copy(transaction = transaction)
+                  }
+                },
+              )
+            }
           when (val transaction = terminal) {
             is TransactionState.Committed -> accounts.refresh()
             is TransactionState.Failed -> {
@@ -519,8 +527,11 @@ class TradeViewModel(
           }
         }
           .onFailure { error ->
-            mutableUiState.update {
-              it.copy(orderError = actionFailure(error.message, "Your order wasn’t placed."))
+            // Dismissing the confirmation just leaves the review as it was.
+            if (!error.isAuthorizationCancelled()) {
+              mutableUiState.update {
+                it.copy(orderError = actionFailure(error.message, "Your order wasn’t placed."))
+              }
             }
           }
       } finally {
