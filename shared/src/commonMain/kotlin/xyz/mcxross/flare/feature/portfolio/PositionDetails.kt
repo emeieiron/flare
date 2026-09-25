@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -7,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -49,6 +49,7 @@ import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareSheetShape
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 
@@ -67,8 +68,9 @@ fun PositionManagementSheet(state: PortfolioUiState, onIntent: (PortfolioIntent)
       onDismissRequest = { if (!busy) dismiss() },
       sheetState = sheetState,
       sheetGesturesEnabled = !state.busy,
-      shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-      containerColor = FlareColors.Surface,
+      modifier = Modifier.border(1.dp, FlareColors.BorderSubtle, FlareSheetShape),
+      shape = FlareSheetShape,
+      containerColor = FlareColors.Canvas,
       contentColor = FlareColors.TextPrimary,
       scrimColor = Color.Black.copy(alpha = 0.64f),
       tonalElevation = 0.dp,

@@ -1,7 +1,9 @@
 package xyz.mcxross.flare.design
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -12,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -141,13 +144,20 @@ fun BackBar(
   }
 }
 
+val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlareSheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    containerColor = FlareColors.Surface,
+    modifier = Modifier.border(1.dp, FlareColors.BorderSubtle, FlareSheetShape),
+    shape = FlareSheetShape,
+    containerColor = FlareColors.Canvas,
+    contentColor = FlareColors.TextPrimary,
+    tonalElevation = 0.dp,
+    scrimColor = Color.Black.copy(alpha = 0.64f),
   ) {
     Column(
       Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()

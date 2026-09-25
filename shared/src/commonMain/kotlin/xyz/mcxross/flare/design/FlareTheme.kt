@@ -29,8 +29,8 @@ import org.jetbrains.compose.resources.Font
 
 object FlareColors {
   val Canvas = Color(0xFF000000)
-  val Surface = Color(0xFF101210)
-  val Elevated = Color(0xFF191C19)
+  val Surface = Color(0xFF111111)
+  val Elevated = Color(0xFF1A1A1A)
   val Hover = Color(0xFF202020)
   val BorderSubtle = Color(0xFF242424)
   val BorderDefault = Color(0xFF343434)
