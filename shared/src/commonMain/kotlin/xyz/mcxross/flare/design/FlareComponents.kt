@@ -1,6 +1,9 @@
 package xyz.mcxross.flare.design
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -13,7 +16,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import com.valentinilk.shimmer.shimmer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,18 +48,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
+import com.valentinilk.shimmer.shimmer
 
 enum class FlareButtonStyle {
   PRIMARY,
@@ -317,6 +327,7 @@ fun FlareAmountField(
   }
 }
 
+/** A borderless pill on the same surface as every other field; only the cursor is lime. */
 @Composable
 fun FlareSearchField(
   value: String,
@@ -324,23 +335,56 @@ fun FlareSearchField(
   placeholder: String,
   leadingIcon: ImageVector,
   modifier: Modifier = Modifier,
+  focusRequester: FocusRequester? = null,
 ) {
-  FlareTextField(
+  val keyboard = LocalSoftwareKeyboardController.current
+  BasicTextField(
     value = value,
     onValueChange = onValueChange,
-    placeholder = placeholder,
-    leadingIcon = {
-      Icon(leadingIcon, contentDescription = null, tint = FlareColors.TextSecondary, modifier = Modifier.size(20.dp))
-    },
-    trailingIcon = {
-      if (value.isNotEmpty()) {
-        IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(24.dp)) {
-          Icon(Icons.Outlined.Close, contentDescription = "Clear search", tint = FlareColors.TextSecondary, modifier = Modifier.size(18.dp))
+    modifier = modifier.then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier),
+    singleLine = true,
+    textStyle = MaterialTheme.typography.bodyLarge.copy(color = FlareColors.TextPrimary),
+    cursorBrush = SolidColor(FlareColors.Positive),
+    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+    keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+    decorationBox = { innerTextField ->
+      Row(
+        Modifier.fillMaxWidth()
+          .heightIn(min = 44.dp)
+          .clip(CircleShape)
+          .background(FlareColors.Surface)
+          .padding(start = 14.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Icon(leadingIcon, contentDescription = null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+        Box(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+          if (value.isEmpty()) {
+            Text(
+              placeholder,
+              style = MaterialTheme.typography.bodyLarge,
+              color = FlareColors.TextTertiary,
+              maxLines = 1,
+            )
+          }
+          innerTextField()
+        }
+        if (value.isNotEmpty()) {
+          IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(40.dp)) {
+            Box(
+              Modifier.size(18.dp).background(FlareColors.BorderDefault, CircleShape),
+              contentAlignment = Alignment.Center,
+            ) {
+              Icon(
+                Icons.Outlined.Close,
+                contentDescription = "Clear search",
+                tint = FlareColors.TextPrimary,
+                modifier = Modifier.size(12.dp),
+              )
+            }
+          }
         }
       }
     },
-    singleLine = true,
-    modifier = modifier,
   )
 }
 
@@ -508,6 +552,10 @@ fun IndicatorChip(
   FlareChip(text, selected, onClick, modifier, semanticColor = color)
 }
 
+/**
+ * One quiet pill track with a lighter pill that slides to the selection, the same way selection
+ * reads everywhere else: lighter means chosen.
+ */
 @Composable
 fun <T> FlareSegmentedControl(
   options: List<T>,
@@ -517,27 +565,45 @@ fun <T> FlareSegmentedControl(
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
 ) {
+  val index = options.indexOf(selectedOption).coerceAtLeast(0)
+  val position by animateFloatAsState(
+    index.toFloat(),
+    spring(stiffness = Spring.StiffnessMediumLow),
+    label = "segmentIndicator",
+  )
   Row(
     modifier =
       modifier
         .fillMaxWidth()
-        .clip(RoundedCornerShape(12.dp))
-        .background(FlareColors.Elevated)
-        .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(12.dp))
-        .padding(3.dp),
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+        .clip(CircleShape)
+        .background(FlareColors.Surface)
+        .drawBehind {
+          val inset = SegmentInset.toPx()
+          val width = (size.width - 2 * inset) / options.size.coerceAtLeast(1)
+          val height = size.height - 2 * inset
+          drawRoundRect(
+            FlareColors.BorderSubtle,
+            topLeft = Offset(inset + position * width, inset),
+            size = Size(width, height),
+            cornerRadius = CornerRadius(height / 2),
+          )
+        }
+        .padding(SegmentInset),
   ) {
     options.forEach { option ->
       val selected = option == selectedOption
-      val background by animateColorAsState(if (selected) FlareColors.Canvas else Color.Transparent)
-      val textColor by
-        animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
+      val textColor by animateColorAsState(
+        when {
+          !enabled -> FlareColors.TextDisabled
+          selected -> FlareColors.TextPrimary
+          else -> FlareColors.TextTertiary
+        }
+      )
       Box(
         modifier =
           Modifier.weight(1f)
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(background)
+            .heightIn(min = 42.dp)
+            .clip(CircleShape)
             .selectable(selected = selected, enabled = enabled, role = Role.Tab) { onOptionSelected(option) },
         contentAlignment = Alignment.Center,
       ) {
@@ -545,12 +611,13 @@ fun <T> FlareSegmentedControl(
           text = label(option),
           color = textColor,
           style = MaterialTheme.typography.labelMedium,
-          fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
       }
     }
   }
 }
+
+private val SegmentInset = 3.dp
 
 @Composable
 fun <T> TimeRangeSelector(
