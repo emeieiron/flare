@@ -114,6 +114,7 @@ private fun PreviewScreens(initialScreen: String) {
                   quotes = quotes.filter { it.market.assetType == AssetType.SPOT },
                 ),
               ),
+              pageQuotes = marketPageQuotes(quotes, emptyMap()),
             ),
             { intent ->
               when (intent) {
