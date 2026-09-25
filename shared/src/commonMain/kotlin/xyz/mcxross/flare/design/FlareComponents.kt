@@ -848,7 +848,7 @@ fun MarketListRow(
 }
 
 @Composable
-private fun AssetIcon(asset: AssetIdentity, modifier: Modifier = Modifier) {
+internal fun AssetIcon(asset: AssetIdentity, modifier: Modifier = Modifier) {
   Box(
     modifier = modifier.clip(CircleShape).background(FlareColors.Elevated),
     contentAlignment = Alignment.Center,
