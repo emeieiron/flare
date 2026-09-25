@@ -72,10 +72,10 @@ internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatchin
     require(frequency >= 60uL) { "Frequency must be at least 1 minute" }
     require(frequency <= duration) { "Frequency cannot exceed duration" }
     val result = orderDraft(side).validateTwap(market, frequency, duration)
-    require(result.isValid) { result.errors.joinToString("\n") { it.message() } }
+    require(result.isValid) { result.errors.joinToString("\n") { it.message(market) } }
   } else {
     val result = orderDraft(side).validate(market, marketDetails.orderBook)
-    require(result.isValid) { result.errors.joinToString("\n") { it.message() } }
+    require(result.isValid) { result.errors.joinToString("\n") { it.message(market) } }
   }
 }
   .exceptionOrNull()

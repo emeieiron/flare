@@ -31,10 +31,12 @@ import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
+import xyz.mcxross.flare.decibel.model.Market
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
+import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.decibel.model.validate
 import xyz.mcxross.flare.decibel.model.validateTwap
 import xyz.mcxross.flare.design.actionFailure
@@ -445,7 +447,7 @@ class TradeViewModel(
               val validated =
                 validation.value
                   ?: error(
-                    validation.errors.joinToString("\n", transform = OrderValidationError::message)
+                    validation.errors.joinToString("\n") { it.message(market) }
                   )
               DecibelCommand.PlaceSpotOrder(subaccount, validated)
             } else if (state.orderType == OrderType.TWAP) {
@@ -455,7 +457,7 @@ class TradeViewModel(
               val twapValidated =
                 twapValidation.value
                   ?: error(
-                    twapValidation.errors.joinToString("\n", transform = OrderValidationError::message)
+                    twapValidation.errors.joinToString("\n") { it.message(market) }
                   )
               DecibelCommand.PlaceTwapOrder(subaccount, twapValidated)
             } else {
@@ -463,7 +465,7 @@ class TradeViewModel(
               val validated =
                 validation.value
                   ?: error(
-                    validation.errors.joinToString("\n", transform = OrderValidationError::message)
+                    validation.errors.joinToString("\n") { it.message(market) }
                   )
               DecibelCommand.PlaceOrder(subaccount, validated)
             }
@@ -645,18 +647,45 @@ private fun decimalCharacters(value: String): String =
 private const val CHART_RETRY_BASE_MS = 2_000L
 private const val CHART_RETRY_MAX_MS = 30_000L
 
-internal fun OrderValidationError.message(): String =
-  when (this) {
-    is OrderValidationError.InvalidDecimal -> "$field: $reason"
-    is OrderValidationError.InvalidMarketAddress -> "$field: $reason"
-    is OrderValidationError.InvalidBuilderAddress -> "$field: $reason"
-    is OrderValidationError.InvalidBuilderFee -> "$field: $reason"
-    is OrderValidationError.MarketMismatch -> "$field does not match the selected market"
-    is OrderValidationError.Overflow -> "$field is too large"
-    is OrderValidationError.TooPrecise -> "$field supports at most $allowedDecimals decimals"
-    is OrderValidationError.NotAligned -> "$field must align to increment $increment"
-    is OrderValidationError.BelowMinimum -> "$field is below minimum $minimum"
-    is OrderValidationError.AboveMaximum -> "$field exceeds maximum $maximum"
+/**
+ * Validation speaks in the market's own units: sizes in the asset, prices in dollars, never the
+ * raw on-chain integers the checks compare.
+ */
+internal fun OrderValidationError.message(market: Market): String {
+  val precision = market.precision
+  val asset = market.symbol.substringBefore('/')
+  fun label(field: String) =
+    when (field) {
+      "size" -> "Size"
+      "price" -> "Price"
+      "take-profit trigger", "take-profit limit" -> "Take profit"
+      "stop-loss trigger", "stop-loss limit" -> "Stop loss"
+      else -> field.replaceFirstChar(Char::uppercase)
+    }
+  fun amount(field: String, units: ULong): String =
+    if (field == "size") "${units.plainDecimal(precision.sizeDecimals)} $asset"
+    else "$${units.plainDecimal(precision.priceDecimals)}"
+  return when (this) {
+    is OrderValidationError.InvalidDecimal -> "${label(field)}: $reason"
+    is OrderValidationError.InvalidMarketAddress -> "${label(field)}: $reason"
+    is OrderValidationError.InvalidBuilderAddress -> "${label(field)}: $reason"
+    is OrderValidationError.InvalidBuilderFee -> "${label(field)}: $reason"
+    is OrderValidationError.MarketMismatch -> "${label(field)} doesn’t match the selected market"
+    is OrderValidationError.Overflow -> "${label(field)} is too large"
+    is OrderValidationError.TooPrecise ->
+      "${label(field)} can have at most $allowedDecimals decimal${if (allowedDecimals == 1) "" else "s"}"
+    is OrderValidationError.NotAligned ->
+      "${label(field)} must be in steps of ${amount(field, increment)}"
+    is OrderValidationError.BelowMinimum ->
+      if (field == "size") "Minimum size is ${amount(field, minimum)}"
+      else "${label(field)} must be at least ${amount(field, minimum)}"
+    is OrderValidationError.AboveMaximum ->
+      "${label(field)} can be at most ${amount(field, maximum)}"
     OrderValidationError.MissingLimitPrice -> "Enter a limit price"
     OrderValidationError.MissingMarketPrice -> "A reliable best bid and ask are required"
   }
+}
+
+/** On-chain units as a readable decimal: 1000000000 at 8 decimals reads "10". */
+private fun ULong.plainDecimal(decimals: Int): String =
+  toDecimalString(decimals).let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }
