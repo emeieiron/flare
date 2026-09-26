@@ -108,6 +108,10 @@ data class PortfolioUiState(
   val takeProfitInput: String = "",
   val stopLossInput: String = "",
   val positionTransaction: TransactionState? = null,
+  /** The position a close is running for, or waiting on a fee decision for. */
+  val closingMarket: String? = null,
+  /** Set once a close lands, until the screen that asked for it has reacted. */
+  val closedMarket: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
@@ -184,7 +188,14 @@ sealed interface PortfolioIntent {
 
   data object DismissPositionManagement : PortfolioIntent
 
-  data object ClosePosition : PortfolioIntent
+  /** Sells or buys back the whole position in [market] at the market price. */
+  data class ClosePosition(val market: String) : PortfolioIntent
+
+  /** The close confirmation was dismissed without closing. */
+  data object CancelClose : PortfolioIntent
+
+  /** The screen reacted to [PortfolioUiState.closedMarket]. */
+  data object CloseHandled : PortfolioIntent
 
   data class ChangeTakeProfit(val value: String) : PortfolioIntent
 
@@ -438,12 +449,8 @@ class PortfolioViewModel(
         }
       is PortfolioIntent.ManagePosition -> {
         val position = accounts.snapshot.value.positions.firstOrNull { it.market == intent.market }
-        val tpStr = position?.takeProfitTriggerPrice?.let { p ->
-          formatPrice(p).replace(",", "").replace("$", "").trim()
-        }.orEmpty()
-        val slStr = position?.stopLossTriggerPrice?.let { p ->
-          formatPrice(p).replace(",", "").replace("$", "").trim()
-        }.orEmpty()
+        val tpStr = exitPriceInput(position?.takeProfitTriggerPrice)
+        val slStr = exitPriceInput(position?.stopLossTriggerPrice)
         local.update {
           it.copy(
             managedPositionMarket = intent.market,
@@ -464,7 +471,17 @@ class PortfolioViewModel(
             actionError = null,
           )
         }
-      PortfolioIntent.ClosePosition -> closePosition(FeePayment.SPONSORED)
+      is PortfolioIntent.ClosePosition -> {
+        local.update {
+          it.copy(closingMarket = intent.market, closedMarket = null, positionTransaction = null)
+        }
+        closePosition(intent.market, FeePayment.SPONSORED)
+      }
+      PortfolioIntent.CancelClose ->
+        if (!local.value.busy) {
+          local.update { it.copy(closingMarket = null, positionTransaction = null, actionError = null) }
+        }
+      PortfolioIntent.CloseHandled -> local.update { it.copy(closedMarket = null) }
       is PortfolioIntent.ChangeTakeProfit ->
         local.update {
           it.copy(takeProfitInput = decimalCharacters(intent.value), positionTransaction = null)
@@ -510,9 +527,11 @@ class PortfolioViewModel(
     }
   }
 
-  private fun closePosition(feePayment: FeePayment) =
+  private fun closePosition(market: String, feePayment: FeePayment) =
     launchAction("Your position stayed open.") {
-      val position = managedPosition()
+      val position =
+        uiState.value.account.positions.firstOrNull { it.market == market }
+          ?: error("This position is no longer open")
       val quote = marketQuote(position.market)
       marketDetails.refresh(position.market)
       val details = marketDetails.details.value
@@ -538,6 +557,7 @@ class PortfolioViewModel(
 
   private fun setTpSl(feePayment: FeePayment) =
     launchAction("Your exits weren’t changed.") {
+      local.update { it.copy(closingMarket = null) }
       val position = managedPosition()
       val quote = marketQuote(position.market)
       val state = local.value
@@ -585,7 +605,14 @@ class PortfolioViewModel(
       )
       .collect { transaction -> local.update { it.copy(positionTransaction = transaction) } }
     when (val terminal = local.value.positionTransaction) {
-      is TransactionState.Committed -> accounts.refresh()
+      is TransactionState.Committed -> {
+        local.value.closingMarket?.let { market ->
+          if (command is DecibelCommand.PlaceOrder) {
+            local.update { it.copy(closingMarket = null, closedMarket = market) }
+          }
+        }
+        accounts.refresh()
+      }
       is TransactionState.Failed -> {
         if (terminal.selfPayEstimateOctas == null) error(terminal.message)
         trading.apiWalletTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
@@ -862,3 +889,7 @@ private fun decimalCharacters(value: String): String =
       val dot = filtered.indexOf('.')
       if (dot < 0) filtered else filtered.take(dot + 1) + filtered.drop(dot + 1).replace(".", "")
     }
+
+/** A saved exit price as the plain number the exit fields edit. */
+internal fun exitPriceInput(price: Double?): String =
+  price?.let { formatPrice(it).replace(",", "").replace("$", "").trim() }.orEmpty()

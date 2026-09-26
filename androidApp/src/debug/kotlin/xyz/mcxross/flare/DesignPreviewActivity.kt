@@ -65,6 +65,7 @@ private fun PreviewScreens(initialScreen: String) {
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
   var settings by remember { mutableStateOf(previewSettingsState(initialScreen)) }
   var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
+  var previewPosition by remember { mutableStateOf<String?>(null) }
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
     Text(
       "DESIGN PREVIEW · SAMPLE DATA",
@@ -178,13 +179,14 @@ private fun PreviewScreens(initialScreen: String) {
             onOpenActivity = { screen = "activity" },
           )
         "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many" ->
-          PortfolioScreen(portfolio, { intent ->
-            portfolio = when (intent) {
-              is xyz.mcxross.flare.feature.portfolio.PortfolioIntent.ManagePosition -> portfolio.copy(managedPositionMarket = intent.market)
-              xyz.mcxross.flare.feature.portfolio.PortfolioIntent.DismissPositionManagement -> portfolio.copy(managedPositionMarket = null)
-              else -> portfolio
-            }
-          }, { screen = "welcome" })
+          previewPosition?.let { market ->
+            PositionScreen(portfolio, market, { portfolio = previewPortfolioIntent(portfolio, it) }, { previewPosition = null })
+          } ?: PortfolioScreen(
+            portfolio,
+            { portfolio = previewPortfolioIntent(portfolio, it) },
+            { screen = "welcome" },
+            onPositionClick = { previewPosition = it },
+          )
         "activity" ->
           OrdersScreen(
             OrdersUiState(section = section),
@@ -241,6 +243,18 @@ private fun previewSettingsState(screen: String): SettingsUiState =
       defaultBuilderAddress = "0x51c0de0b7e2a4f6c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
       preferences = FlarePreferences(builderApproved = true, builderFeeBps = 5),
     )
+
+/** Enough of the portfolio's behaviour to walk through a position and its close sheet. */
+private fun previewPortfolioIntent(state: PortfolioUiState, intent: PortfolioIntent): PortfolioUiState =
+  when (intent) {
+    is PortfolioIntent.ManagePosition -> state.copy(managedPositionMarket = intent.market)
+    PortfolioIntent.DismissPositionManagement -> state.copy(managedPositionMarket = null)
+    is PortfolioIntent.ChangeTakeProfit -> state.copy(takeProfitInput = intent.value)
+    is PortfolioIntent.ChangeStopLoss -> state.copy(stopLossInput = intent.value)
+    is PortfolioIntent.ClosePosition -> state.copy(closedMarket = intent.market)
+    PortfolioIntent.CloseHandled -> state.copy(closedMarket = null)
+    else -> state
+  }
 
 private fun previewQuotes(): List<MarketQuote> =
   listOf(
