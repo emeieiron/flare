@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -28,6 +29,9 @@ enum class Outcome(internal val file: String) {
   SUCCESS("files/order_success.json"),
   FAILURE("files/order_failure.json"),
 }
+
+/** How far the halo and the settle bounce draw past the 52dp circle. */
+private val HALO_ROOM = 14.dp
 
 /** Moment the icon settles, where the haptic lands so touch and motion agree. */
 private const val SETTLE_MS = 550L
@@ -60,8 +64,13 @@ fun OutcomeIcon(outcome: Outcome, modifier: Modifier = Modifier) {
       if (outcome == Outcome.SUCCESS) HapticFeedbackType.Confirm else HapticFeedbackType.Reject
     )
   }
-  // The layout holds only the 52dp circle; the canvas around it leaves the halo room to spread.
-  Box(modifier.size(52.dp), contentAlignment = Alignment.Center) {
+  // The layout keeps the circle's 52dp width, so the ring lines up with the text beside and below
+  // it, and reserves the halo's room above: a parent that clips at its top edge, such as a scroll
+  // area, still shows the whole icon. Sideways the halo spreads into the screen gutter.
+  Box(
+    modifier.padding(top = HALO_ROOM).size(52.dp),
+    contentAlignment = Alignment.Center,
+  ) {
     Image(
       painter = rememberLottiePainter(
         composition = composition,

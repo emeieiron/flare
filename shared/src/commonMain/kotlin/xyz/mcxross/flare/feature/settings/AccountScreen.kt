@@ -76,6 +76,7 @@ import xyz.mcxross.flare.design.OutcomeIcon
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
+import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
@@ -322,7 +323,9 @@ fun WithdrawSheet(
     onDismiss = onDismiss,
     dismissible = !state.withdrawing,
   ) {
-    Column(Modifier.fillMaxWidth().animateContentSize()) {
+    // The height animates between stages. Its clip spans the full sheet, not just the text column, so
+    // anything that draws into the gutter, like the outcome icon's halo, isn't cut at the margin.
+    Column(Modifier.fullBleed().animateContentSize().padding(horizontal = 24.dp)) {
       when (stage) {
         WithdrawStage.FORM -> WithdrawForm(state, onIntent) { reviewing = true }
         WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, feeEstimate, resuming) { reviewing = false }
@@ -466,7 +469,7 @@ private fun WithdrawSent(state: SettingsUiState, hash: String, onDone: () -> Uni
   val revealed = rememberOutcomeReveal()
   val amount = withdrawAmountText(state)
   val recipient = shortAddress(state.withdrawDestination.trim())
-  OutcomeIcon(Outcome.SUCCESS, Modifier.padding(top = 8.dp))
+  OutcomeIcon(Outcome.SUCCESS)
   Column(revealed) {
     Text("Withdrawal complete", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
     Text(
@@ -502,7 +505,7 @@ private fun WithdrawFailed(state: SettingsUiState, onIntent: (SettingsIntent) ->
         "It isn’t clear yet whether it went through. Trying again checks first, so nothing is sent twice."
       else -> "Your USDC is still in your trading account."
     }
-  OutcomeIcon(Outcome.FAILURE, Modifier.padding(top = 8.dp))
+  OutcomeIcon(Outcome.FAILURE)
   Column(revealed) {
     Text("Withdrawal didn’t go through", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.headlineSmall)
     Text(
