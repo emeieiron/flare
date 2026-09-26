@@ -23,6 +23,7 @@ import xyz.mcxross.flare.feature.portfolio.*
 import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.store.WithdrawalContinuation
 
 /** Offline design harness. Debug source set only; no repositories, keys, or transactions. */
 class DesignPreviewActivity : FragmentActivity() {
@@ -188,6 +189,25 @@ private fun PreviewScreens(initialScreen: String) {
             { screen = "welcome" },
             onPositionClick = { previewPosition = it },
           )
+        "withdraw-form", "withdraw-invalid", "withdraw-over", "withdraw-review", "withdraw-working",
+        "withdraw-sending", "withdraw-selfpay", "withdraw-resume", "withdraw-sent", "withdraw-failed",
+        "withdraw-uncertain" -> {
+          var withdraw by remember { mutableStateOf(previewWithdrawState(screen)) }
+          Box(Modifier.fillMaxSize())
+          WithdrawSheet(
+            withdraw,
+            { intent ->
+              withdraw = when (intent) {
+                is SettingsIntent.ChangeWithdrawDestination -> withdraw.copy(withdrawDestination = intent.address)
+                is SettingsIntent.ChangeWithdrawAmount -> withdraw.copy(withdrawAmount = intent.amount)
+                SettingsIntent.EditWithdraw -> withdraw.copy(withdrawTransaction = null, withdrawError = null)
+                else -> withdraw
+              }
+            },
+            {},
+            startInReview = screen !in setOf("withdraw-form", "withdraw-invalid", "withdraw-over"),
+          )
+        }
         "qr" ->
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             FlareQrCode(
@@ -252,6 +272,41 @@ private fun previewSettingsState(screen: String): SettingsUiState =
       defaultBuilderAddress = "0x51c0de0b7e2a4f6c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
       preferences = FlarePreferences(builderApproved = true, builderFeeBps = 5),
     )
+
+/** Each stage of a withdrawal, with sample data. */
+private fun previewWithdrawState(screen: String): SettingsUiState {
+  val address = "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b"
+  val filled = SettingsUiState(withdrawDestination = address, withdrawAmount = "25", withdrawable = 998.51)
+  return when (screen) {
+    "withdraw-form" -> SettingsUiState(withdrawable = 998.51)
+    "withdraw-invalid" -> filled.copy(withdrawDestination = "0xe05e75a9-not-an-address")
+    "withdraw-over" -> filled.copy(withdrawAmount = "1200")
+    "withdraw-working" -> filled.copy(withdrawing = true, withdrawTransaction = TransactionState.Submitting)
+    "withdraw-sending" ->
+      filled.copy(
+        withdrawing = true,
+        withdrawTransaction = TransactionState.Submitting,
+        pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true),
+      )
+    "withdraw-selfpay" ->
+      filled.copy(withdrawTransaction = TransactionState.Failed("Sponsor unavailable", selfPayEstimateOctas = 12_400uL))
+    "withdraw-resume" ->
+      filled.copy(pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true))
+    "withdraw-sent" -> filled.copy(withdrawTransaction = TransactionState.Committed("0xfeed"))
+    "withdraw-failed" ->
+      filled.copy(
+        withdrawTransaction = TransactionState.Failed("Move abort: INSUFFICIENT_BALANCE"),
+        withdrawError = "Move abort: INSUFFICIENT_BALANCE",
+      )
+    "withdraw-uncertain" ->
+      filled.copy(
+        withdrawTransaction = TransactionState.Failed("timed out"),
+        withdrawError = "timed out",
+        pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc"),
+      )
+    else -> filled
+  }
+}
 
 /** Enough of the portfolio's behaviour to walk through a position and its close sheet. */
 private fun previewPortfolioIntent(state: PortfolioUiState, intent: PortfolioIntent): PortfolioUiState =

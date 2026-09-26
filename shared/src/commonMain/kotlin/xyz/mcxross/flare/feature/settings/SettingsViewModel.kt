@@ -2,6 +2,7 @@ package xyz.mcxross.flare.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,10 +28,12 @@ import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.actionFailure
+import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.store.WithdrawalContinuation
 
 data class SettingsUiState(
   val preferences: FlarePreferences = FlarePreferences(),
@@ -53,7 +56,12 @@ data class SettingsUiState(
   val withdrawAmount: String = "",
   val withdrawTransaction: TransactionState? = null,
   val withdrawing: Boolean = false,
+  /** Why the last withdrawal attempt failed, as reported; screens phrase it for people. */
   val withdrawError: String? = null,
+  /** What the trading account can withdraw right now, when known. */
+  val withdrawable: Double? = null,
+  /** A withdrawal that was interrupted part-way and must be finished before another starts. */
+  val pendingWithdrawal: WithdrawalContinuation? = null,
   val busy: Boolean = false,
   /** The product whose builder approval is being written on-chain. */
   val builderPending: AssetType? = null,
@@ -77,7 +85,16 @@ sealed interface SettingsIntent {
 
   data class ChangeWithdrawAmount(val amount: String) : SettingsIntent
 
+  /** Opens the withdrawal, picking up an interrupted one where it stopped. */
+  data object OpenWithdraw : SettingsIntent
+
   data object SubmitWithdraw : SettingsIntent
+
+  /** Retries a withdrawal Flare couldn't sponsor, with the wallet paying the network fee. */
+  data object ConfirmWithdrawSelfPay : SettingsIntent
+
+  /** Leaves a failed attempt to change the recipient or amount. */
+  data object EditWithdraw : SettingsIntent
 
   data object DismissWithdraw : SettingsIntent
 
@@ -132,8 +149,15 @@ class SettingsViewModel(
   }
 
   val uiState: StateFlow<SettingsUiState> =
-    combine(local, preferences.values, wallets.profile) { state, persisted, profile ->
-        state.copy(preferences = persisted, profile = profile)
+    combine(local, preferences.values, wallets.profile, accounts.snapshot) {
+        state, persisted, profile, snapshot ->
+        state.copy(
+          preferences = persisted,
+          profile = profile,
+          withdrawable = snapshot.overview?.crossWithdrawableBalance,
+          pendingWithdrawal =
+            persisted.profiles.firstOrNull { it.id == persisted.activeProfileId }?.withdrawal,
+        )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
@@ -249,43 +273,25 @@ class SettingsViewModel(
             withdrawing = false,
           )
         }
-      SettingsIntent.SubmitWithdraw -> {
-        if (local.value.withdrawing || local.value.withdrawTransaction is TransactionState.Committed) return
-        val dest = local.value.withdrawDestination.trim()
-        val amt = local.value.withdrawAmount.trim()
-        if (dest.isBlank()) {
-          local.update { it.copy(withdrawError = "Enter a recipient Aptos address") }
-          return
+      SettingsIntent.OpenWithdraw -> {
+        val pending = uiState.value.pendingWithdrawal
+        local.update {
+          it.copy(
+            withdrawDestination = pending?.destination ?: it.withdrawDestination,
+            withdrawAmount = pending?.amount ?: it.withdrawAmount,
+            withdrawTransaction = null,
+            withdrawError = null,
+          )
         }
-        if (amt.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true) {
-          local.update { it.copy(withdrawError = "Enter an amount greater than zero") }
-          return
-        }
-        viewModelScope.launch {
-          local.update { it.copy(withdrawing = true, withdrawError = null) }
-          try {
-            val prompt = VaultPrompt("Withdraw USDC", "Confirm your identity")
-            accounts.withdrawUsdc(amt, dest, prompt, FeePayment.SPONSORED)
-              .collect { tx ->
-                local.update { it.copy(withdrawTransaction = tx) }
-              }
-            when (val terminal = local.value.withdrawTransaction) {
-              is TransactionState.Committed -> {
-                accounts.refresh()
-                loadSubaccounts()
-              }
-              is TransactionState.Failed -> {
-                local.update { it.copy(withdrawError = terminal.message) }
-              }
-              else -> Unit
-            }
-          } catch (e: Exception) {
-            local.update { it.copy(withdrawError = e.message ?: "Withdrawal failed") }
-          } finally {
-            local.update { it.copy(withdrawing = false) }
-          }
-        }
+        // The balance shown beside the amount should be the current one.
+        viewModelScope.launch { runSuspendCatching { accounts.refresh() } }
       }
+      SettingsIntent.SubmitWithdraw -> submitWithdraw(FeePayment.SPONSORED)
+      SettingsIntent.ConfirmWithdrawSelfPay -> submitWithdraw(FeePayment.SELF_PAY)
+      SettingsIntent.EditWithdraw ->
+        local.update {
+          if (it.withdrawing) it else it.copy(withdrawTransaction = null, withdrawError = null)
+        }
       is SettingsIntent.SetConfirmTransactions ->
         launchAction("Your confirmation setting didn’t change.") {
           // Relaxing protection needs the person present; turning it back on never does.
@@ -388,6 +394,50 @@ class SettingsViewModel(
       block()
     } finally {
       local.update { it.copy(builderPending = null) }
+    }
+  }
+
+  private fun submitWithdraw(feePayment: FeePayment) {
+    val current = local.value
+    if (current.withdrawing || current.withdrawTransaction is TransactionState.Committed) return
+    val dest = current.withdrawDestination.trim()
+    val amt = current.withdrawAmount.trim()
+    if (!dest.isAptosAddress()) {
+      local.update { it.copy(withdrawError = "Enter a valid Aptos address.") }
+      return
+    }
+    if (amt.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true) {
+      local.update { it.copy(withdrawError = "Enter an amount greater than zero.") }
+      return
+    }
+    viewModelScope.launch {
+      local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }
+      try {
+        val prompt = VaultPrompt("Withdraw USDC", "Confirm your identity")
+        accounts.withdrawUsdc(amt, dest, prompt, feePayment).collect { tx ->
+          local.update { it.copy(withdrawTransaction = tx) }
+        }
+        when (val terminal = local.value.withdrawTransaction) {
+          is TransactionState.Committed -> {
+            accounts.refresh()
+            loadSubaccounts()
+          }
+          // A fee Flare can't sponsor is a choice for the person, not a failure.
+          is TransactionState.Failed ->
+            if (terminal.selfPayEstimateOctas == null) {
+              local.update { it.copy(withdrawError = terminal.message) }
+            }
+          else -> Unit
+        }
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        // Backing out of the identity prompt returns to the review without complaint.
+        if (e.isAuthorizationCancelled()) local.update { it.copy(withdrawTransaction = null) }
+        else local.update { it.copy(withdrawError = e.message ?: "Your withdrawal didn’t go through.") }
+      } finally {
+        local.update { it.copy(withdrawing = false) }
+      }
     }
   }
 

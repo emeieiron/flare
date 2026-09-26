@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.design
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
@@ -7,8 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
@@ -67,5 +71,28 @@ fun OutcomeIcon(outcome: Outcome, modifier: Modifier = Modifier) {
       contentDescription = null,
       modifier = Modifier.requiredSize(80.dp),
     )
+  }
+}
+
+/** Content under an outcome icon waits for the icon to draw, then settles in. */
+private const val REVEAL_DELAY_MS = 450L
+
+/**
+ * Fades and lifts the content that explains an outcome in just after [OutcomeIcon] has drawn, so
+ * the icon lands first. With reduced motion the content is simply there.
+ */
+@Composable
+fun rememberOutcomeReveal(): Modifier {
+  val reducedMotion = rememberReducedMotion()
+  val reveal = remember { Animatable(if (reducedMotion) 1f else 0f) }
+  LaunchedEffect(Unit) {
+    if (reveal.value < 1f) {
+      delay(REVEAL_DELAY_MS)
+      reveal.animateTo(1f, tween(320))
+    }
+  }
+  return Modifier.graphicsLayer {
+    alpha = reveal.value
+    translationY = (1f - reveal.value) * 6.dp.toPx()
   }
 }

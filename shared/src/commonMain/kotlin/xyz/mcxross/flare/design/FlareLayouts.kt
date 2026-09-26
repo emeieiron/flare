@@ -225,6 +225,7 @@ fun BackBar(
 val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 
 /**
+ * [title] is left out when the content carries its own heading, as an outcome does.
  * [dismissible] false holds the sheet open, for while the action it confirms is running.
  * [heightFraction] gives the sheet a fixed share of the screen height instead of fitting its content;
  * the content can then use weights to distribute the room.
@@ -232,7 +233,7 @@ val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlareSheet(
-  title: String,
+  title: String?,
   onDismiss: () -> Unit,
   dismissible: Boolean = true,
   heightFraction: Float? = null,
@@ -271,11 +272,13 @@ fun FlareSheet(
           .then(if (fixedHeight != null) Modifier.weight(1f) else Modifier)
           .padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
       ) {
-        Text(
-          title,
-          style = MaterialTheme.typography.headlineMedium,
-          modifier = Modifier.padding(bottom = 20.dp),
-        )
+        if (title != null) {
+          Text(
+            title,
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 20.dp),
+          )
+        }
         content()
       }
     }
