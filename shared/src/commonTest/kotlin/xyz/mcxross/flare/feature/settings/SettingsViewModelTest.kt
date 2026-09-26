@@ -202,8 +202,8 @@ class SettingsViewModelTest {
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     // Test input changes
-    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0xrecipient123"))
-    assertEquals("0xrecipient123", vm.uiState.value.withdrawDestination)
+    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0xa11ce"))
+    assertEquals("0xa11ce", vm.uiState.value.withdrawDestination)
 
     vm.onIntent(SettingsIntent.ChangeWithdrawAmount("25.5"))
     assertEquals("25.5", vm.uiState.value.withdrawAmount)
@@ -211,20 +211,20 @@ class SettingsViewModelTest {
     // Test submission without destination
     vm.onIntent(SettingsIntent.ChangeWithdrawDestination(""))
     vm.onIntent(SettingsIntent.SubmitWithdraw)
-    assertEquals("Enter a recipient Aptos address", vm.uiState.value.withdrawError)
+    assertEquals("Enter a valid Aptos address.", vm.uiState.value.withdrawError)
 
     // Test submission with invalid amount
-    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0xrecipient123"))
+    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0xa11ce"))
     vm.onIntent(SettingsIntent.ChangeWithdrawAmount("0"))
     vm.onIntent(SettingsIntent.SubmitWithdraw)
-    assertEquals("Enter an amount greater than zero", vm.uiState.value.withdrawError)
+    assertEquals("Enter an amount greater than zero.", vm.uiState.value.withdrawError)
 
     // Test valid submission
     vm.onIntent(SettingsIntent.ChangeWithdrawAmount("50.0"))
     vm.onIntent(SettingsIntent.SubmitWithdraw)
     assertEquals(1, fakeAccounts.withdrawCallCount)
     assertEquals("50.0", fakeAccounts.lastWithdrawAmount)
-    assertEquals("0xrecipient123", fakeAccounts.lastWithdrawDestination)
+    assertEquals("0xa11ce", fakeAccounts.lastWithdrawDestination)
     val tx = vm.uiState.value.withdrawTransaction
     kotlin.test.assertIs<TransactionState.Committed>(tx)
     assertEquals("0xwithdraw_hash_123", tx.hash)

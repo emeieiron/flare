@@ -1,20 +1,14 @@
 package xyz.mcxross.flare.feature.trade
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.design.ActionRow
@@ -22,10 +16,8 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
-import xyz.mcxross.flare.design.rememberReducedMotion
+import xyz.mcxross.flare.design.rememberOutcomeReveal
 
-/** Text and recap follow the icon just as it settles, so the screen assembles in one beat. */
-private const val CONTENT_DELAY_MS = 450L
 
 @Composable
 internal fun OrderResult(
@@ -68,18 +60,7 @@ private fun OrderOutcome(
   links: @Composable ColumnScope.() -> Unit,
 ) {
   val (order, type) = state.orderSummary(side)
-  val reducedMotion = rememberReducedMotion()
-  val reveal = remember { Animatable(if (reducedMotion) 1f else 0f) }
-  LaunchedEffect(Unit) {
-    if (reveal.value < 1f) {
-      delay(CONTENT_DELAY_MS)
-      reveal.animateTo(1f, tween(320))
-    }
-  }
-  val revealed = Modifier.graphicsLayer {
-    alpha = reveal.value
-    translationY = (1f - reveal.value) * 6.dp.toPx()
-  }
+  val revealed = rememberOutcomeReveal()
   SpacedGroups(minHeight) {
     Column {
       OutcomeIcon(outcome)
