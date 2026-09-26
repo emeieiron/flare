@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overlay for the baseline profile and benchmark builds only (see androidApp/build.gradle.kts). Like
+  debug, they reach the local development worker over plain HTTP, so the measured journeys load real
+  account data. Release builds never include it.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>
