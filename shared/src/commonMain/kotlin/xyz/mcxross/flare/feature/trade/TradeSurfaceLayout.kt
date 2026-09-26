@@ -152,7 +152,7 @@ internal fun MarketContext(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        AssetIcon(identity, Modifier.size(44.dp))
+        AssetIcon(identity, 44.dp)
         Column(Modifier.weight(1f)) {
           Text(identity.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
           Text(identity.symbol, color = FlareColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
