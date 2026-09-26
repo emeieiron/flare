@@ -31,13 +31,15 @@ class DesignPreviewActivity : FragmentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     val initialScreen = intent.getStringExtra("screen") ?: "welcome"
+    // Captures for the website and README hide the harness label: --ez label false
+    val showLabel = intent.getBooleanExtra("label", true)
     // Previews show secret screens with sample words, so they stay capturable for design review.
-    setContent { FlareTheme { CompositionLocalProvider(LocalProtectSecrets provides false) { PreviewScreens(initialScreen) } } }
+    setContent { FlareTheme { CompositionLocalProvider(LocalProtectSecrets provides false) { PreviewScreens(initialScreen, showLabel) } } }
   }
 }
 
 @Composable
-private fun PreviewScreens(initialScreen: String) {
+private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
   var screen by remember { mutableStateOf(initialScreen) }
   var onboarding by remember { mutableStateOf(previewOnboardingState(initialScreen)) }
   var quotes by remember { mutableStateOf(previewQuotes()) }
@@ -64,12 +66,14 @@ private fun PreviewScreens(initialScreen: String) {
   var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
   var previewPosition by remember { mutableStateOf<String?>(null) }
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
-    Text(
-      "DESIGN PREVIEW · SAMPLE DATA",
-      Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
-      style = MaterialTheme.typography.labelSmall,
-      color = FlareColors.TextTertiary,
-    )
+    if (showLabel) {
+      Text(
+        "DESIGN PREVIEW · SAMPLE DATA",
+        Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = FlareColors.TextTertiary,
+      )
+    }
     Box(Modifier.weight(1f)) {
       when (screen) {
         "splash" -> FlareSplashScreen()
@@ -162,7 +166,8 @@ private fun PreviewScreens(initialScreen: String) {
             onBack = { screen = "markets" },
             onOpenActivity = { screen = "activity" },
           )
-        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many" ->
+        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many",
+        "portfolio-showcase" ->
           previewPosition?.let { market ->
             PositionScreen(portfolio, market, { portfolio = previewPortfolioIntent(portfolio, it) }, { previewPosition = null })
           } ?: PortfolioScreen(
@@ -438,6 +443,33 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
         },
         amps = xyz.mcxross.flare.decibel.model.AmpsBreakdown(totalAmps = 2400.0, tradingAmps = 2200.0, vaultAmps = 200.0),
         tier = xyz.mcxross.flare.decibel.model.TierInfo(tier = "Silver"),
+      )
+    }
+    // A believable account for product imagery: three positions in major markets, a vault, rewards.
+    "portfolio-showcase" -> {
+      val positions = listOf(
+        xyz.mcxross.flare.decibel.model.Position("0xbtc", "preview", "0.12", 10, 81_740.0, false, false, 0.0, 74_210.0, 1, false),
+        xyz.mcxross.flare.decibel.model.Position("0xeth", "preview", "-1.8", 5, 3_412.5, false, false, 0.0, 3_980.0, 2, false),
+        xyz.mcxross.flare.decibel.model.Position("0xsol", "preview", "24", 3, 188.2, false, false, 0.0, 131.0, 3, false),
+      )
+      val vault = xyz.mcxross.flare.decibel.model.VaultInfo(address = "0xdlp", name = "DLP", totalAum = 12_400_000.0)
+      loaded.copy(
+        account = loaded.account.copy(
+          positions = positions,
+          overview = loaded.account.overview!!.copy(
+            equityBalance = 12_480.65,
+            unrealizedPnl = 446.46,
+            freeVaultEquity = 1_214.6,
+            spot = xyz.mcxross.flare.decibel.model.SpotOverview(totalUsd = 1_050.0),
+          ),
+        ),
+        marketSymbols = mapOf("0xbtc" to "BTC", "0xeth" to "ETH", "0xsol" to "SOL"),
+        markPrices = mapOf("0xbtc" to 83_909.0, "0xeth" to 3_356.4, "0xsol" to 191.75),
+        accountVaults = listOf(
+          xyz.mcxross.flare.decibel.model.AccountVaultPerformance(vault = vault, currentNumShares = 1_150.0, currentValue = 1_214.6)
+        ),
+        amps = xyz.mcxross.flare.decibel.model.AmpsBreakdown(totalAmps = 18_420.0, tradingAmps = 16_900.0, vaultAmps = 1_520.0),
+        tier = xyz.mcxross.flare.decibel.model.TierInfo(tier = "Gold"),
       )
     }
     "portfolio-loading" -> loaded.copy(
