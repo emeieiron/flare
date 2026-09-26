@@ -319,10 +319,12 @@ private fun FlareShell() {
         )
     },
   ) { contentPadding ->
+    // No background of its own: the scaffold paints the same black beneath, and each detail page paints
+    // its own as it slides over, so another full-screen layer here would only be overdraw.
     NavHost(
       navController = navController,
       startDestination = MarketsDestination,
-      modifier = Modifier.fillMaxSize().padding(contentPadding).clipToBounds().background(FlareColors.Canvas),
+      modifier = Modifier.fillMaxSize().padding(contentPadding).clipToBounds(),
       enterTransition = {
         if (targetState.destination.isDetailPage()) pagePushEnter() else EnterTransition.None
       },

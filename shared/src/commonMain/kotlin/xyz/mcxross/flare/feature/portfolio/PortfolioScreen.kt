@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.feature.portfolio
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -132,7 +131,7 @@ fun PortfolioScreen(
     if (page == PortfolioPage.VAULTS) onIntent(PortfolioIntent.RefreshVaults)
   }
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
-    Column(Modifier.fillMaxSize().background(FlareColors.Canvas)) {
+    Column(Modifier.fillMaxSize()) {
       if (displayedPage != PortfolioPage.OVERVIEW) {
         val title = when (displayedPage) {
           PortfolioPage.VAULT_DETAIL -> inspectedVault?.name ?: displayedPage.title
