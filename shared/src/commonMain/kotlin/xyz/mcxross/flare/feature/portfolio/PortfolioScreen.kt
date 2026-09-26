@@ -45,6 +45,7 @@ import kotlin.math.abs
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
@@ -344,7 +345,7 @@ private fun PortfolioOverview(
   }
   PortfolioDestination("Rewards", state.tier?.tier, { onPage(PortfolioPage.REWARDS) }) {
     if (!state.rewardsLoaded && !state.rewardsError && state.amps == null) PortfolioShimmer(rows = 1)
-    else PreviewValue("Amps", state.amps?.let { formatQuantity(it.totalAmps, 0) } ?: "—",
+    else PreviewValue("Amps", state.amps?.let { formatCount(it.totalAmps) } ?: "—",
       if (state.rewardsError) "Updating automatically" else null)
   }
 }
@@ -408,7 +409,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultInfo, onIntent: (P
 @Composable
 private fun RewardsDetails(state: PortfolioUiState) {
   Text("Total Amps", color = FlareColors.TextSecondary)
-  Text(state.amps?.let { formatQuantity(it.totalAmps, 0) } ?: "—",
+  Text(state.amps?.let { formatCount(it.totalAmps) } ?: "—",
     Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
   state.tier?.let { DetailRow("Tier", it.tier) }
   state.amps?.rank?.let { DetailRow("Rank", "#$it") }
