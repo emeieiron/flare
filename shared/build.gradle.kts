@@ -89,6 +89,7 @@ kotlin {
       implementation(libs.coil.svg)
       implementation(libs.compose.shimmer)
       implementation(libs.compottie)
+      implementation(libs.qrose)
     }
     commonTest.dependencies {
       implementation(libs.kotlin.test)
