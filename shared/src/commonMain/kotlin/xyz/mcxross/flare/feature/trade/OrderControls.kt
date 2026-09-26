@@ -12,9 +12,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +41,7 @@ import kotlin.math.roundToInt
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 
 /** A quiet, focusable amount surface shared by size, entry, and exit inputs. */
 @Composable
@@ -164,7 +162,7 @@ private fun LeverageStepper(
     },
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    StepperButton(Icons.Outlined.Remove, "Decrease leverage", enabled && value > 1) { onStep(value - 1) }
+    StepperButton(FlareIcons.Remove, "Decrease leverage", enabled && value > 1) { onStep(value - 1) }
     Text(
       "$value×",
       Modifier.fillMaxHeight()
@@ -181,7 +179,7 @@ private fun LeverageStepper(
       color = if (enabled) FlareColors.Positive else FlareColors.TextDisabled,
       textAlign = TextAlign.Center,
     )
-    StepperButton(Icons.Outlined.Add, "Increase leverage", enabled && value < maximum) { onStep(value + 1) }
+    StepperButton(FlareIcons.Add, "Increase leverage", enabled && value < maximum) { onStep(value + 1) }
   }
 }
 

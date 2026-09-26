@@ -12,11 +12,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ListAlt
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.PieChartOutline
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -63,6 +58,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareSplashScreen
@@ -282,10 +278,10 @@ private fun FlareShell() {
     }
   val navigationItems = remember {
     listOf(
-      FlareNavigationItem("Markets", Icons.Outlined.Search),
-      FlareNavigationItem("Portfolio", Icons.Outlined.PieChartOutline),
-      FlareNavigationItem("Activity", Icons.AutoMirrored.Outlined.ListAlt),
-      FlareNavigationItem("Account", Icons.Outlined.PersonOutline),
+      FlareNavigationItem("Markets", FlareIcons.Markets, FlareIcons.MarketsFilled),
+      FlareNavigationItem("Portfolio", FlareIcons.Portfolio, FlareIcons.PortfolioFilled),
+      FlareNavigationItem("Activity", FlareIcons.Activity, FlareIcons.ActivityFilled),
+      FlareNavigationItem("Account", FlareIcons.Account, FlareIcons.AccountFilled),
     )
   }
 

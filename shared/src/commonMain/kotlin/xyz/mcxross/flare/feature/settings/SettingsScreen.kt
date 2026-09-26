@@ -13,10 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CardGiftcard
-import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +41,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
@@ -128,7 +125,7 @@ fun SettingsScreen(
     ActionRow(
       "Trading access",
       "Devices and keys that can place orders",
-      Icons.Outlined.PhonelinkLock,
+      FlareIcons.Device,
       onClick = {
         showAccess = true
         onIntent(SettingsIntent.LoadDelegations)
@@ -141,13 +138,13 @@ fun SettingsScreen(
       ActionRow(
         "Builder support",
         builderStatus,
-        Icons.Outlined.CardGiftcard,
+        FlareIcons.Heart,
         onClick = { showBuilderSheet = true },
       )
       ActionRow(
         "Referral code",
         if (state.referralRedeemed) "Code active" else "Enter a referral code",
-        Icons.Outlined.CardGiftcard,
+        FlareIcons.Gift,
         onClick = { showReferralSheet = true },
       )
     }
@@ -155,7 +152,7 @@ fun SettingsScreen(
     ActionRow(
       "Security & recovery",
       "Back up keys and manage this device",
-      Icons.Outlined.Key,
+      FlareIcons.Key,
       onClick = { showSecurity = true },
     )
 

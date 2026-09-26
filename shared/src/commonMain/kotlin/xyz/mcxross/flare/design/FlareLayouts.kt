@@ -4,11 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -78,7 +73,7 @@ fun ActionRow(
         )
     }
     Icon(
-      Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+      FlareIcons.ChevronRight,
       null,
       tint = FlareColors.TextTertiary,
       modifier = Modifier.size(20.dp),
@@ -183,7 +178,7 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
   val browser = LocalUriHandler.current
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
     Icon(
-      Icons.Outlined.CheckCircle,
+      FlareIcons.CheckCircle,
       contentDescription = null,
       tint = FlareColors.Positive,
       modifier = Modifier.size(48.dp),
@@ -191,7 +186,7 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
     Text(message, style = MaterialTheme.typography.bodyLarge)
     ActionRow(
       "View on Aptos Explorer",
-      icon = Icons.AutoMirrored.Outlined.OpenInNew,
+      icon = FlareIcons.External,
       onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
     )
     FlareButton("Done", onDone, Modifier.fillMaxWidth(), enabled = enabled)
@@ -212,7 +207,7 @@ fun BackBar(
   ) {
     IconButton(onClick = onBack, enabled = backEnabled) {
       Icon(
-        Icons.AutoMirrored.Outlined.ArrowBack,
+        FlareIcons.ArrowBack,
         "Back",
         tint = if (backEnabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
       )

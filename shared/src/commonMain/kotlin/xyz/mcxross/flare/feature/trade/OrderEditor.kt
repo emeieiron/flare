@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +52,7 @@ import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
@@ -324,7 +323,7 @@ private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean,
         contentAlignment = Alignment.Center,
       ) {
         Icon(
-          Icons.Outlined.Add,
+          FlareIcons.Add,
           contentDescription = null,
           modifier = Modifier.size(16.dp).rotate(rotation),
           tint = if (enabled) FlareColors.Positive else FlareColors.TextDisabled,

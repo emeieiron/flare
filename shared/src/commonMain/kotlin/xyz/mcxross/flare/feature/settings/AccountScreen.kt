@@ -19,14 +19,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +58,7 @@ import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareQrCode
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
@@ -143,7 +136,7 @@ fun AccountScreen(
     .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
     FlareTopBar("Account", action = {
       IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-        Icon(Icons.Outlined.Settings, "Settings", tint = FlareColors.TextPrimary)
+        Icon(FlareIcons.Settings, "Settings", tint = FlareColors.TextPrimary)
       }
     })
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 16.dp), NoticeTone.ALERT) }
@@ -154,7 +147,7 @@ fun AccountScreen(
       ActionRow(walletLabel,
         subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
           else shortAddress(walletAddress),
-        icon = Icons.Outlined.AccountBalanceWallet,
+        icon = FlareIcons.Wallet,
         onClick = { showWallets = true }, enabled = !state.busy)
       if (!active.onboardingComplete) {
         FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
@@ -178,10 +171,10 @@ fun AccountScreen(
             Text(shortAddress(account.address), style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary)
           }
-          if (selected) Icon(Icons.Outlined.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
+          if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
             modifier = Modifier.size(20.dp))
           IconButton(onClick = { detailTitle = "Trading account address"; detailAddress = account.address }) {
-            Icon(Icons.Outlined.ContentCopy, "Show trading account address", tint = FlareColors.TextSecondary,
+            Icon(FlareIcons.Copy, "Show trading account address", tint = FlareColors.TextSecondary,
               modifier = Modifier.size(18.dp))
           }
         }
@@ -189,7 +182,7 @@ fun AccountScreen(
       }
       if (active.ownerAddress != null) {
         ActionRow(if (state.creatingSubaccount) "Creating trading account…" else "Add trading account",
-          icon = Icons.Outlined.Add, enabled = !state.busy && !state.creatingSubaccount,
+          icon = FlareIcons.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })
       }
     }
@@ -209,17 +202,17 @@ fun AccountScreen(
           })
       }
       if (walletAddress.isNotBlank()) ActionRow("Wallet address", subtitle = shortAddress(walletAddress),
-        icon = Icons.Outlined.ContentCopy, onClick = {
+        icon = FlareIcons.Copy, onClick = {
           showWallets = false; detailTitle = "Wallet address"; detailAddress = walletAddress
         })
-      ActionRow("Add wallet", icon = Icons.Outlined.Add, onClick = { showWallets = false; showAddWallet = true })
+      ActionRow("Add wallet", icon = FlareIcons.Add, onClick = { showWallets = false; showAddWallet = true })
     }
   }
   if (showAddWallet) FlareSheet("Add wallet", { showAddWallet = false }) {
-    ActionRow("Create wallet", subtitle = "Get a new recovery phrase", icon = Icons.Outlined.Key,
+    ActionRow("Create wallet", subtitle = "Get a new recovery phrase", icon = FlareIcons.Key,
       onClick = { showAddWallet = false; onCreateAccount() })
     ActionRow("Import wallet", subtitle = "Use a recovery phrase or private key",
-      icon = Icons.Outlined.AccountBalanceWallet, onClick = { showAddWallet = false; onImportAccount() })
+      icon = FlareIcons.Wallet, onClick = { showAddWallet = false; onImportAccount() })
   }
   detailAddress?.let { address ->
     FlareSheet(detailTitle, { detailAddress = null }) {
@@ -484,7 +477,7 @@ private fun WithdrawSent(state: SettingsUiState, hash: String, onDone: () -> Uni
     DetailRow("To", recipient)
     ActionRow(
       "View on Aptos Explorer",
-      icon = Icons.AutoMirrored.Outlined.OpenInNew,
+      icon = FlareIcons.External,
       onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
     )
   }

@@ -18,11 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +57,7 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlarePageTransition
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSkeletonBox
@@ -168,7 +164,7 @@ fun PortfolioScreen(
             PortfolioPage.POSITIONS -> {
               val positions = state.account.positions.sortedByDescending { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
               if (positions.size > 8 || query.isNotEmpty()) item {
-                FlareSearchField(query, { query = it }, "Search positions", Icons.Outlined.Search,
+                FlareSearchField(query, { query = it }, "Search positions", FlareIcons.Search,
                   Modifier.padding(bottom = 16.dp))
               }
               val visible = positions.filter { (state.marketSymbols[it.market] ?: it.market).contains(query, true) }
@@ -184,7 +180,7 @@ fun PortfolioScreen(
             }
             PortfolioPage.HOLDINGS -> {
               if (state.spotHoldings.size > 8 || query.isNotEmpty()) item {
-                FlareSearchField(query, { query = it }, "Search holdings", Icons.Outlined.Search,
+                FlareSearchField(query, { query = it }, "Search holdings", FlareIcons.Search,
                   Modifier.padding(bottom = 16.dp))
               }
               val visible = state.spotHoldings.filter { it.symbol.contains(query, true) || it.name.contains(query, true) }
@@ -215,7 +211,7 @@ fun PortfolioScreen(
                   Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
                 if (state.vaultsError != null) QuietPortfolioMessage(
                   if (state.vaultsLoaded) "Updating · showing your last vault balances" else "Vaults unavailable. Reconnecting automatically.")
-                if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", Icons.Outlined.Search,
+                if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", FlareIcons.Search,
                   Modifier.padding(top = 20.dp))
                 if (ownedMatches.isNotEmpty()) SectionLabel("Your deposits")
                 else if (state.vaultsLoaded && owned.isEmpty() && query.isBlank()) QuietPortfolioMessage("No vault deposits yet")
@@ -280,7 +276,7 @@ private fun PortfolioOverview(
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween) {
       Text("Account value", style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
-      Icon(if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+      Icon(if (expanded) FlareIcons.ChevronUp else FlareIcons.ChevronDown,
         contentDescription = null, tint = FlareColors.TextSecondary)
     }
     if (overview == null && state.account.error == null) PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
@@ -360,7 +356,7 @@ private fun PortfolioDestination(title: String, count: String?, onClick: () -> U
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
       Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
       if (count != null) Text(count, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-      Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+      Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
     }
     Spacer(Modifier.height(12.dp))
     content()
@@ -471,7 +467,7 @@ private fun VaultSummaryRow(name: String, value: String, subtitle: String, onCli
       Text(subtitle, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
     }
     Text(value, style = MaterialTheme.typography.labelLarge)
-    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
 }
@@ -522,7 +518,7 @@ private fun PositionRow(
       )
     }
     Icon(
-      Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+      FlareIcons.ChevronRight,
       contentDescription = "Manage $symbol position",
       tint = FlareColors.TextTertiary,
       modifier = Modifier.size(20.dp),
@@ -580,7 +576,7 @@ private fun HoldingRow(
     }
     if (holding.marketAddress != null) {
       Icon(
-        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+        FlareIcons.ChevronRight,
         contentDescription = "Trade ${holding.symbol}",
         tint = FlareColors.TextTertiary,
         modifier = Modifier.size(20.dp),
