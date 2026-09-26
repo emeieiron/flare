@@ -100,7 +100,6 @@ fun FlareFilterChips(
   ) {
     labels.forEachIndexed { index, label ->
       val selected = index == selectedIndex
-      val color by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary)
       Box(
         Modifier.onPlaced {
           starts[index] = it.positionInParent().x
@@ -111,8 +110,18 @@ fun FlareFilterChips(
           .padding(horizontal = ChipPadding),
         contentAlignment = Alignment.Center,
       ) {
-        Text(label, color = color, style = MaterialTheme.typography.labelMedium)
+        ChipLabel(label, selected)
       }
     }
   }
+}
+
+/**
+ * A chip's label. Its colour animates in its own scope, so a change of selection recomposes the two
+ * labels that fade, not the whole row on every frame of the fade.
+ */
+@Composable
+private fun ChipLabel(label: String, selected: Boolean) {
+  val color by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary)
+  Text(label, color = color, style = MaterialTheme.typography.labelMedium)
 }
