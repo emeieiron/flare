@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -187,6 +188,14 @@ private fun PreviewScreens(initialScreen: String) {
             { screen = "welcome" },
             onPositionClick = { previewPosition = it },
           )
+        "qr" ->
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            FlareQrCode(
+              "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
+              "QR code preview",
+              Modifier.size(282.dp),
+            )
+          }
         "activity" ->
           OrdersScreen(
             OrdersUiState(section = section),

@@ -3,6 +3,7 @@ package xyz.mcxross.flare.feature.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +41,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -53,6 +58,7 @@ import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareQrCode
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.FlareTopBar
@@ -225,64 +231,60 @@ private fun DepositSheet(
   onCopy: () -> Unit,
   onDismiss: () -> Unit,
 ) {
-  FlareSheet("Receive funds", onDismiss) {
+  FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
-      "Receive funds in your wallet, then use Portfolio to transfer USDC to a trading account.",
+      "Send USDC or APT on the Aptos network to $accountLabel.",
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
     )
-    Spacer(Modifier.height(16.dp))
-    DetailRow("Network", "Aptos")
-    DetailRow("Wallet", accountLabel)
-    DetailRow("Supported assets", "USDC, APT")
-    Spacer(Modifier.height(16.dp))
-    Text("Your Aptos address", style = MaterialTheme.typography.titleSmall)
-    Spacer(Modifier.height(8.dp))
-    Column(
-      Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(12.dp))
-        .background(FlareColors.Elevated)
-        .clickable(role = Role.Button, onClick = onCopy)
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-      SelectionContainer {
-        Text(
-          address,
-          style = MaterialTheme.typography.bodySmall,
-          color = FlareColors.TextPrimary,
-        )
-      }
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        Icon(
-          Icons.Outlined.ContentCopy,
-          contentDescription = null,
-          tint = if (copied) FlareColors.Positive else FlareColors.TextSecondary,
-          modifier = Modifier.size(14.dp),
-        )
-        Text(
-          if (copied) "Copied" else "Tap to copy",
-          style = MaterialTheme.typography.labelSmall,
-          color = if (copied) FlareColors.Positive else FlareColors.TextSecondary,
-        )
+    // The code takes whatever room the sheet can spare, up to a size that scans from arm's length.
+    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+      val codeSize = minOf(maxWidth * 0.84f, maxHeight - 112.dp, 320.dp).coerceAtLeast(168.dp)
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FlareQrCode(address, "QR code for your Aptos address", Modifier.size(codeSize))
+        ReceiveAddress(address, onCopy, Modifier.padding(top = 20.dp))
       }
     }
-    Spacer(Modifier.height(16.dp))
     ActionNotice(
-      "Only send Aptos-native USDC and APT to this address. Sending assets from other networks may result in permanent loss.",
+      "Only send Aptos-native USDC and APT. Assets sent from other networks can be lost for good.",
       tone = NoticeTone.INFO,
     )
-    Spacer(Modifier.height(20.dp))
     FlareButton(
       text = if (copied) "Copied" else "Copy address",
       onClick = onCopy,
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
     )
   }
+}
+
+/**
+ * The address in two even lines. The start and end, which people compare against the sender's
+ * screen, read brighter than the middle. Tapping it copies.
+ */
+@Composable
+private fun ReceiveAddress(address: String, onCopy: () -> Unit, modifier: Modifier = Modifier) {
+  val hex = address.removePrefix("0x")
+  val emphasis = 6
+  val breakAt = (hex.length + 1) / 2
+  val text = buildAnnotatedString {
+    withStyle(SpanStyle(color = FlareColors.TextPrimary)) { append(address.take(address.length - hex.length)) }
+    hex.forEachIndexed { index, char ->
+      if (index == breakAt && hex.length > 2 * emphasis) append('\n')
+      val bright = index < emphasis || index >= hex.length - emphasis
+      withStyle(SpanStyle(color = if (bright) FlareColors.TextPrimary else FlareColors.TextTertiary)) {
+        append(char)
+      }
+    }
+  }
+  Text(
+    text,
+    modifier
+      .clip(RoundedCornerShape(12.dp))
+      .clickable(role = Role.Button, onClickLabel = "Copy address", onClick = onCopy)
+      .padding(horizontal = 12.dp, vertical = 8.dp),
+    style = MaterialTheme.typography.bodyMedium,
+    textAlign = TextAlign.Center,
+  )
 }
 
 @Composable

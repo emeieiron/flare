@@ -58,6 +58,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -1051,18 +1052,21 @@ fun FlareLogo(
   modifier: Modifier = Modifier,
   color: Color = FlareColors.Positive,
 ) {
-  Canvas(modifier = modifier) {
-    val stroke = size.width * 0.105f
-    for (i in 0..2) {
-      val x = size.width * (0.15f + i * 0.26f)
-      drawLine(
-        color = color,
-        start = Offset(x, size.height * 0.82f),
-        end = Offset(x + size.width * 0.24f, size.height * (0.36f - i * 0.10f)),
-        strokeWidth = stroke,
-        cap = StrokeCap.Round,
-      )
-    }
+  Canvas(modifier = modifier) { drawFlareMark(color) }
+}
+
+/** The three bars of the Flare mark, filling this draw scope. */
+internal fun DrawScope.drawFlareMark(color: Color) {
+  val stroke = size.width * 0.105f
+  for (i in 0..2) {
+    val x = size.width * (0.15f + i * 0.26f)
+    drawLine(
+      color = color,
+      start = Offset(x, size.height * 0.82f),
+      end = Offset(x + size.width * 0.24f, size.height * (0.36f - i * 0.10f)),
+      strokeWidth = stroke,
+      cap = StrokeCap.Round,
+    )
   }
 }
 

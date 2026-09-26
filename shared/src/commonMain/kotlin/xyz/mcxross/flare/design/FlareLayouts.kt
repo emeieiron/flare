@@ -21,7 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -222,13 +224,18 @@ fun BackBar(
 
 val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 
-/** [dismissible] false holds the sheet open, for while the action it confirms is running. */
+/**
+ * [dismissible] false holds the sheet open, for while the action it confirms is running.
+ * [heightFraction] gives the sheet a fixed share of the screen height instead of fitting its content;
+ * the content can then use weights to distribute the room.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlareSheet(
   title: String,
   onDismiss: () -> Unit,
   dismissible: Boolean = true,
+  heightFraction: Float? = null,
   content: @Composable ColumnScope.() -> Unit,
 ) {
   val canDismiss by rememberUpdatedState(dismissible)
@@ -252,10 +259,17 @@ fun FlareSheet(
         shouldDismissOnClickOutside = dismissible,
       ),
   ) {
-    Column(Modifier.fillMaxWidth()) {
+    // The sheet pads its content above the navigation bar, so that inset is part of the height.
+    val density = LocalDensity.current
+    val windowHeight = LocalWindowInfo.current.containerSize.height
+    val bottomInset = WindowInsets.safeDrawing.getBottom(density)
+    val fixedHeight = heightFraction?.let { with(density) { (windowHeight * it - bottomInset).toDp() } }
+    Column(Modifier.fillMaxWidth().then(fixedHeight?.let { Modifier.height(it) } ?: Modifier)) {
       BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
       Column(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
+        Modifier.fillMaxWidth()
+          .then(if (fixedHeight != null) Modifier.weight(1f) else Modifier)
+          .padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
       ) {
         Text(
           title,
