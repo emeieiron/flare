@@ -69,12 +69,14 @@ import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.settlingActionName
+import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
 
 @Composable
 fun PortfolioRoute(
   onOpenSetup: () -> Unit,
   onMarketClick: (String) -> Unit = {},
+  onPositionClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
   viewModel: PortfolioViewModel = koinViewModel(),
 ) {
@@ -83,7 +85,7 @@ fun PortfolioRoute(
   LaunchedEffect(lifecycleOwner, viewModel) {
     lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.refreshWhileVisible() }
   }
-  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, modifier)
+  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, onPositionClick, modifier)
 }
 
 private enum class PortfolioPage(val title: String) {
@@ -105,9 +107,12 @@ fun PortfolioScreen(
   onIntent: (PortfolioIntent) -> Unit,
   onOpenSetup: () -> Unit,
   onMarketClick: (String) -> Unit = {},
+  onPositionClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   var page by rememberSaveable { mutableStateOf(PortfolioPage.OVERVIEW) }
+  // The position a left swipe asked to close.
+  var closeTarget by rememberSaveable { mutableStateOf<String?>(null) }
   var showBalance by rememberSaveable { mutableStateOf(false) }
   var vaultAddress by rememberSaveable { mutableStateOf<String?>(null) }
   val savedPages = rememberSaveableStateHolder()
@@ -170,10 +175,10 @@ fun PortfolioScreen(
               if (positions.isEmpty()) item { PositionsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
               items(visible, key = { it.market }) { position ->
-                PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market),
-                  state.markPrices[position.market], !state.busy, {
-                    onIntent(PortfolioIntent.ManagePosition(position.market))
-                  })
+                SwipeAction("Close", { closeTarget = position.market }, enabled = !state.busy) {
+                  PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market),
+                    state.markPrices[position.market], !state.busy, { onPositionClick(position.market) })
+                }
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
             }
@@ -252,7 +257,11 @@ fun PortfolioScreen(
       }
     }
   }
-  if (state.managedPositionMarket != null) PositionManagementSheet(state, onIntent)
+  closeTarget?.let { market ->
+    val position = state.account.positions.firstOrNull { it.market == market }
+    if (position != null) ClosePositionSheet(state, position, onIntent, { closeTarget = null }, { closeTarget = null })
+    else LaunchedEffect(market) { closeTarget = null }
+  }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
   if (state.vaultAction != null && state.selectedVault != null) VaultActionSheet(state, onIntent)
 }

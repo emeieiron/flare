@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -220,18 +222,35 @@ fun BackBar(
 
 val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 
+/** [dismissible] false holds the sheet open, for while the action it confirms is running. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FlareSheet(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun FlareSheet(
+  title: String,
+  onDismiss: () -> Unit,
+  dismissible: Boolean = true,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  val canDismiss by rememberUpdatedState(dismissible)
   ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    onDismissRequest = { if (canDismiss) onDismiss() },
+    sheetState =
+      rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { it != SheetValue.Hidden || canDismiss },
+      ),
+    sheetGesturesEnabled = dismissible,
     dragHandle = null,
     shape = FlareSheetShape,
     containerColor = FlareColors.Canvas,
     contentColor = FlareColors.TextPrimary,
     tonalElevation = 0.dp,
     scrimColor = Color.Black.copy(alpha = 0.64f),
+    properties =
+      ModalBottomSheetProperties(
+        shouldDismissOnBackPress = dismissible,
+        shouldDismissOnClickOutside = dismissible,
+      ),
   ) {
     Column(Modifier.fillMaxWidth()) {
       BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
@@ -245,6 +264,49 @@ fun FlareSheet(title: String, onDismiss: () -> Unit, content: @Composable Column
         )
         content()
       }
+    }
+  }
+}
+
+/**
+ * Every confirmation in Flare: what will happen, the action, and a quiet way out, at the bottom
+ * where the thumb already is. While [working] the sheet stays open and the button becomes the
+ * progress indicator; [error] explains a failure in place so the action can be retried.
+ */
+@Composable
+fun FlareConfirmSheet(
+  title: String,
+  message: String,
+  confirmLabel: String,
+  onConfirm: () -> Unit,
+  onDismiss: () -> Unit,
+  dismissLabel: String = "Cancel",
+  destructive: Boolean = true,
+  working: Boolean = false,
+  error: String? = null,
+  details: @Composable ColumnScope.() -> Unit = {},
+) {
+  FlareSheet(title, onDismiss, dismissible = !working) {
+    Text(message, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+    details()
+    error?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.ALERT) }
+    FlareButton(
+      confirmLabel,
+      onConfirm,
+      Modifier.fillMaxWidth().padding(top = 24.dp),
+      style = if (destructive) FlareButtonStyle.DESTRUCTIVE else FlareButtonStyle.PRIMARY,
+      working = working,
+    )
+    TextButton(
+      onDismiss,
+      Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 4.dp),
+      enabled = !working,
+    ) {
+      Text(
+        dismissLabel,
+        color = if (working) FlareColors.TextDisabled else FlareColors.TextSecondary,
+        style = MaterialTheme.typography.labelLarge,
+      )
     }
   }
 }

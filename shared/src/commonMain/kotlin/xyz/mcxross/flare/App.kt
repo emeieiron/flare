@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
@@ -79,6 +80,7 @@ import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
 import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
+import xyz.mcxross.flare.feature.portfolio.PositionRoute
 import xyz.mcxross.flare.feature.settings.AccountRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
@@ -98,6 +100,8 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 @Serializable data object MarketsDestination
 
 @Serializable data class TradeDestination(val marketAddress: String? = null)
+
+@Serializable data class PositionDestination(val market: String)
 
 @Serializable data object OrdersDestination
 
@@ -349,6 +353,19 @@ private fun FlareShell() {
           onMarketClick = { marketAddress ->
             navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
           },
+          onPositionClick = { market ->
+            navController.navigate(PositionDestination(market)) { launchSingleTop = true }
+          },
+        )
+      }
+      composable<PositionDestination> { backStackEntry ->
+        // Shares the portfolio's view model, so the list and the position never disagree.
+        val portfolioEntry =
+          remember(backStackEntry) { navController.getBackStackEntry<PortfolioDestination>() }
+        PositionRoute(
+          market = backStackEntry.toRoute<PositionDestination>().market,
+          onBack = { navController.popBackStack() },
+          viewModel = koinViewModel(viewModelStoreOwner = portfolioEntry),
         )
       }
       composable<MarketsDestination> {
@@ -398,4 +415,5 @@ private fun FlareShell() {
 }
 
 private fun NavDestination.isDetailPage(): Boolean =
-  hasRoute<TradeDestination>() || hasRoute<SettingsDestination>() || hasRoute<AccountSetupDestination>()
+  hasRoute<TradeDestination>() || hasRoute<PositionDestination>() || hasRoute<SettingsDestination>() ||
+    hasRoute<AccountSetupDestination>()

@@ -83,6 +83,8 @@ enum class FlareButtonStyle {
   OUTLINE,
   BUY,
   SELL,
+  /** Filled red, for the confirming step of an action that can't be undone. */
+  DESTRUCTIVE,
 }
 
 /**
@@ -417,7 +419,8 @@ fun FlareButton(
 ) {
   val colors = LocalFlareTradingColors.current
   val shape = CircleShape
-  if (style == FlareButtonStyle.PRIMARY) {
+  if (style == FlareButtonStyle.PRIMARY || style == FlareButtonStyle.DESTRUCTIVE) {
+    val container = if (style == FlareButtonStyle.PRIMARY) colors.positive else colors.negative
     Button(
       onClick = onClick,
       modifier = modifier.heightIn(min = 52.dp).workingShimmer(working),
@@ -425,10 +428,10 @@ fun FlareButton(
       shape = shape,
       colors =
         ButtonDefaults.buttonColors(
-          containerColor = colors.positive,
+          containerColor = container,
           contentColor = Color.Black,
           // A pending action keeps its identity; only interaction is withheld.
-          disabledContainerColor = if (working) colors.positive else FlareColors.Surface,
+          disabledContainerColor = if (working) container else FlareColors.Surface,
           disabledContentColor = if (working) Color.Black else FlareColors.TextDisabled,
         ),
     ) {
