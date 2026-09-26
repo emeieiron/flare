@@ -37,6 +37,8 @@ enum class OnboardingStep {
   SHOW_BACKUP,
   CONFIRM_BACKUP,
   SUBACCOUNT,
+  /** A wallet Flare created opens its trading account and enables trading in one go. */
+  OPEN_ACCOUNT,
   ENABLE_TRADING,
 }
 
@@ -64,6 +66,12 @@ sealed interface SetupFee {
 
   /** The wallet's balance couldn't be checked, so the step can only be tried again. */
   data class Unchecked(override val estimateOctas: ULong) : SetupFee
+
+  /**
+   * A wallet Flare just created has no APT, so only Flare can pay; the step waits, saved, until Flare
+   * can cover it.
+   */
+  data class AwaitingSponsor(override val estimateOctas: ULong) : SetupFee
 }
 
 /** The two on-chain steps of setup, so a fee fallback retries the step that failed. */
@@ -90,6 +98,8 @@ data class OnboardingUiState(
   val subaccounts: List<Subaccount> = emptyList(),
   val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
+  /** A new wallet's trading account is open, whether or not trading is enabled yet. */
+  val accountOpened: Boolean = false,
   val setupTransaction: TransactionState? = null,
   val setupOperation: SetupOperation? = null,
   /** Set when Flare couldn't cover the current step's network fee. */
@@ -132,6 +142,8 @@ sealed interface OnboardingIntent {
   data class SelectSubaccount(val address: String) : OnboardingIntent
 
   data object ContinueSubaccount : OnboardingIntent
+
+  data object OpenAccount : OnboardingIntent
 
   data object EnableTrading : OnboardingIntent
 
@@ -222,7 +234,8 @@ class OnboardingViewModel(
           }
         }
       OnboardingIntent.RetrySetup ->
-        when (local.value.setupOperation) {
+        if (local.value.step == OnboardingStep.OPEN_ACCOUNT) openAccount()
+        else when (local.value.setupOperation) {
           SetupOperation.CREATE_ACCOUNT -> createSubaccount()
           SetupOperation.ENABLE_TRADING,
           null -> enableTrading()
@@ -242,6 +255,7 @@ class OnboardingViewModel(
       is OnboardingIntent.SelectSubaccount ->
         local.value = local.value.copy(selectedSubaccount = intent.address, input = intent.address)
       OnboardingIntent.ContinueSubaccount -> continueSubaccount()
+      OnboardingIntent.OpenAccount -> openAccount()
       OnboardingIntent.EnableTrading -> enableTrading()
       OnboardingIntent.ContinueSetup -> prepareOwnerAccount()
       OnboardingIntent.ClearSensitiveState -> {
@@ -250,7 +264,9 @@ class OnboardingViewModel(
         clearSecrets()
       }
       OnboardingIntent.Back -> {
-        if (
+        if (local.value.step == OnboardingStep.OPEN_ACCOUNT && local.value.accountOpened) {
+          // The account exists on chain; the only way from here is forward.
+        } else if (
           local.value.step == OnboardingStep.ENABLE_TRADING && local.value.subaccounts.size > 1
         ) {
           local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT, error = null)
@@ -329,14 +345,20 @@ class OnboardingViewModel(
         }
       require(matches) { "The confirmation words do not match the recovery phrase" }
       wallets.confirmOwnerBackup()
-      local.value =
+      val cleared =
         state.copy(
-          step = OnboardingStep.SUBACCOUNT,
           backupWords = emptyList(),
           confirmationIndices = emptyList(),
+          confirmationOptions = emptyMap(),
           confirmations = emptyMap(),
         )
-      discoverSubaccountsInternal()
+      // A wallet made here has nothing to look up: it goes straight to opening its trading account.
+      if (activeProfile()?.createdInApp == true) {
+        local.value = cleared.copy(step = OnboardingStep.OPEN_ACCOUNT, accountOpened = false)
+      } else {
+        local.value = cleared.copy(step = OnboardingStep.SUBACCOUNT)
+        discoverSubaccountsInternal()
+      }
     }
 
   private fun prepareOwnerAccount() =
@@ -347,6 +369,16 @@ class OnboardingViewModel(
         // The phrase is fetched only when the person reveals it.
         profile.ownerAddress != null && !profile.ownerBackupConfirmed ->
           local.value = local.value.copy(step = OnboardingStep.SHOW_BACKUP, backupRevealed = false)
+        // A wallet made here resumes at opening its account, with whatever already went through kept.
+        activeProfile()?.createdInApp == true -> {
+          val saved = activeProfile()
+          local.value =
+            local.value.copy(
+              step = OnboardingStep.OPEN_ACCOUNT,
+              accountOpened = saved?.selectedSubaccount != null || saved?.tradingAccountOpened == true,
+              selectedSubaccount = saved?.selectedSubaccount,
+            )
+        }
         else -> discoverSubaccountsInternal()
       }
     }
@@ -406,6 +438,35 @@ class OnboardingViewModel(
       if (local.value.step == OnboardingStep.ENABLE_TRADING) delegateApiAndFinish()
     }
 
+  /**
+   * Opens a new wallet's trading account and enables trading, picking up after whatever part already
+   * went through: the account is never opened twice, and enabling trading checks before it repeats.
+   * Flare sponsors every fee; if it can't just now, the step stays saved for another try.
+   */
+  private fun openAccount() =
+    launchAction("Your trading account isn’t ready yet.") {
+      local.value =
+        local.value.copy(
+          setupOperation = SetupOperation.CREATE_ACCOUNT,
+          setupTransaction = null,
+          setupFee = null,
+        )
+      // One confirmation covers the whole action: the trading key is stored while it's fresh, and
+      // opening the account, enabling trading and builder support sign without asking again.
+      accounts.confirmedSetup(OpenAccountPrompt) {
+        wallets.createApiWallet(setupPrompt)
+        val subaccount = accounts.openTradingAccount(setupPrompt)
+        accounts.selectTradingAccount(subaccount, setupPrompt)
+        local.value = local.value.copy(accountOpened = true, selectedSubaccount = subaccount)
+        delegateApiAndFinish(FeePayment.SPONSORED)
+      }
+    }
+
+  private suspend fun activeProfile(): AccountProfile? {
+    val saved = preferences.values.first()
+    return saved.profiles.firstOrNull { it.id == saved.activeProfileId }
+  }
+
   private fun continueSubaccount() =
     launchAction("That account couldn’t be opened.") {
       val address = local.value.selectedSubaccount ?: local.value.input.trim()
@@ -419,7 +480,13 @@ class OnboardingViewModel(
     }
 
   private fun enableTrading(feePayment: FeePayment = FeePayment.SPONSORED) =
-    launchAction("Trading wasn’t enabled on this device.") { delegateApiAndFinish(feePayment) }
+    launchAction("Trading wasn’t enabled on this device.") {
+      // Enabling trading and builder support are separate transactions confirmed once, together.
+      accounts.confirmedSetup(EnableTradingPrompt) {
+        wallets.createApiWallet(setupPrompt)
+        delegateApiAndFinish(feePayment)
+      }
+    }
 
   private fun importTradingKey() =
     launchAction("That trading key wasn’t imported.") {
@@ -454,7 +521,9 @@ class OnboardingViewModel(
       VaultPrompt(title = "Enable trading", subtitle = "Confirm your identity"),
       feePayment = feePayment,
     )
-    if (local.value.builderOptIn && runtime.defaultBuilderAddress.isNotBlank()) {
+    if (activeProfile()?.builderApproved == true) {
+      // Approved by an earlier attempt; nothing to send again.
+    } else if (local.value.builderOptIn && runtime.defaultBuilderAddress.isNotBlank()) {
       runSuspendCatching {
         // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
         accounts.approveBuilderFee(
@@ -563,6 +632,8 @@ class OnboardingViewModel(
    */
   private suspend fun assessFee(failed: TransactionState.Failed): SetupFee {
     val estimate = checkNotNull(failed.selfPayEstimateOctas)
+    // A wallet made here has no APT to pay with, so there's no balance to check or charge.
+    if (activeProfile()?.createdInApp == true) return SetupFee.AwaitingSponsor(estimate)
     val reserve = maxOf(failed.selfPayReserveOctas ?: estimate, estimate)
     val owner = wallets.profile.first().ownerAddress
     val balance = runSuspendCatching { trading.ownerAptBalance() }.getOrNull()
@@ -590,7 +661,15 @@ class OnboardingViewModel(
           } else {
             local.value.copy(
               setupTransaction = error.transaction,
-              error = actionFailure(failed?.message, "Trading wasn’t enabled on this device."),
+              error =
+                actionFailure(
+                  failed?.message,
+                  if (local.value.setupOperation == SetupOperation.CREATE_ACCOUNT) {
+                    "Your trading account wasn’t opened."
+                  } else {
+                    "Trading wasn’t enabled on this device."
+                  },
+                ),
             )
           }
       } catch (error: Throwable) {
@@ -601,3 +680,6 @@ class OnboardingViewModel(
     }
   }
 }
+
+private val OpenAccountPrompt = VaultPrompt("Open trading account", "Confirm your identity")
+private val EnableTradingPrompt = VaultPrompt("Enable trading", "Confirm your identity")

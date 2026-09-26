@@ -233,9 +233,15 @@ private fun FlareAppFlow() {
       }
   }
   val hasCompletedProfile = persisted?.profiles?.any { it.onboardingComplete } == true
+  // The finished wallet the shell shows. While another wallet is being set up it becomes the active
+  // one, and the shell keeps showing the wallet it had rather than jumping to another finished one.
+  val shownWallet = remember { arrayOf<String?>(null) }
   val lastCompletedProfileId = remember(persisted?.profiles, persisted?.activeProfileId) {
-    persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && it.onboardingComplete }?.id
-      ?: persisted?.profiles?.firstOrNull { it.onboardingComplete }?.id
+    val activeFinished =
+      persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && it.onboardingComplete }?.id
+    val stillFinished = shownWallet[0]?.takeIf { id -> persisted?.profiles?.any { it.id == id && it.onboardingComplete } == true }
+    (activeFinished ?: stillFinished ?: persisted?.profiles?.firstOrNull { it.onboardingComplete }?.id)
+      .also { shownWallet[0] = it }
   }
   val savedScreens = rememberSaveableStateHolder()
   val stage =
@@ -265,14 +271,17 @@ private fun FlareAppFlow() {
           profileId = unfinished,
         )
       }
-      LaunchStage.READY ->
-        key(lastCompletedProfileId, persisted?.selectedSubaccount) {
-          savedScreens.SaveableStateProvider(
-            "shell:${lastCompletedProfileId}:${persisted?.selectedSubaccount}"
-          ) {
+      LaunchStage.READY -> {
+        // The shell starts over only when a finished wallet or its account changes. A wallet still
+        // being set up from inside the shell becomes active along the way, and must not reset it.
+        val shellAccount =
+          persisted?.profiles?.firstOrNull { it.id == lastCompletedProfileId }?.selectedSubaccount
+        key(lastCompletedProfileId, shellAccount) {
+          savedScreens.SaveableStateProvider("shell:$lastCompletedProfileId:$shellAccount") {
             FlareShell()
           }
         }
+      }
       LaunchStage.LOADING,
       LaunchStage.LOCKED -> Unit
     }

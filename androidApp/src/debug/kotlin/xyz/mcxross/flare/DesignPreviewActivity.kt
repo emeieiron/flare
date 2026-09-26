@@ -75,7 +75,8 @@ private fun PreviewScreens(initialScreen: String) {
         "splash" -> FlareSplashScreen()
         "welcome", "import", "import-phrase", "import-key", "backup", "backup-revealed", "confirm",
         "accounts", "create-account", "finding", "enable", "enable-working", "setup-error",
-        "fee-can-pay", "fee-needs-funds", "fee-unchecked" ->
+        "fee-can-pay", "fee-needs-funds", "fee-unchecked", "open-account", "open-account-working",
+        "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
           OnboardingScreen(onboarding, { onboarding = previewOnboardingIntent(onboarding, it) })
         "markets" ->
           MarketsScreen(
@@ -511,6 +512,19 @@ private fun previewOnboardingState(screen: String): OnboardingUiState {
             else -> SetupFee.Unchecked(104_300uL)
           },
       )
+    "open-account", "open-account-working", "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
+      OnboardingUiState(
+        step = OnboardingStep.OPEN_ACCOUNT,
+        profile = owner,
+        accountOpened = screen == "open-account-opened" || screen == "open-account-stalled",
+        busy = screen == "open-account-working" || screen == "open-account-opened",
+        setupOperation =
+          if (screen == "open-account-stalled") SetupOperation.ENABLE_TRADING else SetupOperation.CREATE_ACCOUNT,
+        setupFee = if (screen == "open-account-sponsor") SetupFee.AwaitingSponsor(104_300uL) else null,
+        error =
+          if (screen == "open-account-stalled") "Trading wasn’t enabled on this device. Flare couldn’t reach the network."
+          else null,
+      )
     "setup-error" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, error = "Trading wasn’t enabled on this device. The network didn’t respond.")
     else -> OnboardingUiState()
   }
@@ -528,7 +542,8 @@ private fun previewOnboardingIntent(state: OnboardingUiState, intent: Onboarding
     OnboardingIntent.RevealBackup -> state.copy(backupRevealed = true)
     OnboardingIntent.ReviewBackup -> state.copy(step = OnboardingStep.CONFIRM_BACKUP)
     is OnboardingIntent.ChangeConfirmation -> state.copy(confirmations = state.confirmations + (intent.index to intent.value))
-    OnboardingIntent.ConfirmBackup -> previewOnboardingState("create-account")
+    OnboardingIntent.ConfirmBackup -> previewOnboardingState("open-account")
+    OnboardingIntent.OpenAccount -> state.copy(busy = true, error = null, setupFee = null)
     OnboardingIntent.CreateSubaccount, OnboardingIntent.DiscoverSubaccounts -> previewOnboardingState("accounts")
     is OnboardingIntent.SelectSubaccount -> state.copy(selectedSubaccount = intent.address)
     OnboardingIntent.ContinueSubaccount -> previewOnboardingState("enable")

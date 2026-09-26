@@ -127,6 +127,7 @@ class SettingsViewModelTest {
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
     override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): TransactionState =
       TransactionState.Committed("0xsub")
+    override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0xsub"
     override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): TransactionState =
       TransactionState.Committed("0xdel")
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}

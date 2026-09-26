@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.data
 
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -7,6 +9,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.AccountOpenOrders
@@ -31,6 +36,7 @@ import xyz.mcxross.flare.decibel.api.StreamEvent
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
@@ -48,7 +54,6 @@ import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.decibel.model.VaultInfo
-import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -116,6 +121,22 @@ interface AccountRepository {
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): TransactionState
+
+  /**
+   * Opens the trading account of a wallet Flare created and returns its address. It happens exactly
+   * once: an earlier attempt that went through is found and reused, never repeated, and a new account
+   * is waited for until Decibel lists it. Flare sponsors the fee, since a new wallet has no APT.
+   * A transaction that didn't go through throws [SetupTransactionException], with its progress saved.
+   */
+  suspend fun openTradingAccount(prompt: VaultPrompt): String
+
+  /**
+   * Runs setup's on-chain steps as one confirmed action. Decibel keeps opening an account, enabling
+   * trading and approving builder fees as separate transactions, so instead of one transaction the
+   * person confirms once: every owner signature inside [block] rests on that confirmation rather than
+   * asking again.
+   */
+  suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T = block()
 
   suspend fun delegateApiWallet(
     prompt: VaultPrompt,
@@ -321,16 +342,20 @@ class DefaultAccountRepository(
     sessions.authenticateOwner(null, prompt.copy(requireFreshAuthorization = false))
     val reference = saved.profiles.first { it.id == saved.activeProfileId }.creationReference
     if (reference != null) {
+      // An earlier attempt may have gone through after its journal entry settled, so the chain has
+      // the last word before anything is created again.
+      val resolved = trading.transactionStatus(reference)
       val isPending = trading.pendingTransactions.first().any { it.operation == "CREATE_SUBACCOUNT" }
-      if (!isPending) {
-        preferences.setCreationReference(saved.activeProfileId, null)
-      } else {
-        val resolved = trading.transactionStatus(reference)
-        if (resolved is TransactionState.Committed || (resolved is TransactionState.Failed && resolved.committed)) {
+      when {
+        resolved is TransactionState.Committed -> {
+          preferences.setTradingAccountOpened(saved.activeProfileId)
           preferences.setCreationReference(saved.activeProfileId, null)
-        } else {
           return resolved
         }
+        resolved is TransactionState.Failed && resolved.committed ->
+          preferences.setCreationReference(saved.activeProfileId, null)
+        isPending -> return resolved
+        else -> preferences.setCreationReference(saved.activeProfileId, null)
       }
     }
     trading.reconcilePending()
@@ -342,7 +367,7 @@ class DefaultAccountRepository(
     trading
       .execute(
         DecibelCommand.CreateSubaccount,
-        prompt.copy(requireFreshAuthorization = true),
+        prompt.copy(requireFreshAuthorization = !insideConfirmedSetup()),
         feePayment = feePayment,
         onPrepared = { preferences.setCreationReference(saved.activeProfileId, it) },
       )
@@ -352,12 +377,48 @@ class DefaultAccountRepository(
           preferences.setCreationReference(saved.activeProfileId, null)
         }
         if (state is TransactionState.Committed) {
+          preferences.setTradingAccountOpened(saved.activeProfileId)
           preferences.setCreationReference(saved.activeProfileId, null)
           setupApproval =
             Triple(saved.activeProfileId, wallets.authorizationGeneration, approvalStartedAt)
         }
       }
     return terminal
+  }
+
+  override suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T {
+    if (!insideConfirmedSetup()) wallets.confirmIdentity(prompt)
+    return withContext(ConfirmedSetup()) { block() }
+  }
+
+  private suspend fun insideConfirmedSetup(): Boolean = currentCoroutineContext()[ConfirmedSetup] != null
+
+  override suspend fun openTradingAccount(prompt: VaultPrompt): String {
+    val saved = preferences.values.first()
+    saved.selectedSubaccount?.let { return it }
+    val owner = saved.ownerAddress ?: error("An owner key is required")
+    val profile = saved.profiles.first { it.id == saved.activeProfileId }
+    // A wallet Flare made can't have an account it didn't open, so an account on chain is the one an
+    // earlier attempt opened. A first attempt has nothing to look for.
+    if (profile.tradingAccountOpened || profile.creationReference != null) {
+      subaccounts(owner).firstOrNull()?.let { return it.address }
+    }
+    if (!profile.tradingAccountOpened) {
+      val result = createSubaccount(prompt, FeePayment.SPONSORED)
+      if (result !is TransactionState.Committed) throw SetupTransactionException(result)
+    }
+    return awaitSubaccount(owner)
+  }
+
+  /** Decibel lists a new account a moment after it's opened; this waits, patiently, for it to appear. */
+  private suspend fun awaitSubaccount(owner: String): String {
+    var wait = 1_000L
+    repeat(OPENED_ACCOUNT_CHECKS) {
+      runSuspendCatching { subaccounts(owner).firstOrNull()?.address }.getOrNull()?.let { return it }
+      delay(wait)
+      wait = (wait * 2).coerceAtMost(8_000L)
+    }
+    error("Your trading account is open but isn’t showing yet. Try again in a moment.")
   }
 
   override suspend fun delegateApiWallet(
@@ -379,7 +440,7 @@ class DefaultAccountRepository(
     trading
       .execute(
         command = DecibelCommand.DelegateTrading(subaccount, apiAddress),
-        prompt = prompt.copy(requireFreshAuthorization = !reviewedSetup),
+        prompt = prompt.copy(requireFreshAuthorization = !reviewedSetup && !insideConfirmedSetup()),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
@@ -454,7 +515,7 @@ class DefaultAccountRepository(
     trading
       .execute(
         command = command,
-        prompt = prompt.copy(requireFreshAuthorization = true),
+        prompt = prompt.copy(requireFreshAuthorization = !insideConfirmedSetup()),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
@@ -1166,4 +1227,11 @@ private sealed interface HistoryResult {
 private fun <T> Page<T>.hasMore(offset: Int): Boolean {
   val knownTotal = totalCount
   return items.size == 50 && (knownTotal == null || (offset + items.size).toLong() < knownTotal)
+}
+
+private const val OPENED_ACCOUNT_CHECKS = 8
+
+/** Marks the setup steps a person confirmed as one action; see [AccountRepository.confirmedSetup]. */
+private class ConfirmedSetup : AbstractCoroutineContextElement(ConfirmedSetup) {
+  companion object Key : CoroutineContext.Key<ConfirmedSetup>
 }

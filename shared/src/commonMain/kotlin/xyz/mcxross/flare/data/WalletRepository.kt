@@ -99,7 +99,9 @@ class DefaultWalletRepository(
       val address = account.accountAddress.toString()
       val id = "owner_$address"
       storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), phrase, prompt, scoped = true)
-      preferences.registerProfile(AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false))
+      preferences.registerProfile(
+        AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false, createdInApp = true)
+      )
       OwnerBackup(address, phrase.split(' '))
     } finally {
       account.close()

@@ -143,6 +143,8 @@ class PortfolioViewModelTest {
       feePayment: FeePayment,
     ): TransactionState = TransactionState.Committed("0x")
 
+    override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0x"
+
     override suspend fun delegateApiWallet(
       prompt: VaultPrompt,
       feePayment: FeePayment,
