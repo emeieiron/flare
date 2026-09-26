@@ -1,21 +1,13 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Flare release rules. Most libraries ship their own; these cover the ones that don't.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The Aptos SDK signs through fastkrypto, a Rust library whose UniFFI bindings reach native code
+# through JNA. JNA finds native functions by the bound interface's method names and reads Structure
+# fields by name, so renaming either breaks signing at runtime. Neither library ships rules.
+-keep class com.sun.jna.** { *; }
+-keep class * implements com.sun.jna.** { *; }
+-keep class xyz.mcxross.fastkrypto.** { *; }
+-dontwarn java.awt.**
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Readable stack traces from release crashes; the mapping file restores the names.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
