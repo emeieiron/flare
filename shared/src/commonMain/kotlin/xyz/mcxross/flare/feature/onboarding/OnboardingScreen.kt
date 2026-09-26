@@ -1,27 +1,32 @@
 package xyz.mcxross.flare.feature.onboarding
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,8 +37,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -41,19 +52,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.data.CredentialFormat
-import xyz.mcxross.flare.data.WalletCredential
-import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.FlareSegmentedControl
-import xyz.mcxross.flare.design.FlareTextField
+import xyz.mcxross.flare.design.FlareIcons
+import xyz.mcxross.flare.design.FlareMark
+import xyz.mcxross.flare.design.FlarePageTransition
+import xyz.mcxross.flare.design.IGNITION_REST
 import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.pagePopEnter
+import xyz.mcxross.flare.design.pagePopExit
+import xyz.mcxross.flare.design.pagePushEnter
+import xyz.mcxross.flare.design.pagePushExit
+import xyz.mcxross.flare.design.rememberFlareIgnition
+import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
 
 @Composable
@@ -101,358 +117,266 @@ fun OnboardingScreen(
 ) {
   // The welcome intro plays once per launch, not again when someone steps back to it.
   var introPending by rememberSaveable { mutableStateOf(true) }
+  val goBack = {
+    if (!state.busy) {
+      if (state.step == OnboardingStep.WELCOME && onBack != null) onBack()
+      else onIntent(OnboardingIntent.Back)
+    }
+  }
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = state.step != OnboardingStep.WELCOME || onBack != null,
-    onBackCompleted = {
-      if (!state.busy) {
-        if (state.step == OnboardingStep.WELCOME && onBack != null) onBack()
-        else onIntent(OnboardingIntent.Back)
-      }
+    onBackCompleted = goBack,
+  )
+  AnimatedContent(
+    targetState = state.step == OnboardingStep.WELCOME && initialMode == null,
+    modifier = modifier.fillMaxSize(),
+    transitionSpec = {
+      val move =
+        if (targetState) pagePopEnter() togetherWith pagePopExit()
+        else pagePushEnter() togetherWith pagePushExit()
+      move.apply { targetContentZIndex = if (targetState) 0f else 1f }.using(null)
     },
-  )
-  if (state.step == OnboardingStep.WELCOME && initialMode == null) {
-    WelcomeScreen(
-      intro = introPending,
-      onIntroShown = { introPending = false },
-      busy = state.busy,
-      onCreate = { onIntent(OnboardingIntent.CreateOwner) },
-      onImport = { onIntent(OnboardingIntent.ShowImport) },
-      onBack = onBack,
-      modifier = modifier,
-    )
-    return
+    label = "Welcome and setup",
+  ) { welcome ->
+    if (welcome) {
+      WelcomeScreen(
+        intro = introPending,
+        onIntroShown = { introPending = false },
+        busy = state.busy,
+        onCreate = { onIntent(OnboardingIntent.CreateOwner) },
+        onImport = { onIntent(OnboardingIntent.ShowImport) },
+        onBack = onBack,
+      )
+    } else {
+      SetupFlow(state, onIntent, goBack)
+    }
   }
-  BoxWithConstraints(
-    modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()
-  ) {
-    val pageHeight = maxHeight
+}
+
+@Composable
+private fun SetupFlow(
+  state: OnboardingUiState,
+  onIntent: (OnboardingIntent) -> Unit,
+  goBack: () -> Unit,
+) {
+  Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()) {
+    Box(Modifier.fillMaxWidth().height(56.dp)) {
+      IconButton(goBack, Modifier.align(Alignment.CenterStart).padding(start = 4.dp), enabled = !state.busy) {
+        Icon(
+          FlareIcons.ArrowBack,
+          "Back",
+          tint = if (state.busy) FlareColors.TextDisabled else FlareColors.TextPrimary,
+        )
+      }
+      SetupProgress(state.step.stage, Modifier.align(Alignment.Center).size(28.dp))
+    }
+    FlarePageTransition(state.step, depth = { it.order }, modifier = Modifier.weight(1f)) { step ->
+      when (step) {
+        // A setup opened from the account screen shows this only while it finds where to begin.
+        OnboardingStep.WELCOME ->
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+          }
+        OnboardingStep.IMPORT -> ImportStep(state, onIntent)
+        OnboardingStep.SHOW_BACKUP -> BackupStep(state, onIntent)
+        OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
+        OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
+        OnboardingStep.ENABLE_TRADING -> EnableTradingStep(state, onIntent)
+      }
+    }
+  }
+}
+
+/** Setup has three stages, one for each bar of the mark: securing the account, choosing it, trading. */
+private val OnboardingStep.stage: Int
+  get() =
+    when (this) {
+      OnboardingStep.WELCOME,
+      OnboardingStep.IMPORT,
+      OnboardingStep.SHOW_BACKUP,
+      OnboardingStep.CONFIRM_BACKUP -> 0
+      OnboardingStep.SUBACCOUNT -> 1
+      OnboardingStep.ENABLE_TRADING -> 2
+    }
+
+private val OnboardingStep.order: Int
+  get() =
+    when (this) {
+      OnboardingStep.WELCOME -> 0
+      OnboardingStep.IMPORT,
+      OnboardingStep.SHOW_BACKUP -> 1
+      OnboardingStep.CONFIRM_BACKUP -> 2
+      OnboardingStep.SUBACCOUNT -> 3
+      OnboardingStep.ENABLE_TRADING -> 4
+    }
+
+/**
+ * Setup's progress, drawn as the mark. The bars stand for the stages; the current one is lit, the ones
+ * to come are grey, and a finished stage's bar flares the moment it's done and keeps a soft glow.
+ */
+@Composable
+private fun SetupProgress(stage: Int, modifier: Modifier = Modifier) {
+  val reduceMotion = rememberReducedMotion()
+  val haptics = LocalHapticFeedback.current
+  val ignition = rememberFlareIgnition()
+  val colors =
+    List(3) { bar ->
+      animateColorAsState(
+        if (bar <= stage) FlareColors.Positive else FlareColors.BorderStrong,
+        tween(320),
+        label = "Setup stage $bar",
+      )
+    }
+  var shown by remember { mutableStateOf<Int?>(null) }
+  LaunchedEffect(stage) {
+    val previous = shown
+    shown = stage
+    if (previous != null && stage > previous) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+    for (bar in 0..2) {
+      launch {
+        val level = if (bar < stage) IGNITION_REST else 0f
+        // A stage already done when setup opens is shown lit; one finished just now flares.
+        ignition.light(bar, level, reduceMotion || previous == null || bar < previous)
+      }
+    }
+  }
+  FlareMark(
+    modifier.semantics { contentDescription = "Step ${stage + 1} of 3" },
+    barColor = { colors[it].value },
+    glow = ignition::level,
+  )
+}
+
+/**
+ * A setup step: its heading and body scroll, and its actions stay at the bottom, above the keyboard.
+ */
+@Composable
+internal fun StepLayout(
+  title: String,
+  subtitle: String?,
+  actions: @Composable ColumnScope.() -> Unit,
+  content: @Composable ColumnScope.() -> Unit = {},
+) {
+  Column(Modifier.fillMaxSize()) {
     Column(
-      Modifier.fillMaxWidth()
-        .verticalScroll(rememberScrollState())
-        .heightIn(min = pageHeight)
-        .padding(horizontal = 24.dp, vertical = 16.dp)
+      Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
     ) {
-      if (state.step == OnboardingStep.WELCOME) {
-        Box(
-          modifier = Modifier.fillMaxWidth().heightIn(min = pageHeight),
-          contentAlignment = Alignment.Center,
-        ) {
-          CircularProgressIndicator(strokeWidth = 2.dp)
-        }
-      } else {
-        BackBar("Your account", { if (!state.busy) onIntent(OnboardingIntent.Back) })
-        Spacer(Modifier.height(32.dp))
-        when (state.step) {
-          OnboardingStep.IMPORT -> UnifiedImportStep(state, onIntent)
-          OnboardingStep.SHOW_BACKUP -> BackupStep(state, onIntent)
-          OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
-          OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
-          OnboardingStep.ENABLE_TRADING -> EnableTradingStep(state, onIntent)
-          OnboardingStep.WELCOME -> Unit
-        }
-      }
-      (state.setupTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
-        ActionNotice(
-          "Flare can’t cover the network fee for this step. Your wallet would pay about " +
-            "${estimate.toDecimalString(8)} APT.",
-          Modifier.padding(top = 16.dp),
-        )
-        FlareButton(
-          "Pay the fee and continue",
-          { onIntent(OnboardingIntent.ConfirmSetupSelfPay) },
-          Modifier.fillMaxWidth().padding(top = 12.dp),
-          enabled = !state.busy,
-        )
-      }
-      state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.ALERT) }
-      if (state.busy) {
-        CircularProgressIndicator(
-          Modifier.align(Alignment.CenterHorizontally).padding(top = 20.dp).size(24.dp),
-          strokeWidth = 2.dp,
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun UnifiedImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  val format = remember(state.input) { WalletCredential.detect(state.input) }
-  Text("Welcome back.", style = MaterialTheme.typography.headlineLarge)
-  Text(
-    "Paste a recovery phrase or private key.",
-    Modifier.padding(top = 12.dp),
-    style = MaterialTheme.typography.bodyLarge,
-    color = FlareColors.TextSecondary,
-  )
-  FlareTextField(
-    value = state.input,
-    onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
-    modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
-    label = "Recovery phrase or private key",
-    placeholder = "12–24 words, hex, or ed25519-priv-…",
-    supportingText =
-      when (format) {
-        CredentialFormat.RECOVERY_PHRASE ->
-          if (state.apiImport) "A trading key is a private key, not a phrase."
-          else "Recovery phrase recognized"
-        CredentialFormat.PRIVATE_KEY -> "Private key recognized"
-        CredentialFormat.UNKNOWN -> "12–24 words, hex, or ed25519-priv-…"
-      },
-    visualTransformation = PasswordVisualTransformation(),
-    keyboardOptions =
-      KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-    minLines = 4,
-    singleLine = false,
-    enabled = !state.busy,
-  )
-  if (format == CredentialFormat.PRIVATE_KEY || state.apiImport) {
-    FlareSegmentedControl(
-      listOf(false, true), state.apiImport,
-      { onIntent(OnboardingIntent.SetApiImport(it)) },
-      { if (it) "Trading key" else "Owner key" },
-      Modifier.fillMaxWidth().padding(top = 16.dp), enabled = !state.busy,
-    )
-  }
-  if (state.apiImport) {
-    FlareTextField(
-      value = state.tradingAccountInput,
-      onValueChange = { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
-      modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-      label = "Trading-account address",
-      placeholder = "0x...",
-      singleLine = true,
-      enabled = !state.busy,
-    )
-    Text(
-      "A trading key can trade only. Deposits and withdrawals need the owner key.",
-      Modifier.padding(top = 8.dp),
-      style = MaterialTheme.typography.bodySmall,
-      color = FlareColors.TextSecondary,
-    )
-  }
-  FlareButton(
-    "Continue",
-    { onIntent(OnboardingIntent.ImportCredential) },
-    Modifier.fillMaxWidth().padding(top = 32.dp),
-    enabled =
-      !state.busy &&
-        format != CredentialFormat.UNKNOWN &&
-        (!state.apiImport || format == CredentialFormat.PRIVATE_KEY),
-  )
-}
-
-
-
-@Composable
-private fun BackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  Text("Save your recovery phrase", style = MaterialTheme.typography.headlineLarge)
-  Text(
-    "Write these words down in order and keep them somewhere safe. You’ll need them to recover your account.",
-    modifier = Modifier.padding(top = 12.dp),
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    style = MaterialTheme.typography.bodyMedium,
-  )
-  Column(
-    modifier =
-      Modifier.fillMaxWidth()
-        .padding(top = 20.dp)
-        .background(FlareColors.Surface, MaterialTheme.shapes.medium)
-        .padding(12.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    state.backupWords.chunked(3).forEachIndexed { rowIndex, words ->
-      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        words.forEachIndexed { columnIndex, word ->
-          val index = rowIndex * 3 + columnIndex
-          Text(
-            "${index + 1}. $word",
-            modifier = Modifier.weight(1f).padding(vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-          )
-        }
-      }
-    }
-  }
-  FlareButton(
-    "I’ve saved these words",
-    { onIntent(OnboardingIntent.ReviewBackup) },
-    Modifier.fillMaxWidth().padding(top = 24.dp),
-    !state.busy,
-  )
-}
-
-@Composable
-private fun ConfirmBackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  Text("One quick check.", style = MaterialTheme.typography.headlineLarge)
-  Text(
-    "Enter these words from your saved phrase.",
-    Modifier.padding(top = 12.dp),
-    style = MaterialTheme.typography.bodyLarge,
-    color = FlareColors.TextSecondary,
-  )
-  Text(
-    "Confirm three words",
-    modifier = Modifier.padding(top = 24.dp),
-    style = MaterialTheme.typography.titleLarge,
-  )
-  state.confirmationIndices.forEach { index ->
-    FlareTextField(
-      value = state.confirmations[index].orEmpty(),
-      onValueChange = { onIntent(OnboardingIntent.ChangeConfirmation(index, it)) },
-      modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-      label = "Word ${index + 1}",
-      placeholder = "Enter word ${index + 1}",
-      keyboardOptions =
-        KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-      visualTransformation = PasswordVisualTransformation(),
-      singleLine = true,
-      enabled = !state.busy,
-    )
-  }
-  FlareButton(
-    text = "Confirm backup",
-    onClick = { onIntent(OnboardingIntent.ConfirmBackup) },
-    modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-    enabled =
-      !state.busy &&
-        state.confirmationIndices.all { state.confirmations[it].orEmpty().isNotBlank() },
-  )
-}
-
-@Composable
-private fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  Text("Enable trading", style = MaterialTheme.typography.headlineLarge)
-  Text(
-    "Allow this device to trade for ${state.selectedSubaccount?.let(::shortAddress).orEmpty()}.",
-    Modifier.padding(top = 12.dp),
-    color = FlareColors.TextSecondary,
-  )
-  Spacer(Modifier.height(24.dp))
-  Column(
-    Modifier.fillMaxWidth()
-      .background(FlareColors.Surface, MaterialTheme.shapes.medium)
-      .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    Row(
-      Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Column(Modifier.weight(1f)) {
-        Text("Support Flare development", style = MaterialTheme.typography.bodyLarge)
+      Text(title, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.headlineLarge)
+      if (subtitle != null) {
         Text(
-          "Contribute 0.05% on trades to support Flare. You can adjust or revoke this anytime in Settings.",
-          modifier = Modifier.padding(top = 4.dp),
+          subtitle,
+          Modifier.padding(top = 12.dp),
+          style = MaterialTheme.typography.bodyLarge,
           color = FlareColors.TextSecondary,
-          style = MaterialTheme.typography.bodySmall,
         )
       }
-      Spacer(Modifier.size(16.dp))
-      Switch(
-        checked = state.builderOptIn,
-        onCheckedChange = { onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
-        enabled = !state.busy,
-      )
+      Spacer(Modifier.height(28.dp))
+      content()
+      Spacer(Modifier.height(24.dp))
     }
+    Column(
+      Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+      content = actions,
+    )
   }
-  Spacer(Modifier.height(28.dp))
-  FlareButton(
-    text = "Enable trading",
-    onClick = { onIntent(OnboardingIntent.EnableTrading) },
-    modifier = Modifier.fillMaxWidth(),
-    enabled = !state.busy,
-  )
 }
 
+/**
+ * A step's actions, after anything that went wrong. When Flare couldn't cover the network fee, the way
+ * forward depends on the wallet: it can pay (and the person says so first), it needs funding, or its
+ * balance couldn't be checked. Nothing is ever charged to it without that choice.
+ */
 @Composable
-private fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  val ownerMode = state.profile.ownerAddress != null
-  Text(
-    if (ownerMode) "Choose your account" else "Your trading account",
-    style = MaterialTheme.typography.headlineLarge,
-  )
-  Text(
-    if (ownerMode) "Choose the account you want to trade with."
-    else "Enter the trading account this key is allowed to trade for.",
-    modifier = Modifier.padding(top = 12.dp),
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    style = MaterialTheme.typography.bodyMedium,
-  )
-  if (ownerMode && state.subaccounts.isNotEmpty()) {
-    Column(
-      modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-      state.subaccounts.forEach { subaccount ->
-        FlareButton(
-          text =
-            if (subaccount.address == state.selectedSubaccount) {
-              "Selected · ${shortAddress(subaccount.address)}"
-            } else {
-              subaccount.name.takeIf(String::isNotBlank) ?: shortAddress(subaccount.address)
-            },
-          onClick = { onIntent(OnboardingIntent.SelectSubaccount(subaccount.address)) },
-          modifier = Modifier.fillMaxWidth(),
-          enabled = !state.busy,
-          style =
-            if (subaccount.address == state.selectedSubaccount) {
-              FlareButtonStyle.PRIMARY
-            } else {
-              FlareButtonStyle.OUTLINE
-            },
-        )
-      }
+internal fun ColumnScope.SetupActions(
+  state: OnboardingUiState,
+  onIntent: (OnboardingIntent) -> Unit,
+  primary: @Composable ColumnScope.() -> Unit,
+) {
+  when (val fee = state.setupFee) {
+    null -> {
+      state.error?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
+      primary()
     }
-  } else if (!ownerMode) {
-    FlareTextField(
-      value = state.input,
-      onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
-      modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-      label = "Trading-account address",
-      placeholder = "0x...",
-      singleLine = true,
-      enabled = !state.busy,
-    )
-  } else if (state.subaccountsLoaded) {
-    Text(
-      "Create a trading account and allow this device to trade. You’ll approve two transactions.",
-      modifier = Modifier.padding(top = 20.dp),
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      style = MaterialTheme.typography.bodyMedium,
-    )
-  } else {
-    Text(
-      if (state.busy) "Looking for your accounts…" else "Check for existing accounts to continue.",
-      Modifier.padding(top = 20.dp),
-      color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodyMedium,
-    )
-  }
-  Spacer(Modifier.height(20.dp))
-  if (ownerMode && state.subaccounts.isEmpty()) {
-    if (state.subaccountsLoaded)
-      FlareButton(
-        text = "Create account and enable trading",
-        onClick = { onIntent(OnboardingIntent.CreateSubaccount) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !state.busy,
+    is SetupFee.WalletCanPay -> {
+      ActionNotice(
+        "Flare couldn’t cover this step’s network fee. Your wallet can pay it: about " +
+          "${aptFee(fee.estimateOctas)}, from its ${aptBalance(fee.balanceOctas)}."
       )
-    if (state.subaccountsLoaded) Spacer(Modifier.height(10.dp))
-    FlareButton(
-      text = "Check again",
-      onClick = { onIntent(OnboardingIntent.DiscoverSubaccounts) },
-      modifier = Modifier.fillMaxWidth(),
-      enabled = !state.busy,
-      style = FlareButtonStyle.OUTLINE,
+      FlareButton(
+        "Pay ${aptFee(fee.estimateOctas)} and continue",
+        { onIntent(OnboardingIntent.ConfirmSetupSelfPay) },
+        Modifier.fillMaxWidth(),
+        working = state.busy,
+      )
+      FlareButton(
+        "Try again without paying",
+        { onIntent(OnboardingIntent.RetrySetup) },
+        Modifier.fillMaxWidth(),
+        enabled = !state.busy,
+        style = FlareButtonStyle.OUTLINE,
+      )
+    }
+    is SetupFee.WalletNeedsFunds -> {
+      ActionNotice(
+        "Flare couldn’t cover this step’s network fee, and your wallet can’t pay it yet: the network " +
+          "sets aside ${aptFee(fee.reserveOctas)} before it runs, and your wallet has " +
+          "${aptBalance(fee.balanceOctas)}. Add APT to it, or try again later.",
+        tone = NoticeTone.ALERT,
+      )
+      FundingAddress(fee.address)
+      FlareButton(
+        "Try again",
+        { onIntent(OnboardingIntent.RetrySetup) },
+        Modifier.fillMaxWidth(),
+        working = state.busy,
+      )
+    }
+    is SetupFee.Unchecked -> {
+      ActionNotice(
+        "Flare couldn’t cover this step’s network fee just now. Nothing was charged, and your " +
+          "progress is saved."
+      )
+      FlareButton(
+        "Try again",
+        { onIntent(OnboardingIntent.RetrySetup) },
+        Modifier.fillMaxWidth(),
+        working = state.busy,
+      )
+    }
+  }
+}
+
+/** Where to send APT so the wallet can pay the fee, one tap from the clipboard. */
+@Composable
+private fun FundingAddress(address: String) {
+  val clipboard = LocalClipboardManager.current
+  val shape = RoundedCornerShape(14.dp)
+  Row(
+    Modifier.fillMaxWidth().clip(shape).background(FlareColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text("Your wallet", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextTertiary)
+      Text(shortAddress(address), Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium)
+    }
+    Text(
+      "Copy",
+      Modifier.clip(RoundedCornerShape(8.dp))
+        .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
+        .clickable(role = Role.Button, onClickLabel = "Copy wallet address") {
+          clipboard.setText(AnnotatedString(address))
+        }
+        .padding(horizontal = 10.dp, vertical = 5.dp),
+      style = MaterialTheme.typography.labelMedium,
+      color = FlareColors.Positive,
     )
   }
-  FlareButton(
-    text = "Continue",
-    onClick = { onIntent(OnboardingIntent.ContinueSubaccount) },
-    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-    enabled =
-      !state.busy && (state.selectedSubaccount != null || (!ownerMode && state.input.isNotBlank())),
-  )
 }
+
+/** A fee in APT to four decimals, rounded up so it's never understated. */
+private fun aptFee(octas: ULong): String = "${((octas + 9_999uL) / 10_000uL).toDecimalString(4)} APT"
+
+/** A balance in APT to four decimals, rounded down so it's never overstated. */
+private fun aptBalance(octas: ULong): String = "${(octas / 10_000uL).toDecimalString(4)} APT"

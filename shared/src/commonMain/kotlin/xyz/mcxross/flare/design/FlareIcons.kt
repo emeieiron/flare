@@ -203,6 +203,30 @@ object FlareIcons {
     }
   }
 
+  /** An open eye: show what's hidden. */
+  val Show: ImageVector by lazy {
+    icon("Show") {
+      stroke(EYE)
+      stroke("M9.25 12 A2.75 2.75 0 1 1 14.75 12 A2.75 2.75 0 1 1 9.25 12 Z")
+    }
+  }
+
+  /** The eye struck through: hide it again. */
+  val Hide: ImageVector by lazy {
+    icon("Hide") {
+      stroke(EYE)
+      stroke("M9.25 12 A2.75 2.75 0 1 1 14.75 12 A2.75 2.75 0 1 1 9.25 12 Z")
+      stroke("M4.25 4.25 L19.75 19.75")
+    }
+  }
+
+  /** A shield: something to keep safe. */
+  val Shield: ImageVector by lazy {
+    icon("Shield") {
+      stroke("M12 2.75 L19.25 5.5 V11.25 C19.25 15.9 16.25 19.5 12 21.25 C7.75 19.5 4.75 15.9 4.75 11.25 V5.5 Z")
+    }
+  }
+
   /** Line chart style. */
   val ChartLine: ImageVector by lazy {
     icon("ChartLine") {
@@ -263,6 +287,9 @@ private class IconScope(private val builder: ImageVector.Builder) {
     )
   }
 }
+
+private const val EYE =
+  "M2.75 12 C4.9 7.9 8.15 5.75 12 5.75 C15.85 5.75 19.1 7.9 21.25 12 C19.1 16.1 15.85 18.25 12 18.25 C8.15 18.25 4.9 16.1 2.75 12 Z"
 
 private fun icon(name: String, autoMirror: Boolean = false, draw: IconScope.() -> Unit): ImageVector =
   ImageVector.Builder(

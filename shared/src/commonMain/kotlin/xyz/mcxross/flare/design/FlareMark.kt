@@ -53,11 +53,15 @@ internal fun DrawScope.drawFlareMark(color: Color) {
 }
 
 /**
- * The mark and its light, in a square of [markSize] at this scope's origin. Each bar glows on its own,
- * as strongly as [glow] says: 0 is unlit, 1 is lit, and past 1 the bar runs hot for a moment, its core
- * whitening as it flares.
+ * The mark and its light, in a square of [markSize] at this scope's origin. Each bar has its own
+ * [color] and glows on its own, as strongly as [glow] says: 0 is unlit, 1 is lit, and past 1 the bar
+ * runs hot for a moment, its core whitening as it flares.
  */
-internal fun DrawScope.drawLitFlareMark(markSize: Size, color: Color, glow: (bar: Int) -> Float) {
+internal fun DrawScope.drawLitFlareMark(
+  markSize: Size,
+  color: (bar: Int) -> Color,
+  glow: (bar: Int) -> Float,
+) {
   val stroke = barStroke(markSize)
   for (bar in 0..2) {
     val level = glow(bar)
@@ -65,7 +69,7 @@ internal fun DrawScope.drawLitFlareMark(markSize: Size, color: Color, glow: (bar
     // A halo of stacked translucent strokes, each wider than the last, draws the same on every
     // platform, which a blur doesn't. Crowding the layers close to the bar makes the light fall off
     // fast and then trail away, the way a lit tube glows, rather than fusing the bars into one slab.
-    val halo = color.copy(alpha = (HALO_ALPHA * level).coerceAtMost(1f))
+    val halo = color(bar).copy(alpha = (HALO_ALPHA * level).coerceAtMost(1f))
     for (layer in 1..HALO_LAYERS) {
       val reach = layer.toFloat() / HALO_LAYERS
       val width = stroke * (1f + HALO_SPREAD * reach * reach)
@@ -73,13 +77,13 @@ internal fun DrawScope.drawLitFlareMark(markSize: Size, color: Color, glow: (bar
     }
   }
   for (bar in 0..2) {
-    drawLine(color, barStart(bar, markSize), barEnd(bar, markSize), stroke, cap = StrokeCap.Round)
+    drawLine(color(bar), barStart(bar, markSize), barEnd(bar, markSize), stroke, cap = StrokeCap.Round)
   }
   for (bar in 0..2) {
     val heat = (glow(bar) - 1f).coerceIn(0f, 1f)
     if (heat <= 0f) continue
     drawLine(
-      lerp(color, Color.White, 0.7f).copy(alpha = heat),
+      lerp(color(bar), Color.White, 0.7f).copy(alpha = heat),
       barStart(bar, markSize),
       barEnd(bar, markSize),
       stroke * 0.42f,
@@ -89,16 +93,17 @@ internal fun DrawScope.drawLitFlareMark(markSize: Size, color: Color, glow: (bar
 }
 
 /**
- * The Flare mark and its light; see [drawLitFlareMark]. [glow] is read while drawing, so an animation
- * redraws the mark without recomposing anything.
+ * The Flare mark and its light; see [drawLitFlareMark]. [barColor] and [glow] are read while drawing,
+ * so an animation redraws the mark without recomposing anything.
  */
 @Composable
 fun FlareMark(
   modifier: Modifier = Modifier,
   color: Color = FlareColors.Positive,
+  barColor: (bar: Int) -> Color = { color },
   glow: (bar: Int) -> Float = { 0f },
 ) {
-  Canvas(modifier) { drawLitFlareMark(size, color, glow) }
+  Canvas(modifier) { drawLitFlareMark(size, barColor, glow) }
 }
 
 private const val HALO_LAYERS = 14

@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -74,6 +76,7 @@ import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
 import xyz.mcxross.flare.design.LocalTransactionExplorer
+import xyz.mcxross.flare.design.SplashMarkSize
 import xyz.mcxross.flare.design.TransactionExplorer
 import xyz.mcxross.flare.design.pagePopEnter
 import xyz.mcxross.flare.design.pagePopExit
@@ -242,9 +245,26 @@ private fun FlareAppFlow() {
       !hasCompletedProfile -> LaunchStage.ONBOARDING
       else -> LaunchStage.READY
     }
+  // Whether this is the moment setup finished, worked out as the stage changes so the curtain covers
+  // the app in that same frame.
+  val lastStage = remember { arrayOf(stage) }
+  val finishedSetup =
+    remember(stage) {
+      (lastStage[0] == LaunchStage.ONBOARDING && stage == LaunchStage.READY).also { lastStage[0] = stage }
+    }
   Box(Modifier.fillMaxSize()) {
     when (stage) {
-      LaunchStage.ONBOARDING -> OnboardingRoute(onCompleted = {})
+      LaunchStage.ONBOARDING -> {
+        // A setup that was interrupted picks up where it stopped instead of starting a second account.
+        val unfinished = remember {
+          persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && !it.onboardingComplete }?.id
+        }
+        OnboardingRoute(
+          onCompleted = {},
+          initialMode = unfinished?.let { "CONTINUE" },
+          profileId = unfinished,
+        )
+      }
       LaunchStage.READY ->
         key(lastCompletedProfileId, persisted?.selectedSubaccount) {
           savedScreens.SaveableStateProvider(
@@ -256,7 +276,7 @@ private fun FlareAppFlow() {
       LaunchStage.LOADING,
       LaunchStage.LOCKED -> Unit
     }
-    LaunchCurtain(stage, locked = unlockError != null, onUnlock = { retry++ })
+    LaunchCurtain(stage, finishedSetup, locked = unlockError != null, onUnlock = { retry++ })
   }
 }
 
@@ -271,16 +291,25 @@ private enum class LaunchStage {
  * The splash, held over the app until it can be used. It looks exactly like the system's launch
  * splash, so the app takes over without a visible seam. When the account unlocks, the mark ignites
  * and the curtain lifts off the app already drawn beneath it. Onboarding takes the mark over at the
- * same spot, so there the curtain simply goes. If the unlock is dismissed, the mark stays where it is
+ * same spot, so there the curtain simply goes, and when setup finishes it returns: the mark lights up
+ * in full, once, before the app is revealed. If the unlock is dismissed, the mark stays where it is
  * and the way back in appears beneath it.
  */
 @Composable
-private fun LaunchCurtain(stage: LaunchStage, locked: Boolean, onUnlock: () -> Unit) {
+private fun LaunchCurtain(
+  stage: LaunchStage,
+  finishedSetup: Boolean,
+  locked: Boolean,
+  onUnlock: () -> Unit,
+) {
   val reduceMotion = rememberReducedMotion()
+  val haptics = LocalHapticFeedback.current
   val ignition = rememberFlareIgnition()
   val opacity = remember { Animatable(1f) }
   var covering by remember { mutableStateOf(true) }
-  LaunchedEffect(stage) {
+  var celebrated by remember { mutableStateOf(false) }
+  val celebrating = finishedSetup && !celebrated
+  LaunchedEffect(stage, celebrating) {
     when (stage) {
       LaunchStage.LOADING,
       LaunchStage.LOCKED -> {
@@ -288,8 +317,23 @@ private fun LaunchCurtain(stage: LaunchStage, locked: Boolean, onUnlock: () -> U
         opacity.snapTo(1f)
         covering = true
       }
-      LaunchStage.ONBOARDING -> covering = false
+      LaunchStage.ONBOARDING -> {
+        ignition.snapTo(0f)
+        opacity.snapTo(1f)
+        covering = false
+      }
       LaunchStage.READY -> {
+        if (celebrating) {
+          coroutineScope {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            launch { ignition.ignite(reduceMotion, rest = 1f) }
+            delay(if (reduceMotion) 700 else 1_500)
+            opacity.animateTo(0f, tween(if (reduceMotion) 120 else 320, easing = LinearEasing))
+          }
+          celebrated = true
+          covering = false
+          return@LaunchedEffect
+        }
         if (!covering) return@LaunchedEffect
         coroutineScope {
           launch { ignition.ignite(reduceMotion, rest = 1f, staggerMs = 50, flareMs = 150, settleMs = 300) }
@@ -301,9 +345,17 @@ private fun LaunchCurtain(stage: LaunchStage, locked: Boolean, onUnlock: () -> U
       }
     }
   }
-  if (!covering) return
+  if (!covering && !celebrating) return
   Box(Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value }) {
     FlareSplashScreen(glow = ignition::level)
+    AnimatedVisibility(
+      visible = celebrating,
+      modifier = Modifier.align(Alignment.Center).padding(top = SplashMarkSize + 88.dp),
+      enter = fadeIn(tween(400, delayMillis = 350)) + slideInVertically(tween(500, 350, FastOutSlowInEasing)) { it / 2 },
+      exit = fadeOut(tween(120)),
+    ) {
+      Text("You’re ready to trade.", style = MaterialTheme.typography.titleMedium)
+    }
     AnimatedVisibility(
       visible = stage == LaunchStage.LOCKED && locked,
       modifier = Modifier.align(Alignment.BottomCenter),
