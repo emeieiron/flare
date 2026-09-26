@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhonelinkLock
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +44,7 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
@@ -168,7 +168,8 @@ fun SettingsScreen(
     Spacer(Modifier.height(24.dp))
   }
 
-  if (showAccess) {
+  // A confirmation takes the place of the sheet that asked for it, rather than stacking on it.
+  if (showAccess && revokeAddress == null) {
     FlareSheet("Trading access", { showAccess = false }) {
       Text(
         "These keys can place and cancel orders for your trading account. Only your wallet can " +
@@ -202,35 +203,25 @@ fun SettingsScreen(
 
   revokeAddress?.let { address ->
     val thisDevice = address == state.profile.apiWalletAddress
-    AlertDialog(
-      onDismissRequest = { revokeAddress = null },
-      title = { Text(if (thisDevice) "Turn off trading here?" else "Revoke trading access?") },
-      text = {
-        Text(
-          if (thisDevice) {
-            "This device will stop placing orders until you enable trading again. Your funds stay " +
-              "in your account."
-          } else {
-            "${shortAddress(address)} will no longer be able to trade for this account."
-          }
-        )
+    FlareConfirmSheet(
+      title = if (thisDevice) "Turn off trading here?" else "Revoke trading access?",
+      message =
+        if (thisDevice) {
+          "This device will stop placing orders until you enable trading again. Your funds stay " +
+            "in your account."
+        } else {
+          "${shortAddress(address)} will no longer be able to trade for this account."
+        },
+      confirmLabel = if (thisDevice) "Turn off" else "Revoke",
+      onConfirm = {
+        revokeAddress = null
+        onIntent(SettingsIntent.RevokeDelegate(address))
       },
-      confirmButton = {
-        TextButton(
-          onClick = {
-            revokeAddress = null
-            onIntent(SettingsIntent.RevokeDelegate(address))
-          }
-        ) {
-          Text(if (thisDevice) "Turn off" else "Revoke", color = FlareColors.Negative)
-        }
-      },
-      dismissButton = { TextButton(onClick = { revokeAddress = null }) { Text("Cancel") } },
-      containerColor = FlareColors.Surface,
+      onDismiss = { revokeAddress = null },
     )
   }
 
-  if (showSecurity && state.revealedSecret == null) {
+  if (showSecurity && state.revealedSecret == null && removal == null) {
     FlareSheet("Security & recovery", { showSecurity = false }) {
       if (state.profile.ownerAddress != null) {
         ActionRow(
@@ -286,25 +277,20 @@ fun SettingsScreen(
   }
 
   removal?.let { intent ->
-    AlertDialog(
-      onDismissRequest = { removal = null },
-      title = { Text("Remove from this device?") },
-      text = { Text("Save your recovery phrase or private key first. You’ll need it to return.") },
-      confirmButton = {
-        TextButton({
-          removal = null
-          showSecurity = false
-          onIntent(intent)
-        }) {
-          Text("Remove", color = FlareColors.Negative)
-        }
+    FlareConfirmSheet(
+      title = "Remove from this device?",
+      message = "Save your recovery phrase or private key first. You’ll need it to return.",
+      confirmLabel = "Remove",
+      onConfirm = {
+        removal = null
+        showSecurity = false
+        onIntent(intent)
       },
-      dismissButton = { TextButton({ removal = null }) { Text("Cancel") } },
-      containerColor = FlareColors.Surface,
+      onDismiss = { removal = null },
     )
   }
 
-  if (showBuilderSheet) {
+  if (showBuilderSheet && revokeProduct == null) {
     val preferences = state.preferences
     FlareSheet("Builder support", { showBuilderSheet = false }) {
       Text(
@@ -376,27 +362,16 @@ fun SettingsScreen(
 
   revokeProduct?.let { product ->
     val name = if (product == AssetType.PERP) "perpetuals" else "spot"
-    AlertDialog(
-      onDismissRequest = { revokeProduct = null },
-      title = { Text("Revoke $name approval?") },
-      text = {
-        Text(
-          "This submits an on-chain transaction. Your $name orders will stop including the " +
-            "builder fee."
-        )
+    FlareConfirmSheet(
+      title = "Revoke $name approval?",
+      message =
+        "This submits an on-chain transaction. Your $name orders will stop including the builder fee.",
+      confirmLabel = "Revoke",
+      onConfirm = {
+        revokeProduct = null
+        onIntent(SettingsIntent.RevokeBuilderFee(product))
       },
-      confirmButton = {
-        TextButton(
-          onClick = {
-            revokeProduct = null
-            onIntent(SettingsIntent.RevokeBuilderFee(product))
-          }
-        ) {
-          Text("Revoke", color = FlareColors.Negative)
-        }
-      },
-      dismissButton = { TextButton(onClick = { revokeProduct = null }) { Text("Cancel") } },
-      containerColor = FlareColors.Surface,
+      onDismiss = { revokeProduct = null },
     )
   }
 }
