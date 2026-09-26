@@ -105,6 +105,8 @@ fun MarketsScreen(
   val listStates = sequence.associateWith { rememberLazyListState() }
   val scope = rememberCoroutineScope()
   val intents by rememberUpdatedState(onIntent)
+  // Read at tap time, so callbacks below keep their identity as prices tick.
+  val latest by rememberUpdatedState(state)
   LaunchedEffect(pagerState, sequence) {
     snapshotFlow { pagerState.settledPage }.collect { intents(MarketsIntent.ShowPage(sequence[it])) }
   }
@@ -135,7 +137,7 @@ fun MarketsScreen(
           selectedOption = currentKey.instrument,
           onOptionSelected = { instrument ->
             // Return to the chip last used for that product.
-            val target = sequence.indexOf(state.currentKey(instrument)).coerceAtLeast(0)
+            val target = sequence.indexOf(latest.currentKey(instrument)).coerceAtLeast(0)
             scope.launch { pagerState.animateScrollToPage(target) }
           },
           label = {
@@ -173,7 +175,16 @@ fun MarketsScreen(
         key = { sequence[it].toString() },
       ) { index ->
         val key = sequence[index]
-        MarketPageContent(state, key, listStates.getValue(key), onIntent, onMarketClick)
+        MarketPageContent(
+          quotes = state.pageQuotes[key].orEmpty(),
+          loading = state.loading,
+          offline = state.error != null,
+          assets = state.assets,
+          key = key,
+          listState = listStates.getValue(key),
+          onIntent = onIntent,
+          onMarketClick = onMarketClick,
+        )
       }
     }
   }
@@ -201,18 +212,23 @@ private fun MarketSearchBar(query: String, onQuery: (String) -> Unit, onCancel: 
   }
 }
 
-/** One stop in the sequence: a product filtered by one chip, with its own scroll position. */
+/**
+ * One stop in the sequence: a product filtered by one chip, with its own scroll position. It takes
+ * only what it shows, so a price tick recomposes the rows whose values changed and nothing else.
+ */
 @Composable
 private fun MarketPageContent(
-  state: MarketsUiState,
+  quotes: List<MarketQuote>,
+  loading: Boolean,
+  offline: Boolean,
+  assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
   key: MarketPageKey,
   listState: LazyListState,
   onIntent: (MarketsIntent) -> Unit,
   onMarketClick: (String) -> Unit,
 ) {
-  val quotes = state.pageQuotes[key].orEmpty()
   val title = marketSectionTitle(key.favoritesOnly, key.category)
-  if (state.loading && quotes.isEmpty()) {
+  if (loading && quotes.isEmpty()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
       MarketSectionHeader(title, showPriceLabel = true)
       MarketListSkeleton()
@@ -222,12 +238,12 @@ private fun MarketPageContent(
       EmptyState(
         title =
           when {
-            state.error != null -> "Markets are offline"
+            offline -> "Markets are offline"
             key.favoritesOnly -> "Your watchlist starts here"
             else -> "No markets here yet"
           },
         message =
-          if (state.error != null) "Prices appear as soon as market data arrives."
+          if (offline) "Prices appear as soon as market data arrives."
           else if (key.favoritesOnly) "Tap the star beside a market to follow it here."
           else "Swipe to see other markets.",
       )
@@ -240,7 +256,7 @@ private fun MarketPageContent(
     ) {
       item { MarketSectionHeader(title, showPriceLabel = true) }
       items(quotes, key = { it.market.address }) { quote ->
-        MarketQuoteRow(quote, state, onIntent, onMarketClick)
+        MarketQuoteRow(quote, assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
   }
@@ -262,16 +278,20 @@ private fun MarketFilterChips(
     transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
     label = "marketChips",
   ) { instrument ->
-    val chips = sequence.filter { it.instrument == instrument }
-    val first = sequence.indexOfFirst { it.instrument == instrument }
-    FlareFilterChips(
-      labels = chips.map { key ->
+    // Remembered, so the chips see the same lists on every pass and only recompose for a new selection.
+    val chips = remember(sequence, instrument) { sequence.filter { it.instrument == instrument } }
+    val first = remember(sequence, instrument) { sequence.indexOfFirst { it.instrument == instrument } }
+    val labels = remember(chips) {
+      chips.map { key ->
         when {
           key.favoritesOnly -> "Watchlist"
           key.category != null -> marketCategoryLabel(key.category)
           else -> "All"
         }
-      },
+      }
+    }
+    FlareFilterChips(
+      labels = labels,
       selectedIndex = chips.indexOf(current).coerceAtLeast(0),
       onSelect = { onSelect(chips[it]) },
       modifier = Modifier.padding(vertical = 4.dp),
@@ -321,7 +341,7 @@ private fun MarketSearchResults(
         )
       }
       items(quotes, key = { "search-${it.market.address}" }) { quote ->
-        MarketQuoteRow(quote, state, onIntent, onMarketClick)
+        MarketQuoteRow(quote, state.assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
   }
@@ -345,26 +365,26 @@ private fun MarketSectionHeader(title: String, showPriceLabel: Boolean, subdued:
   }
 }
 
+/**
+ * The row is handed only plain values, and its callbacks capture only the market's address, so it
+ * skips entirely when a tick leaves what it shows unchanged.
+ */
 @Composable
 private fun MarketQuoteRow(
   quote: MarketQuote,
-  state: MarketsUiState,
+  asset: xyz.mcxross.flare.data.AssetMetadata?,
   onIntent: (MarketsIntent) -> Unit,
   onMarketClick: (String) -> Unit,
 ) {
+  val address = quote.market.address
   MarketListRow(
-    asset =
-      resolveAssetIdentity(
-        quote.market.symbol,
-        quote.market.name,
-        state.assets[assetKey(quote.market.symbol)],
-      ),
+    asset = resolveAssetIdentity(quote.market.symbol, quote.market.name, asset),
     price = formatPrice(quote.markPrice),
     delta = formatPercent(quote.changePercent24h),
     positive = quote.changePercent24h >= 0,
     favorite = quote.favorite,
-    onClick = { onMarketClick(quote.market.address) },
-    onFavorite = { onIntent(MarketsIntent.ToggleFavorite(quote.market.address)) },
+    onClick = { onMarketClick(address) },
+    onFavorite = { onIntent(MarketsIntent.ToggleFavorite(address)) },
     badgeText = if (quote.market.assetType == AssetType.SPOT) "SPOT" else null,
   )
 }

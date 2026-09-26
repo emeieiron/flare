@@ -86,7 +86,7 @@ data class MarketsUiState(
   val searching: Boolean = false,
   val searchResults: MarketSearchResults = MarketSearchResults(),
   val pages: Map<MarketInstrumentFilter, MarketPage> = emptyMap(),
-  val pageSequence: List<MarketPageKey> = marketPageSequence(),
+  val pageSequence: List<MarketPageKey> = MarketPageSequence,
   val pageQuotes: Map<MarketPageKey, List<MarketQuote>> = emptyMap(),
 ) {
   fun page(instrument: MarketInstrumentFilter): MarketPage = pages[instrument] ?: MarketPage()
@@ -235,7 +235,7 @@ fun marketPageQuotes(
   quotes: List<MarketQuote>,
   assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
 ): Map<MarketPageKey, List<MarketQuote>> =
-  marketPageSequence().associateWith { key -> quotes.filter { it.matches(key, assets) } }
+  MarketPageSequence.associateWith { key -> quotes.filter { it.matches(key, assets) } }
 
 /** Every stop a swipe passes through, in chip order: perpetuals first, then spot. */
 fun marketPageSequence(): List<MarketPageKey> =
@@ -246,6 +246,12 @@ fun marketPageSequence(): List<MarketPageKey> =
 
 private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
 private val spotCategoryTabs = listOf("crypto")
+
+/**
+ * The sequence never changes, so every state shares this one list: screens holding it see the same
+ * instance on each price tick and don't recompose for it. Declared after the category lists it reads.
+ */
+internal val MarketPageSequence: List<MarketPageKey> = marketPageSequence()
 
 /**
  * Ranks every market, perpetual and spot, against [query]: exact ticker, ticker prefix, name

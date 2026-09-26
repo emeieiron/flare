@@ -374,7 +374,12 @@ class PortfolioViewModel(
           account = state.account.copy(positions = nonSpotPositions),
           spotHoldings = sortedHoldings,
           marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
-          markPrices = catalog.quotes.associate { it.market.address to it.markPrice },
+          // Only the markets with open positions are ever looked up. Keeping the others out means a
+          // price tick elsewhere leaves this state equal, so the portfolio doesn't recompose for it.
+          markPrices =
+            nonSpotPositions.mapTo(HashSet()) { it.market }.let { held ->
+              catalog.quotes.filter { it.market.address in held }.associate { it.market.address to it.markPrice }
+            },
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PortfolioUiState())

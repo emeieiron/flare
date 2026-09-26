@@ -239,7 +239,9 @@ fun TradeScreen(
                       horizontalArrangement = Arrangement.spacedBy(8.dp),
                       verticalAlignment = Alignment.CenterVertically,
                     ) {
-                      ChartStyleToggle(state.chartStyle, { onIntent(TradeIntent.SelectChartStyle(state.chartStyle.flipped())) })
+                      // Captures the style alone, so the toggle skips price ticks.
+                      val chartStyle = state.chartStyle
+                      ChartStyleToggle(chartStyle, { onIntent(TradeIntent.SelectChartStyle(chartStyle.flipped())) })
                       ChartRangeButton(state.range, { showRanges = true })
                       Spacer(Modifier.weight(1f))
                       IndicatorChip("RSI", state.showRsi, FlareColors.IndicatorCyan, { onIntent(TradeIntent.ToggleRsi) })
