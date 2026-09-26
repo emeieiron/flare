@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -71,12 +73,16 @@ class DefaultMarketsRepository(
   private val favorites = mutableSetOf<String>()
   private val mutableCatalog = MutableStateFlow(MarketCatalog())
   private val refreshMutex = Mutex()
+  /** When the last live snapshot landed; guarded by [refreshMutex]. */
+  private var lastSnapshotAtMs = 0L
   override val catalog: StateFlow<MarketCatalog> = mutableCatalog.asStateFlow()
 
   override suspend fun refresh() = refreshMutex.withLock {
     mutableCatalog.update { it.copy(loading = it.quotes.isEmpty(), error = null) }
     favorites.clear()
     favorites += preferences.favoriteMarkets.first()
+    // At launch the last known prices show at once, marked stale, while the live snapshot loads.
+    if (mutableCatalog.value.quotes.isEmpty()) loadCachedMarkets()
     runSuspendCatching {
       coroutineScope {
         val markets = async { client.markets.markets() }
@@ -119,7 +125,8 @@ class DefaultMarketsRepository(
     }
       .onSuccess { quotes ->
         val updatedAtMs = Clock.System.now().toEpochMilliseconds()
-        cache.upsertMarkets(
+        lastSnapshotAtMs = updatedAtMs
+        val rows = withContext(Dispatchers.Default) {
           quotes.map { quote ->
             MarketEntity(
               marketAddress = quote.market.address,
@@ -127,7 +134,8 @@ class DefaultMarketsRepository(
               updatedAtMs = updatedAtMs,
             )
           }
-        )
+        }
+        cache.upsertMarkets(rows)
         mutableCatalog.value =
           MarketCatalog(
             loading = false,
@@ -155,11 +163,14 @@ class DefaultMarketsRepository(
 
   private suspend fun loadCachedMarkets() {
     val rows = cache.markets()
-    val cachedQuotes = rows.mapNotNull { row ->
-      runCatching {
-        DecibelClient.DefaultJson.decodeFromString<MarketQuote>(row.payloadJson)
+    // Decoding every cached market is real work; it stays off the main thread during launch.
+    val cachedQuotes = withContext(Dispatchers.Default) {
+      rows.mapNotNull { row ->
+        runCatching {
+          DecibelClient.DefaultJson.decodeFromString<MarketQuote>(row.payloadJson)
+        }
+          .getOrNull()
       }
-        .getOrNull()
     }
     seedDefaultWatchlist(cachedQuotes.map { it.market })
     val quotes = cachedQuotes.map { quote ->
@@ -217,7 +228,7 @@ class DefaultMarketsRepository(
     var lastRecoveryAtMs = 0L
     client.stream.subscribe(setOf(AllMarketPrices, AllSpotMids)).collect { event ->
       when (event) {
-        is StreamEvent.Connected -> refresh()
+        is StreamEvent.Connected -> backfill()
         is StreamEvent.Message -> {
           val now = Clock.System.now().toEpochMilliseconds()
           val prices = (event.data as? DecibelStreamData.MarketPrices)?.values
@@ -288,6 +299,16 @@ class DefaultMarketsRepository(
           }
       }
     }
+  }
+
+  /**
+   * A (re)connected stream backfills what it missed. At launch the stream connects while the first
+   * snapshot is still loading, so it waits for that one and skips a second fetch if it just landed.
+   */
+  private suspend fun backfill() {
+    refreshMutex.withLock {}
+    if (Clock.System.now().toEpochMilliseconds() - lastSnapshotAtMs < BACKFILL_FRESH_MS) return
+    refresh()
   }
 
   override suspend fun toggleFavorite(marketAddress: String) {
@@ -539,3 +560,6 @@ private fun groupDigits(number: String): String {
   val whole = parts.first().reversed().chunked(3).joinToString(",").reversed()
   return whole + if (parts.size > 1) "." + parts[1] else ""
 }
+
+/** A stream that connects within this long of a live snapshot has nothing to backfill. */
+private const val BACKFILL_FRESH_MS = 15_000L
