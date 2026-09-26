@@ -8,6 +8,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
@@ -59,8 +62,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -71,10 +76,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.SubcomposeAsyncImage
-import coil3.compose.SubcomposeAsyncImageContent
+import coil3.compose.AsyncImagePainter
+import coil3.compose.LocalPlatformContext
+import coil3.compose.rememberAsyncImagePainter
+import coil3.request.ImageRequest
 import com.valentinilk.shimmer.shimmer
 
 enum class FlareButtonStyle {
@@ -812,7 +820,7 @@ fun AssetHeader(
     horizontalArrangement = Arrangement.spacedBy(12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    AssetIcon(asset, Modifier.size(48.dp))
+    AssetIcon(asset, 48.dp)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
       Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -872,7 +880,7 @@ fun MarketListRow(
       modifier = Modifier.size(40.dp).background(FlareColors.Elevated, CircleShape),
       contentAlignment = Alignment.Center,
     ) {
-      AssetIcon(asset, Modifier.size(40.dp))
+      AssetIcon(asset, 40.dp)
     }
     Spacer(Modifier.width(12.dp))
     Column(modifier = Modifier.weight(1f)) {
@@ -924,26 +932,36 @@ fun MarketListRow(
   }
 }
 
+/**
+ * An asset's logo, or its monogram until the logo shows. The request asks for exactly the drawn size,
+ * so a logo already in memory resolves before its first frame, and no subcomposition is needed.
+ */
 @Composable
-internal fun AssetIcon(asset: AssetIdentity, modifier: Modifier = Modifier) {
+internal fun AssetIcon(asset: AssetIdentity, size: Dp, modifier: Modifier = Modifier) {
   Box(
-    modifier = modifier.clip(CircleShape).background(FlareColors.Elevated),
+    modifier = modifier.size(size).clip(CircleShape).background(FlareColors.Elevated),
     contentAlignment = Alignment.Center,
   ) {
-    if (asset.iconUrl == null) {
+    val url = asset.iconUrl
+    if (url == null) {
       Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge)
     } else {
-      SubcomposeAsyncImage(
-        model = asset.iconUrl,
-        contentDescription = "${asset.name} icon",
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize(),
-        loading = {
-          Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge)
+      val context = LocalPlatformContext.current
+      val px = with(LocalDensity.current) { size.roundToPx() }
+      val request = remember(url, px, context) { ImageRequest.Builder(context).data(url).size(px).build() }
+      val painter = rememberAsyncImagePainter(request, contentScale = ContentScale.Crop)
+      val observed by painter.state.collectAsState()
+      // Decided at draw time from the painter itself, so a logo that resolved from memory before
+      // the first frame never shows its monogram; reading [observed] redraws once a load settles.
+      Text(
+        assetMonogram(asset.symbol),
+        Modifier.clearAndSetSemantics {}.drawWithContent {
+          observed
+          if (painter.state.value !is AsyncImagePainter.State.Success) drawContent()
         },
-        error = { Text(assetMonogram(asset.symbol), style = MaterialTheme.typography.titleLarge) },
-        success = { SubcomposeAsyncImageContent() },
+        style = MaterialTheme.typography.titleLarge,
       )
+      Image(painter, "${asset.name} icon", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
   }
 }
