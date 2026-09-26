@@ -20,6 +20,7 @@ import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.SetupTransactionException
+import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
@@ -39,6 +40,32 @@ enum class OnboardingStep {
   ENABLE_TRADING,
 }
 
+/**
+ * What happens to a setup step's network fee after Flare couldn't cover it. Nothing is charged to the
+ * wallet unless the person agrees to it here.
+ */
+sealed interface SetupFee {
+  /** About what the fee itself comes to. */
+  val estimateOctas: ULong
+
+  /** The wallet can pay the fee, from its balance of [balanceOctas]. */
+  data class WalletCanPay(override val estimateOctas: ULong, val balanceOctas: ULong) : SetupFee
+
+  /**
+   * The wallet can't pay yet: the network sets aside [reserveOctas] before running the transaction,
+   * and [address] holds only [balanceOctas].
+   */
+  data class WalletNeedsFunds(
+    override val estimateOctas: ULong,
+    val reserveOctas: ULong,
+    val balanceOctas: ULong,
+    val address: String,
+  ) : SetupFee
+
+  /** The wallet's balance couldn't be checked, so the step can only be tried again. */
+  data class Unchecked(override val estimateOctas: ULong) : SetupFee
+}
+
 /** The two on-chain steps of setup, so a fee fallback retries the step that failed. */
 enum class SetupOperation {
   CREATE_ACCOUNT,
@@ -54,13 +81,19 @@ data class OnboardingUiState(
   val apiImport: Boolean = false,
   val tradingAccountInput: String = "",
   val backupWords: List<String> = emptyList(),
+  /** The phrase stays covered until the person asks to see it. */
+  val backupRevealed: Boolean = false,
   val confirmationIndices: List<Int> = emptyList(),
+  /** For each position to confirm, the right word and two others from the phrase, shuffled. */
+  val confirmationOptions: Map<Int, List<String>> = emptyMap(),
   val confirmations: Map<Int, String> = emptyMap(),
   val subaccounts: List<Subaccount> = emptyList(),
   val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
   val setupTransaction: TransactionState? = null,
   val setupOperation: SetupOperation? = null,
+  /** Set when Flare couldn't cover the current step's network fee. */
+  val setupFee: SetupFee? = null,
   val builderOptIn: Boolean = true,
   val busy: Boolean = false,
   val error: String? = null,
@@ -75,6 +108,9 @@ sealed interface OnboardingIntent {
 
   data object ConfirmSetupSelfPay : OnboardingIntent
 
+  /** Runs the step whose fee couldn't be covered again, asking Flare to cover it once more. */
+  data object RetrySetup : OnboardingIntent
+
   data object CreateOwner : OnboardingIntent
 
   data object ShowImport : OnboardingIntent
@@ -82,6 +118,8 @@ sealed interface OnboardingIntent {
   data object ImportCredential : OnboardingIntent
 
   data class SetApiImport(val enabled: Boolean) : OnboardingIntent
+
+  data object RevealBackup : OnboardingIntent
 
   data object ReviewBackup : OnboardingIntent
 
@@ -120,6 +158,7 @@ class OnboardingViewModel(
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
   private val runtime: FlareRuntimeConfig,
+  private val trading: TradingRepository,
 ) : ViewModel() {
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
@@ -173,11 +212,20 @@ class OnboardingViewModel(
         }
       is OnboardingIntent.ChangeTradingAccount ->
         local.value = local.value.copy(tradingAccountInput = intent.value, error = null)
+      // The wallet pays only after the person has seen that it can, and agreed.
       OnboardingIntent.ConfirmSetupSelfPay ->
+        if (local.value.setupFee is SetupFee.WalletCanPay) {
+          when (local.value.setupOperation) {
+            SetupOperation.CREATE_ACCOUNT -> createSubaccount(FeePayment.SELF_PAY)
+            SetupOperation.ENABLE_TRADING,
+            null -> enableTrading(FeePayment.SELF_PAY)
+          }
+        }
+      OnboardingIntent.RetrySetup ->
         when (local.value.setupOperation) {
-          SetupOperation.CREATE_ACCOUNT -> createSubaccount(FeePayment.SELF_PAY)
+          SetupOperation.CREATE_ACCOUNT -> createSubaccount()
           SetupOperation.ENABLE_TRADING,
-          null -> enableTrading(FeePayment.SELF_PAY)
+          null -> enableTrading()
         }
       OnboardingIntent.CreateOwner -> createOwner()
       OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
@@ -185,6 +233,7 @@ class OnboardingViewModel(
         if (local.value.apiImport) importTradingKey() else importOwner()
       is OnboardingIntent.SetApiImport ->
         local.value = local.value.copy(apiImport = intent.enabled, error = null)
+      OnboardingIntent.RevealBackup -> revealBackup()
       OnboardingIntent.ReviewBackup ->
         local.value = local.value.copy(step = OnboardingStep.CONFIRM_BACKUP)
       OnboardingIntent.ConfirmBackup -> confirmBackup()
@@ -198,10 +247,14 @@ class OnboardingViewModel(
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
-        clearSensitiveState()
+        clearSecrets()
       }
       OnboardingIntent.Back -> {
-        if (local.value.step == OnboardingStep.CONFIRM_BACKUP) {
+        if (
+          local.value.step == OnboardingStep.ENABLE_TRADING && local.value.subaccounts.size > 1
+        ) {
+          local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT, error = null)
+        } else if (local.value.step == OnboardingStep.CONFIRM_BACKUP) {
           local.value =
             local.value.copy(
               step = OnboardingStep.SHOW_BACKUP,
@@ -221,7 +274,18 @@ class OnboardingViewModel(
             previousProfileId?.let { preferences.activateProfile(it) }
             effectChannel.send(OnboardingEffect.Cancelled)
           }
-        } else show(OnboardingStep.WELCOME)
+        } else {
+          // Stepping back to the start of a first setup leaves nothing half made behind.
+          val toClean = createdProfileId
+          createdProfileId = null
+          viewModelScope.launch {
+            if (toClean != null) {
+              val profile = preferences.values.first().profiles.firstOrNull { it.id == toClean }
+              if (profile?.onboardingComplete != true) preferences.removeProfile(toClean)
+            }
+            show(OnboardingStep.WELCOME)
+          }
+        }
       }
       is OnboardingIntent.ChangeInput ->
         local.value = local.value.copy(input = intent.value, error = null)
@@ -280,13 +344,9 @@ class OnboardingViewModel(
       val profile = wallets.profile.first()
       when {
         profile.apiOnly -> show(OnboardingStep.SUBACCOUNT)
-        profile.ownerAddress != null && !profile.ownerBackupConfirmed -> {
-          val phrase =
-            wallets.exportOwnerMnemonic(
-              VaultPrompt("Back up your account", "Confirm your identity")
-            )
-          showBackup(OwnerBackup(profile.ownerAddress, phrase.split(' ')))
-        }
+        // The phrase is fetched only when the person reveals it.
+        profile.ownerAddress != null && !profile.ownerBackupConfirmed ->
+          local.value = local.value.copy(step = OnboardingStep.SHOW_BACKUP, backupRevealed = false)
         else -> discoverSubaccountsInternal()
       }
     }
@@ -321,7 +381,11 @@ class OnboardingViewModel(
   private fun createSubaccount(feePayment: FeePayment = FeePayment.SPONSORED) =
     launchAction("Your trading account wasn’t created.") {
       local.value =
-        local.value.copy(setupOperation = SetupOperation.CREATE_ACCOUNT, setupTransaction = null)
+        local.value.copy(
+          setupOperation = SetupOperation.CREATE_ACCOUNT,
+          setupTransaction = null,
+          setupFee = null,
+        )
       check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
         "Check for existing accounts before creating one."
       }
@@ -332,8 +396,9 @@ class OnboardingViewModel(
         )
       local.value = local.value.copy(setupTransaction = result)
       if (result !is TransactionState.Committed) {
-        if ((result as? TransactionState.Failed)?.selfPayEstimateOctas == null)
-          error((result as? TransactionState.Failed)?.message.orEmpty())
+        val failed = result as? TransactionState.Failed
+        if (failed?.selfPayEstimateOctas == null) error(failed?.message.orEmpty())
+        local.value = local.value.copy(setupFee = assessFee(failed))
         return@launchAction
       }
       // Creating the account and enabling trading are one reviewed operation.
@@ -380,18 +445,23 @@ class OnboardingViewModel(
 
   private suspend fun delegateApiAndFinish(feePayment: FeePayment = FeePayment.SPONSORED) {
     local.value =
-      local.value.copy(setupOperation = SetupOperation.ENABLE_TRADING, setupTransaction = null)
+      local.value.copy(
+        setupOperation = SetupOperation.ENABLE_TRADING,
+        setupTransaction = null,
+        setupFee = null,
+      )
     accounts.prepareTradingWallet(
       VaultPrompt(title = "Enable trading", subtitle = "Confirm your identity"),
       feePayment = feePayment,
     )
     if (local.value.builderOptIn && runtime.defaultBuilderAddress.isNotBlank()) {
       runSuspendCatching {
+        // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
         accounts.approveBuilderFee(
           builderAddress = runtime.defaultBuilderAddress,
           feeBps = 10u,
           prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
-          feePayment = feePayment,
+          feePayment = FeePayment.SPONSORED,
         )
       }.onSuccess {
         preferences.setBuilderFeeBps(runtime.defaultBuilderFeeBps.toInt())
@@ -412,19 +482,69 @@ class OnboardingViewModel(
     finishSetupInternal()
   }
 
-  private fun showBackup(backup: OwnerBackup) {
+  /**
+   * Uncovers the recovery phrase. Once setup has been away from the screen the words are no longer
+   * held, so they're read back from the vault, which asks the person to confirm it's them.
+   */
+  private fun revealBackup() {
+    if (local.value.backupWords.isNotEmpty()) {
+      local.value = local.value.copy(backupRevealed = true)
+      return
+    }
+    launchAction("Your recovery phrase couldn’t be shown.") {
+      val owner = checkNotNull(wallets.profile.first().ownerAddress) { "No account to back up" }
+      val phrase = wallets.exportOwnerMnemonic(VaultPrompt("Show recovery phrase", "Confirm your identity"))
+      showBackup(OwnerBackup(owner, phrase.split(' ')), revealed = true)
+    }
+  }
+
+  private fun showBackup(backup: OwnerBackup, revealed: Boolean = false) {
+    val indices = backup.words.indices.shuffled(Random.Default).take(3).sorted()
     local.value =
       local.value.copy(
         step = OnboardingStep.SHOW_BACKUP,
         input = "",
         backupWords = backup.words,
-        confirmationIndices = (backup.words.indices).shuffled(Random.Default).take(3).sorted(),
+        backupRevealed = revealed,
+        confirmationIndices = indices,
+        confirmationOptions = indices.associateWith { choicesFor(it, backup.words) },
         confirmations = emptyMap(),
       )
   }
 
+  /** The word at [index] and two other words from the same phrase, in random order. */
+  private fun choicesFor(index: Int, words: List<String>): List<String> {
+    val word = words[index]
+    val others = words.filterIndexed { i, other -> i != index && other != word }.distinct()
+    return (others.shuffled(Random.Default).take(2) + word).shuffled(Random.Default)
+  }
+
   private fun show(step: OnboardingStep) {
     clearSensitiveState(step)
+  }
+
+  /**
+   * Drops anything secret when setup leaves the screen, but keeps the person's place: an import keeps
+   * its step without the pasted key, and a backup is covered again, to be read back when revealed.
+   */
+  private fun clearSecrets() {
+    val state = local.value
+    local.value =
+      when (state.step) {
+        OnboardingStep.IMPORT -> state.copy(input = "", error = null)
+        OnboardingStep.SHOW_BACKUP,
+        OnboardingStep.CONFIRM_BACKUP ->
+          state.copy(
+            step = OnboardingStep.SHOW_BACKUP,
+            backupWords = emptyList(),
+            backupRevealed = false,
+            confirmationIndices = emptyList(),
+            confirmationOptions = emptyMap(),
+            confirmations = emptyMap(),
+            error = null,
+          )
+        else -> state
+      }
   }
 
   private fun clearSensitiveState(step: OnboardingStep = OnboardingStep.WELCOME) {
@@ -437,6 +557,22 @@ class OnboardingViewModel(
       )
   }
 
+  /**
+   * Whether the wallet can pay a fee Flare couldn't cover. The network sets the whole gas limit aside
+   * before running a transaction, so that reserve, not the smaller fee, is what the balance must meet.
+   */
+  private suspend fun assessFee(failed: TransactionState.Failed): SetupFee {
+    val estimate = checkNotNull(failed.selfPayEstimateOctas)
+    val reserve = maxOf(failed.selfPayReserveOctas ?: estimate, estimate)
+    val owner = wallets.profile.first().ownerAddress
+    val balance = runSuspendCatching { trading.ownerAptBalance() }.getOrNull()
+    return when {
+      owner == null || balance == null -> SetupFee.Unchecked(estimate)
+      balance >= reserve -> SetupFee.WalletCanPay(estimate, balance)
+      else -> SetupFee.WalletNeedsFunds(estimate, reserve, balance, owner)
+    }
+  }
+
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
@@ -447,15 +583,16 @@ class OnboardingViewModel(
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (error: SetupTransactionException) {
+        val failed = error.transaction as? TransactionState.Failed
         local.value =
-          local.value.copy(
-            setupTransaction = error.transaction,
-            error =
-              actionFailure(
-                (error.transaction as? TransactionState.Failed)?.message,
-                "Trading wasn’t enabled on this device.",
-              ),
-          )
+          if (failed?.selfPayEstimateOctas != null) {
+            local.value.copy(setupTransaction = failed, setupFee = assessFee(failed))
+          } else {
+            local.value.copy(
+              setupTransaction = error.transaction,
+              error = actionFailure(failed?.message, "Trading wasn’t enabled on this device."),
+            )
+          }
       } catch (error: Throwable) {
         local.value = local.value.copy(error = actionFailure(error.message, outcome))
       } finally {

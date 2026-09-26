@@ -80,6 +80,9 @@ interface TradingRepository {
 
   suspend fun apiWalletAptBalance(): ULong
 
+  /** The APT the owner wallet holds, which pays an owner action's network fee if Flare can't. */
+  suspend fun ownerAptBalance(): ULong = error("The owner wallet's balance isn't available")
+
   suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double = 0.0
 
   fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState>
@@ -364,6 +367,17 @@ class DefaultTradingRepository(
   override suspend fun apiWalletAptBalance(): ULong {
     val address =
       wallets.profile.first().apiWalletAddress ?: error("This device has no trading key")
+    return when (
+      val result =
+        aptos.accounts.getBalance(AccountAddress.fromString(address), AccountAsset.coin(APTOS_COIN))
+    ) {
+      is AptosResult.Success -> result.value
+      is AptosResult.Failure -> error(result.error.toString())
+    }
+  }
+
+  override suspend fun ownerAptBalance(): ULong {
+    val address = wallets.profile.first().ownerAddress ?: error("This device has no owner key")
     return when (
       val result =
         aptos.accounts.getBalance(AccountAddress.fromString(address), AccountAsset.coin(APTOS_COIN))

@@ -31,20 +31,15 @@ class DesignPreviewActivity : FragmentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     val initialScreen = intent.getStringExtra("screen") ?: "welcome"
-    setContent { FlareTheme { PreviewScreens(initialScreen) } }
+    // Previews show secret screens with sample words, so they stay capturable for design review.
+    setContent { FlareTheme { CompositionLocalProvider(LocalProtectSecrets provides false) { PreviewScreens(initialScreen) } } }
   }
 }
 
 @Composable
 private fun PreviewScreens(initialScreen: String) {
   var screen by remember { mutableStateOf(initialScreen) }
-  var onboarding by remember {
-    mutableStateOf(
-      OnboardingUiState(
-        step = if (initialScreen == "import") OnboardingStep.IMPORT else OnboardingStep.WELCOME
-      )
-    )
-  }
+  var onboarding by remember { mutableStateOf(previewOnboardingState(initialScreen)) }
   var quotes by remember { mutableStateOf(previewQuotes()) }
   var query by remember { mutableStateOf("") }
   var favorites by remember { mutableStateOf(false) }
@@ -78,24 +73,10 @@ private fun PreviewScreens(initialScreen: String) {
     Box(Modifier.weight(1f)) {
       when (screen) {
         "splash" -> FlareSplashScreen()
-        "welcome",
-        "import" ->
-          OnboardingScreen(
-            onboarding,
-            { intent ->
-              onboarding =
-                when (intent) {
-                  OnboardingIntent.ShowImport -> onboarding.copy(step = OnboardingStep.IMPORT)
-                  is OnboardingIntent.ChangeInput -> onboarding.copy(input = intent.value)
-                  is OnboardingIntent.SetApiImport -> onboarding.copy(apiImport = intent.enabled)
-                  OnboardingIntent.Back -> OnboardingUiState()
-                  else ->
-                    onboarding.copy(
-                      error = "Preview only. Account creation and import are disabled."
-                    )
-                }
-            },
-          )
+        "welcome", "import", "import-phrase", "import-key", "backup", "backup-revealed", "confirm",
+        "accounts", "create-account", "finding", "enable", "enable-working", "setup-error",
+        "fee-can-pay", "fee-needs-funds", "fee-unchecked" ->
+          OnboardingScreen(onboarding, { onboarding = previewOnboardingIntent(onboarding, it) })
         "markets" ->
           MarketsScreen(
             MarketsUiState(
@@ -480,3 +461,86 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
     else -> loaded
   }
 }
+
+private val PreviewWords =
+  listOf("orbit", "velvet", "canyon", "ember", "mosaic", "harbor", "lunar", "quartz", "willow", "summit", "prism", "cobalt")
+
+private val PreviewSubaccounts =
+  listOf(
+    Subaccount(address = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48", owner = "0x1", customLabel = "Main", isPrimary = true),
+    Subaccount(address = "0x2e91b47c0d8a35f6e1c94b27a0d6f3e85c1b49a7d2e06f3c8b5a1d94e7f20c36", owner = "0x1", isPrimary = false),
+  )
+
+private fun previewOnboardingState(screen: String): OnboardingUiState {
+  val owner = WalletProfile(ownerAddress = "0x1c4e8f2a9b7d3c6e5f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6")
+  val backup =
+    OnboardingUiState(
+      step = OnboardingStep.SHOW_BACKUP,
+      profile = owner,
+      backupWords = PreviewWords,
+      confirmationIndices = listOf(2, 6, 10),
+      confirmationOptions = mapOf(
+        2 to listOf("summit", "canyon", "ember"),
+        6 to listOf("lunar", "prism", "velvet"),
+        10 to listOf("orbit", "harbor", "prism"),
+      ),
+    )
+  return when (screen) {
+    "import" -> OnboardingUiState(step = OnboardingStep.IMPORT)
+    "import-phrase" -> OnboardingUiState(step = OnboardingStep.IMPORT, input = PreviewWords.joinToString(" "))
+    "import-key" -> OnboardingUiState(step = OnboardingStep.IMPORT, input = "ed25519-priv-0x" + "5f".repeat(32))
+    "backup" -> backup
+    "backup-revealed" -> backup.copy(backupRevealed = true)
+    "confirm" -> backup.copy(step = OnboardingStep.CONFIRM_BACKUP, backupRevealed = true, confirmations = mapOf(2 to "canyon"))
+    "accounts" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, subaccounts = PreviewSubaccounts, subaccountsLoaded = true, selectedSubaccount = PreviewSubaccounts[0].address)
+    "create-account" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, subaccountsLoaded = true)
+    "finding" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, busy = true)
+    "enable" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address)
+    "enable-working" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, busy = true)
+    "fee-can-pay", "fee-needs-funds", "fee-unchecked" ->
+      OnboardingUiState(
+        step = OnboardingStep.ENABLE_TRADING,
+        profile = owner,
+        selectedSubaccount = PreviewSubaccounts[0].address,
+        setupOperation = SetupOperation.ENABLE_TRADING,
+        setupFee =
+          when (screen) {
+            "fee-can-pay" -> SetupFee.WalletCanPay(estimateOctas = 104_300uL, balanceOctas = 48_210_000uL)
+            "fee-needs-funds" ->
+              SetupFee.WalletNeedsFunds(104_300uL, reserveOctas = 5_000_000uL, balanceOctas = 0uL, address = owner.ownerAddress!!)
+            else -> SetupFee.Unchecked(104_300uL)
+          },
+      )
+    "setup-error" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, error = "Trading wasn’t enabled on this device. The network didn’t respond.")
+    else -> OnboardingUiState()
+  }
+}
+
+/** Walks the preview through setup without keys, network or transactions. */
+private fun previewOnboardingIntent(state: OnboardingUiState, intent: OnboardingIntent): OnboardingUiState =
+  when (intent) {
+    OnboardingIntent.ShowImport -> OnboardingUiState(step = OnboardingStep.IMPORT)
+    OnboardingIntent.CreateOwner -> previewOnboardingState("backup")
+    is OnboardingIntent.ChangeInput -> state.copy(input = intent.value)
+    is OnboardingIntent.SetApiImport -> state.copy(apiImport = intent.enabled)
+    is OnboardingIntent.ChangeTradingAccount -> state.copy(tradingAccountInput = intent.value)
+    OnboardingIntent.ImportCredential -> previewOnboardingState("accounts")
+    OnboardingIntent.RevealBackup -> state.copy(backupRevealed = true)
+    OnboardingIntent.ReviewBackup -> state.copy(step = OnboardingStep.CONFIRM_BACKUP)
+    is OnboardingIntent.ChangeConfirmation -> state.copy(confirmations = state.confirmations + (intent.index to intent.value))
+    OnboardingIntent.ConfirmBackup -> previewOnboardingState("create-account")
+    OnboardingIntent.CreateSubaccount, OnboardingIntent.DiscoverSubaccounts -> previewOnboardingState("accounts")
+    is OnboardingIntent.SelectSubaccount -> state.copy(selectedSubaccount = intent.address)
+    OnboardingIntent.ContinueSubaccount -> previewOnboardingState("enable")
+    is OnboardingIntent.SetBuilderOptIn -> state.copy(builderOptIn = intent.enabled)
+    OnboardingIntent.EnableTrading, OnboardingIntent.ConfirmSetupSelfPay, OnboardingIntent.RetrySetup ->
+      state.copy(busy = true)
+    OnboardingIntent.Back ->
+      when (state.step) {
+        OnboardingStep.CONFIRM_BACKUP -> state.copy(step = OnboardingStep.SHOW_BACKUP)
+        OnboardingStep.ENABLE_TRADING -> previewOnboardingState("accounts")
+        else -> OnboardingUiState()
+      }
+    else -> state
+  }
+

@@ -140,6 +140,11 @@ sealed interface TransactionState {
     val committed: Boolean = false,
     val selfPayEstimateOctas: ULong? = null,
     val definitelyNotSubmitted: Boolean = false,
+    /**
+     * What the sender must hold to pay the fee itself: the network reserves the whole gas limit at the
+     * gas price before running a transaction, so this is more than [selfPayEstimateOctas].
+     */
+    val selfPayReserveOctas: ULong? = null,
   ) : TransactionState
 }
 
@@ -634,12 +639,20 @@ internal class DefaultDecibelTradingService(
           is AptosResult.Success -> result.value
           is AptosResult.Failure -> {
             val safeForSelfPay = result.error.safeForSelfPay()
+            val raw = unsigned.rawTransaction
+            val reserve =
+              if (raw.gasUnitPrice == 0uL || raw.maxGasAmount <= ULong.MAX_VALUE / raw.gasUnitPrice) {
+                raw.maxGasAmount * raw.gasUnitPrice
+              } else {
+                null
+              }
             emit(
               TransactionState.Failed(
                 message = result.error.toString(),
                 hash = preparedReference,
                 selfPayEstimateOctas = selfPayEstimateOctas.takeIf { safeForSelfPay },
                 definitelyNotSubmitted = safeForSelfPay,
+                selfPayReserveOctas = reserve.takeIf { safeForSelfPay },
               )
             )
             return@flow

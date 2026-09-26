@@ -126,7 +126,7 @@ internal fun WelcomeScreen(
       val end = hero?.translate(-origin) ?: start
       val mark = lerp(start, end, glide.value)
       drawFlareAfterglow(mark.center, mark.width * 2.8f, afterglow.value * breath())
-      translate(mark.left, mark.top) { drawLitFlareMark(mark.size, FlareColors.Positive, ignition::level) }
+      translate(mark.left, mark.top) { drawLitFlareMark(mark.size, { FlareColors.Positive }, ignition::level) }
     }
     Column(
       Modifier.fillMaxSize()
