@@ -15,6 +15,7 @@ val flareBuilderAddress =
 plugins {
   alias(libs.plugins.androidApplication)
   alias(libs.plugins.composeCompiler)
+  alias(libs.plugins.baselineprofile)
 }
 
 kotlin {
@@ -30,6 +31,9 @@ dependencies {
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.fragment)
   implementation(libs.androidx.room3.runtime)
+  // Hands the shipped baseline profile to ART on installs that don't apply it themselves, like sideloads.
+  implementation(libs.androidx.profileinstaller)
+  baselineProfile(project(":baselineprofile"))
 
   implementation(libs.compose.uiToolingPreview)
   debugImplementation(libs.compose.uiTooling)
@@ -81,5 +85,15 @@ android {
   buildFeatures {
     compose = true
     resValues = true
+  }
+}
+
+// The baseline profile plugin's build types don't read their own src/<buildType> folders, so the
+// overlay that lets them reach the local worker is added to those variants here.
+androidComponents {
+  onVariants { variant ->
+    if (variant.buildType in setOf("nonMinifiedRelease", "benchmarkRelease")) {
+      variant.sources.manifests.addStaticManifestFile(file("src/benchmark/AndroidManifest.xml").path)
+    }
   }
 }

@@ -34,6 +34,8 @@ dependencyResolutionManagement {
 
 include(":androidApp")
 
+include(":baselineprofile")
+
 include(":decibel")
 
 include(":shared")
