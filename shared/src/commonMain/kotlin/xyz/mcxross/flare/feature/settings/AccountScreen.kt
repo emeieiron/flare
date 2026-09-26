@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -132,7 +131,7 @@ fun AccountScreen(
   LaunchedEffect(copied) {
     if (copied) { delay(COPIED_CONFIRMATION_MS); copied = false }
   }
-  Column(modifier.fillMaxSize().background(FlareColors.Canvas)
+  Column(modifier.fillMaxSize()
     .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
     FlareTopBar("Account", action = {
       IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {

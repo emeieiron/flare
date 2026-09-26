@@ -48,7 +48,9 @@ fun <T> FlarePageTransition(
 ) {
   AnimatedContent(
     targetState = page,
-    modifier = modifier.fillMaxSize().clipToBounds().background(FlareColors.Canvas),
+    // Each page carries the background, since a page must cover the one it slides over; the container
+    // would only paint the same black a second time.
+    modifier = modifier.fillMaxSize().clipToBounds(),
     transitionSpec = {
       val fromDepth = depth(initialState)
       val toDepth = depth(targetState)

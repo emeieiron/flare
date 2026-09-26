@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -111,7 +110,7 @@ fun MarketsScreen(
     snapshotFlow { pagerState.settledPage }.collect { intents(MarketsIntent.ShowPage(sequence[it])) }
   }
   val currentKey = sequence[pagerState.currentPage.coerceIn(sequence.indices)]
-  Column(modifier = modifier.fillMaxSize().background(FlareColors.Canvas)) {
+  Column(modifier = modifier.fillMaxSize()) {
     Column(Modifier.padding(horizontal = 24.dp)) {
       if (state.searching) {
         MarketSearchBar(state.query, { onIntent(MarketsIntent.Search(it)) }, closeSearch)

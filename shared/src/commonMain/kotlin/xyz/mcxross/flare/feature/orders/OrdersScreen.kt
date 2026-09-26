@@ -1,6 +1,5 @@
 package xyz.mcxross.flare.feature.orders
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,7 +64,6 @@ fun OrdersScreen(
     modifier =
       modifier
         .fillMaxSize()
-        .background(FlareColors.Canvas)
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp)
   ) {
