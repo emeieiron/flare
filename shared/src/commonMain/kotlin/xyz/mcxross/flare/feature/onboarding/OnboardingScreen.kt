@@ -20,8 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +52,7 @@ import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTextField
@@ -182,7 +181,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
   ) {
     if (onBack != null) {
       IconButton(onClick = onBack, modifier = Modifier.padding(end = 8.dp)) {
-        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+        Icon(FlareIcons.ArrowBack, contentDescription = "Back")
       }
     }
     Text("flare", style = MaterialTheme.typography.headlineMedium)

@@ -25,8 +25,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +57,7 @@ import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
@@ -119,7 +118,7 @@ fun MarketsScreen(
           title = "Markets",
           action = {
             IconButton({ onIntent(MarketsIntent.OpenSearch) }, Modifier.size(48.dp)) {
-              Icon(Icons.Outlined.Search, "Search markets", tint = FlareColors.TextPrimary)
+              Icon(FlareIcons.Search, "Search markets", tint = FlareColors.TextPrimary)
             }
           },
         )
@@ -194,7 +193,7 @@ private fun MarketSearchBar(query: String, onQuery: (String) -> Unit, onCancel: 
       value = query,
       onValueChange = onQuery,
       placeholder = "Search all markets",
-      leadingIcon = Icons.Outlined.Search,
+      leadingIcon = FlareIcons.Search,
       modifier = Modifier.weight(1f),
       focusRequester = focusRequester,
     )

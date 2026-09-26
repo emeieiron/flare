@@ -1,9 +1,11 @@
 package xyz.mcxross.flare.design
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -30,10 +32,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -379,7 +377,7 @@ fun FlareSearchField(
               contentAlignment = Alignment.Center,
             ) {
               Icon(
-                Icons.Outlined.Close,
+                FlareIcons.Close,
                 contentDescription = "Clear search",
                 tint = FlareColors.TextPrimary,
                 modifier = Modifier.size(12.dp),
@@ -915,7 +913,7 @@ fun MarketListRow(
     Spacer(Modifier.width(8.dp))
     IconButton(onClick = onFavorite) {
       Icon(
-        if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+        if (favorite) FlareIcons.StarFilled else FlareIcons.Star,
         contentDescription =
           if (favorite) "Remove ${asset.symbol} from watchlist"
           else "Add ${asset.symbol} to watchlist",
@@ -977,9 +975,11 @@ fun EmptyState(
   }
 }
 
+/** A tab: its outline icon while idle, and a filled form once selected. */
 data class FlareNavigationItem(
   val label: String,
   val icon: ImageVector,
+  val selectedIcon: ImageVector = icon,
 )
 
 @Composable
@@ -995,7 +995,11 @@ fun FlareBottomNavigation(
   ) {
     items.forEachIndexed { index, item ->
       val selected = index == selectedIndex
-      val color = if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary
+      val color by animateColorAsState(
+        if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary,
+        tween(180),
+        label = "tabColor",
+      )
       Column(
         modifier =
           Modifier.weight(1f).heightIn(min = 52.dp).selectable(
@@ -1007,7 +1011,14 @@ fun FlareBottomNavigation(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
       ) {
-        Icon(item.icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+        Crossfade(selected, animationSpec = tween(180), label = "tabIcon") { filled ->
+          Icon(
+            if (filled) item.selectedIcon else item.icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(22.dp),
+          )
+        }
         Spacer(Modifier.height(5.dp))
         Text(item.label, color = color, style = MaterialTheme.typography.labelSmall)
       }

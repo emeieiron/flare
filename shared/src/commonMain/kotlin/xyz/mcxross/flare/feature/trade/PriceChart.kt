@@ -20,11 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShowChart
-import androidx.compose.material.icons.outlined.CandlestickChart
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +71,7 @@ import kotlin.math.pow
 import xyz.mcxross.flare.data.ChartRange
 import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.domain.MacdPoint
@@ -239,8 +235,8 @@ fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier
   ) {
     Crossfade(next, label = "chartStyleToggle") { target ->
       Icon(
-        if (target == ChartStyle.LINE) Icons.AutoMirrored.Outlined.ShowChart
-        else Icons.Outlined.CandlestickChart,
+        if (target == ChartStyle.LINE) FlareIcons.ChartLine
+        else FlareIcons.ChartCandles,
         contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
         modifier = Modifier.size(18.dp),
         tint = FlareColors.TextPrimary,
@@ -264,7 +260,7 @@ fun ChartRangeButton(range: ChartRange, onClick: () -> Unit, modifier: Modifier 
   ) {
     Text(range.label, style = MaterialTheme.typography.labelMedium)
     Icon(
-      Icons.Outlined.KeyboardArrowDown,
+      FlareIcons.ChevronDown,
       contentDescription = null,
       modifier = Modifier.padding(start = 2.dp).size(18.dp),
       tint = FlareColors.TextSecondary,
@@ -286,7 +282,7 @@ fun ChartRangeSheet(selected: ChartRange, onSelect: (ChartRange) -> Unit, onDism
       ) {
         Text(range.title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         if (range == selected) {
-          Icon(Icons.Outlined.Check, contentDescription = null, tint = FlareColors.Positive)
+          Icon(FlareIcons.Check, contentDescription = null, tint = FlareColors.Positive)
         }
       }
     }
