@@ -125,7 +125,7 @@ fun OnboardingScreen(
   }
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
-    isBackEnabled = state.step != OnboardingStep.WELCOME || onBack != null,
+    isBackEnabled = (state.step != OnboardingStep.WELCOME || onBack != null) && !state.pastReturn,
     onBackCompleted = goBack,
   )
   AnimatedContent(
@@ -162,14 +162,15 @@ private fun SetupFlow(
 ) {
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()) {
     Box(Modifier.fillMaxWidth().height(56.dp)) {
-      IconButton(goBack, Modifier.align(Alignment.CenterStart).padding(start = 4.dp), enabled = !state.busy) {
+      val canGoBack = !state.busy && !state.pastReturn
+      IconButton(goBack, Modifier.align(Alignment.CenterStart).padding(start = 4.dp), enabled = canGoBack) {
         Icon(
           FlareIcons.ArrowBack,
           "Back",
-          tint = if (state.busy) FlareColors.TextDisabled else FlareColors.TextPrimary,
+          tint = if (canGoBack) FlareColors.TextPrimary else FlareColors.TextDisabled,
         )
       }
-      SetupProgress(state.step.stage, Modifier.align(Alignment.Center).size(28.dp))
+      SetupProgress(state.stage, Modifier.align(Alignment.Center).size(28.dp))
     }
     FlarePageTransition(state.step, depth = { it.order }, modifier = Modifier.weight(1f)) { step ->
       when (step) {
@@ -182,21 +183,31 @@ private fun SetupFlow(
         OnboardingStep.SHOW_BACKUP -> BackupStep(state, onIntent)
         OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
         OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
+        OnboardingStep.OPEN_ACCOUNT -> OpenAccountStep(state, onIntent)
         OnboardingStep.ENABLE_TRADING -> EnableTradingStep(state, onIntent)
       }
     }
   }
 }
 
-/** Setup has three stages, one for each bar of the mark: securing the account, choosing it, trading. */
-private val OnboardingStep.stage: Int
+/** Once a new wallet's trading account is open on chain, setup only goes forward. */
+private val OnboardingUiState.pastReturn: Boolean
+  get() = step == OnboardingStep.OPEN_ACCOUNT && accountOpened
+
+/**
+ * Setup has three stages, one for each bar of the mark: securing the account, its trading account,
+ * trading. A new wallet opens its account and enables trading on one screen, which moves on to the
+ * last stage as soon as the account is open.
+ */
+private val OnboardingUiState.stage: Int
   get() =
-    when (this) {
+    when (step) {
       OnboardingStep.WELCOME,
       OnboardingStep.IMPORT,
       OnboardingStep.SHOW_BACKUP,
       OnboardingStep.CONFIRM_BACKUP -> 0
       OnboardingStep.SUBACCOUNT -> 1
+      OnboardingStep.OPEN_ACCOUNT -> if (accountOpened) 2 else 1
       OnboardingStep.ENABLE_TRADING -> 2
     }
 
@@ -207,7 +218,8 @@ private val OnboardingStep.order: Int
       OnboardingStep.IMPORT,
       OnboardingStep.SHOW_BACKUP -> 1
       OnboardingStep.CONFIRM_BACKUP -> 2
-      OnboardingStep.SUBACCOUNT -> 3
+      OnboardingStep.SUBACCOUNT,
+      OnboardingStep.OPEN_ACCOUNT -> 3
       OnboardingStep.ENABLE_TRADING -> 4
     }
 
@@ -326,6 +338,18 @@ internal fun ColumnScope.SetupActions(
         tone = NoticeTone.ALERT,
       )
       FundingAddress(fee.address)
+      FlareButton(
+        "Try again",
+        { onIntent(OnboardingIntent.RetrySetup) },
+        Modifier.fillMaxWidth(),
+        working = state.busy,
+      )
+    }
+    is SetupFee.AwaitingSponsor -> {
+      ActionNotice(
+        "Flare couldn’t cover the network fee just now. A new wallet has no APT, so nothing was " +
+          "charged, and everything that went through is saved. Try again in a moment."
+      )
       FlareButton(
         "Try again",
         { onIntent(OnboardingIntent.RetrySetup) },

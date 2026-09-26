@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -761,6 +762,135 @@ private fun AccountOption(
       animateColorAsState(if (selected) FlareColors.Positive else FlareColors.BorderStrong, label = "Account ring")
     Box(Modifier.size(22.dp).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) {
       if (selected) Box(Modifier.size(10.dp).background(FlareColors.Positive, CircleShape))
+    }
+  }
+}
+
+/**
+ * A new wallet's last step: Flare opens its trading account and enables trading, all sponsored. What
+ * has gone through stays checked off, so a retry after a failure or an interruption only does what's
+ * left.
+ */
+@Composable
+internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
+  val stalled = !state.busy && (state.error != null || state.setupFee != null)
+  StepLayout(
+    title = "Open your trading account",
+    subtitle =
+      "Flare opens a Decibel trading account for your new wallet and adds a trading key to this " +
+        "phone, so your orders sign instantly. The key can trade, but it can’t move funds out.",
+    actions = {
+      SetupActions(state, onIntent) {
+        FlareButton(
+          when {
+            stalled -> "Try again"
+            state.accountOpened -> "Enable trading"
+            else -> "Open account"
+          },
+          { onIntent(OnboardingIntent.OpenAccount) },
+          Modifier.fillMaxWidth(),
+          working = state.busy,
+        )
+      }
+    },
+  ) {
+    Column(
+      Modifier.fillMaxWidth()
+        .clip(RoundedCornerShape(18.dp))
+        .background(FlareColors.Surface)
+        .padding(horizontal = 16.dp)
+    ) {
+      SetupTask(
+        "Trading account",
+        when {
+          state.accountOpened -> TaskStatus.DONE
+          state.busy -> TaskStatus.WORKING
+          stalled -> TaskStatus.STALLED
+          else -> TaskStatus.WAITING
+        },
+        waiting = "A Decibel account for your new wallet",
+        working = "Opening…",
+        done = "Open",
+        stalled = "Not opened yet",
+      )
+      HorizontalDivider(color = FlareColors.BorderSubtle)
+      SetupTask(
+        "Trading on this phone",
+        when {
+          !state.accountOpened -> TaskStatus.WAITING
+          state.busy -> TaskStatus.WORKING
+          stalled -> TaskStatus.STALLED
+          else -> TaskStatus.WAITING
+        },
+        waiting = if (state.accountOpened) "Ready to enable" else "Once the account is open",
+        working = "Enabling…",
+        done = "Enabled",
+        stalled = "Not enabled yet",
+      )
+    }
+    Box(
+      Modifier.fillMaxWidth()
+        .padding(top = 12.dp)
+        .clip(RoundedCornerShape(18.dp))
+        .background(FlareColors.Surface)
+        .padding(horizontal = 16.dp)
+    ) {
+      SwitchRow(
+        "Support Flare",
+        "Adds 0.05% to your trades to fund Flare’s development. Change it anytime in Settings.",
+        state.builderOptIn,
+        { if (!state.busy) onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
+      )
+    }
+    NetworkFeeLine("Network fees", covered = state.setupFee == null, Modifier.padding(top = 16.dp))
+  }
+}
+
+private enum class TaskStatus {
+  WAITING,
+  WORKING,
+  DONE,
+  STALLED,
+}
+
+@Composable
+private fun SetupTask(
+  title: String,
+  status: TaskStatus,
+  waiting: String,
+  working: String,
+  done: String,
+  stalled: String,
+) {
+  Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+      when (status) {
+        TaskStatus.WAITING -> Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.BorderStrong, CircleShape))
+        TaskStatus.WORKING ->
+          CircularProgressIndicator(Modifier.size(18.dp), color = FlareColors.Positive, strokeWidth = 2.dp)
+        TaskStatus.DONE ->
+          Icon(FlareIcons.CheckCircle, contentDescription = null, Modifier.size(22.dp), tint = FlareColors.Positive)
+        TaskStatus.STALLED -> Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.Warning, CircleShape))
+      }
+    }
+    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+      Text(title, style = MaterialTheme.typography.bodyLarge)
+      Text(
+        when (status) {
+          TaskStatus.WAITING -> waiting
+          TaskStatus.WORKING -> working
+          TaskStatus.DONE -> done
+          TaskStatus.STALLED -> stalled
+        },
+        Modifier.padding(top = 2.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color =
+          when (status) {
+            TaskStatus.DONE -> FlareColors.Positive
+            TaskStatus.STALLED -> FlareColors.Warning
+            else -> FlareColors.TextSecondary
+          },
+      )
     }
   }
 }

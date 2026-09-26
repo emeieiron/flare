@@ -50,6 +50,13 @@ data class AccountProfile(
   val builderApproved: Boolean = false,
   val spotBuilderFeeBps: Int = 5,
   val spotBuilderApproved: Boolean = false,
+  /**
+   * Flare generated this wallet on this device, so it has no trading account until Flare opens one,
+   * and no APT to pay network fees with.
+   */
+  val createdInApp: Boolean = false,
+  /** Its trading account went through on chain, so it's never opened a second time. */
+  val tradingAccountOpened: Boolean = false,
 )
 
 data class FlarePreferences(
@@ -236,6 +243,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   suspend fun setCreationReference(profileId: String, reference: String?) =
     updateProfile(profileId) { it.copy(creationReference = reference) }
+
+  suspend fun setTradingAccountOpened(profileId: String) =
+    updateProfile(profileId) { it.copy(tradingAccountOpened = true) }
 
   suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) =
     updateProfile(profileId) { it.copy(withdrawal = withdrawal) }
