@@ -1,17 +1,25 @@
 package xyz.mcxross.flare
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -27,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -42,10 +51,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import androidx.room3.RoomDatabase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.KoinApplication
 import org.koin.compose.koinInject
@@ -59,7 +70,6 @@ import xyz.mcxross.flare.design.FlareBottomNavigation
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
-import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
@@ -71,6 +81,8 @@ import xyz.mcxross.flare.design.pagePredictivePopEnter
 import xyz.mcxross.flare.design.pagePredictivePopExit
 import xyz.mcxross.flare.design.pagePushEnter
 import xyz.mcxross.flare.design.pagePushExit
+import xyz.mcxross.flare.design.rememberFlareIgnition
+import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.di.flareModule
 import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
@@ -223,39 +235,93 @@ private fun FlareAppFlow() {
       ?: persisted?.profiles?.firstOrNull { it.onboardingComplete }?.id
   }
   val savedScreens = rememberSaveableStateHolder()
-  if (persisted == null || walletProfile == null) {
-    FlareSplashScreen()
-  } else if (hasCredentials && !unlocked) {
-    if (unlockError == null) {
-      FlareSplashScreen()
-    } else {
-      Box(
-        Modifier.fillMaxSize().background(FlareColors.Canvas),
-        contentAlignment = Alignment.Center,
-      ) {
-        Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-          FlareLogo(modifier = Modifier.size(64.dp), color = FlareColors.Positive)
-          Text("flare", style = MaterialTheme.typography.headlineMedium)
-          Text(
-            "Confirm it’s you to continue.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-          )
-          FlareButton("Continue", { retry++ })
+  val stage =
+    when {
+      persisted == null || walletProfile == null -> LaunchStage.LOADING
+      hasCredentials && !unlocked -> LaunchStage.LOCKED
+      !hasCompletedProfile -> LaunchStage.ONBOARDING
+      else -> LaunchStage.READY
+    }
+  Box(Modifier.fillMaxSize()) {
+    when (stage) {
+      LaunchStage.ONBOARDING -> OnboardingRoute(onCompleted = {})
+      LaunchStage.READY ->
+        key(lastCompletedProfileId, persisted?.selectedSubaccount) {
+          savedScreens.SaveableStateProvider(
+            "shell:${lastCompletedProfileId}:${persisted?.selectedSubaccount}"
+          ) {
+            FlareShell()
+          }
         }
+      LaunchStage.LOADING,
+      LaunchStage.LOCKED -> Unit
+    }
+    LaunchCurtain(stage, locked = unlockError != null, onUnlock = { retry++ })
+  }
+}
+
+private enum class LaunchStage {
+  LOADING,
+  LOCKED,
+  ONBOARDING,
+  READY,
+}
+
+/**
+ * The splash, held over the app until it can be used. It looks exactly like the system's launch
+ * splash, so the app takes over without a visible seam. When the account unlocks, the mark ignites
+ * and the curtain lifts off the app already drawn beneath it. Onboarding takes the mark over at the
+ * same spot, so there the curtain simply goes. If the unlock is dismissed, the mark stays where it is
+ * and the way back in appears beneath it.
+ */
+@Composable
+private fun LaunchCurtain(stage: LaunchStage, locked: Boolean, onUnlock: () -> Unit) {
+  val reduceMotion = rememberReducedMotion()
+  val ignition = rememberFlareIgnition()
+  val opacity = remember { Animatable(1f) }
+  var covering by remember { mutableStateOf(true) }
+  LaunchedEffect(stage) {
+    when (stage) {
+      LaunchStage.LOADING,
+      LaunchStage.LOCKED -> {
+        ignition.snapTo(0f)
+        opacity.snapTo(1f)
+        covering = true
+      }
+      LaunchStage.ONBOARDING -> covering = false
+      LaunchStage.READY -> {
+        if (!covering) return@LaunchedEffect
+        coroutineScope {
+          launch { ignition.ignite(reduceMotion, rest = 1f, staggerMs = 50, flareMs = 150, settleMs = 300) }
+          // The curtain starts lifting as the last bar flares, so unlocking never waits on the light.
+          delay(if (reduceMotion) 0 else 200)
+          opacity.animateTo(0f, tween(if (reduceMotion) 120 else 240, easing = LinearEasing))
+        }
+        covering = false
       }
     }
-  } else if (!hasCompletedProfile) {
-    OnboardingRoute(onCompleted = {})
-  } else {
-    key(lastCompletedProfileId, persisted?.selectedSubaccount) {
-      savedScreens.SaveableStateProvider(
-        "shell:${lastCompletedProfileId}:${persisted?.selectedSubaccount}"
+  }
+  if (!covering) return
+  Box(Modifier.fillMaxSize().graphicsLayer { alpha = opacity.value }) {
+    FlareSplashScreen(glow = ignition::level)
+    AnimatedVisibility(
+      visible = stage == LaunchStage.LOCKED && locked,
+      modifier = Modifier.align(Alignment.BottomCenter),
+      enter = fadeIn(tween(220)) + slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 6 },
+      exit = fadeOut(tween(120)),
+    ) {
+      Column(
+        Modifier.fillMaxWidth().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        FlareShell()
+        Text("Flare is locked", style = MaterialTheme.typography.titleLarge)
+        Text(
+          "Confirm it’s you to open your account.",
+          Modifier.padding(top = 8.dp),
+          style = MaterialTheme.typography.bodyMedium,
+          color = FlareColors.TextSecondary,
+        )
+        FlareButton("Unlock", onUnlock, Modifier.fillMaxWidth().padding(top = 28.dp))
       }
     }
   }

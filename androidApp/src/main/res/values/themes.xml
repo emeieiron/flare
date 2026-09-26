@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Black from the first pixel, so no grey window ever shows between the splash and the app. -->
+    <style name="Theme.Flare" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/flare_canvas</item>
+        <item name="android:colorBackground">@color/flare_canvas</item>
+    </style>
+
+    <!--
+      The launch splash: the mark on black, drawn exactly where and how large the app's own first
+      frame draws it, so the handoff from the system to the app can't be seen.
+    -->
+    <style name="Theme.Flare.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/flare_canvas</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_mark</item>
+        <item name="postSplashScreenTheme">@style/Theme.Flare</item>
+    </style>
+</resources>
