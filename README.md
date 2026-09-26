@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme/hero.webp" width="100%" alt="Flare on three phones: live markets, the welcome screen and a Bitcoin chart">
+  <img src="assets/preview.webp" width="100%" alt="Flare on five phones: the portfolio, live markets, the welcome screen, a Bitcoin chart and an order ticket">
 </p>
 
 <h1 align="center">Flare</h1>
@@ -16,13 +16,6 @@
   <a href="#get-flare">Get Flare</a>
   &nbsp;·&nbsp;
   <a href="#build-it-yourself">Build it yourself</a>
-</p>
-
-<p align="center">
-  <img src="assets/readme/launch.webp" width="24%" alt="Flare launching: the mark lights up and the welcome screen appears">
-  <img src="assets/readme/markets.webp" width="24%" alt="Crypto markets with live prices and daily changes">
-  <img src="assets/readme/chart.webp" width="24%" alt="A Bitcoin chart with candles, RSI and MACD">
-  <img src="assets/readme/portfolio.webp" width="24%" alt="A portfolio with positions, holdings, a vault and rewards">
 </p>
 
 > [!IMPORTANT]
@@ -53,13 +46,6 @@ Flare is two things at once. For anyone who just wants something that works, it'
 - **Setup with one confirmation**: Back up and confirm your recovery phrase, and Flare opens your trading account and enables trading with a single confirmation. Every step is saved, so an interrupted setup picks up where it left off.
 - **Sponsored network fees**: Flare's gas station pays network fees by default, including everything setup needs. If sponsorship is unavailable, Flare says so and asks before your wallet pays. It never switches silently.
 - **Offline resilience**: Pending transactions are journaled and reconciled when the app restarts.
-
-<p align="center">
-  <img src="assets/readme/order.webp" width="24%" alt="A Bitcoin order at five times leverage">
-  <img src="assets/readme/phrase.webp" width="24%" alt="A recovery phrase, covered until you choose to reveal it">
-  <img src="assets/readme/setup.webp" width="24%" alt="Opening a trading account, with network fees covered">
-  <img src="assets/readme/locked.webp" width="24%" alt="Flare locked, waiting for you to confirm it's you">
-</p>
 
 ---
 
