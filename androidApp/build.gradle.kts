@@ -28,6 +28,7 @@ dependencies {
   implementation(project(":shared"))
 
   implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.core.splashscreen)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.fragment)
   implementation(libs.androidx.room3.runtime)

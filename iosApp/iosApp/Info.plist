@@ -6,6 +6,15 @@
 	<string>$(FLARE_WORKER_URL)</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Flare uses Face ID to unlock wallet signing keys.</string>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>LaunchMark</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<false/>
+	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 </dict>

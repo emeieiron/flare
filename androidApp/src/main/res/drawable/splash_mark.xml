@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Flare mark for the launch splash. The splash shows an icon without a background on a 288dp
+  canvas, so the mark's 72dp box sits at its centre: the same size and position as FlareSplashScreen.
+  The bars follow drawFlareMark in the shared design system.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+    <path
+        android:pathData="M118.80,167.04 L136.08,133.92"
+        android:strokeColor="@color/flare_positive"
+        android:strokeLineCap="round"
+        android:strokeWidth="7.56" />
+    <path
+        android:pathData="M137.52,167.04 L154.80,126.72"
+        android:strokeColor="@color/flare_positive"
+        android:strokeLineCap="round"
+        android:strokeWidth="7.56" />
+    <path
+        android:pathData="M156.24,167.04 L173.52,119.52"
+        android:strokeColor="@color/flare_positive"
+        android:strokeLineCap="round"
+        android:strokeWidth="7.56" />
+</vector>

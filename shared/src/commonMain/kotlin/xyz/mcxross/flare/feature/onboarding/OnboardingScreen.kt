@@ -17,19 +17,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,8 +51,6 @@ import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.FlareIcons
-import xyz.mcxross.flare.design.FlareLogo
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.NoticeTone
@@ -102,6 +99,8 @@ fun OnboardingScreen(
   initialMode: String? = null,
   modifier: Modifier = Modifier,
 ) {
+  // The welcome intro plays once per launch, not again when someone steps back to it.
+  var introPending by rememberSaveable { mutableStateOf(true) }
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = state.step != OnboardingStep.WELCOME || onBack != null,
@@ -112,6 +111,18 @@ fun OnboardingScreen(
       }
     },
   )
+  if (state.step == OnboardingStep.WELCOME && initialMode == null) {
+    WelcomeScreen(
+      intro = introPending,
+      onIntroShown = { introPending = false },
+      busy = state.busy,
+      onCreate = { onIntent(OnboardingIntent.CreateOwner) },
+      onImport = { onIntent(OnboardingIntent.ShowImport) },
+      onBack = onBack,
+      modifier = modifier,
+    )
+    return
+  }
   BoxWithConstraints(
     modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()
   ) {
@@ -123,15 +134,11 @@ fun OnboardingScreen(
         .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
       if (state.step == OnboardingStep.WELCOME) {
-        if (initialMode != null) {
-          Box(
-            modifier = Modifier.fillMaxWidth().heightIn(min = pageHeight),
-            contentAlignment = Alignment.Center,
-          ) {
-            CircularProgressIndicator(strokeWidth = 2.dp)
-          }
-        } else {
-          WelcomeStep(state, onIntent, onBack)
+        Box(
+          modifier = Modifier.fillMaxWidth().heightIn(min = pageHeight),
+          contentAlignment = Alignment.Center,
+        ) {
+          CircularProgressIndicator(strokeWidth = 2.dp)
         }
       } else {
         BackBar("Your account", { if (!state.busy) onIntent(OnboardingIntent.Back) })
@@ -167,63 +174,6 @@ fun OnboardingScreen(
       }
     }
   }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.ColumnScope.WelcomeStep(
-  state: OnboardingUiState,
-  onIntent: (OnboardingIntent) -> Unit,
-  onBack: (() -> Unit)? = null,
-) {
-  Row(
-    Modifier.fillMaxWidth().padding(top = 12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    if (onBack != null) {
-      IconButton(onClick = onBack, modifier = Modifier.padding(end = 8.dp)) {
-        Icon(FlareIcons.ArrowBack, contentDescription = "Back")
-      }
-    }
-    Text("flare", style = MaterialTheme.typography.headlineMedium)
-    Spacer(Modifier.weight(1f))
-    Text(
-      "ON DECIBEL",
-      style = MaterialTheme.typography.labelSmall,
-      color = FlareColors.TextSecondary,
-    )
-  }
-  Spacer(Modifier.weight(1f))
-  Box(Modifier.fillMaxWidth().padding(vertical = 36.dp), contentAlignment = Alignment.Center) {
-    Box(
-      Modifier.size(168.dp).background(FlareColors.PositiveMuted, CircleShape),
-      contentAlignment = Alignment.Center,
-    ) {
-      FlareLogo(Modifier.size(88.dp), color = FlareColors.Positive)
-    }
-  }
-  Text("A clearer way\nto trade.", style = MaterialTheme.typography.displaySmall)
-  Text(
-    "Trade Decibel markets with\na wallet you control.",
-    Modifier.padding(top = 16.dp),
-    style = MaterialTheme.typography.bodyLarge,
-    color = FlareColors.TextSecondary,
-  )
-  Spacer(Modifier.weight(1f))
-  Spacer(Modifier.height(32.dp))
-  FlareButton(
-    "Create account",
-    { onIntent(OnboardingIntent.CreateOwner) },
-    Modifier.fillMaxWidth(),
-    enabled = !state.busy,
-  )
-  Spacer(Modifier.height(12.dp))
-  FlareButton(
-    "Import account",
-    { onIntent(OnboardingIntent.ShowImport) },
-    Modifier.fillMaxWidth(),
-    enabled = !state.busy,
-    style = FlareButtonStyle.OUTLINE,
-  )
 }
 
 @Composable
