@@ -40,4 +40,9 @@ object WalletCredential {
           "Enter a valid recovery phrase or private key."
         )
     }
+
+  /** The address a private key signs as, or null when [input] isn't a key. */
+  fun keyAddress(input: String): String? =
+    if (detect(input) != CredentialFormat.PRIVATE_KEY) null
+    else runCatching { keyAccount(normalize(input)).accountAddress.toString() }.getOrNull()
 }

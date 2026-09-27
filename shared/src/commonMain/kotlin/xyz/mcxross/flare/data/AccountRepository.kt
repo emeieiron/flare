@@ -33,6 +33,7 @@ import xyz.mcxross.flare.decibel.api.DecibelStreamData
 import xyz.mcxross.flare.decibel.api.DecibelStreamTopic
 import xyz.mcxross.flare.decibel.api.OrderUpdates
 import xyz.mcxross.flare.decibel.api.StreamEvent
+import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AccountOverview
@@ -59,6 +60,7 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.kaptos.model.AccountAddress
+import xyz.mcxross.kaptos.model.AptosResult
 
 data class AccountSnapshot(
   val account: String? = null,
@@ -113,6 +115,9 @@ interface AccountRepository {
   suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount>
 
   suspend fun subaccounts(owner: String): List<Subaccount>
+
+  /** Null when the chain couldn't be asked. */
+  suspend fun tradingAccountStatus(address: String): SubaccountStatus? = null
 
   /** Selects the trading account to use and loads it with whichever key this device holds. */
   suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt)
@@ -317,6 +322,10 @@ class DefaultAccountRepository(
 
   override suspend fun subaccounts(owner: String): List<Subaccount> =
     client.accounts.subaccounts(owner).filter(Subaccount::isActive)
+
+  override suspend fun tradingAccountStatus(address: String): SubaccountStatus? =
+    runSuspendCatching { (client.subaccounts.status(address) as? AptosResult.Success)?.value }
+      .getOrNull()
 
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }

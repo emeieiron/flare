@@ -93,7 +93,8 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
   val ready =
     format != CredentialFormat.UNKNOWN &&
       !phraseAsTradingKey &&
-      (!state.apiImport || state.tradingAccountInput.isNotBlank())
+      (!state.apiImport || state.tradingAccountInput.isNotBlank()) &&
+      (!state.apiImport || state.tradingAccountCheck.usable)
   StepLayout(
     title = "Import your account",
     subtitle = "Enter the recovery phrase or private key of the account you want to use.",
@@ -152,11 +153,25 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
             label = "Trading account",
             enabled = !state.busy,
           )
+          CredentialHint(tradingAccountHint(state.tradingAccountCheck))
         }
       }
     }
   }
 }
+
+private val TradingAccountCheck.usable: Boolean
+  get() = this == TradingAccountCheck.UNKNOWN || this == TradingAccountCheck.TRADING_ACCOUNT
+
+private fun tradingAccountHint(check: TradingAccountCheck): Hint? =
+  when (check) {
+    TradingAccountCheck.UNKNOWN -> null
+    TradingAccountCheck.TRADING_ACCOUNT -> Hint("Active trading account", HintTone.RECOGNIZED)
+    TradingAccountCheck.CLOSED -> Hint("This trading account is closed.", HintTone.ALERT)
+    TradingAccountCheck.KEY_ADDRESS ->
+      Hint("That’s this key’s own address. Enter the account it trades for.", HintTone.ALERT)
+    TradingAccountCheck.WALLET -> Hint("That’s a wallet, not a trading account.", HintTone.ALERT)
+  }
 
 /**
  * Where a recovery phrase or key goes. It stays masked unless the person asks to see it, and a secret

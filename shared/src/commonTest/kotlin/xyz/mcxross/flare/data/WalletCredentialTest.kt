@@ -39,4 +39,10 @@ class WalletCredentialTest {
     assertEquals(CredentialFormat.PRIVATE_KEY, WalletCredential.detect(key))
     assertEquals(key, WalletCredential.normalize(key))
   }
+
+  @Test
+  fun onlyKeysHaveAnAddress() {
+    assertEquals(null, WalletCredential.keyAddress("abandon ".repeat(11) + "about"))
+    assertEquals(null, WalletCredential.keyAddress("0x1234"))
+  }
 }
