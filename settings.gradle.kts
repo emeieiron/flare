@@ -31,13 +31,6 @@ dependencyResolutionManagement {
     // can never stand in for a published one.
     if (useMavenLocal) mavenLocal()
     mavenCentral()
-    // Kaptos 1.0 is published as snapshots for now; pinned to one build in libs.versions.toml.
-    maven("https://central.sonatype.com/repository/maven-snapshots/") {
-      mavenContent {
-        snapshotsOnly()
-        includeGroupAndSubgroups("xyz.mcxross")
-      }
-    }
   }
 }
 
