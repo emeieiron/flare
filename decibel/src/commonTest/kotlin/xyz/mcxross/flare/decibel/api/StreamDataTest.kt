@@ -6,6 +6,7 @@ import kotlin.test.assertIs
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import xyz.mcxross.flare.decibel.DecibelClient
+import xyz.mcxross.flare.decibel.model.CandleInterval
 
 class StreamDataTest {
   private val json = DecibelClient.DefaultJson
@@ -34,6 +35,20 @@ class StreamDataTest {
     assertEquals(0.597, data.values.single().mid)
     assertEquals(0.683, data.values.single().lastTradePrice)
     assertEquals(0.683, data.values.single().price)
+  }
+
+  @Test
+  fun decodesCandlestickEnvelope() {
+    val topic = MarketCandlestick("0x1", CandleInterval.ONE_MINUTE)
+    val payload =
+      objectPayload(
+        """{"topic":"${topic.wireValue}","candle":{"t":1790518620000,"T":1790518679999,"o":340.35,"h":340.35,"l":340.14,"c":340.14,"v":0.12,"i":"1m"}}"""
+      )
+
+    val candle = assertIs<DecibelStreamData.CandleValue>(decodeStreamData(topic, payload, json)).value
+    assertEquals(1790518620000, candle.openTimeMs)
+    assertEquals(340.14, candle.close)
+    assertEquals("1m", candle.interval)
   }
 
   @Test

@@ -63,7 +63,7 @@ data class FlarePreferences(
   val activeProfileId: String = "legacy",
   val profiles: List<AccountProfile> = emptyList(),
   val network: DecibelNetwork = DecibelNetwork.TESTNET,
-  val chartRange: String = "DAY",
+  val chartRange: String = "FIVE_MINUTES",
   val chartStyle: String = "LINE",
   val showRsi: Boolean = false,
   val showMacd: Boolean = false,
@@ -103,7 +103,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
           preferences[NetworkKey]?.let { value ->
             DecibelNetwork.entries.firstOrNull { it.name == value }
           } ?: DecibelNetwork.TESTNET,
-        chartRange = preferences[ChartRangeKey] ?: "DAY",
+        chartRange = preferences[ChartRangeKey] ?: "FIVE_MINUTES",
         chartStyle = preferences[ChartStyleKey] ?: "LINE",
         showRsi = preferences[ShowRsiKey] ?: false,
         showMacd = preferences[ShowMacdKey] ?: false,

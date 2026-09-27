@@ -4,20 +4,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.ChartRange
 import xyz.mcxross.flare.data.ChartRepository
+import xyz.mcxross.flare.data.ChartTimeframe
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.LiveCandles
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketQuote
@@ -25,8 +28,11 @@ import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
+import xyz.mcxross.flare.data.caughtUpWith
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.mergeCandles
+import xyz.mcxross.flare.data.withLiveCandle
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
@@ -54,7 +60,7 @@ internal fun ChartStyle.flipped(): ChartStyle =
 
 data class TradeUiState(
   val quote: MarketQuote? = null,
-  val range: ChartRange = ChartRange.DAY,
+  val timeframe: ChartTimeframe = ChartTimeframe.Default,
   val chartStyle: ChartStyle = ChartStyle.LINE,
   val showRsi: Boolean = false,
   val showMacd: Boolean = false,
@@ -112,7 +118,10 @@ data class TradeUiState(
 sealed interface TradeIntent {
   data class SelectMarket(val marketAddress: String?) : TradeIntent
 
-  data class SelectRange(val range: ChartRange) : TradeIntent
+  data class SelectTimeframe(val timeframe: ChartTimeframe) : TradeIntent
+
+  /** The chart has panned close to its oldest loaded candle. */
+  data object LoadOlderCandles : TradeIntent
 
   data class SelectChartStyle(val style: ChartStyle) : TradeIntent
 
@@ -160,6 +169,11 @@ class TradeViewModel(
 
   private var requestedMarket: String? = null
   private var chartJob: Job? = null
+  private var olderCandlesJob: Job? = null
+  /** The chart whose history is loaded. The live stream follows it while the chart is on screen. */
+  private val loadedChart = MutableStateFlow<ChartKey?>(null)
+  private var chartLoadedAtMs = 0L
+  private var historyComplete = false
   private var marketDetailsJob: Job? = null
   private var baseBalanceJob: Job? = null
   private var lastBaseBalanceKey: String? = null
@@ -184,7 +198,7 @@ class TradeViewModel(
         if (changed) {
           syncPositionLeverage()
           syncBalances()
-          if (quote != null) loadCandles(quote, mutableUiState.value.range)
+          if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
           if (quote != null) loadMarketDetails(quote.market.address)
         }
       }
@@ -203,14 +217,14 @@ class TradeViewModel(
     }
     viewModelScope.launch {
       preferences.values.collect { values ->
-        val range =
-          ChartRange.entries.firstOrNull { it.name == values.chartRange } ?: ChartRange.DAY
+        val timeframe =
+          ChartTimeframe.entries.firstOrNull { it.name == values.chartRange } ?: ChartTimeframe.Default
         val chartStyle =
           ChartStyle.entries.firstOrNull { it.name == values.chartStyle } ?: ChartStyle.LINE
-        val rangeChanged = range != mutableUiState.value.range
+        val timeframeChanged = timeframe != mutableUiState.value.timeframe
         mutableUiState.update {
           it.copy(
-            range = range,
+            timeframe = timeframe,
             chartStyle = chartStyle,
             showRsi = values.showRsi,
             showMacd = values.showMacd,
@@ -223,7 +237,7 @@ class TradeViewModel(
             spotBuilderApproved = values.spotBuilderApproved,
           )
         }
-        if (rangeChanged) mutableUiState.value.quote?.let { loadCandles(it, range) }
+        if (timeframeChanged) mutableUiState.value.quote?.let { loadCandles(it, timeframe) }
       }
     }
     viewModelScope.launch {
@@ -323,15 +337,16 @@ class TradeViewModel(
           syncPositionLeverage()
           syncBalances(forceBase = true)
           preferences.setSelectedMarket(quote?.market?.address)
-          if (quote != null) loadCandles(quote, mutableUiState.value.range)
+          if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
           if (quote != null) loadMarketDetails(quote.market.address)
         }
       }
-      is TradeIntent.SelectRange -> {
-        mutableUiState.update { it.copy(range = intent.range) }
-        mutableUiState.value.quote?.let { loadCandles(it, intent.range) }
-        viewModelScope.launch { preferences.setChartRange(intent.range.name) }
+      is TradeIntent.SelectTimeframe -> {
+        mutableUiState.update { it.copy(timeframe = intent.timeframe) }
+        mutableUiState.value.quote?.let { loadCandles(it, intent.timeframe) }
+        viewModelScope.launch { preferences.setChartRange(intent.timeframe.name) }
       }
+      TradeIntent.LoadOlderCandles -> loadOlderCandles()
       is TradeIntent.SelectChartStyle -> {
         mutableUiState.update { it.copy(chartStyle = intent.style) }
         viewModelScope.launch { preferences.setChartStyle(intent.style.name) }
@@ -591,17 +606,22 @@ class TradeViewModel(
     }
   }
 
-  /** The chart keeps trying on its own; selecting another market or range cancels the attempt. */
-  private fun loadCandles(quote: MarketQuote, range: ChartRange) {
+  /** The chart keeps trying on its own; selecting another market or timeframe cancels the attempt. */
+  private fun loadCandles(quote: MarketQuote, timeframe: ChartTimeframe) {
     chartJob?.cancel()
+    olderCandlesJob?.cancel()
+    loadedChart.value = null
+    historyComplete = false
+    val key = ChartKey(quote.market.address, timeframe)
     chartJob = viewModelScope.launch {
       var backoffMs = CHART_RETRY_BASE_MS
       while (true) {
         mutableUiState.update { it.copy(chartLoading = true, error = null) }
         val loaded = runSuspendCatching {
-          charts.candles(quote.market.address, range)
+          charts.candles(key.market, timeframe)
         }
           .onSuccess { snapshot ->
+            chartLoadedAtMs = Clock.System.now().toEpochMilliseconds()
             mutableUiState.update {
               it.copy(
                 candles = snapshot.candles,
@@ -610,6 +630,7 @@ class TradeViewModel(
                 error = snapshot.error,
               )
             }
+            loadedChart.value = key
           }
           .onFailure {
             mutableUiState.update {
@@ -627,6 +648,64 @@ class TradeViewModel(
       }
     }
   }
+
+  /** Streams the chart's forming candle and each new one. Run it while the chart is on screen. */
+  suspend fun followLiveChart() {
+    loadedChart.collectLatest { key ->
+      if (key == null) return@collectLatest
+      charts.liveCandles(key.market, key.timeframe).collect { event ->
+        when (event) {
+          LiveCandles.Connected -> catchUpChart(key)
+          is LiveCandles.Update ->
+            mutableUiState.update { it.copy(candles = it.candles.withLiveCandle(event.candle)) }
+        }
+      }
+    }
+  }
+
+  /** Fills in what the stream missed while away, unless the history is only moments old. */
+  private suspend fun catchUpChart(key: ChartKey) {
+    val now = Clock.System.now().toEpochMilliseconds()
+    if (now - chartLoadedAtMs < CHART_FRESH_MS) return
+    val latest = runSuspendCatching { charts.candles(key.market, key.timeframe) }.getOrNull()
+    if (latest == null || latest.stale || loadedChart.value != key) return
+    chartLoadedAtMs = now
+    historyComplete = false
+    mutableUiState.update {
+      it.copy(candles = it.candles.caughtUpWith(latest.candles, key.timeframe.durationMs))
+    }
+  }
+
+  /**
+   * Adds the page before the oldest candle, quietly, as the chart pans toward it. A failed page is
+   * tried again a few times, because the chart only asks again once it moves.
+   */
+  private fun loadOlderCandles() {
+    val key = loadedChart.value ?: return
+    val loaded = mutableUiState.value.candles
+    val oldest = loaded.firstOrNull() ?: return
+    if (historyComplete || loaded.size >= MAX_CHART_CANDLES || olderCandlesJob?.isActive == true) {
+      return
+    }
+    olderCandlesJob = viewModelScope.launch {
+      var backoffMs = CHART_RETRY_BASE_MS
+      repeat(OLDER_CANDLES_ATTEMPTS) { attempt ->
+        val older =
+          runSuspendCatching { charts.candlesBefore(key.market, key.timeframe, oldest.openTimeMs) }
+            .getOrNull()
+        if (loadedChart.value != key) return@launch
+        if (older != null) {
+          if (older.isEmpty()) historyComplete = true
+          else mutableUiState.update { it.copy(candles = mergeCandles(older, it.candles)) }
+          return@launch
+        }
+        if (attempt < OLDER_CANDLES_ATTEMPTS - 1) delay(backoffMs)
+        backoffMs *= 2
+      }
+    }
+  }
+
+  private data class ChartKey(val market: String, val timeframe: ChartTimeframe)
 }
 
 /**
@@ -653,6 +732,11 @@ private fun decimalCharacters(value: String): String =
 
 private const val CHART_RETRY_BASE_MS = 2_000L
 private const val CHART_RETRY_MAX_MS = 30_000L
+private const val CHART_FRESH_MS = 5_000L
+private const val OLDER_CANDLES_ATTEMPTS = 3
+
+/** Enough history to pan through without slowing the chart down as it keeps growing. */
+private const val MAX_CHART_CANDLES = 10_000
 
 /**
  * Validation speaks in the market's own units: sizes in the asset, prices in dollars, never the

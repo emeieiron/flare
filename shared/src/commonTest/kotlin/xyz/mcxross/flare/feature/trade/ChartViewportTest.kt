@@ -29,10 +29,20 @@ class ChartViewportTest {
 
   @Test
   fun panningIncludesPartialCandlesAndClampsAtHistoryEdges() {
-    assertEquals(139..200, visibleCandleIndices(139.8, 199.2, 240))
-    assertEquals(0..60, visibleCandleIndices(-0.5, 59.5, 240))
-    assertEquals(179..239, visibleCandleIndices(179.3, 239.5, 240))
-    assertEquals(0..4, visibleCandleIndices(-0.5, 4.5, 5))
-    assertTrue(visibleCandleIndices(0.0, 60.0, 0).isEmpty())
+    val slots = (1_000L until 1_240L).toList()
+    assertEquals(139..200, visibleCandleIndices(slots, 1_139L..1_200L, 60))
+    assertEquals(0..60, visibleCandleIndices(slots, 990L..1_060L, 60))
+    assertEquals(179..239, visibleCandleIndices(slots, 1_179L..1_250L, 60))
+    assertEquals(180..239, visibleCandleIndices(slots, null, 60))
+    assertEquals(0..4, visibleCandleIndices(slots.take(5), null, 60))
+    assertTrue(visibleCandleIndices(emptyList(), 0L..60L, 60).isEmpty())
+  }
+
+  @Test
+  fun missingCandlesDoNotShiftTheWindow() {
+    val slots = listOf(10L, 11L, 14L, 15L, 16L)
+    assertEquals(2..3, visibleCandleIndices(slots, 12L..15L, 60))
+    assertEquals(4..4, visibleCandleIndices(slots, 20L..30L, 60))
+    assertEquals(0..0, visibleCandleIndices(slots, 0L..5L, 60))
   }
 }

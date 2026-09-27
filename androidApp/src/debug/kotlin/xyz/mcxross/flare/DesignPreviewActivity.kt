@@ -52,6 +52,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
         quote = quotes.first(),
         marketDetails = previewBook(quotes.first()),
         candles = previewCandles(),
+        timeframe = ChartTimeframe.ONE_MINUTE,
         stale = false,
         chartStyle = if (initialScreen == "candles") ChartStyle.CANDLESTICK else ChartStyle.LINE,
         tradingKeyAddress = "preview",
@@ -134,7 +135,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
               trade =
                 when (intent) {
                   is TradeIntent.SelectChartStyle -> trade.copy(chartStyle = intent.style)
-                  is TradeIntent.SelectRange -> trade.copy(range = intent.range)
+                  is TradeIntent.SelectTimeframe -> trade.copy(timeframe = intent.timeframe)
                   TradeIntent.ToggleRsi -> trade.copy(showRsi = !trade.showRsi)
                   TradeIntent.ToggleMacd -> trade.copy(showMacd = !trade.showMacd)
                   is TradeIntent.SetSize -> trade.copy(sizeInput = intent.value)

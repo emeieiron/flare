@@ -3,28 +3,26 @@ package xyz.mcxross.flare.data
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.AllMarketPrices
 import xyz.mcxross.flare.decibel.api.AllSpotMids
 import xyz.mcxross.flare.decibel.api.DecibelStreamData
+import xyz.mcxross.flare.decibel.api.MarketCandlestick
 import xyz.mcxross.flare.decibel.api.StreamEvent
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Candle
@@ -339,44 +337,37 @@ class DefaultMarketsRepository(
   }
 }
 
-enum class ChartRange(
+/** A chart's candle size. The chart opens on the latest candles and loads older ones as it pans. */
+enum class ChartTimeframe(
   val label: String,
   val title: String,
   val interval: CandleInterval,
-  val durationMs: Long?,
 ) {
-  DAY("1D", "1 day", CandleInterval.ONE_MINUTE, 24L * 60 * 60 * 1_000),
-  WEEK("1W", "1 week", CandleInterval.FIFTEEN_MINUTES, 7L * 24 * 60 * 60 * 1_000),
-  MONTH("1M", "1 month", CandleInterval.ONE_HOUR, 30L * 24 * 60 * 60 * 1_000),
-  THREE_MONTHS("3M", "3 months", CandleInterval.FOUR_HOURS, 90L * 24 * 60 * 60 * 1_000),
-  YEAR_TO_DATE("YTD", "Year to date", CandleInterval.FOUR_HOURS, null),
-  YEAR("1Y", "1 year", CandleInterval.ONE_DAY, 365L * 24 * 60 * 60 * 1_000),
-  FIVE_YEARS("5Y", "5 years", CandleInterval.ONE_DAY, 5L * 365 * 24 * 60 * 60 * 1_000),
+  ONE_MINUTE("1m", "1 minute", CandleInterval.ONE_MINUTE),
+  FIVE_MINUTES("5m", "5 minutes", CandleInterval.FIVE_MINUTES),
+  FIFTEEN_MINUTES("15m", "15 minutes", CandleInterval.FIFTEEN_MINUTES),
+  THIRTY_MINUTES("30m", "30 minutes", CandleInterval.THIRTY_MINUTES),
+  ONE_HOUR("1h", "1 hour", CandleInterval.ONE_HOUR),
+  TWO_HOURS("2h", "2 hours", CandleInterval.TWO_HOURS),
+  FOUR_HOURS("4h", "4 hours", CandleInterval.FOUR_HOURS),
+  EIGHT_HOURS("8h", "8 hours", CandleInterval.EIGHT_HOURS),
+  TWELVE_HOURS("12h", "12 hours", CandleInterval.TWELVE_HOURS),
+  ONE_DAY("1d", "1 day", CandleInterval.ONE_DAY),
+  ONE_WEEK("1w", "1 week", CandleInterval.ONE_WEEK),
+  // A capital M, so a month never reads as a minute.
+  ONE_MONTH("1M", "1 month", CandleInterval.ONE_MONTH);
+
+  val durationMs: Long
+    get() = interval.durationMs()
+
+  companion object {
+    val Default = FIVE_MINUTES
+  }
 }
 
-data class ChartRequestSpec(
-  val startTimeMs: Long,
-  val interval: CandleInterval,
-)
-
-fun chartRequestSpec(range: ChartRange, nowMs: Long): ChartRequestSpec {
-  val startTimeMs =
-    range.durationMs?.let { nowMs - it }
-      ?: run {
-        val year = Instant.fromEpochMilliseconds(nowMs).toLocalDateTime(TimeZone.UTC).year
-        LocalDate(year, 1, 1).atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
-      }
-  val interval =
-    if (
-      range == ChartRange.YEAR_TO_DATE &&
-        (nowMs - startTimeMs) / FOUR_HOURS_MS >= MAX_CANDLES_PER_REQUEST
-    ) {
-      CandleInterval.ONE_DAY
-    } else {
-      range.interval
-    }
-  return ChartRequestSpec(startTimeMs, interval)
-}
+/** The span of the page of history that ends at [endTimeMs]. */
+fun candlePage(endTimeMs: Long, timeframe: ChartTimeframe): Pair<Long, Long> =
+  (endTimeMs - timeframe.durationMs * CANDLES_PER_PAGE) to endTimeMs
 
 fun candleRequestWindows(
   startTimeMs: Long,
@@ -399,7 +390,21 @@ fun candleRequestWindows(
 }
 
 interface ChartRepository {
-  suspend fun candles(market: String, range: ChartRange): ChartSnapshot
+  /** The latest page of candles, from the cache when the network fails. */
+  suspend fun candles(market: String, timeframe: ChartTimeframe): ChartSnapshot
+
+  /** The page of candles before [beforeMs]; empty once the market's history runs out. */
+  suspend fun candlesBefore(market: String, timeframe: ChartTimeframe, beforeMs: Long): List<Candle>
+
+  /** The forming candle as it changes, and each new one, while collected. */
+  fun liveCandles(market: String, timeframe: ChartTimeframe): Flow<LiveCandles>
+}
+
+sealed interface LiveCandles {
+  /** The stream (re)started or missed updates, so history may need catching up. */
+  data object Connected : LiveCandles
+
+  data class Update(val candle: Candle) : LiveCandles
 }
 
 data class ChartSnapshot(
@@ -412,35 +417,18 @@ class DefaultChartRepository(
   private val client: DecibelClient,
   private val cache: MarketCacheDao,
 ) : ChartRepository {
-  override suspend fun candles(market: String, range: ChartRange): ChartSnapshot {
+  override suspend fun candles(market: String, timeframe: ChartTimeframe): ChartSnapshot {
     val now = Clock.System.now().toEpochMilliseconds()
-    val request = chartRequestSpec(range, now)
+    val (startTimeMs, endTimeMs) = candlePage(now, timeframe)
     cache.selectMarket(SelectedMarketEntity(market, now))
-    val cached =
-      cache
-        .candles(market, request.interval.wireValue, request.startTimeMs, now)
-        .map(CandleEntity::toDomain)
-    return runSuspendCatching {
-        candleRequestWindows(request.startTimeMs, now, request.interval)
-          .flatMap { (startTimeMs, endTimeMs) ->
-            client.markets.candles(
-              market = market,
-              interval = request.interval,
-              startTimeMs = startTimeMs,
-              endTimeMs = endTimeMs,
-              filterWicks = false,
-            )
-          }
-          .distinctBy(Candle::openTimeMs)
-          .sortedBy(Candle::openTimeMs)
-      }
+    return runSuspendCatching { fetch(market, timeframe, startTimeMs, endTimeMs) }
       .fold(
-        onSuccess = { candles ->
-          cache.upsertCandles(candles.map { it.toEntity(market, request.interval) })
-          cache.deleteCandlesBefore(now - CANDLE_RETENTION_MS)
-          ChartSnapshot(candles = candles, stale = false)
-        },
+        onSuccess = { candles -> ChartSnapshot(candles = candles, stale = false) },
         onFailure = { error ->
+          val cached =
+            cache
+              .candles(market, timeframe.interval.wireValue, startTimeMs, endTimeMs)
+              .map(CandleEntity::toDomain)
           if (cached.isEmpty()) throw error
           ChartSnapshot(
             candles = cached,
@@ -449,6 +437,54 @@ class DefaultChartRepository(
           )
         },
       )
+  }
+
+  override suspend fun candlesBefore(
+    market: String,
+    timeframe: ChartTimeframe,
+    beforeMs: Long,
+  ): List<Candle> {
+    val (startTimeMs, endTimeMs) = candlePage(beforeMs - 1, timeframe)
+    return fetch(market, timeframe, startTimeMs, endTimeMs).filter { it.openTimeMs < beforeMs }
+  }
+
+  override fun liveCandles(market: String, timeframe: ChartTimeframe): Flow<LiveCandles> =
+    client.stream.subscribe(setOf(MarketCandlestick(market, timeframe.interval))).mapNotNull { event ->
+      when (event) {
+        is StreamEvent.Connected,
+        is StreamEvent.SequenceGap -> LiveCandles.Connected
+        is StreamEvent.Message ->
+          (event.data as? DecibelStreamData.CandleValue)
+            ?.value
+            ?.takeIf { it.interval == timeframe.interval.wireValue }
+            ?.let(LiveCandles::Update)
+        is StreamEvent.Rejected,
+        is StreamEvent.Disconnected -> null
+      }
+    }
+
+  private suspend fun fetch(
+    market: String,
+    timeframe: ChartTimeframe,
+    startTimeMs: Long,
+    endTimeMs: Long,
+  ): List<Candle> {
+    val candles =
+      candleRequestWindows(startTimeMs, endTimeMs, timeframe.interval)
+        .flatMap { (windowStartMs, windowEndMs) ->
+          client.markets.candles(
+            market = market,
+            interval = timeframe.interval,
+            startTimeMs = windowStartMs,
+            endTimeMs = windowEndMs,
+            filterWicks = false,
+          )
+        }
+        .distinctBy(Candle::openTimeMs)
+        .sortedBy(Candle::openTimeMs)
+    cache.upsertCandles(candles.map { it.toEntity(market, timeframe.interval) })
+    cache.deleteCandlesBefore(Clock.System.now().toEpochMilliseconds() - CANDLE_RETENTION_MS)
+    return candles
   }
 }
 
@@ -478,8 +514,13 @@ private fun CandleEntity.toDomain() =
   )
 
 private const val MAX_CANDLES_PER_REQUEST = 1_000L
+private const val CANDLES_PER_PAGE = 500L
 private const val FOUR_HOURS_MS = 4L * 60 * 60 * 1_000
 private const val CANDLE_RETENTION_MS = 5L * 366 * 24 * 60 * 60 * 1_000
+
+/** How long a candle of this wire interval lasts, or null for one Flare doesn't know. */
+fun candleDurationMs(interval: String): Long? =
+  CandleInterval.entries.firstOrNull { it.wireValue == interval }?.durationMs()
 
 private fun CandleInterval.durationMs(): Long =
   when (this) {
@@ -490,9 +531,11 @@ private fun CandleInterval.durationMs(): Long =
     CandleInterval.ONE_HOUR -> 60L * 60 * 1_000
     CandleInterval.TWO_HOURS -> 2L * 60 * 60 * 1_000
     CandleInterval.FOUR_HOURS -> FOUR_HOURS_MS
+    CandleInterval.EIGHT_HOURS -> 8L * 60 * 60 * 1_000
+    CandleInterval.TWELVE_HOURS -> 12L * 60 * 60 * 1_000
     CandleInterval.ONE_DAY -> 24L * 60 * 60 * 1_000
     CandleInterval.ONE_WEEK -> 7L * 24 * 60 * 60 * 1_000
-    CandleInterval.ONE_MONTH -> 31L * 24 * 60 * 60 * 1_000
+    CandleInterval.ONE_MONTH -> 30L * 24 * 60 * 60 * 1_000
   }
 
 fun formatPrice(value: Double): String =

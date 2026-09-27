@@ -3,15 +3,14 @@ package xyz.mcxross.flare
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
-import xyz.mcxross.flare.data.ChartRange
+import xyz.mcxross.flare.data.ChartTimeframe
 import xyz.mcxross.flare.data.MarketQuote
+import xyz.mcxross.flare.data.candlePage
 import xyz.mcxross.flare.data.candleRequestWindows
-import xyz.mcxross.flare.data.chartRequestSpec
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.CandleInterval
@@ -46,23 +45,13 @@ class SharedCommonTest {
   }
 
   @Test
-  fun yearToDateStartsAtUtcYearBoundaryAndBoundsOrdinaryRequest() {
-    val earlyYear = Instant.parse("2026-02-01T00:00:00Z").toEpochMilliseconds()
-    val lateYear = Instant.parse("2026-09-01T00:00:00Z").toEpochMilliseconds()
-    val expectedStart = Instant.parse("2026-01-01T00:00:00Z").toEpochMilliseconds()
+  fun aPageOfHistoryEndsWhereItIsAskedTo() {
+    val end = 1_790_518_620_000L
+    val (start, pageEnd) = candlePage(end, ChartTimeframe.FIFTEEN_MINUTES)
 
-    assertEquals(
-      expectedStart,
-      chartRequestSpec(ChartRange.YEAR_TO_DATE, earlyYear).startTimeMs,
-    )
-    assertEquals(
-      CandleInterval.FOUR_HOURS,
-      chartRequestSpec(ChartRange.YEAR_TO_DATE, earlyYear).interval,
-    )
-    assertEquals(
-      CandleInterval.ONE_DAY,
-      chartRequestSpec(ChartRange.YEAR_TO_DATE, lateYear).interval,
-    )
+    assertEquals(end, pageEnd)
+    assertEquals(500L, (pageEnd - start) / ChartTimeframe.FIFTEEN_MINUTES.durationMs)
+    assertEquals(1, candleRequestWindows(start, pageEnd, CandleInterval.FIFTEEN_MINUTES).size)
   }
 
   @Test
