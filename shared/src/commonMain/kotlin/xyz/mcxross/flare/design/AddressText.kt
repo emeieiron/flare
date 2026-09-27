@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +81,8 @@ fun FlareAddressField(
   supportingText: String? = null,
   isError: Boolean = false,
   enabled: Boolean = true,
+  imeAction: ImeAction = ImeAction.Next,
+  keyboardActions: KeyboardActions = KeyboardActions.Default,
   interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
   val clipboard = LocalClipboardManager.current
@@ -111,8 +114,9 @@ fun FlareAddressField(
           capitalization = KeyboardCapitalization.None,
           autoCorrectEnabled = false,
           keyboardType = KeyboardType.Ascii,
-          imeAction = ImeAction.Next,
+          imeAction = imeAction,
         ),
+      keyboardActions = keyboardActions,
       interactionSource = interactionSource,
       textStyle = valueStyle.copy(
         color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,

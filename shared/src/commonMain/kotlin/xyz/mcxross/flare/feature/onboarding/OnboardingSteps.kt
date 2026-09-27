@@ -31,6 +31,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -110,11 +113,16 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
       }
     },
   ) {
+    val submit = KeyboardActions(
+      onDone = { if (ready && !state.busy) onIntent(OnboardingIntent.ImportCredential) }
+    )
     SecretField(
       value = state.input,
       onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
       recognized = format != CredentialFormat.UNKNOWN && !phraseAsTradingKey,
       enabled = !state.busy,
+      imeAction = if (state.apiImport) ImeAction.Next else ImeAction.Done,
+      keyboardActions = submit,
     )
     CredentialHint(
       when {
@@ -146,14 +154,25 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
           color = FlareColors.TextSecondary,
         )
         if (state.apiImport) {
-          FlareAddressField(
-            state.tradingAccountInput,
-            { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
-            Modifier.fillMaxWidth().padding(top = 16.dp),
-            label = "Trading account",
-            enabled = !state.busy,
-          )
-          CredentialHint(tradingAccountHint(state.tradingAccountCheck))
+          // Scrolled into view together, so the hint isn't left under the keyboard.
+          val tradingAccountView = remember { BringIntoViewRequester() }
+          LaunchedEffect(state.tradingAccountCheck) {
+            if (state.tradingAccountCheck != TradingAccountCheck.UNKNOWN) {
+              tradingAccountView.bringIntoView()
+            }
+          }
+          Column(Modifier.bringIntoViewRequester(tradingAccountView)) {
+            FlareAddressField(
+              state.tradingAccountInput,
+              { onIntent(OnboardingIntent.ChangeTradingAccount(it)) },
+              Modifier.fillMaxWidth().padding(top = 16.dp),
+              label = "Trading account",
+              enabled = !state.busy,
+              imeAction = ImeAction.Done,
+              keyboardActions = submit,
+            )
+            CredentialHint(tradingAccountHint(state.tradingAccountCheck))
+          }
         }
       }
     }
@@ -183,6 +202,8 @@ private fun SecretField(
   onValueChange: (String) -> Unit,
   recognized: Boolean,
   enabled: Boolean,
+  imeAction: ImeAction,
+  keyboardActions: KeyboardActions,
 ) {
   var visible by rememberSaveable { mutableStateOf(false) }
   val clipboardText = LocalClipboardManager.current
@@ -218,8 +239,9 @@ private fun SecretField(
         capitalization = KeyboardCapitalization.None,
         autoCorrectEnabled = false,
         keyboardType = KeyboardType.Password,
-        imeAction = ImeAction.Done,
+        imeAction = imeAction,
       ),
+    keyboardActions = keyboardActions,
     visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
     interactionSource = interaction,
     textStyle = style.copy(color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled),
