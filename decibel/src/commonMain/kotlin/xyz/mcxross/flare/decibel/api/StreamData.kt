@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.decibel.model.DecimalTextSerializer
 import xyz.mcxross.flare.decibel.model.MarketPrice
 import xyz.mcxross.flare.decibel.model.MarketTrade
@@ -24,6 +25,9 @@ sealed interface DecibelStreamData {
   data class MarketDepthValue(val value: MarketDepthUpdate) : DecibelStreamData
 
   data class MarketTrades(val values: List<MarketTrade>) : DecibelStreamData
+
+  /** The forming candle, or one that just closed. */
+  data class CandleValue(val value: Candle) : DecibelStreamData
 
   data class AccountOverviewValue(val value: AccountOverview) : DecibelStreamData
 
@@ -76,6 +80,8 @@ internal fun decodeStreamData(
       )
     is MarketDepth ->
       DecibelStreamData.MarketDepthValue(json.decodeFromJsonElement<MarketDepthUpdate>(payload))
+    is MarketCandlestick ->
+      DecibelStreamData.CandleValue(json.decodeFromJsonElement<CandleEnvelope>(payload).candle)
     is MarketTrades,
     is UserTrades ->
       DecibelStreamData.MarketTrades(
@@ -107,6 +113,8 @@ internal fun decodeStreamData(
 @Serializable private data class MarketPriceEnvelope(val price: MarketPrice)
 
 @Serializable private data class MarketTradesEnvelope(val trades: List<MarketTrade>)
+
+@Serializable private data class CandleEnvelope(val candle: Candle)
 
 @Serializable
 private data class AccountOverviewEnvelope(

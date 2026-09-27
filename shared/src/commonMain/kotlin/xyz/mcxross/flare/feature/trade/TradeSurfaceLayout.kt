@@ -134,6 +134,8 @@ internal fun MarketContext(
   state: TradeUiState,
   assets: Map<String, AssetMetadata>,
   stage: TradeStage,
+  window: ChartWindow,
+  onReachHistoryStart: () -> Unit = {},
   onToggleStyle: () -> Unit = {},
 ) {
   val quote = state.quote ?: return
@@ -172,7 +174,14 @@ internal fun MarketContext(
         )
       ) {
         if (state.chartLoading) PriceChartSkeleton(Modifier.fillMaxSize(), chartStyle = state.chartStyle)
-        else FlarePriceChart(state.candles, state.chartStyle, Modifier.fillMaxSize())
+        else FlarePriceChart(
+          state.candles,
+          state.chartStyle,
+          rising = quote.changePercent24h >= 0,
+          window = window,
+          modifier = Modifier.fillMaxSize(),
+          onReachHistoryStart = onReachHistoryStart,
+        )
       }
     }
   }

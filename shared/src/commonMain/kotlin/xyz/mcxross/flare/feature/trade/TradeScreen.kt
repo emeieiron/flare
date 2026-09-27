@@ -42,7 +42,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
@@ -82,6 +85,10 @@ fun TradeRoute(
   val assetCatalog: AssetCatalogRepository = koinInject()
   val assets by assetCatalog.assets.collectAsStateWithLifecycle()
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
+  val lifecycleOwner = LocalLifecycleOwner.current
+  LaunchedEffect(lifecycleOwner, viewModel) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followLiveChart() }
+  }
   TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity)
 }
 
@@ -104,7 +111,9 @@ fun TradeScreen(
   var exitsOpen by rememberSaveable(quote?.market?.address) {
     mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
   }
-  var showRanges by rememberSaveable { mutableStateOf(false) }
+  var showTimeframes by rememberSaveable { mutableStateOf(false) }
+  // Shared by the price chart and the indicators under it; a new market or timeframe starts over.
+  val chartWindow = remember(quote?.market?.address, state.timeframe) { ChartWindow() }
   var reviewing by rememberSaveable(
     quote?.market?.address, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
     state.stopLossInput, state.orderType, state.leverage,
@@ -200,7 +209,13 @@ fun TradeScreen(
             onDragStopped = { velocity -> pullToReturn.dragStopped(velocity) },
           )
         ) {
-          MarketContext(state, assets, stage) {
+          MarketContext(
+            state,
+            assets,
+            stage,
+            chartWindow,
+            onReachHistoryStart = { onIntent(TradeIntent.LoadOlderCandles) },
+          ) {
             onIntent(TradeIntent.SelectChartStyle(state.chartStyle.flipped()))
           }
         }
@@ -242,12 +257,17 @@ fun TradeScreen(
                       // Captures the style alone, so the toggle skips price ticks.
                       val chartStyle = state.chartStyle
                       ChartStyleToggle(chartStyle, { onIntent(TradeIntent.SelectChartStyle(chartStyle.flipped())) })
-                      ChartRangeButton(state.range, { showRanges = true })
+                      ChartTimeframeButton(state.timeframe, { showTimeframes = true })
                       Spacer(Modifier.weight(1f))
                       IndicatorChip("RSI", state.showRsi, FlareColors.IndicatorCyan, { onIntent(TradeIntent.ToggleRsi) })
                       IndicatorChip("MACD", state.showMacd, FlareColors.IndicatorOrange, { onIntent(TradeIntent.ToggleMacd) })
                     }
-                    FlareIndicators(state.candles, state.showRsi, state.showMacd)
+                    FlareIndicators(
+                      state.candles,
+                      chartWindow,
+                      state.showRsi,
+                      state.showMacd,
+                    )
                     if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
                     MarketInformation(state, showBook, { showBook = !showBook })
                   }
@@ -317,14 +337,14 @@ fun TradeScreen(
       },
     )
   }
-  if (showRanges) {
-    ChartRangeSheet(
-      state.range,
+  if (showTimeframes) {
+    ChartTimeframeSheet(
+      state.timeframe,
       onSelect = {
-        onIntent(TradeIntent.SelectRange(it))
-        showRanges = false
+        onIntent(TradeIntent.SelectTimeframe(it))
+        showTimeframes = false
       },
-      onDismiss = { showRanges = false },
+      onDismiss = { showTimeframes = false },
     )
   }
 }

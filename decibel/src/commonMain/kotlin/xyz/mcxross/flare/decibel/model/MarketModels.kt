@@ -167,7 +167,10 @@ enum class CandleInterval(val wireValue: String) {
   ONE_HOUR("1h"),
   TWO_HOURS("2h"),
   FOUR_HOURS("4h"),
+  EIGHT_HOURS("8h"),
+  TWELVE_HOURS("12h"),
   ONE_DAY("1d"),
   ONE_WEEK("1w"),
+  /** Decibel's month is a 30-day bucket counted from the epoch, not a calendar month. */
   ONE_MONTH("1mo"),
 }
