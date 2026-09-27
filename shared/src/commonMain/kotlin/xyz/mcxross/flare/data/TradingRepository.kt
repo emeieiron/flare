@@ -32,6 +32,7 @@ import xyz.mcxross.flare.store.operationName
 import xyz.mcxross.flare.store.profileId
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.account.AccountAsset
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.AptosResult
@@ -656,7 +657,7 @@ class DefaultTradingRepository(
   private suspend fun <T> withSigner(
     signer: TradingSigner,
     prompt: VaultPrompt,
-    block: suspend (Ed25519Account) -> T,
+    block: suspend (Account) -> T,
   ): T =
     when (signer) {
       TradingSigner.OWNER -> wallets.withOwnerAccount(prompt, block)

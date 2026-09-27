@@ -20,6 +20,7 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.Aptos
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
 
 class WithdrawalFlowTest {
@@ -200,7 +201,7 @@ private class WithdrawalSessions : SessionRepository {
     error("Refresh unavailable")
 
   override suspend fun verifyApiCredential(
-    account: Ed25519Account,
+    account: Account,
     subaccount: String,
   ): SessionStatus = error("Not used")
 

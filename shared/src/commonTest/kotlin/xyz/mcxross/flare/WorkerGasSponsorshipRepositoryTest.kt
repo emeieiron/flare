@@ -22,6 +22,7 @@ import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.WorkerGasSponsorshipRepository
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.model.AptosResult
 
@@ -131,7 +132,7 @@ private object TestSessionRepository : SessionRepository {
   override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
 
   override suspend fun verifyApiCredential(
-    account: Ed25519Account,
+    account: Account,
     subaccount: String,
   ): SessionStatus = error("Not used")
 

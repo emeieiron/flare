@@ -8,9 +8,12 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
+import xyz.mcxross.kaptos.account.SingleKeyAccount
 import xyz.mcxross.kaptos.core.crypto.Aip80PrivateKey
 import xyz.mcxross.kaptos.core.crypto.Ed25519PrivateKey
+import xyz.mcxross.kaptos.core.crypto.Secp256k1PrivateKey
 import xyz.mcxross.kaptos.core.crypto.MnemonicPhrase
 import xyz.mcxross.kaptos.core.crypto.MnemonicWordCount
 
@@ -55,7 +58,7 @@ interface WalletRepository {
   suspend fun importApiWallet(
     key: String,
     prompt: VaultPrompt,
-    verify: suspend (Ed25519Account) -> Unit,
+    verify: suspend (Account) -> Unit,
   ): String
 
   suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String
@@ -68,9 +71,9 @@ interface WalletRepository {
 
   fun lock()
 
-  suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Ed25519Account) -> T): T
+  suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T
 
-  suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Ed25519Account) -> T): T
+  suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T
 }
 
 class DefaultWalletRepository(
@@ -144,11 +147,10 @@ class DefaultWalletRepository(
   override suspend fun importApiWallet(
     key: String,
     prompt: VaultPrompt,
-    verify: suspend (Ed25519Account) -> Unit,
+    verify: suspend (Account) -> Unit,
   ): String {
     val validated = Aip80PrivateKey.parse(WalletCredential.normalize(key))
-    val privateKey = Ed25519PrivateKey.fromAip80(validated)
-    val account = Ed25519Account(privateKey)
+    val account = keyAccount(validated.value)
     return try {
       val address = account.accountAddress.toString()
       val saved =
@@ -211,17 +213,17 @@ class DefaultWalletRepository(
 
   override suspend fun <T> withOwnerAccount(
     prompt: VaultPrompt,
-    block: suspend (Ed25519Account) -> T,
+    block: suspend (Account) -> T,
   ): T = withAccount(WalletSecretSlot.OWNER_MNEMONIC, prompt, ::ownerAccount, block)
 
   override suspend fun <T> withApiAccount(
     prompt: VaultPrompt,
-    block: suspend (Ed25519Account) -> T,
+    block: suspend (Account) -> T,
   ): T =
     withAccount(
       WalletSecretSlot.API_PRIVATE_KEY,
       prompt,
-      { Ed25519Account(Ed25519PrivateKey.fromAip80(it)) },
+      ::keyAccount,
       block,
     )
 
@@ -229,8 +231,8 @@ class DefaultWalletRepository(
   private suspend fun <T> withAccount(
     slot: WalletSecretSlot,
     prompt: VaultPrompt,
-    open: (String) -> Ed25519Account,
-    block: suspend (Ed25519Account) -> T,
+    open: (String) -> Account,
+    block: suspend (Account) -> T,
   ): T {
     val generation = authorizationGeneration
     val account = open(readText(slot, prompt))
@@ -283,9 +285,16 @@ class DefaultWalletRepository(
   }
 }
 
-private fun ownerAccount(credential: String): Ed25519Account =
-  if (credential.startsWith("ed25519-priv-")) {
-    Ed25519Account(Ed25519PrivateKey.fromAip80(credential))
+private fun ownerAccount(credential: String): Account =
+  if (credential.startsWith("ed25519-priv-") || credential.startsWith("secp256k1-priv-")) {
+    keyAccount(credential)
   } else {
     Ed25519Account.fromMnemonic(MnemonicPhrase.parse(credential))
+  }
+
+internal fun keyAccount(aip80: String): Account =
+  if (aip80.startsWith("secp256k1-priv-")) {
+    SingleKeyAccount(Secp256k1PrivateKey.fromAip80(aip80))
+  } else {
+    Ed25519Account(Ed25519PrivateKey.fromAip80(aip80))
   }
