@@ -6,6 +6,7 @@ import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,15 +22,19 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.WalletCredential
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.design.actionFailure
+import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
+import xyz.mcxross.kaptos.model.AccountAddress
 
 enum class OnboardingStep {
   WELCOME,
@@ -74,6 +79,17 @@ sealed interface SetupFee {
   data class AwaitingSponsor(override val estimateOctas: ULong) : SetupFee
 }
 
+/** What the chain says about the trading account entered with a trading key. */
+enum class TradingAccountCheck {
+  UNKNOWN,
+  TRADING_ACCOUNT,
+  CLOSED,
+  /** The key's own address, not the account it trades for. */
+  KEY_ADDRESS,
+  /** An address that isn't a trading account, most likely the owner's wallet. */
+  WALLET,
+}
+
 /** The two on-chain steps of setup, so a fee fallback retries the step that failed. */
 enum class SetupOperation {
   CREATE_ACCOUNT,
@@ -88,6 +104,7 @@ data class OnboardingUiState(
   val input: String = "",
   val apiImport: Boolean = false,
   val tradingAccountInput: String = "",
+  val tradingAccountCheck: TradingAccountCheck = TradingAccountCheck.UNKNOWN,
   val backupWords: List<String> = emptyList(),
   /** The phrase stays covered until the person asks to see it. */
   val backupRevealed: Boolean = false,
@@ -175,6 +192,7 @@ class OnboardingViewModel(
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
+  private var tradingAccountCheckJob: Job? = null
   private var subflowMode: String? = null
   private var previousProfileId: String? = null
   private var createdProfileId: String? = null
@@ -222,8 +240,15 @@ class OnboardingViewModel(
           if (preferences.values.first().onboardingComplete)
             effectChannel.send(OnboardingEffect.Completed)
         }
-      is OnboardingIntent.ChangeTradingAccount ->
-        local.value = local.value.copy(tradingAccountInput = intent.value, error = null)
+      is OnboardingIntent.ChangeTradingAccount -> {
+        local.value =
+          local.value.copy(
+            tradingAccountInput = intent.value,
+            tradingAccountCheck = TradingAccountCheck.UNKNOWN,
+            error = null,
+          )
+        checkTradingAccount()
+      }
       // The wallet pays only after the person has seen that it can, and agreed.
       OnboardingIntent.ConfirmSetupSelfPay ->
         if (local.value.setupFee is SetupFee.WalletCanPay) {
@@ -244,8 +269,10 @@ class OnboardingViewModel(
       OnboardingIntent.ShowImport -> show(OnboardingStep.IMPORT)
       OnboardingIntent.ImportCredential ->
         if (local.value.apiImport) importTradingKey() else importOwner()
-      is OnboardingIntent.SetApiImport ->
+      is OnboardingIntent.SetApiImport -> {
         local.value = local.value.copy(apiImport = intent.enabled, error = null)
+        checkTradingAccount()
+      }
       OnboardingIntent.RevealBackup -> revealBackup()
       OnboardingIntent.ReviewBackup ->
         local.value = local.value.copy(step = OnboardingStep.CONFIRM_BACKUP)
@@ -303,8 +330,10 @@ class OnboardingViewModel(
           }
         }
       }
-      is OnboardingIntent.ChangeInput ->
+      is OnboardingIntent.ChangeInput -> {
         local.value = local.value.copy(input = intent.value, error = null)
+        checkTradingAccount()
+      }
       is OnboardingIntent.ChangeConfirmation ->
         local.value =
           local.value.copy(
@@ -503,6 +532,33 @@ class OnboardingViewModel(
       finishSetupInternal()
     }
 
+  /** Looks the trading account up quietly after typing settles; the result only ever adds a hint. */
+  private fun checkTradingAccount() {
+    tradingAccountCheckJob?.cancel()
+    val state = local.value
+    val address = state.tradingAccountInput.trim()
+    if (!state.apiImport || !address.isAptosAddress()) return
+    tradingAccountCheckJob =
+      viewModelScope.launch {
+        delay(TRADING_ACCOUNT_CHECK_DELAY_MS)
+        val ownAddress = WalletCredential.keyAddress(state.input)?.let(AccountAddress::fromString)
+        val check =
+          if (ownAddress == AccountAddress.fromString(address)) {
+            TradingAccountCheck.KEY_ADDRESS
+          } else {
+            when (accounts.tradingAccountStatus(address)) {
+              SubaccountStatus.ACTIVE -> TradingAccountCheck.TRADING_ACCOUNT
+              SubaccountStatus.INACTIVE -> TradingAccountCheck.CLOSED
+              SubaccountStatus.NOT_SUBACCOUNT -> TradingAccountCheck.WALLET
+              null -> TradingAccountCheck.UNKNOWN
+            }
+          }
+        if (local.value.tradingAccountInput.trim() == address) {
+          local.value = local.value.copy(tradingAccountCheck = check)
+        }
+      }
+  }
+
   private suspend fun finishSetupInternal() {
     createdProfileId = null
     preferences.setOnboardingComplete(true)
@@ -680,6 +736,8 @@ class OnboardingViewModel(
     }
   }
 }
+
+private const val TRADING_ACCOUNT_CHECK_DELAY_MS = 400L
 
 private val OpenAccountPrompt = VaultPrompt("Open trading account", "Confirm your identity")
 private val EnableTradingPrompt = VaultPrompt("Enable trading", "Confirm your identity")
