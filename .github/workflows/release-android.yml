@@ -1,0 +1,131 @@
+name: Release Android
+
+# Push a tag like v1.2.3 from main to build, sign and publish the Android APK for direct download.
+# Signing secrets live in the android-release environment, which only v* tags can use and which
+# waits for approval before each run.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-android
+  cancel-in-progress: false
+
+env:
+  # Every published APK must carry this signing certificate (SHA-256, lowercase hex).
+  EXPECTED_CERT_SHA256: b05e699cc7f2967ff2fd27ff0966c32915367b09032dcf56f74296a97ba40090
+  # The HTTPS Worker release builds talk to. Override with the repository variable FLARE_WORKER_URL.
+  FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL || 'https://decibel-worker.em-eieiron.workers.dev' }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: android-release
+    permissions:
+      contents: write        # create the GitHub Release
+      id-token: write        # sign the build provenance
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read the version from the tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Tags must look like v1.2.3, got $tag"; exit 1
+          fi
+          major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} patch=${BASH_REMATCH[3]}
+          if (( minor > 99 || patch > 99 )); then
+            echo "::error::Minor and patch must stay below 100 to keep versionCode increasing"; exit 1
+          fi
+          # Only release what is already on main.
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$tag is not on main"; exit 1
+          fi
+          echo "name=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+          echo "code=$(( major * 10000 + minor * 100 + patch ))" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test
+        run: >-
+          ./gradlew
+          :decibel:jvmTest
+          :shared:testAndroidHostTest
+          :androidApp:lintRelease
+
+      - name: Build the signed APK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ORG_GRADLE_PROJECT_flareKeystorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_flareKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_flareKeyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          keystore="$RUNNER_TEMP/flare-release.keystore"
+          echo "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          ./gradlew :androidApp:assembleRelease \
+            -PflareKeystoreFile="$keystore" \
+            -PflareWorkerUrl="$FLARE_WORKER_URL" \
+            -PflareVersionName="${{ steps.version.outputs.name }}" \
+            -PflareVersionCode="${{ steps.version.outputs.code }}"
+          rm -f "$keystore"
+
+      - name: Check the APK before it ships
+        id: apk
+        run: |
+          apk=androidApp/build/outputs/apk/release/androidApp-release.apk
+          tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$tools/apksigner" verify --print-certs "$apk" > signers.txt
+          cert=$(grep -m1 "certificate SHA-256 digest" signers.txt | awk '{print $NF}')
+          if [[ "$cert" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::Signed with $cert, expected $EXPECTED_CERT_SHA256"; exit 1
+          fi
+          "$tools/aapt2" dump resources "$apk" | grep -A1 "string/flare_worker_url" | grep -q "\"$FLARE_WORKER_URL\"" \
+            || { echo "::error::The APK does not point at $FLARE_WORKER_URL"; exit 1; }
+          "$tools/aapt2" dump badging "$apk" | grep -q "versionName='${{ steps.version.outputs.name }}'" \
+            || { echo "::error::Version mismatch"; exit 1; }
+          mkdir dist
+          cp "$apk" "dist/flare-${{ steps.version.outputs.name }}.apk"
+          # A stable name, so /releases/latest/download/flare-android.apk always serves the newest.
+          cp "$apk" dist/flare-android.apk
+          (cd dist && sha256sum *.apk > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Attest where the APK came from
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.apk
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          ## Install
+
+          Download \`flare-android.apk\` below and open it on your phone. Android asks once to allow installs from your browser.
+
+          ## Verify
+
+          - SHA-256 checksums are in \`SHA256SUMS\`.
+          - Signing certificate SHA-256: \`${EXPECTED_CERT_SHA256}\`
+          - Build provenance: \`gh attestation verify flare-android.apk --repo ${GITHUB_REPOSITORY}\`
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Flare ${{ steps.version.outputs.name }}" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
