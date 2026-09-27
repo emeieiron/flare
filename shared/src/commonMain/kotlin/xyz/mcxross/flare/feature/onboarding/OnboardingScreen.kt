@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -160,7 +159,7 @@ private fun SetupFlow(
   onIntent: (OnboardingIntent) -> Unit,
   goBack: () -> Unit,
 ) {
-  Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding().imePadding()) {
+  Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
     Box(Modifier.fillMaxWidth().height(56.dp)) {
       val canGoBack = !state.busy && !state.pastReturn
       IconButton(goBack, Modifier.align(Alignment.CenterStart).padding(start = 4.dp), enabled = canGoBack) {

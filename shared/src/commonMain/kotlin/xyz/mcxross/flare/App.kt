@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -451,7 +452,11 @@ private fun FlareShell() {
     NavHost(
       navController = navController,
       startDestination = MarketsDestination,
-      modifier = Modifier.fillMaxSize().padding(contentPadding).clipToBounds(),
+      modifier =
+        Modifier.fillMaxSize()
+          .padding(contentPadding)
+          .consumeWindowInsets(contentPadding)
+          .clipToBounds(),
       enterTransition = {
         if (targetState.destination.isDetailPage()) pagePushEnter() else EnterTransition.None
       },
