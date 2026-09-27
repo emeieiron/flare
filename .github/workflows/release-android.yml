@@ -18,14 +18,17 @@ concurrency:
 env:
   # Every published APK must carry this signing certificate (SHA-256, lowercase hex).
   EXPECTED_CERT_SHA256: b05e699cc7f2967ff2fd27ff0966c32915367b09032dcf56f74296a97ba40090
-  # The HTTPS Worker release builds talk to. Override with the repository variable FLARE_WORKER_URL.
-  FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL || 'https://decibel-worker.em-eieiron.workers.dev' }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: android-release
+    env:
+      # Both come from the android-release environment's variables, so they change without code:
+      # the HTTPS Worker the app talks to, and the address that receives Flare's builder fee.
+      FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL }}
+      FLARE_BUILDER_ADDRESS: ${{ vars.FLARE_BUILDER_ADDRESS }}
     permissions:
       contents: write        # create the GitHub Release
       id-token: write        # sign the build provenance
@@ -54,6 +57,17 @@ jobs:
           echo "name=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
           echo "code=$(( major * 10000 + minor * 100 + patch ))" >> "$GITHUB_OUTPUT"
 
+      - name: Check the release configuration
+        run: |
+          if [[ ! "$FLARE_WORKER_URL" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "::error::Set FLARE_WORKER_URL (an https:// URL) in the android-release environment"; exit 1
+          fi
+          if [[ ! "$FLARE_BUILDER_ADDRESS" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::Set FLARE_BUILDER_ADDRESS (0x and 64 hex digits) in the android-release environment"; exit 1
+          fi
+          echo "Worker: $FLARE_WORKER_URL"
+          echo "Builder: $FLARE_BUILDER_ADDRESS"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -79,6 +93,7 @@ jobs:
           ./gradlew :androidApp:assembleRelease \
             -PflareKeystoreFile="$keystore" \
             -PflareWorkerUrl="$FLARE_WORKER_URL" \
+            -PflareBuilderAddress="$FLARE_BUILDER_ADDRESS" \
             -PflareVersionName="${{ steps.version.outputs.name }}" \
             -PflareVersionCode="${{ steps.version.outputs.code }}"
           rm -f "$keystore"
@@ -95,6 +110,8 @@ jobs:
           fi
           "$tools/aapt2" dump resources "$apk" | grep -A1 "string/flare_worker_url" | grep -q "\"$FLARE_WORKER_URL\"" \
             || { echo "::error::The APK does not point at $FLARE_WORKER_URL"; exit 1; }
+          "$tools/aapt2" dump resources "$apk" | grep -A1 "string/flare_builder_address" | grep -q "\"$FLARE_BUILDER_ADDRESS\"" \
+            || { echo "::error::The APK does not carry builder $FLARE_BUILDER_ADDRESS"; exit 1; }
           "$tools/aapt2" dump badging "$apk" | grep -q "versionName='${{ steps.version.outputs.name }}'" \
             || { echo "::error::Version mismatch"; exit 1; }
           mkdir dist
