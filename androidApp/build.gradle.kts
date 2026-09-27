@@ -12,6 +12,15 @@ val flareBuilderAddress =
     .gradleProperty("flareBuilderAddress")
     .orElse("0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b")
 
+// A distributable release build is signed with the key CI passes in; without it, release builds
+// stay unsigned for local use. See .github/workflows/release-android.yml.
+val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
+val releaseSigned = releaseKeystore.isPresent
+
+// Release versions come from the tag: v1.2.3 builds versionName 1.2.3 and versionCode 10203.
+val flareVersionName = providers.gradleProperty("flareVersionName").orElse("1.0")
+val flareVersionCode = providers.gradleProperty("flareVersionCode").map { it.toInt() }.orElse(1)
+
 plugins {
   alias(libs.plugins.androidApplication)
   alias(libs.plugins.composeCompiler)
@@ -58,8 +67,8 @@ android {
     targetSdk {
       version = release(libs.versions.android.targetSdk.get().toInt())
     }
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = flareVersionCode.get()
+    versionName = flareVersionName.get()
     resValue("string", "flare_worker_url", flareWorkerUrl.get())
     resValue("string", "flare_builder_address", flareBuilderAddress.get())
   }
@@ -68,8 +77,27 @@ android {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
   }
+  signingConfigs {
+    if (releaseSigned) {
+      create("release") {
+        storeFile = file(releaseKeystore.get())
+        storePassword = providers.gradleProperty("flareKeystorePassword").get()
+        keyAlias = providers.gradleProperty("flareKeyAlias").get()
+        keyPassword = providers.gradleProperty("flareKeyPassword").get()
+      }
+    }
+  }
   buildTypes {
     release {
+      if (releaseSigned) {
+        signingConfig = signingConfigs.getByName("release")
+        // A signed build is one people install: it must reach a real, encrypted Worker.
+        check(flareWorkerUrl.get().startsWith("https://")) {
+          "A signed release needs an HTTPS flareWorkerUrl, not ${flareWorkerUrl.get()}"
+        }
+      }
+      // Phones only: 64- and 32-bit ARM. The x86 and obsolete ABIs some libraries carry add ~14 MB.
+      ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
       // R8 shrinks, optimises and obfuscates the release build; resources nothing references go too.
       isMinifyEnabled = true
       isShrinkResources = true
