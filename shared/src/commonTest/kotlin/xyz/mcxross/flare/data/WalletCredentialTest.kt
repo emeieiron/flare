@@ -28,8 +28,15 @@ class WalletCredentialTest {
   @Test
   fun rejectsInvalidKeysAndUnsupportedAlgorithms() {
     for (value in
-      listOf("0x1234", "z".repeat(64), "ed25519-priv-0x1234", "secp256k1-priv-0x$hex", "")) {
+      listOf("0x1234", "z".repeat(64), "ed25519-priv-0x1234", "secp256k1-priv-0x1234", "secp256r1-priv-0x$hex", "")) {
       assertFailsWith<IllegalArgumentException> { WalletCredential.normalize(value) }
     }
+  }
+
+  @Test
+  fun keepsSecp256k1Keys() {
+    val key = "secp256k1-priv-0x$hex"
+    assertEquals(CredentialFormat.PRIVATE_KEY, WalletCredential.detect(key))
+    assertEquals(key, WalletCredential.normalize(key))
   }
 }

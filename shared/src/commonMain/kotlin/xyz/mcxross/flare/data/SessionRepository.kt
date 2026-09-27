@@ -24,7 +24,10 @@ import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
+import xyz.mcxross.kaptos.core.crypto.AnyPublicKey
+import xyz.mcxross.kaptos.core.crypto.AnySignature
 import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.HexInput
 
@@ -60,7 +63,7 @@ interface SessionRepository {
   suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus
 
   /** Authenticates a trading key that is not stored yet, to verify it before adopting it. */
-  suspend fun verifyApiCredential(account: Ed25519Account, subaccount: String): SessionStatus
+  suspend fun verifyApiCredential(account: Account, subaccount: String): SessionStatus
 
   /** Reuses the current trading session while it remains valid, renewing it silently otherwise. */
   suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus
@@ -163,7 +166,7 @@ class WorkerSessionRepository(
     }
 
   override suspend fun verifyApiCredential(
-    account: Ed25519Account,
+    account: Account,
     subaccount: String,
   ): SessionStatus = mutex.withLock { authenticate(account, subaccount, SessionRole.API) }
 
@@ -202,7 +205,7 @@ class WorkerSessionRepository(
   }
 
   private suspend fun authenticate(
-    account: Ed25519Account,
+    account: Account,
     subaccount: String?,
     expectedRole: SessionRole,
   ): SessionStatus {
@@ -228,11 +231,12 @@ class WorkerSessionRepository(
     }
 
     val challengeBytes = challenge.challenge.encodeToByteArray()
-    val publicKey = account.publicKey.toByteArray()
+    // The Worker takes the bare key and signature, not their SingleKey wrappers.
+    val publicKey = account.publicKey.let { (it as? AnyPublicKey)?.publicKey ?: it }.toByteArray()
     val signature =
       try {
         wallets.requireAuthorization(generation)
-        account.sign(HexInput.fromByteArray(challengeBytes)).toByteArray()
+        account.sign(HexInput.fromByteArray(challengeBytes)).let { (it as? AnySignature)?.signature ?: it }.toByteArray()
       } finally {
         challengeBytes.fill(0)
       }
