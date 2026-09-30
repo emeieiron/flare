@@ -10,8 +10,6 @@ import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
 import androidx.room3.Transaction
 import androidx.room3.Upsert
-import androidx.room3.migration.Migration
-import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -180,7 +178,7 @@ interface AssetCatalogDao {
       AssetMetadataEntity::class,
       AssetCatalogSyncEntity::class,
     ],
-  version = 2,
+  version = 1,
   exportSchema = true,
 )
 @ConstructedBy(FlareDatabaseConstructor::class)
@@ -199,25 +197,6 @@ expect object FlareDatabaseConstructor : RoomDatabaseConstructor<FlareDatabase> 
 
 fun buildFlareDatabase(builder: RoomDatabase.Builder<FlareDatabase>): FlareDatabase =
   builder
-    .addMigrations(FlareDatabaseMigration1To2)
     .setDriver(BundledSQLiteDriver())
     .setQueryCoroutineContext(Dispatchers.Default)
     .build()
-
-private object FlareDatabaseMigration1To2 : Migration(1, 2) {
-  override suspend fun migrate(connection: SQLiteConnection) {
-    connection.execute(
-      "CREATE TABLE IF NOT EXISTS asset_metadata (" +
-        "symbolKey TEXT NOT NULL PRIMARY KEY, symbol TEXT NOT NULL, name TEXT NOT NULL, " +
-        "kind TEXT NOT NULL, iconUrl TEXT, sha256 TEXT, revision TEXT NOT NULL, updatedAtMs INTEGER NOT NULL)"
-    )
-    connection.execute(
-      "CREATE TABLE IF NOT EXISTS asset_catalog_sync (" +
-        "id INTEGER NOT NULL PRIMARY KEY, revision TEXT NOT NULL, refreshedAtMs INTEGER NOT NULL)"
-    )
-  }
-}
-
-private fun SQLiteConnection.execute(sql: String) {
-  prepare(sql).use { statement -> statement.step() }
-}
