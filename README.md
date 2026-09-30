@@ -11,123 +11,100 @@
 </p>
 
 <p align="center">
-  <a href="https://flare.mcxross.xyz">Website</a>
+  <a href="https://github.com/emeieiron/flare/releases/latest">Download</a>
   &nbsp;·&nbsp;
-  <a href="#get-flare">Get Flare</a>
+  <a href="https://flare.mcxross.xyz">Website</a>
   &nbsp;·&nbsp;
   <a href="#build-it-yourself">Build it yourself</a>
 </p>
 
-> [!IMPORTANT]
-> Flare is under active development on Decibel testnet. Do not use this repository with mainnet funds.
+> [!NOTE]
+> Flare is under active development and runs reliably on Decibel **testnet**. Try it there and [share feedback](https://github.com/emeieiron/flare/issues). Power users can switch to mainnet at their own risk.
 
----
+## Contents
+
+- [Made to be yours](#made-to-be-yours)
+- [Features](#features)
+- [Get Flare](#get-flare)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Agent skills](#agent-skills)
+- [Build it yourself](#build-it-yourself)
+- [Security](#security)
+- [Contributing & license](#contributing--license)
 
 ## Made to be yours
 
-Flare is two things at once. For anyone who just wants something that works, it's a complete app with thoughtful defaults: install it, set up a wallet and trade. For anyone who wants more, it's a personal app waiting to happen, with every line here to read and change.
-
-- **Inspect** exactly what the app does with your wallet and your trades.
-- **Fork** it and start your own version from the same code.
-- **Modify** the screens, the defaults and the details until it fits the way you trade.
-
----
+Flare is a complete app with thoughtful defaults, and a personal app waiting to happen. Every line is here to **inspect**, **fork** and **modify** until it fits the way you trade. Its architecture and design system double as a blueprint for Web3 mobile apps on any chain.
 
 ## Features
 
 - **Markets**: Crypto, equities and commodities, in perps and spot, with live prices, a watchlist and search.
-- **Charts**: Candles or a clean line, with RSI and MACD a tap away.
-- **Orders**: Market, limit and TWAP orders across perps (`dex_accounts_perp_entry`) and spot (`dex_accounts_spot_entry`), with leverage and attached take profit and stop loss.
-- **Portfolio**: Account value and P&L up top; positions, holdings, DLP vaults and Amps rewards underneath; transfers, deposits and withdrawals a tap away.
-- **Self-custody**:
-  - Create a wallet with a BIP-39 recovery phrase, or import one from a phrase, a raw Ed25519 private key or an AIP-80 key.
-  - Keys stay on the device, and Flare opens behind your fingerprint, face or passcode.
-  - Trades sign with a delegated trading key that can trade but can't withdraw.
-- **Setup with one confirmation**: Back up and confirm your recovery phrase, and Flare opens your trading account and enables trading with a single confirmation. Every step is saved, so an interrupted setup picks up where it left off.
-- **Sponsored network fees**: Flare's gas station pays network fees by default, including everything setup needs. If sponsorship is unavailable, Flare says so and asks before your wallet pays. It never switches silently.
-- **Offline resilience**: Pending transactions are journaled and reconciled when the app restarts.
-
----
+- **Charts**: Live candles or a clean line, RSI and MACD, and panning through history.
+- **Orders**: Market, limit and TWAP, with leverage and attached take profit and stop loss.
+- **Portfolio**: Account value, P&L, positions, holdings, DLP vaults, Amps rewards, transfers, deposits and withdrawals.
+- **Self-custody**: Create a BIP-39 wallet or import a phrase, an Ed25519 or Secp256k1 key, or an AIP-80 key. Keys stay on the device behind biometrics or passcode. Trades sign with a delegated key that can't withdraw.
+- **One-confirmation setup**: Flare opens your trading account and enables trading in a single step. An interrupted setup resumes where it left off.
+- **Sponsored fees**: Flare's gas station pays network fees. If it can't, Flare asks before your wallet pays.
+- **Offline resilience**: Transactions are simulated before approval, journaled before sending and reconciled on restart.
 
 ## Get Flare
 
-A direct Android download is on its way at [flare.mcxross.xyz](https://flare.mcxross.xyz), with Google Play and the App Store to follow. Until then, [build it yourself](#build-it-yourself).
+**Android:** download `flare-android.apk` from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
 
----
+**iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
 
-## Tech Stack
-
-Built with **Kotlin Multiplatform** and **Compose Multiplatform**, Flare shares its UI, business and transaction logic across **Android and iOS**, using [**Kaptos**](https://github.com/mcxross/kaptos) as its core Aptos transaction and blockchain engine.
+## Tech stack
 
 | Layer | Technology |
 | :--- | :--- |
-| **UI & Presentation** | Compose Multiplatform, Vico Charts, MVI/MVVM |
-| **Platforms** | Android, iOS (a SwiftUI shell hosting the shared Compose UI) |
-| **Blockchain & Web3** | [Kaptos](https://github.com/mcxross/kaptos) (Kotlin Multiplatform SDK for Aptos) |
-| **State & DI** | Koin, Kotlinx Coroutines & Flow |
-| **Local Storage** | Room, DataStore, Platform Secure Enclaves (Keychain & EncryptedSharedPreferences) |
-| **Networking** | Ktor HTTP/WebSockets, Decibel Worker Proxy |
-
----
+| **UI** | Compose Multiplatform, Vico charts, MVVM |
+| **Platforms** | Android, iOS (SwiftUI shell hosting the shared UI) |
+| **Blockchain** | [Kaptos](https://github.com/mcxross/kaptos) (Aptos) |
+| **State & DI** | Koin, Coroutines & Flow |
+| **Storage** | Room, DataStore, Android Keystore, iOS Keychain |
+| **Networking** | Ktor HTTP & WebSockets, Decibel Worker proxy |
 
 ## Architecture
 
 ```
 flare/
-├── androidApp/  # Android entry point, manifests, and packaging
-├── iosApp/      # SwiftUI wrapper embedding the shared Kotlin framework
-├── shared/      # Shared UI, ViewModels, domain logic, secure storage, and repositories
-└── decibel/     # Protocol models, Move ABI serialization, and market types
+├── androidApp/       # Android entry point and packaging
+├── iosApp/           # SwiftUI shell for the shared framework
+├── shared/           # Screens, ViewModels, repositories, storage
+├── decibel/          # Headless Decibel protocol SDK
+├── baselineprofile/  # Startup and journey baseline profiles
+└── skills/           # Agent skills distilled from Flare
 ```
 
-- **`:shared`** houses the app's screens and all core business logic, domain models, and state management.
-- **`:decibel`** provides a headless Kotlin Multiplatform client for Decibel protocol types.
-- **Kaptos** handles all on-chain interactions: building payloads, gas simulation, transaction signing, submission, and confirmation.
+Dependencies point downward: platform apps → `:shared` → protocol modules → chain SDKs.
 
----
+## Agent skills
+
+[`skills/`](skills) teaches coding agents to build Web3 mobile apps the way Flare is built, on any chain:
+
+- **[`flare-architecture`](skills/flare-architecture/SKILL.md)**: structure, MVVM, chain SDKs, transaction safety, signing, onboarding.
+- **[`flare-design-system`](skills/flare-design-system/SKILL.md)**: themes, custom components, signing screens, formatting, charts, motion.
 
 ## Build it yourself
 
-### Prerequisites
-
-- JDK 21+
-- Android Studio Ladybug+ / Android SDK 37
-- Xcode 16+ (for iOS)
-- Running instance of the companion `decibel-worker`
-
-### 1. Start the Decibel Worker Proxy
+**Prerequisites:** JDK 21+, Android SDK 37, Xcode 16+ (for iOS), and the companion [`decibel-worker`](https://github.com/emeieiron/decibel-worker).
 
 ```sh
+# 1. Start the worker proxy
 git clone https://github.com/emeieiron/decibel-worker
-cd decibel-worker
-npm ci && cp .dev.vars.example .dev.vars
-npm run dev
-```
+cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 
-### 2. Run Android
-
-```sh
+# 2. Run Android (debug builds connect to http://10.0.2.2:8787)
 ./gradlew :androidApp:installDebug
 ```
 
-*(By default, the debug build connects to the local worker proxy at `http://10.0.2.2:8787`).*
-
-### 3. Run iOS
-
-Open `iosApp/iosApp.xcodeproj` in Xcode and select your target simulator or physical device.
-
----
+For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run it.
 
 ## Security
 
-Private keys never leave the device's secure hardware (iOS Keychain and Android EncryptedSharedPreferences). Network communications pass through a stateless, credential-isolating proxy worker to keep sensitive node and gas credentials off client devices.
+Keys never leave the device's secure hardware and are excluded from backups. Node and gas credentials stay on a stateless worker proxy, never on devices. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-For threat analysis, see [THREAT_MODEL.md](THREAT_MODEL.md).
+## Contributing & license
 
----
-
-## Contributing & License
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for local development workflows and Kaptos snapshot testing.
-
-Flare is licensed under the [Apache License 2.0](LICENSE).
+Contributions and testnet feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Flare is licensed under [Apache 2.0](LICENSE).
