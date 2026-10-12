@@ -10,6 +10,7 @@ object VenueEntry {
   fun venue(context: Context): Venue =
     HyperliquidVenue(
       if (context.getString(R.string.flare_hyperliquid_network) == "mainnet") Network.MAINNET
-      else Network.TESTNET
+      else Network.TESTNET,
+      builderAddress = context.getString(R.string.flare_hyperliquid_builder_address),
     )
 }

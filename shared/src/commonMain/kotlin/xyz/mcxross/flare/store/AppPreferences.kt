@@ -201,6 +201,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     return next
   }
 
+  /** The last value [nextSequence] returned for [name], or null if it never has. */
+  suspend fun lastSequence(name: String): Long? =
+    dataStore.data.first()[longPreferencesKey("sequence_$name")]
+
   suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) = updateActiveProfile {
     val resolvedAddress =
       if (address != null && it.id.startsWith("owner_")) it.id.removePrefix("owner_") else address

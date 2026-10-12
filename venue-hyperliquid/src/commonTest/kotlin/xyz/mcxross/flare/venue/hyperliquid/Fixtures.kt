@@ -115,4 +115,12 @@ internal object Fixtures {
   /** `userAbstraction` of UNIFIED_USER. */
   const val USER_ABSTRACTION_UNIFIED =
     """"unifiedAccount""""
+
+  /** `orderStatus` by cloid: a canceled order. */
+  const val ORDER_STATUS =
+    """{"status":"order","order":{"order":{"coin":"ETH","side":"B","limitPx":"2529.2","sz":"5.0","oid":62467226234,"timestamp":1791768486999,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"5.0","tif":"Alo","cloid":"0x0123456789abcdef0123456789abcdef"},"status":"canceled","statusTimestamp":1791768491623}}"""
+
+  /** `extraAgents`: one named agent. */
+  const val EXTRA_AGENTS =
+    """[{"name":"grid_bot","address":"0x1000000000000000000000000000000000000009","validUntil":1799909269142}]"""
 }

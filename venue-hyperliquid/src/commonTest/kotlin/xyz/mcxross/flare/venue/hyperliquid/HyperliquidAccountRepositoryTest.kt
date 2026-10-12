@@ -51,7 +51,8 @@ class HyperliquidAccountRepositoryTest {
   ): Pair<HyperliquidAccountRepository, AppPreferences> {
     val preferences = memoryPreferences()
     preferences.registerProfile(AccountProfile("owner_$user", ownerAddress = user))
-    return HyperliquidAccountRepository(testClient(responses), preferences) to preferences
+    val client = testClient(responses)
+    return HyperliquidAccountRepository(client, preferences, unusedSetup(client, preferences)) to preferences
   }
 
   @Test
