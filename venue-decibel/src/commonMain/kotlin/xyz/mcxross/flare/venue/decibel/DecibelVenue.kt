@@ -9,11 +9,9 @@ import org.koin.dsl.module
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.AptosSessionRepository
 import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.data.DefaultAccountRepository
 import xyz.mcxross.flare.data.DefaultTradingRepository
 import xyz.mcxross.flare.data.GasSponsorshipRepository
 import xyz.mcxross.flare.data.MarketDetailsRepository
@@ -57,6 +55,9 @@ class DecibelVenue(
             "https://explorer.aptoslabs.com/txn/${VenueExplorer.REFERENCE}" +
               "?network=${network.name.lowercase()}",
         ),
+      proxyUrl = config.workerBaseUrl,
+      builderAddress = config.defaultBuilderAddress,
+      rewardPointsName = "Amps",
     )
 
   override fun module(): Module = decibelModule(config)
@@ -78,8 +79,8 @@ class DecibelVenue(
 }
 
 /**
- * Decibel's repositories. Markets, charts, market details, the wallet, the Worker session and gas
- * sponsorship live in this module; accounts and trading are still implemented in `:shared`. They
+ * Decibel's repositories. Markets, charts, market details, accounts, the wallet, the Worker session
+ * and gas sponsorship live in this module; trading is still implemented in `:shared`. They
  * read the common bindings from `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and
  * the wallet vault.
  */

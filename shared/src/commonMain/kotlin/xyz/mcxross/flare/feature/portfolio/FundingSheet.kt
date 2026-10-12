@@ -71,7 +71,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       if (isDeposit) {
         state.primaryUsdcBalance
       } else {
-        state.account.overview?.crossWithdrawableBalance ?: 0.0
+        state.account.overview?.withdrawable ?: 0.0
       }
     val availableText = "Available: ${formatQuantity(availableUsdc, 2)} USDC"
     val amount = state.fundingAmount.toDoubleOrNull()
@@ -129,7 +129,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
           contentAlignment = Alignment.Center,
         ) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
-          Box(
+          // Without in-app deposits there is only one direction to go.
+          if (state.capabilities.inAppDeposit) Box(
             modifier =
               Modifier.size(40.dp)
                 .clip(CircleShape)
@@ -199,7 +200,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       state.actionError?.let { error ->
         ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
       }
-      (state.fundingTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+      state.selfPayEstimate(state.fundingTransaction)?.let { estimate ->
         ActionNotice(
           "Flare can’t cover the network fee right now. Your wallet would pay about " +
             "${estimate.toDecimalString(8)} APT.",

@@ -32,7 +32,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
 import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
@@ -49,6 +48,8 @@ import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.venue.model.TradingKey
+import xyz.mcxross.flare.venue.model.TradingKeyScope
 
 @Composable
 fun SettingsRoute(
@@ -141,12 +142,14 @@ fun SettingsScreen(
         FlareIcons.Heart,
         onClick = { showBuilderSheet = true },
       )
-      ActionRow(
-        "Referral code",
-        if (state.referralRedeemed) "Code active" else "Enter a referral code",
-        FlareIcons.Gift,
-        onClick = { showReferralSheet = true },
-      )
+      if (state.capabilities.rewards) {
+        ActionRow(
+          "Referral code",
+          if (state.referralRedeemed) "Code active" else "Enter a referral code",
+          FlareIcons.Gift,
+          onClick = { showReferralSheet = true },
+        )
+      }
     }
 
     ActionRow(
@@ -175,13 +178,13 @@ fun SettingsScreen(
         style = MaterialTheme.typography.bodyMedium,
       )
       Spacer(Modifier.height(12.dp))
-      state.delegations.forEach { delegation ->
-        val thisDevice = delegation.delegate == state.profile.apiWalletAddress
+      state.delegations.forEach { key ->
+        val thisDevice = key.address == state.profile.apiWalletAddress
         ActionRow(
-          if (thisDevice) "This device" else shortAddress(delegation.delegate),
-          delegationSummary(delegation),
+          if (thisDevice) "This device" else shortAddress(key.address),
+          tradingKeySummary(key),
           enabled = !state.busy,
-          onClick = { revokeAddress = delegation.delegate },
+          onClick = { revokeAddress = key.address },
         )
       }
       if (state.delegationsLoaded && state.delegations.isEmpty()) {
@@ -300,6 +303,7 @@ fun SettingsScreen(
           Triple(AssetType.PERP, preferences.builderApproved, preferences.builderFeeBps),
           Triple(AssetType.SPOT, preferences.spotBuilderApproved, preferences.spotBuilderFeeBps),
         )
+        .filter { (product) -> product == AssetType.PERP || state.capabilities.spot }
         .forEachIndexed { index, (product, approved, bps) ->
           if (index > 0) HorizontalDivider(Modifier.padding(top = 24.dp), color = FlareColors.BorderSubtle)
           BuilderProductSection(
@@ -440,13 +444,15 @@ private fun BuilderProductSection(
   }
 }
 
-/** What a delegation actually permits, in place of the raw permission type. */
-private fun delegationSummary(delegation: Delegation): String {
+/** What a trading key actually permits, in place of the venue's raw permission. */
+private fun tradingKeySummary(key: TradingKey): String {
   val scope =
-    if (delegation.canTradeAllPerpMarkets) "Can trade perp markets"
-    else if (delegation.canTradeAllSpotMarkets) "Can trade spot markets"
-    else "Can trade ${delegation.permissionMarket ?: "one market"}"
-  val expiry =
-    delegation.expirationTimeSeconds?.let { " · expires ${formatCalendarDate(it * 1_000L)}" }
+    when (key.scope) {
+      TradingKeyScope.ALL_MARKETS -> "Can trade all markets"
+      TradingKeyScope.PERP_MARKETS -> "Can trade perp markets"
+      TradingKeyScope.SPOT_MARKETS -> "Can trade spot markets"
+      TradingKeyScope.ONE_MARKET -> "Can trade ${key.marketId ?: "one market"}"
+    }
+  val expiry = key.expiresAtMs?.let { " · expires ${formatCalendarDate(it)}" }
   return scope + expiry.orEmpty()
 }

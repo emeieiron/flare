@@ -23,4 +23,10 @@ interface CredentialParser {
 
   /** The address a private key signs as, or null when [input] isn't a valid key. */
   fun keyAddress(input: String): String?
+
+  /**
+   * Whether two addresses name the same account, however each is written (case, padding). False
+   * when either isn't a valid address.
+   */
+  fun sameAddress(first: String, second: String): Boolean
 }

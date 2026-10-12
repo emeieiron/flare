@@ -23,9 +23,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.data.AptosSessionRepository
 import xyz.mcxross.flare.data.AptosSigningWallet
-import xyz.mcxross.flare.data.SESSION_RENEWAL_MARGIN_MS
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.sameAptosAddress

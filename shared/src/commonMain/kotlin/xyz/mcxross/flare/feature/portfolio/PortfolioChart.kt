@@ -34,16 +34,18 @@ import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.TimeRangeSelector
 import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberFlareShimmer
+import xyz.mcxross.flare.venue.model.PortfolioChartRange
+import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.PortfolioPoint
 
 @Composable
 fun PortfolioPerformanceChart(
-  points: List<PortfolioChartPoint>,
+  points: List<PortfolioPoint>,
   range: PortfolioChartRange,
   metric: PortfolioMetric,
   onRangeSelect: (PortfolioChartRange) -> Unit,
@@ -59,12 +61,7 @@ fun PortfolioPerformanceChart(
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     var choosingMetric by remember { mutableStateOf(false) }
-    val values = points.map { point ->
-      point.dataPoints ?: when (metric) {
-        PortfolioMetric.EQUITY -> point.accountValue ?: point.value
-        PortfolioMetric.PNL -> point.realizedPnl ?: point.value
-      }
-    }
+    val values = points.map { it.value }
     Box {
       TextButton({ choosingMetric = true }) { Text("${metric.label} ▾") }
       DropdownMenu(choosingMetric, { choosingMetric = false }) {

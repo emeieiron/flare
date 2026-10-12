@@ -34,7 +34,6 @@ import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.withLiveCandle
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
@@ -47,6 +46,7 @@ import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.TradingFees
 
 enum class ChartStyle {
   LINE,
@@ -89,7 +89,7 @@ data class TradeUiState(
   val topUpTransaction: TransactionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
-  val fees: xyz.mcxross.flare.decibel.model.AccountFees? = null,
+  val fees: TradingFees? = null,
   val builderAddress: String? = null,
   val builderFeeBps: Int? = null,
   val builderApproved: Boolean = false,
@@ -258,11 +258,11 @@ class TradeViewModel(
       } else {
         val position =
           accounts.snapshot.value.positions.firstOrNull {
-            it.market == state.quote?.market?.id
+            it.marketId == state.quote?.market?.id
           }
         state.copy(
           positionLeverage = position?.leverage,
-          positionIsolated = position?.isIsolated,
+          positionIsolated = position?.isolated,
           leverage =
             position?.leverage
               ?: state.leverage.coerceIn(
@@ -289,12 +289,12 @@ class TradeViewModel(
       }
     }
     if (quote?.market?.kind == MarketKind.SPOT) {
-      val spot = snapshot.overview?.spot
-      val availableCash = spot?.positions?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
+      val spot = snapshot.overview?.balances?.spot
+      val availableCash = spot?.assets?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
       mutableUiState.update {
-        it.copy(quoteBalance = availableCash?.plus(snapshot.overview?.crossWithdrawableBalance ?: 0.0))
+        it.copy(quoteBalance = availableCash?.plus(snapshot.overview?.withdrawable ?: 0.0))
       }
-      val base = spot?.positions?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
+      val base = spot?.assets?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
       if (spot != null) {
         baseBalanceJob?.cancel()
         mutableUiState.update { it.copy(baseBalance = base) }
@@ -310,7 +310,7 @@ class TradeViewModel(
           val cash = runSuspendCatching { trading.baseAssetBalance(subaccount, "USDC") }.getOrNull()
           mutableUiState.update {
             it.copy(baseBalance = availableBase,
-              quoteBalance = cash?.plus(snapshot.overview?.crossWithdrawableBalance ?: 0.0))
+              quoteBalance = cash?.plus(snapshot.overview?.withdrawable ?: 0.0))
           }
         }
       }
@@ -498,7 +498,7 @@ class TradeViewModel(
           require(!snapshot.stale && snapshot.account == subaccount) {
             "Your account is still reconnecting. Try again in a moment."
           }
-          val position = snapshot.positions.firstOrNull { it.market == market.id }
+          val position = snapshot.positions.firstOrNull { it.marketId == market.id }
           val terminal =
             trading.confirmedAction(
               VaultPrompt(

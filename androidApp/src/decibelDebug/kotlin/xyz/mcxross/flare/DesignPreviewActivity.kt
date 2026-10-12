@@ -25,12 +25,22 @@ import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
+import xyz.mcxross.flare.venue.model.AccountOverview
+import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderBookLevel
+import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.RewardPointsSource
+import xyz.mcxross.flare.venue.model.RewardTier
+import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SpotBalances
+import xyz.mcxross.flare.venue.model.VaultPosition
+import xyz.mcxross.flare.venue.model.VaultSummary
 
 /** Offline design harness. Decibel debug builds only; no repositories, keys, or transactions. */
 class DesignPreviewActivity : FragmentActivity() {
@@ -389,6 +399,7 @@ private fun previewBook(quote: MarketQuote) =
 
 private fun previewPortfolio() =
   PortfolioUiState(
+    rewardPointsName = "Amps",
     profile = WalletProfile(ownerAddress = "preview"),
     spotHoldings =
       listOf(
@@ -417,15 +428,11 @@ private fun previewPortfolio() =
       AccountSnapshot(
         overview =
           AccountOverview(
-            12480.65,
+            equity = 12480.65,
             unrealizedPnl = 284.16,
-            unrealizedFundingCost = 0.0,
-            crossMarginRatio = 0.18,
-            maintenanceMargin = 120.0,
-            totalMargin = 1800.0,
-            crossWithdrawableBalance = 8240.32,
-            isolatedWithdrawableBalance = 0.0,
+            marginRatio = 0.18,
             availableToTrade = 8240.32,
+            withdrawable = 8240.32,
           ),
         stale = false,
       ),
@@ -437,53 +444,45 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
   return when (screen) {
     "portfolio-many" -> {
       val positions = (1..24).map { index ->
-        xyz.mcxross.flare.decibel.model.Position("0xposition$index", "preview", "$index", 2, 10.0,
-          false, false, 0.0, 5.0, index.toLong(), false)
+        Position("0xposition$index", "$index", 2, 10.0, isolated = false, liquidationPrice = 5.0)
       }
       val vaults = (1..12).map { index ->
-        xyz.mcxross.flare.decibel.model.VaultInfo(address = "0xvault$index", name = "Vault $index",
-          totalAum = index * 100_000.0)
+        VaultSummary(address = "0xvault$index", name = "Vault $index", totalValue = index * 100_000.0)
       }
       loaded.copy(
         account = loaded.account.copy(positions = positions),
-        marketSymbols = positions.mapIndexed { index, position -> position.market to "Market ${index + 1}" }.toMap(),
-        markPrices = positions.associate { it.market to 12.0 },
+        marketSymbols = positions.mapIndexed { index, position -> position.marketId to "Market ${index + 1}" }.toMap(),
+        markPrices = positions.associate { it.marketId to 12.0 },
         spotHoldings = loaded.spotHoldings.take(1) + (1..47).map { index ->
           SpotHolding("ASSET$index", "Asset $index", quantity = index.toDouble(), markPrice = 1.0, valueUsd = index.toDouble())
         },
         vaults = vaults,
-        accountVaults = vaults.take(3).map {
-          xyz.mcxross.flare.decibel.model.AccountVaultPerformance(vault = it, currentNumShares = 10.0, currentValue = 10.0)
-        },
-        amps = xyz.mcxross.flare.decibel.model.AmpsBreakdown(totalAmps = 2400.0, tradingAmps = 2200.0, vaultAmps = 200.0),
-        tier = xyz.mcxross.flare.decibel.model.TierInfo(tier = "Silver"),
+        accountVaults = vaults.take(3).map { VaultPosition(vault = it, shares = 10.0, value = 10.0) },
+        rewards = previewRewards(totalAmps = 2400.0, tradingAmps = 2200.0, vaultAmps = 200.0, tier = "Silver"),
       )
     }
     // A believable account for product imagery: three positions in major markets, a vault, rewards.
     "portfolio-showcase" -> {
       val positions = listOf(
-        xyz.mcxross.flare.decibel.model.Position("0xbtc", "preview", "0.12", 10, 81_740.0, false, false, 0.0, 74_210.0, 1, false),
-        xyz.mcxross.flare.decibel.model.Position("0xeth", "preview", "-1.8", 5, 3_412.5, false, false, 0.0, 3_980.0, 2, false),
-        xyz.mcxross.flare.decibel.model.Position("0xsol", "preview", "24", 3, 188.2, false, false, 0.0, 131.0, 3, false),
+        Position("0xbtc", "0.12", 10, 81_740.0, isolated = false, liquidationPrice = 74_210.0),
+        Position("0xeth", "-1.8", 5, 3_412.5, isolated = false, liquidationPrice = 3_980.0),
+        Position("0xsol", "24", 3, 188.2, isolated = false, liquidationPrice = 131.0),
       )
-      val vault = xyz.mcxross.flare.decibel.model.VaultInfo(address = "0xdlp", name = "DLP", totalAum = 12_400_000.0)
+      val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 12_400_000.0)
       loaded.copy(
         account = loaded.account.copy(
           positions = positions,
           overview = loaded.account.overview!!.copy(
-            equityBalance = 12_480.65,
+            equity = 12_480.65,
             unrealizedPnl = 446.46,
-            freeVaultEquity = 1_214.6,
-            spot = xyz.mcxross.flare.decibel.model.SpotOverview(totalUsd = 1_050.0),
+            vaultEquity = 1_214.6,
+            balances = Balances(spot = SpotBalances(totalUsd = 1_050.0)),
           ),
         ),
         marketSymbols = mapOf("0xbtc" to "BTC", "0xeth" to "ETH", "0xsol" to "SOL"),
         markPrices = mapOf("0xbtc" to 83_909.0, "0xeth" to 3_356.4, "0xsol" to 191.75),
-        accountVaults = listOf(
-          xyz.mcxross.flare.decibel.model.AccountVaultPerformance(vault = vault, currentNumShares = 1_150.0, currentValue = 1_214.6)
-        ),
-        amps = xyz.mcxross.flare.decibel.model.AmpsBreakdown(totalAmps = 18_420.0, tradingAmps = 16_900.0, vaultAmps = 1_520.0),
-        tier = xyz.mcxross.flare.decibel.model.TierInfo(tier = "Gold"),
+        accountVaults = listOf(VaultPosition(vault = vault, shares = 1_150.0, value = 1_214.6)),
+        rewards = previewRewards(totalAmps = 18_420.0, tradingAmps = 16_900.0, vaultAmps = 1_520.0, tier = "Gold"),
       )
     }
     "portfolio-loading" -> loaded.copy(
@@ -492,9 +491,8 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
     )
     "portfolio-empty" -> loaded.copy(
       spotHoldings = emptyList(), account = loaded.account.copy(overview = loaded.account.overview!!.copy(
-        equityBalance = 0.0, unrealizedPnl = 0.0, availableToTrade = 0.0,
-        crossWithdrawableBalance = 0.0, crossUsdcBalance = 0.0, freeVaultEquity = 0.0,
-        spot = xyz.mcxross.flare.decibel.model.SpotOverview(),
+        equity = 0.0, unrealizedPnl = 0.0, availableToTrade = 0.0, withdrawable = 0.0, vaultEquity = 0.0,
+        balances = Balances(collateral = 0.0, spot = SpotBalances()),
       )),
     )
     "portfolio-stale" -> loaded.copy(
@@ -508,6 +506,24 @@ private fun previewPortfolioState(screen: String): PortfolioUiState {
     else -> loaded
   }
 }
+
+/** Amps and a tier as Decibel reports them, in the order its rewards page lists their sources. */
+private fun previewRewards(totalAmps: Double, tradingAmps: Double, vaultAmps: Double, tier: String) =
+  Rewards(
+    points =
+      RewardPoints(
+        total = totalAmps,
+        sources =
+          listOf(
+            RewardPointsSource("Trading", tradingAmps),
+            RewardPointsSource("Streaks", 0.0),
+            RewardPointsSource("Vaults", vaultAmps),
+            RewardPointsSource("Referrals", 0.0),
+            RewardPointsSource("Bonuses", 0.0),
+          ),
+      ),
+    tier = RewardTier(tier, percentile = 0.0, feeDiscountBps = 0),
+  )
 
 private val PreviewWords =
   listOf("orbit", "velvet", "canyon", "ember", "mosaic", "harbor", "lunar", "quartz", "willow", "summit", "prism", "cobalt")

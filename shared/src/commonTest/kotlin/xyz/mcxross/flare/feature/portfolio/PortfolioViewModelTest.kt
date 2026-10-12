@@ -8,6 +8,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -44,15 +47,29 @@ import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AccountOverview
 import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Delegation
-import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.BareCapabilities
+import xyz.mcxross.flare.testVenue
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.model.AccountOverview
+import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.PortfolioChartRange
+import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.RewardPart
+import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.RewardTier
+import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingKey
+import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultPosition
+import xyz.mcxross.flare.venue.model.VaultSummary
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioViewModelTest {
@@ -120,7 +137,7 @@ class PortfolioViewModelTest {
     override val history: StateFlow<AccountHistorySnapshot> =
       MutableStateFlow(AccountHistorySnapshot())
 
-    override suspend fun delegations(): List<Delegation> = emptyList()
+    override suspend fun delegations(): List<TradingKey> = emptyList()
 
     override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState =
       TransactionState.Committed("0x")
@@ -185,27 +202,30 @@ class PortfolioViewModelTest {
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
 
     override suspend fun portfolioChart(
-      timeRange: String,
-      metric: String,
-    ): List<xyz.mcxross.flare.decibel.model.PortfolioChartPoint> = emptyList()
+      range: PortfolioChartRange,
+      metric: PortfolioMetric,
+    ): List<PortfolioPoint> = emptyList()
 
-    override suspend fun tradingStreak(): xyz.mcxross.flare.decibel.model.TradingStreak? = null
+    var rewardReads = 0
+    var vaultReads = 0
 
-    override suspend fun ampsBreakdown(): xyz.mcxross.flare.decibel.model.AmpsBreakdown? = null
-
-    override suspend fun tierInfo(): xyz.mcxross.flare.decibel.model.TierInfo? = null
-
-    override suspend fun verifyReferralCode(code: String): xyz.mcxross.flare.decibel.model.ReferralCodeInfo? = null
+    override suspend fun rewards(): Rewards? {
+      rewardReads++
+      return null
+    }
 
     override suspend fun redeemReferralCode(code: String): Boolean = true
 
-    override suspend fun activeTwaps(): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
+    override suspend fun activeTwaps(): List<TwapOrder> = emptyList()
 
-    override suspend fun twapHistory(limit: Int): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
+    override suspend fun twapHistory(limit: Int): List<TwapOrder> = emptyList()
 
-    override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> = emptyList()
+    override suspend fun vaults(limit: Int): List<VaultSummary> {
+      vaultReads++
+      return emptyList()
+    }
 
-    override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> = emptyList()
+    override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
 
     override fun contributeToVault(
       vaultAddress: String,
@@ -257,8 +277,10 @@ class PortfolioViewModelTest {
     override fun lock() {}
   }
 
-  private class FakeTradingRepository(private val spotBalances: Map<String, Double> = emptyMap()) :
-    TradingRepository {
+  private class FakeTradingRepository(
+    private val spotBalances: Map<String, Double> = emptyMap(),
+    private val outcome: TransactionState? = null,
+  ) : TradingRepository {
     override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
 
     override suspend fun reconcilePending() = ReconciliationResult(0, 0)
@@ -271,7 +293,7 @@ class PortfolioViewModelTest {
       prompt: VaultPrompt,
       feePayment: FeePayment,
       onPrepared: suspend (String) -> Unit,
-    ): Flow<TransactionState> = emptyFlow()
+    ): Flow<TransactionState> = outcome?.let { flowOf(it) } ?: emptyFlow()
 
     override suspend fun apiWalletAptBalance(): ULong = 100_000_000uL
 
@@ -325,16 +347,12 @@ class PortfolioViewModelTest {
   fun totalBalanceAggregatesCollateralAndSpotHoldings() = runTest {
     val overview =
       AccountOverview(
-        equityBalance = 9.51,
+        equity = 9.51,
         unrealizedPnl = 0.0,
-        unrealizedFundingCost = 0.0,
-        crossMarginRatio = 0.0,
-        maintenanceMargin = 0.0,
-        totalMargin = 0.0,
-        crossWithdrawableBalance = 5.0,
-        crossUsdcBalance = 9.51,
-        isolatedWithdrawableBalance = 0.0,
+        marginRatio = 0.0,
         availableToTrade = 9.51,
+        withdrawable = 5.0,
+        balances = Balances(collateral = 9.51),
       )
     val snapshot = AccountSnapshot(account = "0xsubaccount", overview = overview, stale = false)
     val trading = FakeTradingRepository(spotBalances = mapOf("APT" to 10.979))
@@ -346,6 +364,7 @@ class PortfolioViewModelTest {
         trading = trading,
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
+        venue = testVenue(),
         assetCatalog = FakeAssetCatalogRepository(),
       )
 
@@ -376,16 +395,16 @@ class PortfolioViewModelTest {
   fun historyRecoversAutomaticallyAndRetainsCachedPoints() = runTest {
     var unavailable = true
     var reads = 0
-    val point = xyz.mcxross.flare.decibel.model.PortfolioChartPoint(timestamp = 1, dataPoints = 25.0)
+    val point = PortfolioPoint(timeMs = 1, value = 25.0)
     val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun portfolioChart(timeRange: String, metric: String): List<xyz.mcxross.flare.decibel.model.PortfolioChartPoint> {
+      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<PortfolioPoint> {
         reads++
         check(!unavailable) { "Offline" }
         return listOf(point)
       }
     }
     val vm = PortfolioViewModel(accounts, FakeWalletRepository(), AppPreferences(MemoryPreferences()),
-      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository())
+      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository(), testVenue())
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.SetHistoryVisible(true))
     assertTrue(vm.uiState.value.chartError != null)
@@ -410,8 +429,8 @@ class PortfolioViewModelTest {
   @Test
   fun spotMarketsAreFilteredOutOfPerpPositions() = runTest {
     val perpPos =
-      Position("0xbtc_perp", "0xsub", "0.1", 10, 68000.0, false, false, 0.0, 60000.0, 1L, false)
-    val spotPos = Position("0xapt_spot", "0xsub", "10", 1, 0.58, false, false, 0.0, 0.0, 1L, false)
+      Position("0xbtc_perp", "0.1", 10, 68000.0, isolated = false, liquidationPrice = 60000.0)
+    val spotPos = Position("0xapt_spot", "10", 1, 0.58, isolated = false, liquidationPrice = 0.0)
     val snapshot =
       AccountSnapshot(account = "0xsubaccount", positions = listOf(perpPos, spotPos), stale = false)
 
@@ -423,38 +442,31 @@ class PortfolioViewModelTest {
         trading = FakeTradingRepository(),
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
+        venue = testVenue(),
         assetCatalog = FakeAssetCatalogRepository(),
       )
 
     val state = vm.uiState.first { it.account.positions.isNotEmpty() }
     assertEquals(1, state.account.positions.size)
-    assertEquals("0xbtc_perp", state.account.positions.first().market)
+    assertEquals("0xbtc_perp", state.account.positions.first().marketId)
   }
 
   @Test
   fun vaultsAndActionFlow() = runTest {
     val snapshot = AccountSnapshot(account = "0xsubaccount", stale = false)
     val testVault =
-      xyz.mcxross.flare.decibel.model.VaultInfo(
+      VaultSummary(
         address = "0xvault1",
         name = "Decibel Liquidity Pool",
-        totalAum = 500_000.0,
+        totalValue = 500_000.0,
         sharePrice = 1.05,
       )
     val fakeAccounts =
       object : FakeAccountRepository(snapshot) {
-        override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> =
-          listOf(testVault)
+        override suspend fun vaults(limit: Int): List<VaultSummary> = listOf(testVault)
 
-        override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> =
-          listOf(
-            xyz.mcxross.flare.decibel.model.AccountVaultPerformance(
-              vault = testVault,
-              currentNumShares = 100.0,
-              currentValue = 105.0,
-              returnsPercent = 5.0,
-            )
-          )
+        override suspend fun vaultPositions(): List<VaultPosition> =
+          listOf(VaultPosition(vault = testVault, shares = 100.0, value = 105.0, returnPercent = 5.0))
       }
 
     val vm =
@@ -465,6 +477,7 @@ class PortfolioViewModelTest {
         trading = FakeTradingRepository(),
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
+        venue = testVenue(),
         assetCatalog = FakeAssetCatalogRepository(),
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
@@ -474,7 +487,7 @@ class PortfolioViewModelTest {
     assertEquals(1, vaultsState.vaults.size)
     assertEquals("Decibel Liquidity Pool", vaultsState.vaults.first().name)
     assertEquals(1, vaultsState.accountVaults.size)
-    assertEquals(105.0, vaultsState.accountVaults.first().currentValue)
+    assertEquals(105.0, vaultsState.accountVaults.first().value)
 
     // Test opening deposit action
     vm.onIntent(PortfolioIntent.OpenVaultAction(testVault, VaultActionMode.DEPOSIT))
@@ -537,6 +550,7 @@ class PortfolioViewModelTest {
         trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 42.5)),
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
+        venue = testVenue(),
         assetCatalog = FakeAssetCatalogRepository(),
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
@@ -560,5 +574,115 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.CloseFunding)
     val closedState = vm.uiState.first { it.fundingMode == null }
     kotlin.test.assertNull(closedState.fundingMode)
+  }
+
+  private fun portfolio(
+    accounts: AccountRepository,
+    capabilities: VenueCapabilities = VenueCapabilities.All,
+    trading: TradingRepository = FakeTradingRepository(),
+  ) =
+    PortfolioViewModel(
+      accounts = accounts,
+      wallets = FakeWalletRepository(),
+      preferences = AppPreferences(MemoryPreferences()),
+      trading = trading,
+      markets = FakeMarketsRepository(quotes),
+      marketDetails = FakeMarketDetailsRepository(),
+      venue = testVenue(capabilities),
+    )
+
+  @Test
+  fun featuresTheVenueLacksAreNeitherLoadedNorOffered() = runTest {
+    val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
+    val vm = portfolio(accounts, BareCapabilities)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.Refresh)
+    vm.onIntent(PortfolioIntent.RefreshVaults)
+    val state = vm.uiState.value
+    assertEquals(BareCapabilities, state.capabilities)
+    assertEquals(0, accounts.rewardReads)
+    assertEquals(0, accounts.vaultReads)
+    assertFalse(state.rewardsLoaded)
+    assertFalse(state.vaultsLoaded)
+    assertNull(
+      state.selfPayEstimate(TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 5_000uL))
+    )
+
+    // Without in-app deposits, a transfer can only go out to the wallet.
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    assertEquals(FundingMode.WITHDRAW, vm.uiState.value.fundingMode)
+  }
+
+  @Test
+  fun aVenueWithEveryFeatureLoadsAndOffersThemAll() = runTest {
+    val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    val state = vm.uiState.value
+    assertEquals(1, accounts.rewardReads)
+    assertEquals(1, accounts.vaultReads)
+    assertTrue(state.rewardsLoaded)
+    assertTrue(state.vaultsLoaded)
+    assertEquals("Amps", state.rewardPointsName)
+    assertEquals(
+      5_000uL,
+      state.selfPayEstimate(TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 5_000uL)),
+    )
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    assertEquals(FundingMode.DEPOSIT, vm.uiState.value.fundingMode)
+  }
+
+  @Test
+  fun aNetworkFeeTopUpIsOfferedOnlyWhereTheVenueHasOne() = runTest {
+    suspend fun topUpOffered(capabilities: VenueCapabilities): Boolean {
+      val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+      val accounts =
+        FakeAccountRepository(
+          AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false)
+        )
+      // Flare couldn't sponsor the fee, and the device holds less than the wallet would pay.
+      val failure = TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 200_000_000uL)
+      val vm = portfolio(accounts, capabilities, FakeTradingRepository(outcome = failure))
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+      vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
+      vm.onIntent(PortfolioIntent.ChangeTakeProfit("80000"))
+      vm.onIntent(PortfolioIntent.SubmitTpSl)
+      val state = vm.uiState.value
+      assertIs<TransactionState.Failed>(state.positionTransaction)
+      return state.apiWalletNeedsTopUp
+    }
+
+    assertTrue(topUpOffered(VenueCapabilities.All))
+    assertFalse(topUpOffered(VenueCapabilities.All.copy(networkFeeTopUp = false)))
+  }
+
+  @Test
+  fun rewardsThatFailToLoadKeepWhatWasShown() = runTest {
+    var reads = 0
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun rewards(): Rewards? {
+          reads++
+          return if (reads == 1) {
+            Rewards(points = RewardPoints(total = 1_500.0), tier = RewardTier("Silver"))
+          } else {
+            Rewards(tier = RewardTier("Gold"), unavailable = setOf(RewardPart.POINTS))
+          }
+        }
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    assertEquals(1_500.0, vm.uiState.value.rewards?.points?.total)
+    assertFalse(vm.uiState.value.rewardsError)
+
+    vm.onIntent(PortfolioIntent.Refresh)
+
+    val state = vm.uiState.value
+    assertEquals(2, reads)
+    assertEquals(1_500.0, state.rewards?.points?.total)
+    assertEquals("Gold", state.rewards?.tier?.name)
+    assertTrue(state.rewardsError)
   }
 }
