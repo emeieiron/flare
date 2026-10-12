@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A clearer way to trade.</b><br>
-  An open-source app for trading perps and spot on <a href="https://decibel.trade">Decibel</a>, on Android and iOS.<br>
+  An open-source app for trading perps and spot on <a href="https://decibel.trade">Decibel</a> and <a href="https://hyperliquid.xyz">Hyperliquid</a>, on Android and iOS.<br>
   Use it just as it comes, or make it entirely your own.
 </p>
 
@@ -50,7 +50,10 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 
 ## Get Flare
 
-**Android:** download `flare-decibel-android.apk` from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
+**Android:** each exchange is its own app. Download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-decibel-android.apk) or [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-hyperliquid-android.apk) from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
+
+- **Hyperliquid** runs on testnet. Its faucet only serves addresses that have deposited on Hyperliquid mainnet, so fund the same address on mainnet first.
+- **Already testing Decibel?** The Decibel app now installs as `xyz.mcxross.flare.decibel`, so it can't upgrade an earlier Flare in place. Install it alongside, then restore your wallet from its recovery phrase or re-import your trading key.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
 
