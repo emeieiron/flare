@@ -548,7 +548,8 @@ private class Harness(
                 contentType = content.contentType,
                 body = content.text,
               )
-            val type = Json.parseToJsonElement(content.text).jsonObject["type"]!!.jsonPrimitive.content
+            val body = Json.parseToJsonElement(content.text).jsonObject
+            val type = body.getValue("type").jsonPrimitive.content
             respondJson(responder(type))
           }
         ),

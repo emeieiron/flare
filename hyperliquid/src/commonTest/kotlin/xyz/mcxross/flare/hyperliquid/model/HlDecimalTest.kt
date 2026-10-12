@@ -27,7 +27,9 @@ class HlDecimalTest {
         "0.000000000000000001" to "0.000000000000000001",
         "1.0000000000000000000000" to "1",
       )
-    cases.forEach { (text, expected) -> assertEquals(expected, text.toHlDecimal().toString(), text) }
+    cases.forEach { (text, expected) ->
+      assertEquals(expected, text.toHlDecimal().toString(), text)
+    }
   }
 
   @Test
@@ -83,7 +85,8 @@ class HlDecimalTest {
     // Rescaling either side to the other's scale would overflow; comparing must not.
     assertTrue("999999999999999999".toHlDecimal() > "0.999999999999999999".toHlDecimal())
     assertTrue("-999999999999999999".toHlDecimal() < "-0.999999999999999999".toHlDecimal())
-    val sorted = listOf("3", "-2.5", "0.01", "-2.49", "0", "2.999").map(String::toHlDecimal).sorted()
+    val sorted =
+      listOf("3", "-2.5", "0.01", "-2.49", "0", "2.999").map(String::toHlDecimal).sorted()
     assertEquals(listOf("-2.5", "-2.49", "0", "0.01", "2.999", "3"), sorted.map { it.toString() })
   }
 
@@ -146,39 +149,39 @@ class HlDecimalTest {
       )
     table.forEach { (value, expected) ->
       modes.zip(expected).forEach { (mode, result) ->
-        assertEquals(result, value.toHlDecimal().roundToDecimals(0, mode).toString(), "$value $mode")
+        assertEquals(result, round(value, 0, mode), "$value $mode")
       }
     }
   }
 
   @Test
   fun roundsToDecimalPlaces() {
-    assertEquals("1.01", "1.005".toHlDecimal().roundToDecimals(2, HlRounding.HALF_UP).toString())
-    assertEquals("1", "1.005".toHlDecimal().roundToDecimals(2, HlRounding.HALF_EVEN).toString())
-    assertEquals("1.02", "1.015".toHlDecimal().roundToDecimals(2, HlRounding.HALF_EVEN).toString())
-    assertEquals("1.005", "1.00505".toHlDecimal().roundToDecimals(4, HlRounding.HALF_EVEN).toString())
-    assertEquals("-1.01", "-1.0051".toHlDecimal().roundToDecimals(2, HlRounding.HALF_EVEN).toString())
-    assertEquals("1.23", "1.23".toHlDecimal().roundToDecimals(5, HlRounding.UP).toString())
+    assertEquals("1.01", round("1.005", 2, HlRounding.HALF_UP))
+    assertEquals("1", round("1.005", 2, HlRounding.HALF_EVEN))
+    assertEquals("1.02", round("1.015", 2, HlRounding.HALF_EVEN))
+    assertEquals("1.005", round("1.00505", 4, HlRounding.HALF_EVEN))
+    assertEquals("-1.01", round("-1.0051", 2, HlRounding.HALF_EVEN))
+    assertEquals("1.23", round("1.23", 5, HlRounding.UP))
     // Just below and above a tie.
-    assertEquals("0", "0.4999999".toHlDecimal().roundToDecimals(0, HlRounding.HALF_UP).toString())
-    assertEquals("1", "0.5000001".toHlDecimal().roundToDecimals(0, HlRounding.HALF_EVEN).toString())
+    assertEquals("0", round("0.4999999", 0, HlRounding.HALF_UP))
+    assertEquals("1", round("0.5000001", 0, HlRounding.HALF_EVEN))
     assertEquals(
       "1",
-      "0.999999999999999999".toHlDecimal().roundToDecimals(17, HlRounding.HALF_UP).toString(),
+      round("0.999999999999999999", 17, HlRounding.HALF_UP),
     )
   }
 
   @Test
   fun roundsToTensAndBeyond() {
-    assertEquals("12300", "12345".toHlDecimal().roundToDecimals(-2, HlRounding.HALF_UP).toString())
-    assertEquals("12400", "12350".toHlDecimal().roundToDecimals(-2, HlRounding.HALF_EVEN).toString())
-    assertEquals("12200", "12250".toHlDecimal().roundToDecimals(-2, HlRounding.HALF_EVEN).toString())
-    assertEquals("12400", "12301".toHlDecimal().roundToDecimals(-2, HlRounding.CEILING).toString())
-    assertEquals("-12400", "-12301".toHlDecimal().roundToDecimals(-2, HlRounding.FLOOR).toString())
+    assertEquals("12300", round("12345", -2, HlRounding.HALF_UP))
+    assertEquals("12400", round("12350", -2, HlRounding.HALF_EVEN))
+    assertEquals("12200", round("12250", -2, HlRounding.HALF_EVEN))
+    assertEquals("12400", round("12301", -2, HlRounding.CEILING))
+    assertEquals("-12400", round("-12301", -2, HlRounding.FLOOR))
     // Past 10^18 the divisor no longer fits a Long.
-    assertEquals("0", "5".toHlDecimal().roundToDecimals(-19, HlRounding.DOWN).toString())
-    assertEquals("0", "5".toHlDecimal().roundToDecimals(-19, HlRounding.HALF_UP).toString())
-    assertEquals("0", "5.5".toHlDecimal().roundToDecimals(-25, HlRounding.HALF_EVEN).toString())
+    assertEquals("0", round("5", -19, HlRounding.DOWN))
+    assertEquals("0", round("5", -19, HlRounding.HALF_UP))
+    assertEquals("0", round("5.5", -25, HlRounding.HALF_EVEN))
     assertFailsWith<ArithmeticException> {
       "5".toHlDecimal().roundToDecimals(-19, HlRounding.UP)
     }
@@ -274,4 +277,7 @@ class HlDecimalTest {
     assertEquals("0.0", plainNumberText("0.0"))
     assertEquals("0.00000012", plainNumberText("1.2e-7").toHlDecimal().toString())
   }
+
+  private fun round(value: String, decimals: Int, rounding: HlRounding): String =
+    value.toHlDecimal().roundToDecimals(decimals, rounding).toString()
 }

@@ -73,7 +73,9 @@ class SubscriptionTest {
   fun rejectsInvalidAddresses() {
     val invalid = listOf("", "0x1", "1000000000000000000000000000000000000001", "0x$lower", "0xZZ")
     invalid.forEach { address ->
-      assertFailsWith<IllegalArgumentException>(address) { Subscription.ClearinghouseState(address) }
+      assertFailsWith<IllegalArgumentException>(address) {
+        Subscription.ClearinghouseState(address)
+      }
       assertFailsWith<IllegalArgumentException>(address) { Subscription.UserFills(address) }
       assertFailsWith<IllegalArgumentException>(address) {
         Subscription.ActiveAssetData(address, "BTC")
