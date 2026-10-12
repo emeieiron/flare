@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -25,6 +26,7 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
@@ -34,6 +36,7 @@ import xyz.mcxross.flare.store.journalOperation
 import xyz.mcxross.flare.store.operationName
 import xyz.mcxross.flare.store.profileId
 import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.kaptos.Aptos
@@ -110,7 +113,64 @@ class DefaultTradingRepository(
         )
         return@flow
       }
-    emitAll(executeCommand(command, prompt, feePayment, onPrepared))
+    if (command is DecibelCommand.SetPositionTpSl) {
+      emitAll(setPositionTpSl(command, prompt, feePayment, onPrepared))
+    } else {
+      emitAll(executeCommand(command, prompt, feePayment, onPrepared))
+    }
+  }
+
+  private fun setPositionTpSl(
+    command: DecibelCommand.SetPositionTpSl,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+    onPrepared: suspend (String) -> Unit,
+  ): Flow<ActionState> {
+    val kinds =
+      setOfNotNull(
+        ExitKind.TAKE_PROFIT.takeIf { command.takeProfitTrigger != null },
+        ExitKind.STOP_LOSS.takeIf { command.stopLossTrigger != null },
+      )
+    return ExitReplacement(
+        openExits = { exitsOf(command.subaccount, command.market, kinds, prompt) },
+        cancel = { exit ->
+          // Part of the change already confirmed, so it doesn't ask again.
+          withContext(ConfirmedAction()) {
+            val cancel =
+              if (exit.isPositionTpSl) {
+                DecibelCommand.CancelPositionTpSl(command.subaccount, command.market, exit.orderId)
+              } else {
+                DecibelCommand.CancelOrder(command.subaccount, command.market, exit.orderId)
+              }
+            executeCommand(cancel, prompt, feePayment).last()
+          }
+        },
+      )
+      .replace(executeCommand(command, prompt, feePayment, onPrepared))
+  }
+
+  /** The open exits of [kinds] guarding the position in [market], read just now. */
+  private suspend fun exitsOf(
+    subaccount: String,
+    market: String,
+    kinds: Set<ExitKind>,
+    prompt: VaultPrompt,
+  ): List<OpenOrder> {
+    val session = sessions.ensureTrading(subaccount, prompt.copy(requireFreshAuthorization = false))
+    return sessions
+      .bind(
+        session,
+        flow {
+          val position =
+            client.accounts.positions(subaccount, market).firstOrNull { !it.isDeleted }
+              ?: return@flow emit(emptyList())
+          val orders = client.accounts.openOrders(subaccount).items.map { it.toOpenOrder() }
+          emit(
+            orders.exitsFor(market, closesWithBuy = !position.isLong).filter { it.exitKind in kinds }
+          )
+        },
+      )
+      .first()
   }
 
   override fun executeCommand(

@@ -97,6 +97,8 @@ class DefaultAccountRepository(
   private val withdrawalMutex = Mutex()
   private val tradingWalletSetup = TradingWalletSetup()
   private var streamJob: Job? = null
+  // Positions as Decibel last sent them, so exits read from open orders can be joined to them again.
+  private var venuePositions: List<Position> = emptyList()
   private var streamingAccount: String? = null
   override val snapshot: StateFlow<AccountSnapshot> = mutableSnapshot.asStateFlow()
   override val history: StateFlow<AccountHistorySnapshot> = mutableHistory.asStateFlow()
@@ -130,6 +132,7 @@ class DefaultAccountRepository(
     if (subaccount == null) {
       streamJob?.cancel()
       streamingAccount = null
+      venuePositions = emptyList()
       mutableSnapshot.value = AccountSnapshot()
       mutableHistory.value = AccountHistorySnapshot()
       return
@@ -685,12 +688,14 @@ class DefaultAccountRepository(
     }
       .onSuccess { (overview, positions, orders) ->
         if (preferences.values.first().selectedSubaccount != account) return@onSuccess
+        val openOrders = orders.items.map { it.toOpenOrder() }
+        venuePositions = positions.filterNot(Position::isDeleted)
         mutableSnapshot.value =
           AccountSnapshot(
             account = account,
             overview = overview.toAccountOverview(),
-            positions = positions.filterNot(Position::isDeleted).map { it.toPosition() },
-            openOrders = orders.items.map { it.toOpenOrder() },
+            positions = venuePositions.map { it.toPosition(openOrders) },
+            openOrders = openOrders,
             stale = false,
           )
       }
@@ -855,6 +860,7 @@ class DefaultAccountRepository(
   }
 
   private suspend fun collectAccountStream(account: String) {
+    venuePositions = emptyList()
     var lastBackfillAtMs = 0L
     var lastHistoryBackfillAtMs = 0L
     val userTrades = UserTrades(account)
@@ -881,22 +887,27 @@ class DefaultAccountRepository(
               mutableSnapshot.update {
                 it.copy(overview = data.value.toAccountOverview(), stale = false, error = null)
               }
-            is DecibelStreamData.AccountPositionsValue ->
-              mutableSnapshot.update {
-                it.copy(
-                  positions = data.values.filterNot(Position::isDeleted).map { it.toPosition() },
+            is DecibelStreamData.AccountPositionsValue -> {
+              venuePositions = data.values.filterNot(Position::isDeleted)
+              mutableSnapshot.update { snapshot ->
+                snapshot.copy(
+                  positions = venuePositions.map { it.toPosition(snapshot.openOrders) },
                   stale = false,
                   error = null,
                 )
               }
-            is DecibelStreamData.AccountOpenOrdersValue ->
+            }
+            is DecibelStreamData.AccountOpenOrdersValue -> {
+              val openOrders = data.values.map { it.toOpenOrder() }
               mutableSnapshot.update {
                 it.copy(
-                  openOrders = data.values.map { it.toOpenOrder() },
+                  positions = venuePositions.map { position -> position.toPosition(openOrders) },
+                  openOrders = openOrders,
                   stale = false,
                   error = null,
                 )
               }
+            }
             is DecibelStreamData.MarketTrades ->
               if (event.topic == userTrades) {
                 mutableHistory.update { current ->
