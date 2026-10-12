@@ -37,6 +37,7 @@ import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
@@ -302,10 +303,7 @@ class TradeViewModel(
     }
     if (quote?.market?.kind == MarketKind.SPOT) {
       val spot = snapshot.overview?.balances?.spot
-      val availableCash = spot?.assets?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
-      mutableUiState.update {
-        it.copy(quoteBalance = availableCash?.plus(snapshot.overview?.withdrawable ?: 0.0))
-      }
+      mutableUiState.update { it.copy(quoteBalance = spotQuoteBalance(snapshot.overview)) }
       val base = spot?.assets?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
       if (spot != null) {
         baseBalanceJob?.cancel()
@@ -693,6 +691,18 @@ class TradeViewModel(
   }
 
   private data class ChartKey(val market: String, val timeframe: ChartTimeframe)
+}
+
+/**
+ * The USDC a spot buy can spend: the venue's own figure where it gives one, such as Hyperliquid's
+ * unified margin whose spot USDC already holds the perpetuals' value, else spot USDC plus what
+ * perpetuals can withdraw.
+ */
+internal fun spotQuoteBalance(overview: AccountOverview?): Double? {
+  val balances = overview?.balances ?: return null
+  balances.spotBuyingPower?.let { return it }
+  val cash = balances.spot?.assets?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
+  return cash?.plus(overview.withdrawable)
 }
 
 /**

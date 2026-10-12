@@ -31,6 +31,11 @@ data class Balances(
   val spot: SpotBalances? = null,
   /** Spot value already counted in [AccountOverview.equity]. */
   val sharedWithEquity: Double = 0.0,
+  /**
+   * USDC free to buy spot with, where the venue works it out; null means spot USDC plus what
+   * perpetuals can withdraw.
+   */
+  val spotBuyingPower: Double? = null,
 )
 
 data class SpotBalances(

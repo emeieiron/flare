@@ -37,6 +37,7 @@ internal fun TradeAction.toDecibelCommand(usdcMetadata: String): DecibelCommand 
       )
     }
     is TradeAction.CancelPositionTpSl -> DecibelCommand.CancelPositionTpSl(account, marketId, orderId)
+    is TradeAction.CancelOrders -> error("Decibel cancels one order at a time")
     is TradeAction.ConfigureMarket -> {
       require(leverage in 1..UByte.MAX_VALUE.toInt()) { "Choose leverage within this market’s limit" }
       DecibelCommand.ConfigureMarket(

@@ -302,16 +302,19 @@ fun TradeScreen(
         // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
         val selfPayOffered = state.selfPayEstimate != null
         val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
+        val twapUnavailable = state.capabilities.unavailableReason(ActionKind.TWAP)
+          ?.takeIf { state.orderType == OrderType.TWAP && stage == TradeStage.EDIT }
         val enabled = when (stage) {
           TradeStage.MARKET -> !state.orderBusy && actionsUnavailable == null
           TradeStage.RESULT -> !state.orderBusy
-          else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() &&
+          else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() && twapUnavailable == null &&
             !state.orderBusy && (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
         }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
-          if (stage == TradeStage.MARKET && actionsUnavailable != null) {
-            Text(actionsUnavailable, Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+          val notice = if (stage == TradeStage.MARKET) actionsUnavailable else twapUnavailable
+          if (notice != null) {
+            Text(notice, Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
               color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
           }
           FlareButton(

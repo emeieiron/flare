@@ -106,6 +106,13 @@ sealed interface TradeAction {
     val stopLossSize: String? = null,
   ) : TradeAction
 
+  /**
+   * Cancels several open orders in one request. Only venues with
+   * [xyz.mcxross.flare.venue.VenueCapabilities.batchCancel] accept it.
+   */
+  data class CancelOrders(override val account: String, val orders: List<OpenOrderRef>) :
+    TradeAction
+
   data class CancelPositionTpSl(
     override val account: String,
     val marketId: String,
@@ -189,10 +196,15 @@ sealed interface TradeAction {
   ) : TradeAction
 }
 
+/** An open order, as a cancel names it. */
+data class OpenOrderRef(val marketId: String, val orderId: String)
+
 /** What an action does, so a venue can say which of its actions the app can send. */
 enum class ActionKind {
-  /** Orders, cancels, exits, leverage and TWAPs. */
+  /** Orders, cancels, exits and leverage. */
   TRADING,
+  /** Placing and canceling TWAP orders. */
+  TWAP,
   /** Deposits, withdrawals, transfers and vault moves. */
   FUNDS,
   /** Enabling and revoking trading, builder fees and opening trading accounts. */
@@ -202,12 +214,14 @@ enum class ActionKind {
 val TradeAction.actionKind: ActionKind
   get() =
     when (this) {
-      is TradeAction.PlaceOrder,
+      is TradeAction.PlaceOrder ->
+        if (order.type == OrderType.TWAP) ActionKind.TWAP else ActionKind.TRADING
+      is TradeAction.CancelTwapOrder -> ActionKind.TWAP
       is TradeAction.CancelOrder,
+      is TradeAction.CancelOrders,
       is TradeAction.SetPositionTpSl,
       is TradeAction.CancelPositionTpSl,
-      is TradeAction.ConfigureMarket,
-      is TradeAction.CancelTwapOrder -> ActionKind.TRADING
+      is TradeAction.ConfigureMarket -> ActionKind.TRADING
       is TradeAction.Deposit,
       is TradeAction.Withdraw,
       is TradeAction.Transfer,
@@ -242,7 +256,8 @@ sealed interface ActionState {
   /** [reference] is the transaction hash, or the exchange's own action reference. */
   data class Pending(val reference: String) : ActionState
 
-  data class Committed(val reference: String) : ActionState
+  /** [detail] says what came of it, where the exchange tells, such as an order's fill. */
+  data class Committed(val reference: String, val detail: String? = null) : ActionState
 
   data class Failed(
     val message: String,

@@ -99,10 +99,14 @@ fun OrdersScreen(
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
     val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
-    if (actionsUnavailable != null && !historySelected &&
-      (state.account.openOrders.isNotEmpty() || state.activeTwaps.isNotEmpty())) {
-      ActionNotice(actionsUnavailable, Modifier.padding(bottom = 12.dp), NoticeTone.INFO)
+    val twapUnavailable = actionsUnavailable ?: state.capabilities.unavailableReason(ActionKind.TWAP)
+    val unavailableNotice = when {
+      historySelected -> null
+      state.section == OrdersSection.TWAP && state.activeTwaps.isNotEmpty() -> twapUnavailable
+      state.section == OrdersSection.OPEN && state.account.openOrders.isNotEmpty() -> actionsUnavailable
+      else -> null
     }
+    unavailableNotice?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.INFO) }
     state.selfPayEstimate?.let { estimate ->
       val chain = LocalVenue.current.chain
       ActionNotice(
@@ -252,7 +256,7 @@ fun OrdersScreen(
                     onClick = {
                       onIntent(OrdersIntent.CancelTwap(twap.marketId, twap.id))
                     },
-                    enabled = !state.busy && actionsUnavailable == null,
+                    enabled = !state.busy && twapUnavailable == null,
                   )
                 }
                 HorizontalDivider(color = FlareColors.BorderSubtle)
