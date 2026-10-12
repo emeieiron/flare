@@ -187,10 +187,10 @@ data class LedgerUpdate(
 
 /**
  * One ledger change. [type] says which fields apply: `deposit` and `withdraw` (`usdc`, `fee`),
- * `internalTransfer` and `subAccountTransfer` (`usdc`, `user`, `destination`), `accountClassTransfer`
- * (`usdc`, `toPerp`), `spotTransfer` and `send` (`token`, `amount`, `user`, `destination`),
- * `vaultDeposit` and `vaultWithdraw` (`vault`, `usdc`, `requestedUsd`, `netWithdrawnUsd`), and
- * others. Kept flat so new types still decode.
+ * `internalTransfer` and `subAccountTransfer` (`usdc`, `user`, `destination`),
+ * `accountClassTransfer` (`usdc`, `toPerp`), `spotTransfer` and `send` (`token`, `amount`, `user`,
+ * `destination`), `vaultDeposit` and `vaultWithdraw` (`vault`, `usdc`, `requestedUsd`,
+ * `netWithdrawnUsd`), and others. Kept flat so new types still decode.
  */
 @Serializable
 data class LedgerDelta(

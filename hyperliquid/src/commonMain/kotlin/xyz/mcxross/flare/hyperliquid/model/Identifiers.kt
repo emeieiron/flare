@@ -41,7 +41,8 @@ value class Cloid private constructor(val hex: String) {
   }
 }
 
-private fun isHexDigit(char: Char): Boolean = char in '0'..'9' || char in 'a'..'f' || char in 'A'..'F'
+private fun isHexDigit(char: Char): Boolean =
+  char in '0'..'9' || char in 'a'..'f' || char in 'A'..'F'
 
 private fun byteToHex(byte: Byte): String {
   val value = byte.toInt() and 0xff
