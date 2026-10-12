@@ -42,8 +42,8 @@ data class DecibelOrderRules(
   override val minimumSize: String
     get() = precision.minimumSize.toDecimalString(precision.sizeDecimals)
 
-  override fun check(order: OrderRequest, orderBook: OrderBook?): OrderCheck =
-    if (order.type == OrderType.TWAP && kind != AssetType.SPOT) {
+  override fun check(order: OrderRequest, orderBook: OrderBook?): OrderCheck {
+    if (order.type == OrderType.TWAP) {
       val schedule = checkNotNull(order.twap) { "Choose a TWAP schedule" }
       val result =
         order
@@ -53,13 +53,15 @@ data class DecibelOrderRules(
             schedule.frequencySeconds.toULong(),
             schedule.durationSeconds.toULong(),
           )
-      result.value?.takeIf { result.isValid }?.let { OrderCheck.Valid(order.resolved(it)) }
-        ?: OrderCheck.Invalid(result.errors.map { it.message() })
-    } else {
-      val result = order.toDraft().decibelValidate(toDecibelMarket(), orderBook?.toDecibelOrderBook())
-      result.value?.takeIf { result.isValid }?.let { OrderCheck.Valid(order.resolved(it)) }
-        ?: OrderCheck.Invalid(result.errors.map { it.message() })
+      val twap = result.value?.takeIf { result.isValid }
+        ?: return OrderCheck.Invalid(result.errors.map { it.message() })
+      // Spot has no TWAP: the order goes in whole, at the book's best price.
+      if (kind != AssetType.SPOT) return OrderCheck.Valid(order.resolved(twap))
     }
+    val result = order.toDraft().decibelValidate(toDecibelMarket(), orderBook?.toDecibelOrderBook())
+    return result.value?.takeIf { result.isValid }?.let { OrderCheck.Valid(order.resolved(it)) }
+      ?: OrderCheck.Invalid(result.errors.map { it.message() })
+  }
 
   override fun checkExitPrices(takeProfit: String?, stopLoss: String?): String? =
     runCatching {
