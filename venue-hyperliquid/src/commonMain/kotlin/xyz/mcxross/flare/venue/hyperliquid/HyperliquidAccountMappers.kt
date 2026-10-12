@@ -89,7 +89,12 @@ internal fun accountOverview(
       withdrawable = free,
       vaultEquity = vaultEquity,
       balances =
-        Balances(collateral = null, spot = spotBalances, sharedWithEquity = equity.coerceIn(0.0, usdcTotal)),
+        Balances(
+          collateral = null,
+          spot = spotBalances,
+          sharedWithEquity = equity.coerceIn(0.0, usdcTotal),
+          spotBuyingPower = free,
+        ),
     )
   }
   val crossValue = perp.crossMarginSummary.accountValue.toDoubleOrZero()
@@ -101,7 +106,14 @@ internal fun accountOverview(
     availableToTrade = withdrawable,
     withdrawable = withdrawable,
     vaultEquity = vaultEquity,
-    balances = Balances(collateral = equity - unrealizedPnl, spot = spotBalances),
+    balances =
+      Balances(
+        collateral = equity - unrealizedPnl,
+        spot = spotBalances,
+        // Perps and spot are separate accounts: only spot USDC buys spot.
+        spotBuyingPower =
+          spot?.let { (usdc?.total.toDoubleOrZero() - usdc?.hold.toDoubleOrZero()).coerceAtLeast(0.0) },
+      ),
   )
 }
 
