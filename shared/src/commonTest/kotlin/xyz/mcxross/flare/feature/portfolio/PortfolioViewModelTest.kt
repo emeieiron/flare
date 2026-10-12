@@ -463,6 +463,35 @@ class PortfolioViewModelTest {
   }
 
   @Test
+  fun anEmptyAccountListsNoHoldings() = runTest {
+    val overview =
+      AccountOverview(
+        equity = 0.0,
+        unrealizedPnl = 0.0,
+        marginRatio = 0.0,
+        availableToTrade = 0.0,
+        withdrawable = 0.0,
+        balances = Balances(collateral = 0.0),
+      )
+    val vm =
+      PortfolioViewModel(
+        accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", overview = overview, stale = false)),
+        wallets = FakeWalletRepository(),
+        preferences = AppPreferences(MemoryPreferences()),
+        trading = FakeTradingRepository(),
+        markets = FakeMarketsRepository(quotes),
+        marketDetails = FakeMarketDetailsRepository(),
+        venue = testVenue(),
+        assetCatalog = FakeAssetCatalogRepository(),
+      )
+
+    val state = vm.uiState.first { it.account.overview != null }
+
+    assertTrue(state.spotHoldings.isEmpty())
+    assertEquals(0.0, state.totalBalance)
+  }
+
+  @Test
   fun historyRecoversAutomaticallyAndRetainsCachedPoints() = runTest {
     var unavailable = true
     var reads = 0

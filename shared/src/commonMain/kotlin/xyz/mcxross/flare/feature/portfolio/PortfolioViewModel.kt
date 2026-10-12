@@ -368,8 +368,9 @@ class PortfolioViewModel(
 
         val holdings = mutableListOf<SpotHolding>()
 
-        // Collateral is an owned balance, not the amount currently available to withdraw.
-        state.account.overview?.balances?.collateral?.let { cash ->
+        // Collateral is an owned balance, not the amount currently available to withdraw. Like any
+        // holding, it's listed only when there is some.
+        state.account.overview?.balances?.collateral?.takeIf { it > 0.0 }?.let { cash ->
           holdings.add(SpotHolding("USDC", "Trading collateral", quantity = cash,
             markPrice = 1.0, valueUsd = cash, isCollateral = true, badge = "MARGIN"))
         }
