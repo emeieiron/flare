@@ -65,6 +65,8 @@ import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.SelfPayOffer
+import xyz.mcxross.flare.venue.model.SpotBalance
+import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
@@ -278,6 +280,8 @@ class PortfolioViewModelTest {
     private val spotBalances: Map<String, Double> = emptyMap(),
     private val outcome: ActionState? = null,
   ) : TradingRepository {
+    val executed = mutableListOf<TradeAction>()
+
     override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
 
     override suspend fun reconcilePending() = ReconciliationResult(0, 0)
@@ -290,7 +294,10 @@ class PortfolioViewModelTest {
       prompt: VaultPrompt,
       feePayment: FeePayment,
       onPrepared: suspend (String) -> Unit,
-    ): Flow<ActionState> = outcome?.let { flowOf(it) } ?: emptyFlow()
+    ): Flow<ActionState> {
+      executed += action
+      return outcome?.let { flowOf(it) } ?: emptyFlow()
+    }
 
     override suspend fun tradingKeyFeeBalance(): ULong = 100_000_000uL
 
@@ -338,6 +345,45 @@ class PortfolioViewModelTest {
 
     override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
       transform(data.value).also { data.value = it }
+  }
+
+  @Test
+  fun usdcMovesBetweenPerpsAndSpotWhereTheAccountKeepsThemApart() = runTest {
+    val overview =
+      AccountOverview(
+        equity = 20.0,
+        unrealizedPnl = 0.0,
+        marginRatio = 0.0,
+        availableToTrade = 20.0,
+        withdrawable = 12.0,
+        balances = Balances(spot = SpotBalances(listOf(SpotBalance("0", "USDC", 7.5, 7.5)), totalUsd = 7.5)),
+        perpSpotSeparate = true,
+      )
+    val snapshot = AccountSnapshot(account = "0xaccount", overview = overview, stale = false)
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
+    val vm =
+      PortfolioViewModel(FakeAccountRepository(snapshot), FakeWalletRepository(), AppPreferences(MemoryPreferences()),
+        trading, FakeMarketsRepository(quotes), FakeMarketDetailsRepository(),
+        testVenue(BareCapabilities.copy(perpSpotTransfer = true)))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW))
+    vm.onIntent(PortfolioIntent.SelectFundingMode(FundingMode.TO_PERPS))
+    assertTrue(vm.uiState.value.canMovePerpSpot)
+    assertEquals(7.5, vm.uiState.value.fundingAvailable(FundingMode.TO_PERPS))
+    assertEquals(12.0, vm.uiState.value.fundingAvailable(FundingMode.TO_SPOT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("8"))
+    vm.onIntent(PortfolioIntent.SubmitFunding)
+    assertTrue(trading.executed.isEmpty(), "more than spot holds is refused before signing")
+
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("7.5"))
+    vm.onIntent(PortfolioIntent.SubmitFunding)
+
+    assertEquals(listOf<TradeAction>(TradeAction.MovePerpSpot("0xaccount", "7.5", toSpot = false)), trading.executed)
+    assertEquals(ActionState.Committed("0xhash"), vm.uiState.value.fundingTransaction)
+    val unified = PortfolioUiState(capabilities = BareCapabilities.copy(perpSpotTransfer = true),
+      account = AccountSnapshot(overview = overview.copy(perpSpotSeparate = false)))
+    assertFalse(unified.canMovePerpSpot)
   }
 
   @Test

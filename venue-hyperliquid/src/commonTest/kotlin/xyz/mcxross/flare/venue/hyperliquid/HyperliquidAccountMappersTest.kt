@@ -2,6 +2,7 @@ package xyz.mcxross.flare.venue.hyperliquid
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -12,22 +13,28 @@ import xyz.mcxross.flare.feature.trade.spotQuoteBalance
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
+import xyz.mcxross.flare.hyperliquid.model.DailyVolume
 import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.FundingUpdate
 import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
 import xyz.mcxross.flare.hyperliquid.model.OrderWithStatus
 import xyz.mcxross.flare.hyperliquid.model.Portfolio
+import xyz.mcxross.flare.hyperliquid.model.Referral
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
+import xyz.mcxross.flare.hyperliquid.model.StakingDiscount
 import xyz.mcxross.flare.hyperliquid.model.TwapHistoryEntry
 import xyz.mcxross.flare.hyperliquid.model.UserFees
 import xyz.mcxross.flare.hyperliquid.model.VaultDetails
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
+import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 
 class HyperliquidAccountMappersTest {
@@ -80,8 +87,12 @@ class HyperliquidAccountMappersTest {
     val total = PortfolioUiState(account = AccountSnapshot(overview = overview)).totalBalance
     assertEquals(716.428468, total, 1e-6)
 
+    assertFalse(overview.perpSpotSeparate, "a unified account has nothing to move between perps and spot")
+
     // Read as separate accounts, the same balances would count the USDC twice.
     val separate = accountOverview(perp, spot, standard, prices, null, 0L)
+    assertTrue(separate.perpSpotSeparate)
+    assertFalse(accountOverview(perp, spot, null, prices, null, 0L).perpSpotSeparate)
     val doubled = PortfolioUiState(account = AccountSnapshot(overview = separate)).totalBalance
     assertEquals(716.428468 + 716.428232, doubled, 1e-6)
   }
@@ -343,5 +354,59 @@ class HyperliquidAccountMappersTest {
     assertEquals(MarketKind.SPOT, marketKindOf("PURR/USDC"))
     assertEquals(MarketKind.PERP, marketKindOf("BTC"))
     assertEquals(MarketKind.PERP, marketKindOf("osrs:DTEST"))
+  }
+
+  @Test
+  fun theFeeTierIsSetByTheLastFourteenCompleteDays() {
+    val fixture = decode<UserFees>(Fixtures.USER_FEES)
+    val tier = fixture.toFeeTier()
+
+    // Today (2026-09-29) is still running; only 2026-09-28 counts.
+    assertEquals("Tier 0", tier.name)
+    assertEquals(2301145.89, tier.volumeUsd, 1e-6)
+    assertEquals(FeeRates(makerRate = -0.00003, takerRate = 0.00035), tier.perp)
+    assertEquals(FeeRates(makerRate = -0.00003, takerRate = 0.0005), tier.spot)
+    assertNull(tier.stakingDiscount)
+    assertNull(tier.referralDiscount)
+
+    val days = (1..16).map { DailyVolume("2026-09-${it.toString().padStart(2, '0')}", "600000.0", "400000.0", "0") }
+    val busier =
+      fixture.copy(
+        dailyUserVlm = days,
+        activeStakingDiscount = StakingDiscount("0.001", "0.1"),
+        activeReferralDiscount = "0.04",
+      )
+    val tier1 = busier.toFeeTier()
+    assertEquals(14_000_000.0, tier1.volumeUsd, 1e-6)
+    assertEquals("Tier 1", tier1.name)
+    assertEquals(0.1, tier1.stakingDiscount)
+    assertEquals(0.04, tier1.referralDiscount)
+  }
+
+  @Test
+  fun theReferralShowsTheOwnCodeTheReferrerAndWhatItEarned() {
+    assertEquals(
+      ReferralSummary(code = "FLARE", referredBy = "FRIEND", earnedUsd = 1.515443),
+      decode<Referral>(Fixtures.REFERRAL).toReferralSummary(),
+    )
+    val unready =
+      decode<Referral>("""{"referredBy":null,"cumVlm":"0","unclaimedRewards":"0","claimedRewards":"0","builderRewards":"0","referrerState":{"stage":"needToTrade","data":{"required":10000}}}""")
+    assertEquals(ReferralSummary(earnedUsd = 0.0), unready.toReferralSummary())
+  }
+
+  @Test
+  fun rewardsKeepWhatLoadedAndFailOnlyWhenNothingDid() {
+    val tier = decode<UserFees>(Fixtures.USER_FEES).toFeeTier()
+    val failed = Result.failure<ReferralSummary>(IllegalStateException("down"))
+
+    val partial = hyperliquidRewards(Result.success(tier), failed)
+
+    assertEquals(tier, partial.feeTier)
+    assertEquals(setOf(RewardPart.REFERRAL), partial.unavailable)
+    assertNull(partial.points)
+    assertNull(partial.streak)
+    assertFailsWith<IllegalStateException> {
+      hyperliquidRewards(Result.failure(IllegalStateException("down")), failed)
+    }
   }
 }

@@ -41,8 +41,10 @@ class HyperliquidFunds(
   ): ActionState = sending {
     val owner = owner()
     requireMainAccount(account, "Withdrawals")
-    val target = destination?.trim()?.takeIf(String::isNotEmpty) ?: owner
-    require(HyperliquidCredentialParser.isAddress(target)) { "Enter a valid Arbitrum address" }
+    val target =
+      destination?.trim()?.takeIf(String::isNotEmpty)?.also {
+        require(HyperliquidCredentialParser.isAddress(it)) { "Enter a valid Arbitrum address" }
+      } ?: owner
     val usdc = usdc(amount)
     require(usdc > WITHDRAWAL_FEE) { "A withdrawal must be more than the $WITHDRAWAL_FEE USDC fee" }
     ownerSigned(Withdraw(target, usdc), prompt.copy(requireFreshAuthorization = true)) { lapses ->
