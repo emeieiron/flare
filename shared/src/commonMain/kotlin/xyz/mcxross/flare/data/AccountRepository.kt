@@ -233,9 +233,9 @@ interface AccountRepository {
 
 class DefaultAccountRepository(
   private val client: DecibelClient,
-  private val sessions: SessionRepository,
+  private val sessions: AptosSessionRepository,
   private val trading: TradingRepository,
-  private val wallets: WalletRepository,
+  private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
 ) : AccountRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
@@ -306,7 +306,7 @@ class DefaultAccountRepository(
 
   override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Enter a trading-account address" }
-    wallets.importApiWallet(key, prompt) { account ->
+    wallets.importAptosApiWallet(key, prompt) { account ->
       sessions.verifyApiCredential(account, subaccount)
     }
     selectTradingAccount(subaccount, prompt)

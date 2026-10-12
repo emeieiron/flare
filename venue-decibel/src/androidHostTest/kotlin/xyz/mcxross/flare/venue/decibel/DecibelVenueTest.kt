@@ -8,6 +8,8 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +20,10 @@ import org.koin.dsl.module
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AptosSessionRepository
+import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.ChartRepository
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.GasSponsorshipRepository
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
@@ -54,7 +59,10 @@ class DecibelVenueTest {
     koin.get<DecibelClient>()
     listOf(
         WalletRepository::class,
+        AptosSigningWallet::class,
+        CredentialParser::class,
         SessionRepository::class,
+        AptosSessionRepository::class,
         MarketsRepository::class,
         ChartRepository::class,
         MarketDetailsRepository::class,
@@ -63,6 +71,17 @@ class DecibelVenueTest {
         AccountRepository::class,
       )
       .forEach { type -> assertTrue(type.isInstance(koin.get<Any>(type)), "$type") }
+  }
+
+  @Test
+  fun walletAndSessionAreOneInstanceBehindBothInterfaces() {
+    val koin = koinWith(DecibelVenue())
+
+    assertSame(koin.get<WalletRepository>(), koin.get<AptosSigningWallet>())
+    assertIs<DefaultWalletRepository>(koin.get<WalletRepository>())
+    assertSame(koin.get<SessionRepository>(), koin.get<AptosSessionRepository>())
+    assertIs<WorkerSessionRepository>(koin.get<SessionRepository>())
+    assertSame(DecibelCredentialParser, koin.get<CredentialParser>())
   }
 
   @Test

@@ -1,4 +1,4 @@
-package xyz.mcxross.flare
+package xyz.mcxross.flare.venue.decibel
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -22,9 +22,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.SessionRole
-import xyz.mcxross.flare.data.WorkerSessionRepository
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.Network

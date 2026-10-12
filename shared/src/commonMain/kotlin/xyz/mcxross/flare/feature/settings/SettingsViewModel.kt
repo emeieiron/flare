@@ -126,7 +126,8 @@ class SettingsViewModel(
   private val preferences: AppPreferences,
   private val wallets: WalletRepository,
   private val accounts: AccountRepository,
-  private val sessions: SessionRepository,
+  /** The venue's backend session, signed out when a key is removed; null when it has none. */
+  private val sessions: SessionRepository?,
   private val decibelConfig: DecibelRuntimeConfig,
 ) : ViewModel() {
   private val local =
@@ -345,13 +346,13 @@ class SettingsViewModel(
       SettingsIntent.RemoveOwner ->
         launchAction("The owner key is still on this device.") {
           wallets.removeOwner(VaultPrompt("Remove owner key", "Confirm your identity"))
-          sessions.invalidate()
+          sessions?.invalidate()
           accounts.restoreTrading()
         }
       SettingsIntent.RemoveApi ->
         launchAction("The trading key is still on this device.") {
           wallets.removeApiWallet(VaultPrompt("Remove trading key", "Confirm your identity"))
-          sessions.invalidate()
+          sessions?.invalidate()
           accounts.restoreTrading()
         }
     }

@@ -24,6 +24,7 @@ import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
@@ -40,7 +41,16 @@ class DesignPreviewActivity : FragmentActivity() {
     // Captures for the website and README hide the harness label: --ez label false
     val showLabel = intent.getBooleanExtra("label", true)
     // Previews show secret screens with sample words, so they stay capturable for design review.
-    setContent { FlareTheme { CompositionLocalProvider(LocalProtectSecrets provides false) { PreviewScreens(initialScreen, showLabel) } } }
+    setContent {
+      FlareTheme {
+        CompositionLocalProvider(
+          LocalProtectSecrets provides false,
+          LocalCredentialParser provides DecibelCredentialParser,
+        ) {
+          PreviewScreens(initialScreen, showLabel)
+        }
+      }
+    }
   }
 }
 

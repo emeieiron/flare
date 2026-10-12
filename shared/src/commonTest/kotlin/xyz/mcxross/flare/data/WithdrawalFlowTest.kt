@@ -17,11 +17,11 @@ import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.UnavailableWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.account.Account
-import xyz.mcxross.kaptos.account.Ed25519Account
 
 class WithdrawalFlowTest {
   private val prompt = VaultPrompt("Confirm withdrawal", "Confirm your identity")
@@ -162,7 +162,7 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
         DecibelClient(http, aptos),
         sessions,
         trading,
-        DefaultWalletRepository(ForegroundWalletVault(UnavailableWalletVault()), preferences),
+        WithdrawalWallets(preferences),
         preferences,
       )
     block(WithdrawalFixture(preferences, trading, sessions, accounts))
@@ -181,7 +181,65 @@ private class WithdrawalFixture(
   suspend fun progress() = preferences.values.first().profiles.first { it.id == "owner" }.withdrawal
 }
 
-private class WithdrawalSessions : SessionRepository {
+/**
+ * The keys as the Decibel wallet reports them from saved preferences, over a vault that has no
+ * secrets: the flow under test signs only through the fake trading repository.
+ */
+private class WithdrawalWallets(private val preferences: AppPreferences) : AptosSigningWallet {
+  private val vault = ForegroundWalletVault(UnavailableWalletVault())
+
+  override val authorizationGeneration: Long
+    get() = vault.generation
+
+  override fun requireAuthorization(generation: Long) = vault.requireVisit(generation)
+
+  override val profile =
+    preferences.values.map {
+      WalletProfile(it.ownerAddress, it.apiWalletAddress, it.ownerBackupConfirmed)
+    }
+
+  override suspend fun confirmIdentity(prompt: VaultPrompt) {
+    vault.read(WalletSecretSlot.OWNER_MNEMONIC, prompt).fill(0)
+  }
+
+  override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup = error("Not used")
+
+  override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String = error("Not used")
+
+  override suspend fun confirmOwnerBackup() = error("Not used")
+
+  override suspend fun createApiWallet(prompt: VaultPrompt): String = error("Not used")
+
+  override suspend fun importApiWallet(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (address: String) -> Unit,
+  ): String = error("Not used")
+
+  override suspend fun importAptosApiWallet(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (Account) -> Unit,
+  ): String = error("Not used")
+
+  override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = error("Not used")
+
+  override suspend fun exportApiWallet(prompt: VaultPrompt): String = error("Not used")
+
+  override suspend fun removeOwner(prompt: VaultPrompt) = error("Not used")
+
+  override suspend fun removeApiWallet(prompt: VaultPrompt) = error("Not used")
+
+  override fun lock() = vault.lock()
+
+  override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T =
+    error("Not used")
+
+  override suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T =
+    error("Not used")
+}
+
+private class WithdrawalSessions : AptosSessionRepository {
   val tradingPrompts = mutableListOf<VaultPrompt>()
   val boundRoles = mutableListOf<SessionRole>()
 

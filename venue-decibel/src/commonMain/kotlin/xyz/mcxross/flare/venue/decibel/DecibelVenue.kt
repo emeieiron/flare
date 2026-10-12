@@ -9,18 +9,18 @@ import org.koin.dsl.module
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AptosSessionRepository
+import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.ChartRepository
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.DefaultAccountRepository
 import xyz.mcxross.flare.data.DefaultTradingRepository
-import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.GasSponsorshipRepository
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.data.WorkerGasSponsorshipRepository
-import xyz.mcxross.flare.data.WorkerSessionRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
@@ -78,14 +78,23 @@ class DecibelVenue(
 }
 
 /**
- * Decibel's repositories. Markets, charts and market details live in this module; the rest are
- * still implemented in `:shared`. They read the common bindings from `flareModule`: the
- * [HttpClient], [FlareRuntimeConfig], storage and the wallet vault.
+ * Decibel's repositories. Markets, charts, market details, the wallet, the Worker session and gas
+ * sponsorship live in this module; accounts and trading are still implemented in `:shared`. They
+ * read the common bindings from `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and
+ * the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
   single { config }
-  singleOf(::DefaultWalletRepository) { bind<WalletRepository>() }
-  singleOf(::WorkerSessionRepository) { bind<SessionRepository>() }
+  single<CredentialParser> { DecibelCredentialParser }
+  // One wallet and one session, each seen through the neutral and the Decibel interface.
+  singleOf(::DefaultWalletRepository) {
+    bind<WalletRepository>()
+    bind<AptosSigningWallet>()
+  }
+  singleOf(::WorkerSessionRepository) {
+    bind<SessionRepository>()
+    bind<AptosSessionRepository>()
+  }
   single {
     val runtime = get<FlareRuntimeConfig>()
     val sessionRepository = get<SessionRepository>()

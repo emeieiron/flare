@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,7 +70,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.CredentialFormat
-import xyz.mcxross.flare.data.WalletCredential
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.design.FlareAddressField
 import xyz.mcxross.flare.design.FlareButton
@@ -87,10 +88,15 @@ import com.valentinilk.shimmer.shimmer
 
 private val Whitespace = Regex("\\s+")
 
+/** Recognizes what is typed or pasted as a phrase or key; `App` provides the venue's parser. */
+val LocalCredentialParser =
+  staticCompositionLocalOf<CredentialParser> { error("No CredentialParser provided") }
+
 @Composable
 internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   ProtectFromScreenCapture()
-  val format = remember(state.input) { WalletCredential.detect(state.input) }
+  val credentials = LocalCredentialParser.current
+  val format = remember(state.input, credentials) { credentials.detect(state.input) }
   val words = remember(state.input) { state.input.trim().split(Whitespace).count(String::isNotEmpty) }
   val phraseAsTradingKey = state.apiImport && format == CredentialFormat.RECOVERY_PHRASE
   val ready =
@@ -206,6 +212,7 @@ private fun SecretField(
   keyboardActions: KeyboardActions,
 ) {
   var visible by rememberSaveable { mutableStateOf(false) }
+  val credentials = LocalCredentialParser.current
   val clipboardText = LocalClipboardManager.current
   val clipboard = LocalClipboard.current
   val scope = rememberCoroutineScope()
@@ -263,7 +270,7 @@ private fun SecretField(
                   val pasted = clipboardText.getText()?.text?.trim().orEmpty()
                   if (pasted.isNotEmpty()) {
                     onValueChange(pasted)
-                    if (WalletCredential.detect(pasted) != CredentialFormat.UNKNOWN) {
+                    if (credentials.detect(pasted) != CredentialFormat.UNKNOWN) {
                       scope.launch { clipboard.setClipEntry(null) }
                     }
                   }

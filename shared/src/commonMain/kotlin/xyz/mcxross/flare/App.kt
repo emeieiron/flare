@@ -67,6 +67,7 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
@@ -89,6 +90,7 @@ import xyz.mcxross.flare.design.rememberFlareIgnition
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.di.flareModule
 import xyz.mcxross.flare.feature.markets.MarketsRoute
+import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
 import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
@@ -147,7 +149,8 @@ fun App(
       LocalTransactionExplorer provides
         remember(runtimeConfig) {
           TransactionExplorer(runtimeConfig.network)
-        }
+        },
+      LocalCredentialParser provides koinInject<CredentialParser>(),
     ) {
       FlareTheme { FlareAppFlow() }
     }

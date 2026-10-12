@@ -37,8 +37,6 @@ import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
-import xyz.mcxross.kaptos.account.Account
-import xyz.mcxross.kaptos.account.Ed25519Account
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -77,21 +75,18 @@ class SettingsViewModelTest {
     override suspend fun importApiWallet(
       key: String,
       prompt: VaultPrompt,
-      verify: suspend (Account) -> Unit,
+      verify: suspend (address: String) -> Unit,
     ): String = "0xapi"
     override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = "word1 word2"
     override suspend fun exportApiWallet(prompt: VaultPrompt): String = "key"
-    override suspend fun removeOwner(prompt: VaultPrompt) {}
-    override suspend fun removeApiWallet(prompt: VaultPrompt) {}
+    val removed = mutableListOf<String>()
+    override suspend fun removeOwner(prompt: VaultPrompt) {
+      removed += "owner"
+    }
+    override suspend fun removeApiWallet(prompt: VaultPrompt) {
+      removed += "api"
+    }
     override fun lock() {}
-    override suspend fun <T> withOwnerAccount(
-      prompt: VaultPrompt,
-      block: suspend (Account) -> T,
-    ): T = error("Not supported")
-    override suspend fun <T> withApiAccount(
-      prompt: VaultPrompt,
-      block: suspend (Account) -> T,
-    ): T = error("Not supported")
   }
 
   private class FakeSessionRepository : SessionRepository {
@@ -102,13 +97,14 @@ class SettingsViewModelTest {
       SessionStatus(SessionRole.OWNER, "0xowner", subaccount, 1_000_000L)
     override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
       SessionStatus(SessionRole.API, "0xapi", subaccount, 1_000_000L)
-    override suspend fun verifyApiCredential(account: Account, subaccount: String): SessionStatus =
-      SessionStatus(SessionRole.API, "0xapi", subaccount, 1_000_000L)
     override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus =
       SessionStatus(SessionRole.API, "0xapi", subaccount, 1_000_000L)
     override suspend fun useAnonymous(): SessionStatus =
       SessionStatus(SessionRole.ANONYMOUS, null, null, 1_000_000L)
-    override suspend fun invalidate() {}
+    var invalidations = 0
+    override suspend fun invalidate() {
+      invalidations++
+    }
   }
 
   private class FakeAccountRepository : AccountRepository {
@@ -238,4 +234,38 @@ class SettingsViewModelTest {
     assertNull(vm.uiState.value.withdrawTransaction)
     assertNull(vm.uiState.value.withdrawError)
   }
+
+  @Test
+  fun removingAKeySignsOutOfTheVenueSession() = runTest {
+    val wallets = FakeWalletRepository()
+    val sessions = FakeSessionRepository()
+    val vm = settingsViewModel(wallets, sessions)
+
+    vm.onIntent(SettingsIntent.RemoveApi)
+    vm.onIntent(SettingsIntent.RemoveOwner)
+
+    assertEquals(listOf("api", "owner"), wallets.removed)
+    assertEquals(2, sessions.invalidations)
+    assertNull(vm.uiState.value.error)
+  }
+
+  @Test
+  fun removingAKeyWorksForVenuesWithoutASession() = runTest {
+    val wallets = FakeWalletRepository()
+    val vm = settingsViewModel(wallets, sessions = null)
+
+    vm.onIntent(SettingsIntent.RemoveApi)
+
+    assertEquals(listOf("api"), wallets.removed)
+    assertNull(vm.uiState.value.error)
+  }
+
+  private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =
+    SettingsViewModel(
+      preferences = AppPreferences(MemoryPreferences()),
+      wallets = wallets,
+      accounts = FakeAccountRepository(),
+      sessions = sessions,
+      decibelConfig = DecibelRuntimeConfig(),
+    )
 }
