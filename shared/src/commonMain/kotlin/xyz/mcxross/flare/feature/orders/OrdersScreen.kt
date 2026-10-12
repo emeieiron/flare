@@ -97,6 +97,11 @@ fun OrdersScreen(
       androidx.compose.material3.TextButton({ onIntent(OrdersIntent.RetryAccount) }) { Text("Retry") }
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
+    val actionsUnavailable = state.capabilities.actionsUnavailableReason
+    if (actionsUnavailable != null && !historySelected &&
+      (state.account.openOrders.isNotEmpty() || state.activeTwaps.isNotEmpty())) {
+      ActionNotice(actionsUnavailable, Modifier.padding(bottom = 12.dp), NoticeTone.INFO)
+    }
     state.selfPayEstimate?.let { estimate ->
       val chain = LocalVenue.current.chain
       ActionNotice(
@@ -144,7 +149,7 @@ fun OrdersScreen(
                 text = "Cancel all",
                 positive = false,
                 onClick = { onIntent(OrdersIntent.CancelAll) },
-                enabled = !state.busy,
+                enabled = !state.busy && actionsUnavailable == null,
               )
             }
             state.account.openOrders.forEach { order ->
@@ -183,7 +188,7 @@ fun OrdersScreen(
                   onClick = {
                     onIntent(OrdersIntent.Cancel(order.marketId, order.orderId, order.isPositionTpSl))
                   },
-                  enabled = !state.busy,
+                  enabled = !state.busy && actionsUnavailable == null,
                 )
               }
               HorizontalDivider(color = FlareColors.BorderSubtle)
@@ -246,7 +251,7 @@ fun OrdersScreen(
                     onClick = {
                       onIntent(OrdersIntent.CancelTwap(twap.marketId, twap.id))
                     },
-                    enabled = !state.busy,
+                    enabled = !state.busy && actionsUnavailable == null,
                   )
                 }
                 HorizontalDivider(color = FlareColors.BorderSubtle)

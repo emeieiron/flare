@@ -170,7 +170,8 @@ fun PortfolioScreen(
               if (positions.isEmpty()) item { PositionsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
               items(visible, key = { it.marketId }) { position ->
-                SwipeAction("Close", { closeTarget = position.marketId }, enabled = !state.busy) {
+                SwipeAction("Close", { closeTarget = position.marketId },
+                  enabled = !state.busy && state.capabilities.actionsUnavailableReason == null) {
                   PositionRow(position, state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
                     state.markPrices[position.marketId], !state.busy, { onPositionClick(position.marketId) })
                 }
@@ -307,7 +308,7 @@ private fun PortfolioOverview(
     PortfolioMetric("Unrealized P&L", overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—", Modifier.weight(1f))
   }
   Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-    if (state.profile.ownerAddress != null) FlareButton("Transfer",
+    if (state.profile.ownerAddress != null && state.capabilities.actionsUnavailableReason == null) FlareButton("Transfer",
       { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
     FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
   }
@@ -400,12 +401,17 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
   DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
+  val actionsUnavailable = state.capabilities.actionsUnavailableReason
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     FlareButton("Deposit", { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
-      Modifier.weight(1f), enabled = !state.busy)
+      Modifier.weight(1f), enabled = !state.busy && actionsUnavailable == null)
     if (position != null && position.shares > 0) FlareButton("Redeem",
       { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
-      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy)
+      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy && actionsUnavailable == null)
+  }
+  actionsUnavailable?.let {
+    Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
   }
 }
 

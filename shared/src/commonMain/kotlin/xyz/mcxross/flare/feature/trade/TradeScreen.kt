@@ -300,13 +300,19 @@ fun TradeScreen(
         val inputError = state.orderInputError(side)
         // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
         val selfPayOffered = state.selfPayEstimate != null
+        val actionsUnavailable = state.capabilities.actionsUnavailableReason
         val enabled = when (stage) {
-          TradeStage.MARKET, TradeStage.RESULT -> !state.orderBusy
+          TradeStage.MARKET -> !state.orderBusy && actionsUnavailable == null
+          TradeStage.RESULT -> !state.orderBusy
           else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() &&
             !state.orderBusy && (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
         }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
+          if (stage == TradeStage.MARKET && actionsUnavailable != null) {
+            Text(actionsUnavailable, Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+              color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+          }
           FlareButton(
             when (stage) {
               TradeStage.MARKET -> "Trade ${quote.market.symbol}"

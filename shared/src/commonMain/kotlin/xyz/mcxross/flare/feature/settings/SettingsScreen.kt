@@ -315,11 +315,15 @@ fun SettingsScreen(
             approved = approved,
             basisPoints = bps,
             pending = state.builderPending == product,
-            enabled = !state.busy && state.profile.ownerAddress != null,
+            enabled = !state.busy && state.profile.ownerAddress != null &&
+              state.capabilities.actionsUnavailableReason == null,
             onRate = { onIntent(SettingsIntent.SetBuilderFeeBps(product, it)) },
             onRevoke = { revokeProduct = product },
           )
         }
+      state.capabilities.actionsUnavailableReason?.let {
+        ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO)
+      }
       Spacer(Modifier.height(24.dp))
       Text(
         "Paid to Flare’s builder address, ${shortAddress(preferences.builderAddress ?: state.defaultBuilderAddress)}",
