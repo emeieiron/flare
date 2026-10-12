@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.security
 
+import android.content.Context
 import android.os.Build
 import android.os.SystemClock
 import android.security.keystore.KeyGenParameterSpec
@@ -20,13 +21,17 @@ import javax.crypto.spec.GCMParameterSpec
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-class AndroidWalletVault(private val activity: FragmentActivity) : WalletVault {
+/**
+ * Lives as long as the process, since the app's dependencies outlive any one activity. Each activity
+ * [attach]es itself, and prompts show over whichever one is resumed.
+ */
+class AndroidWalletVault(context: Context) : WalletVault {
   @Volatile private var authorizedUntilElapsedMs: Long = 0L
-  private val preferences =
-    activity.applicationContext.getSharedPreferences(
-      PREFERENCES_NAME,
-      android.content.Context.MODE_PRIVATE,
-    )
+  private val appContext = context.applicationContext
+  private val host = ResumedHost<FragmentActivity>()
+  private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+  fun attach(activity: FragmentActivity) = host.attach(activity, activity)
 
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) {
     try {
@@ -122,7 +127,7 @@ class AndroidWalletVault(private val activity: FragmentActivity) : WalletVault {
       BiometricManager.Authenticators.BIOMETRIC_STRONG or
         BiometricManager.Authenticators.DEVICE_CREDENTIAL
     if (
-      BiometricManager.from(activity).canAuthenticate(authenticators) !=
+      BiometricManager.from(appContext).canAuthenticate(authenticators) !=
         BiometricManager.BIOMETRIC_SUCCESS
     ) {
       throw WalletVaultException.Unavailable(
@@ -130,6 +135,7 @@ class AndroidWalletVault(private val activity: FragmentActivity) : WalletVault {
       )
     }
 
+    val activity = host.await()
     suspendCancellableCoroutine { continuation ->
       val callback =
         object : BiometricPrompt.AuthenticationCallback() {
