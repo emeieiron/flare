@@ -118,14 +118,7 @@ internal fun DecibelMarketTrade.toFill(): Fill =
     id = tradeId.ifBlank { "$transactionVersion:$market:$account:$price:$size" },
     marketId = market,
     kind = assetType.toMarketKind(),
-    direction =
-      when (action) {
-        "OpenLong" -> FillDirection.OPEN_LONG
-        "CloseLong" -> FillDirection.CLOSE_LONG
-        "OpenShort" -> FillDirection.OPEN_SHORT
-        "CloseShort" -> FillDirection.CLOSE_SHORT
-        else -> FillDirection.OTHER
-      },
+    direction = decibelDirection(action),
     action = action,
     size = size,
     price = price,
@@ -142,7 +135,18 @@ internal fun DecibelFundingPayment.toFundingPayment(): FundingPayment =
     amount = realizedFundingAmount,
     fee = feeAmount,
     timeMs = transactionUnixMs,
+    direction = decibelDirection(action),
   )
+
+/** Decibel writes trade actions as `CloseLong` and, in its documentation, `Close Long`. */
+private fun decibelDirection(action: String): FillDirection =
+  when (action.filterNot { it.isWhitespace() }) {
+    "OpenLong" -> FillDirection.OPEN_LONG
+    "CloseLong" -> FillDirection.CLOSE_LONG
+    "OpenShort" -> FillDirection.OPEN_SHORT
+    "CloseShort" -> FillDirection.CLOSE_SHORT
+    else -> FillDirection.OTHER
+  }
 
 /** Decibel's fund history: indexed USDC deposits, withdrawals and rewards, all settled. */
 internal fun DecibelFundMovement.toFundMovement(): FundMovement =
