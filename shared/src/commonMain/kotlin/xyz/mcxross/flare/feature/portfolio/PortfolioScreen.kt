@@ -45,6 +45,7 @@ import kotlin.math.abs
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatCalendarDateTime
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
@@ -55,6 +56,7 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlarePageTransition
 import xyz.mcxross.flare.design.FlareSearchField
@@ -406,21 +408,28 @@ private fun SectionLabel(title: String) {
 private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent: (PortfolioIntent) -> Unit) {
   val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
   if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
+  val stakeInUsdc = LocalVenue.current.vaultTerms.stakeInUsdc
   position?.let {
     DetailRow("Your value", formatBalance(it.value))
-    DetailRow("Your shares", formatQuantity(it.shares, 4))
+    if (!stakeInUsdc) DetailRow("Your shares", formatQuantity(it.shares, 4))
     DetailRow("Return", "${if (it.returnPercent >= 0) "+" else ""}${formatQuantity(it.returnPercent, 2)}%")
   }
-  DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
+  if (!stakeInUsdc) DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
   DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
   val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.FUNDS)
+  val lockedUntil = position?.lockedUntil()
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     FlareButton("Deposit", { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
       Modifier.weight(1f), enabled = !state.busy && actionsUnavailable == null)
     if (position != null && position.shares > 0) FlareButton("Redeem",
       { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
-      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy && actionsUnavailable == null)
+      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
+      enabled = !state.busy && actionsUnavailable == null && lockedUntil == null)
+  }
+  lockedUntil?.let {
+    Text("Your latest deposit is locked until ${formatCalendarDateTime(it)}.", Modifier.padding(top = 12.dp),
+      color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
   }
   actionsUnavailable?.let {
     Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,

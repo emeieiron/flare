@@ -11,7 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlin.time.Clock
 import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatCalendarDateTime
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.ActionNotice
@@ -25,6 +27,7 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.VaultPosition
 
 @Composable
 fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
@@ -49,6 +52,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         message =
           if (mode == VaultActionMode.DEPOSIT)
             "Your USDC has been contributed to ${vault.name.ifBlank { "the vault" }}."
+          else if (LocalVenue.current.vaultTerms.stakeInUsdc)
+            "Your USDC has been redeemed from ${vault.name.ifBlank { "the vault" }}."
           else "Your shares have been redeemed from ${vault.name.ifBlank { "the vault" }}.",
         hash = committed.reference,
         onDone = { onIntent(PortfolioIntent.DismissVaultAction) },
@@ -57,6 +62,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       return@FlareSheet
     }
 
+    val terms = LocalVenue.current.vaultTerms
+    val inUsdc = terms.stakeInUsdc
     Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
       DetailRow("Vault", vault.name.ifBlank { "DLP Vault" })
       if (vault.manager.isNotBlank()) {
@@ -66,15 +73,30 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       DetailRow("Share price", formatPrice(vault.sharePrice))
       DetailRow("Performance fee", "${vault.performanceFeeBps / 100.0}%")
       DetailRow("Deposit lockup", vault.lockupSeconds?.let { lockup ->
-        if (lockup > 0) "${formatQuantity(lockup / 3600.0, 1)} hours" else "None" } ?: "Not available")
+        when {
+          lockup <= 0 -> "None"
+          terms.lockupPerDeposit -> lockupText(lockup)
+          else -> "${formatQuantity(lockup / 3600.0, 1)} hours"
+        }
+      } ?: "Not available")
 
       val userPerformance = state.accountVaults.firstOrNull { it.vault.address == vault.address }
       val availableShares = userPerformance?.shares ?: 0.0
       val effectivePrice = userPerformance?.sharePrice ?: vault.sharePrice
       val parsedAmount = state.vaultAmountInput.toDoubleOrNull() ?: 0.0
 
+      val lockedUntil = userPerformance?.lockedUntil()
       if (mode == VaultActionMode.DEPOSIT) {
         DetailRow("Available to deposit", formatBalance(state.collateralBalance))
+        vault.lockupSeconds?.takeIf { terms.lockupPerDeposit && it > 0 }?.let { lockup ->
+          ActionNotice(
+            "This deposit locks your whole stake for ${lockupText(lockup)}: you can redeem from " +
+              "${formatCalendarDateTime(currentTimeMs() + lockup * 1_000)}.",
+            Modifier.padding(top = 12.dp),
+          )
+        }
+      } else if (inUsdc) {
+        DetailRow("Current value", formatBalance(userPerformance?.value ?: 0.0))
       } else {
         DetailRow(
           "Shares held",
@@ -83,6 +105,13 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         DetailRow("Current value", formatBalance(userPerformance?.value ?: 0.0))
         Text("Redemption depends on unlocked shares. Locked or pledged shares may be unavailable.",
           style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      }
+      if (mode == VaultActionMode.REDEEM && lockedUntil != null) {
+        ActionNotice(
+          "Your latest deposit is locked until ${formatCalendarDateTime(lockedUntil)}.",
+          Modifier.padding(top = 12.dp),
+          NoticeTone.ALERT,
+        )
       }
 
       val maxClick: (() -> Unit)? =
@@ -118,6 +147,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
           }
         } else {
           when {
+            inUsdc -> null
             parsedAmount > 0.0 ->
               "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC" +
                 minimumShares?.let { " · Min. $it shares" }.orEmpty()
@@ -131,11 +161,14 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       FlareAmountField(
         value = state.vaultAmountInput,
         onValueChange = { onIntent(PortfolioIntent.ChangeVaultAmount(it)) },
-        label = if (mode == VaultActionMode.DEPOSIT) "Amount" else "Shares to redeem",
-        unit = if (mode == VaultActionMode.DEPOSIT) "USDC" else "shares",
+        label = if (mode == VaultActionMode.DEPOSIT || inUsdc) "Amount" else "Shares to redeem",
+        unit = if (mode == VaultActionMode.DEPOSIT || inUsdc) "USDC" else "shares",
         availableText =
-          if (mode == VaultActionMode.DEPOSIT) "Available: ${formatBalance(state.collateralBalance)}"
-          else "Held: ${formatQuantity(availableShares, 4)} shares",
+          when {
+            mode == VaultActionMode.DEPOSIT -> "Available: ${formatBalance(state.collateralBalance)}"
+            inUsdc -> "Held: ${formatBalance(availableShares)}"
+            else -> "Held: ${formatQuantity(availableShares, 4)} shares"
+          },
         placeholder =
           if (mode == VaultActionMode.DEPOSIT) {
             minimumDeposit?.let { if ('.' in it) it else "$it.00" } ?: "0.00"
@@ -156,13 +189,27 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
             state.busy && mode == VaultActionMode.DEPOSIT -> "Contributing…"
             state.busy -> "Redeeming…"
             mode == VaultActionMode.DEPOSIT -> "Deposit USDC"
+            inUsdc -> "Redeem USDC"
             else -> "Redeem shares"
           },
         onClick = { onIntent(PortfolioIntent.SubmitVaultAction) },
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        enabled = state.vaultAmountInput.isNotBlank() && !state.busy,
+        enabled =
+          state.vaultAmountInput.isNotBlank() && !state.busy &&
+            (mode == VaultActionMode.DEPOSIT || lockedUntil == null),
         working = state.busy,
       )
     }
   }
 }
+
+/** Until when the stake can't be redeemed; null once it can. */
+internal fun VaultPosition.lockedUntil(nowMs: Long = currentTimeMs()): Long? =
+  lockedUntilMs?.takeIf { it > nowMs }
+
+/** A lockup in whole days where it is one, otherwise in hours. */
+private fun lockupText(seconds: Long): String =
+  if (seconds % 86_400 == 0L) "${seconds / 86_400} day${if (seconds == 86_400L) "" else "s"}"
+  else "${formatQuantity(seconds / 3600.0, 1)} hours"
+
+private fun currentTimeMs(): Long = Clock.System.now().toEpochMilliseconds()

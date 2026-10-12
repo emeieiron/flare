@@ -55,6 +55,7 @@ import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareQrCode
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.LocalTransactionExplorer
@@ -363,7 +364,9 @@ private fun WithdrawForm(
   onIntent: (SettingsIntent) -> Unit,
   onReview: () -> Unit,
 ) {
-  val chainName = LocalVenue.current.chain.name
+  val venue = LocalVenue.current
+  val terms = venue.withdrawal
+  val chainName = if (state.withdrawOnVenue) venue.chain.name else terms?.network ?: venue.chain.name
   val credentials = LocalCredentialParser.current
   val destination = state.withdrawDestination.trim()
   val addressInvalid = destination.isNotEmpty() && !credentials.isAddress(destination)
@@ -371,9 +374,21 @@ private fun WithdrawForm(
   val available = state.withdrawable
   // Guard at the field: an amount above the balance is flagged before anything is signed.
   val exceeds = amount != null && available != null && amount > available + BALANCE_EPSILON
-  val canReview = credentials.isAddress(destination) && amount != null && amount > 0.0 && !exceeds
+  val fee = withdrawalFee(state)
+  val coversFee = fee == null || (amount != null && amount > fee)
+  val canReview = credentials.isAddress(destination) && amount != null && amount > 0.0 && !exceeds && coversFee
+  if (terms?.internalTransfers == true) {
+    FlareSegmentedControl(
+      listOf(false, true),
+      state.withdrawOnVenue,
+      { onIntent(SettingsIntent.SetWithdrawOnVenue(it)) },
+      { if (it) "On ${venue.chain.name}" else "To ${terms.network}" },
+      Modifier.fillMaxWidth().padding(bottom = 16.dp),
+    )
+  }
   Text(
-    "Send USDC from your trading account to any $chainName address.",
+    if (state.withdrawOnVenue) "Send USDC from your trading account to another $chainName account."
+    else "Send USDC from your trading account to any $chainName address.",
     color = FlareColors.TextSecondary,
     style = MaterialTheme.typography.bodyMedium,
   )
@@ -394,8 +409,13 @@ private fun WithdrawForm(
     availableText = available?.let { "Available ${formatQuantity(it, 2)} USDC" },
     onMaxClick =
       available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max))) } },
-    isError = exceeds,
-    supportingText = if (exceeds && available != null) "You can withdraw up to ${formatQuantity(available, 2)} USDC." else null,
+    isError = exceeds || !coversFee,
+    supportingText =
+      when {
+        exceeds && available != null -> "You can withdraw up to ${formatQuantity(available, 2)} USDC."
+        fee != null -> "${formatQuantity(fee, 6)} USDC of it pays the withdrawal fee."
+        else -> null
+      },
     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
   )
   state.withdrawError?.let {
@@ -446,10 +466,23 @@ private fun WithdrawReview(
     style = MaterialTheme.typography.bodyLarge,
   )
   HorizontalDivider(Modifier.padding(top = 16.dp), color = FlareColors.BorderSubtle)
-  val chain = LocalVenue.current.chain
-  DetailRow("Network", chain.name)
+  val venue = LocalVenue.current
+  val chain = venue.chain
+  DetailRow("Network", if (state.withdrawOnVenue) chain.name else venue.withdrawal?.network ?: chain.name)
+  withdrawalFee(state)?.let { fee ->
+    DetailRow("Withdrawal fee", "${formatQuantity(fee, 6)} USDC")
+    state.withdrawAmount.toDoubleOrNull()?.let {
+      DetailRow("Recipient gets", "${formatQuantity((it - fee).coerceAtLeast(0.0), 6)} USDC")
+    }
+  }
   if (feeEstimate != null) DetailRow("Network fee", "About ${chain.feeAmount(feeEstimate)}")
   else if (state.capabilities.sponsoredFees) DetailRow("Network fee", "Sponsored by Flare")
+  if (state.withdrawOnVenue) Text(
+    "${chain.name} may charge a one-time fee to activate an address that has never used it.",
+    Modifier.padding(top = 12.dp),
+    color = FlareColors.TextSecondary,
+    style = MaterialTheme.typography.bodySmall,
+  )
   Text(
     "Withdrawals can’t be reversed. Check the address before you confirm.",
     Modifier.padding(top = 12.dp),
@@ -559,6 +592,11 @@ private fun QuietAction(label: String, onClick: () -> Unit, enabled: Boolean = t
     )
   }
 }
+
+/** What the venue keeps from a withdrawal leaving it; null for a send on the venue, or no fee. */
+@Composable
+private fun withdrawalFee(state: SettingsUiState): Double? =
+  LocalVenue.current.withdrawal?.feeUsdc?.toDoubleOrNull()?.takeIf { !state.withdrawOnVenue && it > 0.0 }
 
 private fun withdrawAmountText(state: SettingsUiState): String =
   state.withdrawAmount.toDoubleOrNull()?.let { formatQuantity(it, 6) } ?: state.withdrawAmount

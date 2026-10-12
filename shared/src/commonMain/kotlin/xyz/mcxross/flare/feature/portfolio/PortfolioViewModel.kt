@@ -30,6 +30,7 @@ import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
@@ -57,6 +58,10 @@ import xyz.mcxross.flare.venue.model.VaultSummary
 enum class FundingMode {
   DEPOSIT,
   WITHDRAW,
+  /** USDC from perpetuals to spot, where the venue keeps them apart. */
+  TO_SPOT,
+  /** USDC from spot to perpetuals. */
+  TO_PERPS,
 }
 
 enum class VaultActionMode {
@@ -151,6 +156,26 @@ data class PortfolioUiState(
   val collateralBalance: Double
     get() = account.overview?.withdrawable ?: 0.0
 
+  /** Spot USDC free to move, where the venue reports spot with the account. */
+  val spotUsdc: Double
+    get() =
+      account.overview?.balances?.spot?.assets
+        ?.filter { it.symbol.equals("USDC", ignoreCase = true) }
+        ?.sumOf { it.amount } ?: 0.0
+
+  /** Whether USDC can move between perpetuals and spot for this account. */
+  val canMovePerpSpot: Boolean
+    get() = capabilities.perpSpotTransfer && account.overview?.perpSpotSeparate == true
+
+  /** What [mode] can move now. */
+  fun fundingAvailable(mode: FundingMode): Double =
+    when (mode) {
+      FundingMode.DEPOSIT -> primaryUsdcBalance
+      FundingMode.WITHDRAW,
+      FundingMode.TO_SPOT -> account.overview?.withdrawable ?: 0.0
+      FundingMode.TO_PERPS -> spotUsdc
+    }
+
   /**
    * What the wallet would pay for [transaction]'s network fee once the venue's sponsor declined it;
    * null when it wasn't declined, or the venue has no sponsored fees.
@@ -172,6 +197,9 @@ sealed interface PortfolioIntent {
   data class OpenFunding(val mode: FundingMode) : PortfolioIntent
 
   data class ChangeWithdrawalDestination(val value: String) : PortfolioIntent
+
+  /** Switches an open transfer between withdrawing and moving USDC between perps and spot. */
+  data class SelectFundingMode(val mode: FundingMode) : PortfolioIntent
 
   data class ChangeFundingAmount(val value: String) : PortfolioIntent
 
@@ -228,6 +256,7 @@ class PortfolioViewModel(
   private val capabilities = venue.capabilities
   private val chain = venue.chain
   private val vaultMinimums = venue.vaultMinimums
+  private val vaultTerms = venue.vaultTerms
   private val local =
     MutableStateFlow(
       PortfolioUiState(capabilities = capabilities, rewardPointsName = venue.rewardPointsName)
@@ -439,6 +468,12 @@ class PortfolioViewModel(
         }
         viewModelScope.launch { runSuspendCatching { accounts.restoreTrading() } }
       }
+      is PortfolioIntent.SelectFundingMode ->
+        if (!local.value.busy) {
+          local.update {
+            it.copy(fundingMode = intent.mode, fundingAmount = "", fundingTransaction = null, actionError = null)
+          }
+        }
       is PortfolioIntent.ChangeFundingAmount ->
         local.update {
           it.copy(
@@ -666,8 +701,11 @@ class PortfolioViewModel(
 
   private fun submitFunding(feePayment: FeePayment) =
     launchAction(
-      if (local.value.fundingMode == FundingMode.WITHDRAW) "Your withdrawal didn’t go through."
-      else "Your deposit didn’t go through."
+      when (local.value.fundingMode) {
+        FundingMode.WITHDRAW -> "Your withdrawal didn’t go through."
+        FundingMode.TO_SPOT, FundingMode.TO_PERPS -> "Your USDC wasn’t moved."
+        else -> "Your deposit didn’t go through."
+      }
     ) {
       submitFundingInternal(feePayment)
     }
@@ -677,22 +715,33 @@ class PortfolioViewModel(
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
     val amount = state.fundingAmount.toDoubleOrNull()
     require(amount != null && amount > 0.0) { "Enter an amount to transfer" }
-    val available =
-      if (mode == FundingMode.DEPOSIT) uiState.value.primaryUsdcBalance
-      else uiState.value.account.overview?.withdrawable ?: 0.0
+    val available = uiState.value.fundingAvailable(mode)
     require(amount <= available + 1e-9) {
       "You can transfer up to ${formatQuantity(available, 2)} USDC."
     }
     val prompt =
       VaultPrompt(
-        title = if (mode == FundingMode.DEPOSIT) "Deposit USDC" else "Withdraw USDC",
+        title =
+          when (mode) {
+            FundingMode.DEPOSIT -> "Deposit USDC"
+            FundingMode.WITHDRAW -> "Withdraw USDC"
+            FundingMode.TO_SPOT, FundingMode.TO_PERPS -> "Move USDC"
+          },
         subtitle = "Confirm your identity",
       )
     val flow =
-      if (mode == FundingMode.DEPOSIT) {
-        accounts.depositUsdc(state.fundingAmount, prompt, feePayment)
-      } else {
-        accounts.withdrawUsdc(state.fundingAmount, state.withdrawalDestination, prompt, feePayment)
+      when (mode) {
+        FundingMode.DEPOSIT -> accounts.depositUsdc(state.fundingAmount, prompt, feePayment)
+        FundingMode.WITHDRAW ->
+          accounts.withdrawUsdc(state.fundingAmount, state.withdrawalDestination, prompt, feePayment)
+        FundingMode.TO_SPOT, FundingMode.TO_PERPS -> {
+          val account = checkNotNull(uiState.value.account.account) { "Select a trading account" }
+          trading.execute(
+            TradeAction.MovePerpSpot(account, state.fundingAmount, toSpot = mode == FundingMode.TO_SPOT),
+            prompt,
+            feePayment,
+          )
+        }
       }
     flow.collect { transaction -> local.update { it.copy(fundingTransaction = transaction) } }
     when (val terminal = local.value.fundingTransaction) {
@@ -864,7 +913,8 @@ class PortfolioViewModel(
         local.update {
           it.copy(
             actionError =
-              "You cannot redeem more than your balance of ${formatQuantity(maxShares, 4)} shares."
+              if (vaultTerms.stakeInUsdc) "You can redeem up to ${formatBalance(maxShares)}."
+              else "You cannot redeem more than your balance of ${formatQuantity(maxShares, 4)} shares."
           )
         }
         return
