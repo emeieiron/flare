@@ -3,6 +3,7 @@ package xyz.mcxross.flare.venue.decibel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import xyz.mcxross.flare.core.runSuspendCatching
+import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
@@ -23,14 +24,33 @@ internal val OpenOrder.exitKind: ExitKind?
     }
   }
 
-/** The price that sets the exit off. Flare places exits with their limit at the trigger. */
+/** The price that sets the exit off. */
 internal val OpenOrder.exitTrigger: Double?
-  get() =
-    when (exitKind) {
-      ExitKind.TAKE_PROFIT -> takeProfit?.triggerPrice ?: price
-      ExitKind.STOP_LOSS -> stopLoss?.triggerPrice ?: price
-      null -> null
-    }
+  get() = if (exitKind == null) null else triggerPrice
+
+/**
+ * The price that sets this order off: the one its trigger condition names, or for an exit, its own
+ * trigger, else its limit, as Flare places exits with their limit at the trigger. Null otherwise.
+ */
+internal fun OpenOrder.ownTrigger(): Double? {
+  conditionPrice(triggerCondition)?.let { return it }
+  if (!reduceOnly) return null
+  return when (exitKind) {
+    ExitKind.TAKE_PROFIT -> takeProfit?.triggerPrice ?: price
+    ExitKind.STOP_LOSS -> stopLoss?.triggerPrice ?: price
+    null -> null
+  }
+}
+
+private fun conditionPrice(condition: String): Double? =
+  Regex("""\d[\d,]*(?:\.\d+)?""").findAll(condition).lastOrNull()
+    ?.value?.replace(",", "")?.toDoubleOrNull()?.takeIf { it > 0.0 }
+
+/** Marks the exits Decibel holds as set for a whole position, by the ids the positions name. */
+internal fun List<OpenOrder>.withWholePositionExits(positions: List<DecibelPosition>): List<OpenOrder> {
+  val ids = positions.flatMap { listOfNotNull(it.takeProfitOrderId, it.stopLossOrderId) }.toSet()
+  return map { if (!it.coversPosition && it.orderId in ids) it.copy(coversPosition = true) else it }
+}
 
 /**
  * The take-profits and stop-losses guarding a position in [market]: reduce-only trigger orders on

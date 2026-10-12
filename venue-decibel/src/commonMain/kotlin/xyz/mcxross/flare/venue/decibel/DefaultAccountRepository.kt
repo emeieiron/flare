@@ -688,8 +688,8 @@ class DefaultAccountRepository(
     }
       .onSuccess { (overview, positions, orders) ->
         if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-        val openOrders = orders.items.map { it.toOpenOrder() }
         venuePositions = positions.filterNot(Position::isDeleted)
+        val openOrders = orders.items.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
         mutableSnapshot.value =
           AccountSnapshot(
             account = account,
@@ -890,15 +890,17 @@ class DefaultAccountRepository(
             is DecibelStreamData.AccountPositionsValue -> {
               venuePositions = data.values.filterNot(Position::isDeleted)
               mutableSnapshot.update { snapshot ->
+                val openOrders = snapshot.openOrders.withWholePositionExits(venuePositions)
                 snapshot.copy(
-                  positions = venuePositions.map { it.toPosition(snapshot.openOrders) },
+                  positions = venuePositions.map { it.toPosition(openOrders) },
+                  openOrders = openOrders,
                   stale = false,
                   error = null,
                 )
               }
             }
             is DecibelStreamData.AccountOpenOrdersValue -> {
-              val openOrders = data.values.map { it.toOpenOrder() }
+              val openOrders = data.values.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
               mutableSnapshot.update {
                 it.copy(
                   positions = venuePositions.map { position -> position.toPosition(openOrders) },

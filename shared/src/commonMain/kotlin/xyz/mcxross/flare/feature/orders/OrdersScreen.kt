@@ -182,9 +182,7 @@ fun OrdersScreen(
                   }
                   OrderConditions(order)
                   Text(
-                    "${if (order.isBuy) "Buy" else "Sell"} " +
-                      "${order.remainingSize?.let { formatQuantity(it) } ?: "—"} · " +
-                      (order.price?.let { "at ${formatPrice(it)}" } ?: "at market"),
+                    openOrderSummary(order),
                     color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
@@ -324,7 +322,9 @@ fun OrdersScreen(
                     style = MaterialTheme.typography.labelSmall,
                   )
                   OrderConditions(order)
-                  order.originalSize?.let { size ->
+                  if (order.coversPosition) {
+                    Text("Entire position", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+                  } else order.originalSize?.let { size ->
                     Text("${formatQuantity(size)} ordered · ${order.remainingSize?.let { formatQuantity(it) } ?: "—"} remaining",
                       style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
                   }
@@ -495,6 +495,19 @@ private fun HistoryEmpty(stale: Boolean, title: String) {
   )
 }
 
+/** An open order's side, size and prices, as its row reads: `Sell 0.01 · at market · trigger $35,000.00`. */
+fun openOrderSummary(order: OpenOrder): String =
+  buildList {
+      add(
+        "${if (order.isBuy) "Buy" else "Sell"} " +
+          if (order.coversPosition) "entire position"
+          else order.remainingSize?.let { formatQuantity(it) } ?: "—"
+      )
+      add(order.price?.let { "at ${formatPrice(it)}" } ?: "at market")
+      order.triggerPrice?.let { add("trigger ${formatPrice(it)}") }
+    }
+    .joinToString(" · ")
+
 private fun signedAmount(value: Double): String =
   (if (value > 0) "+" else "") + formatBalance(value)
 
@@ -524,12 +537,17 @@ private fun fundMovementLabel(kind: FundMovementKind): String =
 
 @Composable
 private fun OrderConditions(order: OpenOrder) {
-  val conditions = buildList {
-    order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
-    order.takeProfit?.let { add("TP ${formatPrice(it.triggerPrice)}") }
-    order.stopLoss?.let { add("SL ${formatPrice(it.triggerPrice)}") }
-    if (order.reduceOnly) add("Reduce only")
-  }
-  if (conditions.isNotEmpty()) Text(conditions.joinToString(" · "),
+  val conditions = openOrderConditions(order)
+  if (conditions.isNotEmpty()) Text(conditions,
     style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
 }
+
+/** An order's kind, attached exits and flags, as its row reads: `stop market · Reduce only`. */
+fun openOrderConditions(order: OpenOrder): String =
+  buildList {
+      order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
+      order.takeProfit?.let { add("TP ${formatPrice(it.triggerPrice)}") }
+      order.stopLoss?.let { add("SL ${formatPrice(it.triggerPrice)}") }
+      if (order.reduceOnly) add("Reduce only")
+    }
+    .joinToString(" · ")

@@ -93,8 +93,8 @@ internal fun DecibelPosition.toPosition(openOrders: List<OpenOrder> = emptyList(
   )
 }
 
-internal fun Order.toOpenOrder(): OpenOrder =
-  OpenOrder(
+internal fun Order.toOpenOrder(): OpenOrder {
+  val order = OpenOrder(
     marketId = market,
     orderId = orderId,
     clientOrderId = clientOrderId,
@@ -112,6 +112,18 @@ internal fun Order.toOpenOrder(): OpenOrder =
     stopLoss = stopLossTriggerPrice?.let { OrderTrigger(it, stopLossLimitPrice) },
     timeMs = unixMs,
   )
+  val trigger = order.ownTrigger()
+  // An exit's own trigger isn't one that comes with it.
+  val ownKind = order.exitKind.takeIf { isReduceOnly }
+  return order.copy(
+    triggerPrice = trigger,
+    takeProfit =
+      order.takeProfit.takeUnless { ownKind == ExitKind.TAKE_PROFIT && it?.triggerPrice == trigger },
+    stopLoss = order.stopLoss.takeUnless { ownKind == ExitKind.STOP_LOSS && it?.triggerPrice == trigger },
+    // An exit set for the whole position carries no size of its own.
+    coversPosition = isTpSl && (remainingSize ?: 0.0) == 0.0 && (originalSize ?: 0.0) == 0.0,
+  )
+}
 
 internal fun Order.toOrderHistoryEntry(): OrderHistoryEntry =
   OrderHistoryEntry(order = toOpenOrder(), status = cancellationNote()?.let { "$status: $it" } ?: status)
