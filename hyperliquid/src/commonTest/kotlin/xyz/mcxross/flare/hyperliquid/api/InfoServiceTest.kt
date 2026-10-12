@@ -343,6 +343,59 @@ class InfoServiceTest {
   }
 
   @Test
+  fun readsTheAccountAbstraction() = runTest {
+    var mode = Fixtures.USER_ABSTRACTION
+    val harness = Harness(responder = { mode })
+
+    val standard = harness.info.userAbstraction(Fixtures.USER)
+    assertEquals("default", standard.mode)
+    assertFalse(standard.sharesSpotCollateral)
+    assertEquals(
+      """{"type":"userAbstraction","user":"${Fixtures.USER}"}""",
+      harness.requests.single().body,
+    )
+
+    mode = Fixtures.USER_ABSTRACTION_UNIFIED
+    assertTrue(harness.info.userAbstraction(Fixtures.UNIFIED_USER).sharesSpotCollateral)
+  }
+
+  @Test
+  fun decodesTriggerOrdersTwapsAndLedgerKinds() = runTest {
+    val info =
+      Harness(
+          mapOf(
+            "frontendOpenOrders" to Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS,
+            "twapHistory" to Fixtures.TWAP_HISTORY_ENTRIES,
+            "userNonFundingLedgerUpdates" to Fixtures.LEDGER_UPDATES_KINDS,
+          )
+        )
+        .info
+
+    val orders = info.openOrders(Fixtures.USER)
+    assertEquals("Take Profit Market", orders[0].orderType)
+    assertNull(orders[0].tif)
+    assertTrue(orders[2].isPositionTpsl)
+    assertEquals("0.0", orders[2].sz)
+    assertEquals(listOf("Take Profit Market", "Stop Market"), orders[3].children.map { it.orderType })
+
+    val twaps = info.twapHistory(Fixtures.USER)
+    assertEquals(1774612361L, twaps.first().time)
+    assertEquals("terminated", twaps.first().status.status)
+    assertEquals(14656L, twaps.first().twapId)
+    assertEquals(5, twaps.first().state.minutes)
+
+    val ledger = info.ledgerUpdates(Fixtures.USER, 0L)
+    assertEquals(
+      listOf("deposit", "withdraw", "spotTransfer", "accountClassTransfer", "vaultDeposit", "vaultWithdraw"),
+      ledger.map { it.delta.type },
+    )
+    assertEquals("1.0", ledger[1].delta.fee)
+    assertEquals(true, ledger[3].delta.toPerp)
+    assertEquals(Fixtures.HLP_VAULT, ledger[4].delta.vault)
+    assertEquals("5.0", ledger[5].delta.netWithdrawnUsd)
+  }
+
+  @Test
   fun decodesOrderStatusByOidAndCloid() = runTest {
     var known = true
     val harness =
