@@ -26,6 +26,8 @@ jobs:
       - name: Test SDK and shared code, then assemble Android
         run: >-
           ./gradlew
+          :strategies:jvmTest
+          :jev:jvmTest
           :decibel:jvmTest
           :hyperliquid:jvmTest
           :hyperliquid:testAndroidHostTest
@@ -50,6 +52,10 @@ jobs:
       - name: Test and compile shared iOS code
         run: >-
           ./gradlew
+          :strategies:iosSimulatorArm64Test
+          :jev:iosSimulatorArm64Test
+          :strategies:compileKotlinIosSimulatorArm64
+          :jev:compileKotlinIosSimulatorArm64
           :decibel:iosSimulatorArm64Test
           :hyperliquid:iosSimulatorArm64Test
           :shared:iosSimulatorArm64Test
