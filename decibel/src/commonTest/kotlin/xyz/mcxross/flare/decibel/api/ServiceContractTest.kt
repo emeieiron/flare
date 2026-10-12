@@ -125,12 +125,14 @@ class ServiceContractTest {
   }
 
   @Test
-  fun fundHistoryDecodesMovements() = runTest {
+  fun fundHistoryDecodesDocumentedFundsEnvelope() = runTest {
+    var query = ""
     val http =
       HttpClient(
-        MockEngine {
+        MockEngine { request ->
+          query = request.url.encodedQuery
           respondJson(
-            """{"items":[{"timestamp":1735758000000,"type":"deposit","amount":500.0,"asset_symbol":"USDC","transaction_hash":"0xabc","status":"confirmed"}],"total_count":1}"""
+            """{"funds":[{"movement_type":"withdrawal","amount":25.0,"balance_after":475.0,"timestamp":1760338800000,"transaction_version":6912345700},{"movement_type":"deposit","amount":500.0,"balance_after":500.0,"timestamp":1760335200000,"transaction_version":6912345678}],"total":2}"""
           )
         }
       )
@@ -138,9 +140,13 @@ class ServiceContractTest {
 
     val history = service.fundHistory("0x22")
 
-    assertEquals(1, history.items.size)
-    assertEquals("deposit", history.items.first().type)
-    assertEquals(500.0, history.items.first().amount)
+    assertEquals("account=0x22&limit=100&offset=0", query)
+    assertEquals(2, history.items.size)
+    assertEquals(2, history.totalCount)
+    assertEquals("withdrawal", history.items.first().movementType)
+    assertEquals(25.0, history.items.first().amount)
+    assertEquals("deposit", history.items.last().movementType)
+    assertEquals(6_912_345_678L, history.items.last().transactionVersion)
   }
 
   @Test

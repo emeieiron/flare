@@ -514,6 +514,7 @@ private fun fundMovementLabel(kind: FundMovementKind): String =
     FundMovementKind.TRANSFER_OUT -> "Transfer out"
     FundMovementKind.VAULT_DEPOSIT -> "Vault deposit"
     FundMovementKind.VAULT_WITHDRAWAL -> "Vault withdrawal"
+    FundMovementKind.REWARD -> "Reward"
   }
 
 @Composable

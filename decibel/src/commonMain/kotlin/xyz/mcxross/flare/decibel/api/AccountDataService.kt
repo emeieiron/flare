@@ -11,6 +11,7 @@ import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.FundHistory
 import xyz.mcxross.flare.decibel.model.FundMovement
 import xyz.mcxross.flare.decibel.model.FundingPayment
 import xyz.mcxross.flare.decibel.model.MarketTrade
@@ -203,24 +204,15 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
     account: String,
     limit: Int,
     offset: Int,
-  ): Page<FundMovement> =
-    runCatching {
-      api.get<Page<FundMovement>>("account_fund_history") {
+  ): Page<FundMovement> {
+    val history =
+      api.get<FundHistory>("account_fund_history") {
         parameter("account", account)
         parameter("limit", limit.coerceIn(1, 200))
         parameter("offset", offset.coerceIn(0, 10_000))
       }
-    }.getOrElse {
-      runCatching {
-        val items =
-          api.get<List<FundMovement>>("account_fund_history") {
-            parameter("account", account)
-            parameter("limit", limit.coerceIn(1, 200))
-            parameter("offset", offset.coerceIn(0, 10_000))
-          }
-        Page(items = items, totalCount = items.size.toLong())
-      }.getOrDefault(Page())
-    }
+    return Page(items = history.funds, totalCount = history.total)
+  }
 
   override suspend fun streak(account: String): TradingStreak? =
     try {

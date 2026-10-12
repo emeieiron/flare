@@ -144,16 +144,18 @@ internal fun DecibelFundingPayment.toFundingPayment(): FundingPayment =
     timeMs = transactionUnixMs,
   )
 
-/** Decibel's fund history lists deposits and withdrawals; anything not a deposit went out. */
+/** Decibel's fund history: indexed USDC deposits, withdrawals and rewards, all settled. */
 internal fun DecibelFundMovement.toFundMovement(): FundMovement =
   FundMovement(
     kind =
-      if (type.lowercase().contains("deposit")) FundMovementKind.DEPOSIT
-      else FundMovementKind.WITHDRAWAL,
-    amount = amount,
-    assetSymbol = assetSymbol,
-    status = status,
-    reference = transactionHash,
+      when (movementType.lowercase()) {
+        "deposit" -> FundMovementKind.DEPOSIT
+        "reward" -> FundMovementKind.REWARD
+        else -> FundMovementKind.WITHDRAWAL
+      },
+    amount = kotlin.math.abs(amount),
+    assetSymbol = "USDC",
+    status = "confirmed",
     timeMs = timestamp,
   )
 
