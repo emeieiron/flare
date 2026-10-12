@@ -788,6 +788,47 @@ class PortfolioViewModelTest {
   }
 
   @Test
+  fun savingExitsSendsOnlyTheOnesThatChanged() = runTest {
+    val position =
+      Position(
+        "0xbtc_perp", "0.1", 10, 68_000.0, isolated = false,
+        takeProfitTriggerPrice = 130_000.0, stopLossTriggerPrice = 35_000.0,
+      )
+    val accounts =
+      FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false))
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
+
+    // Nothing changed: there is nothing to save, and saving sends nothing.
+    assertFalse(exitChanges(vm.uiState.value.takeProfitInput, vm.uiState.value.stopLossInput, position).any)
+    vm.onIntent(PortfolioIntent.SubmitTpSl)
+    assertEquals(emptyList(), trading.executed)
+
+    // The same take-profit typed plainly is still unchanged.
+    vm.onIntent(PortfolioIntent.ChangeTakeProfit("130000"))
+    vm.onIntent(PortfolioIntent.ChangeStopLoss("30000"))
+    vm.onIntent(PortfolioIntent.SubmitTpSl)
+
+    val sent = assertIs<TradeAction.SetPositionTpSl>(trading.executed.single())
+    assertNull(sent.takeProfitTrigger)
+    assertNull(sent.takeProfitLimit)
+    assertEquals("30000", sent.stopLossTrigger)
+    assertEquals("30000", sent.stopLossLimit)
+  }
+
+  @Test
+  fun exitChangesCompareByValue() {
+    val position =
+      Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false, takeProfitTriggerPrice = 2_529.556)
+    assertEquals(ExitChanges(null, null), exitChanges("2529.56", "", position))
+    assertEquals(ExitChanges(null, null), exitChanges("2529.556", " ", position))
+    assertEquals(ExitChanges("2600", "2400"), exitChanges("2600", "2400", position))
+    assertEquals(ExitChanges("2600", null), exitChanges("2600", "", null))
+  }
+
+  @Test
   fun rewardsThatFailToLoadKeepWhatWasShown() = runTest {
     var reads = 0
     val accounts =

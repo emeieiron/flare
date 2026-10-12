@@ -1,11 +1,6 @@
 package xyz.mcxross.flare.feature.portfolio
 
 import xyz.mcxross.flare.design.UnavailableNotice
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -116,9 +111,7 @@ private fun PositionDetails(
   val pnl = mark?.let { price -> size?.let { (price - position.entryPrice) * it } }
   // Close failures belong to the close sheet; only exit changes report here.
   val savingExits = state.busy && state.closingMarket == null
-  val exitsChanged =
-    state.takeProfitInput != exitPriceInput(position.takeProfitTriggerPrice) ||
-      state.stopLossInput != exitPriceInput(position.stopLossTriggerPrice)
+  val exitsChanged = exitChanges(state.takeProfitInput, state.stopLossInput, position).any
   Text(
     "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))} · " +
       "${position.leverage}× · ${if (position.isolated) "isolated" else "cross"}",
@@ -147,19 +140,13 @@ private fun PositionDetails(
     { onIntent(PortfolioIntent.ChangeStopLoss(it)) },
     Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !state.busy,
   )
-  // Saving appears only once there is something to save.
-  AnimatedVisibility(
-    savingExits || (exitsChanged && (state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())),
-    enter = expandVertically() + fadeIn(),
-    exit = shrinkVertically() + fadeOut(),
-  ) {
-    FlareButton(
-      "Save exits",
-      { onIntent(PortfolioIntent.SubmitTpSl) },
-      Modifier.fillMaxWidth().padding(top = 16.dp),
-      working = savingExits,
-    )
-  }
+  FlareButton(
+    "Save exits",
+    { onIntent(PortfolioIntent.SubmitTpSl) },
+    Modifier.fillMaxWidth().padding(top = 16.dp),
+    enabled = exitsChanged && !state.busy,
+    working = savingExits,
+  )
   Text(
     "Leverage and margin mode can only change once this position is closed.",
     Modifier.padding(top = 12.dp),

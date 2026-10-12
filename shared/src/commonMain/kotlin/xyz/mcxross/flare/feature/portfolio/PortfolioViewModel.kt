@@ -53,6 +53,7 @@ import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.VaultPosition
@@ -646,9 +647,12 @@ class PortfolioViewModel(
       val position = managedPosition()
       val quote = marketQuote(position.marketId)
       val state = local.value
-      val takeProfit = state.takeProfitInput.takeIf(String::isNotBlank)
-      val stopLoss = state.stopLossInput.takeIf(String::isNotBlank)
-      require(takeProfit != null || stopLoss != null) { "Enter a take-profit or stop-loss price" }
+      require(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()) {
+        "Enter a take-profit or stop-loss price"
+      }
+      // Only the exits that changed are replaced; the others stay as they are.
+      val (takeProfit, stopLoss) = exitChanges(state.takeProfitInput, state.stopLossInput, position)
+      require(takeProfit != null || stopLoss != null) { "These exits are already set" }
       quote.market.rules.checkExitPrices(takeProfit, stopLoss)?.let { throw IllegalArgumentException(it) }
       val subaccount = checkNotNull(uiState.value.account.account)
       executePositionActionInternal(
@@ -997,3 +1001,21 @@ private fun decimalCharacters(value: String): String =
 /** A saved exit price as the plain number the exit fields edit. */
 internal fun exitPriceInput(price: Double?): String =
   price?.let { formatPrice(it).replace(",", "").replace("$", "").trim() }.orEmpty()
+
+/** The exit prices entered that differ from the position's own; null where one is left as it is. */
+internal data class ExitChanges(val takeProfit: String?, val stopLoss: String?) {
+  val any: Boolean
+    get() = takeProfit != null || stopLoss != null
+}
+
+internal fun exitChanges(takeProfitInput: String, stopLossInput: String, position: Position?): ExitChanges =
+  ExitChanges(
+    takeProfit = changedExit(takeProfitInput, position?.takeProfitTriggerPrice),
+    stopLoss = changedExit(stopLossInput, position?.stopLossTriggerPrice),
+  )
+
+private fun changedExit(input: String, current: Double?): String? {
+  val entered = input.trim().takeIf(String::isNotEmpty) ?: return null
+  if (current != null && (entered == exitPriceInput(current) || entered.toDoubleOrNull() == current)) return null
+  return entered
+}
