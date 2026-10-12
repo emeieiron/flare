@@ -38,6 +38,7 @@ import xyz.mcxross.flare.hyperliquid.model.CancelOrders
 import xyz.mcxross.flare.hyperliquid.model.CancelOrdersByCloid
 import xyz.mcxross.flare.hyperliquid.model.CancelRequest
 import xyz.mcxross.flare.hyperliquid.model.CancelStatus
+import xyz.mcxross.flare.hyperliquid.model.CancelTwap
 import xyz.mcxross.flare.hyperliquid.model.CandleInterval
 import xyz.mcxross.flare.hyperliquid.model.Cloid
 import xyz.mcxross.flare.hyperliquid.model.ExchangeOutcome
@@ -50,11 +51,14 @@ import xyz.mcxross.flare.hyperliquid.model.OrderStatus
 import xyz.mcxross.flare.hyperliquid.model.OrderGrouping
 import xyz.mcxross.flare.hyperliquid.model.OrderType
 import xyz.mcxross.flare.hyperliquid.model.PlaceOrders
+import xyz.mcxross.flare.hyperliquid.model.PlaceTwap
 import xyz.mcxross.flare.hyperliquid.model.TimeInForce
 import xyz.mcxross.flare.hyperliquid.model.TpSl
 import xyz.mcxross.flare.hyperliquid.model.UpdateLeverage
+import xyz.mcxross.flare.hyperliquid.model.UsdClassTransfer
 import xyz.mcxross.flare.hyperliquid.model.UsdSend
 import xyz.mcxross.flare.hyperliquid.model.VaultTransfer
+import xyz.mcxross.flare.hyperliquid.model.Withdraw
 import xyz.mcxross.flare.hyperliquid.model.toHlDecimal
 import xyz.mcxross.flare.hyperliquid.signing.EvmSigner
 import xyz.mcxross.flare.hyperliquid.signing.FastKryptoSigner
@@ -361,6 +365,72 @@ class HyperliquidTestnetSigningTest {
     }
   }
 
+  /**
+   * The fund moves and TWAPs Flare sends: user-signed by the owner, and vault transfers and TWAPs
+   * signed as L1 actions the way the device's agent signs them, expiring as Flare's do.
+   */
+  @Test
+  fun fundAndTwapShapesRecoverTheSignersAddress() = runBlocking {
+    assumeLive()
+    liveHttpClient().use { http ->
+      val client = testnetClient(http)
+      val signer = freshSigner()
+      val btc = AssetDirectory(client.info.perpMeta(), client.info.spotMeta()).requireCoin("BTC")
+      val user =
+        mapOf(
+          "withdraw3" to Withdraw(randomAddress(), "5".toHlDecimal()),
+          "usdClassTransfer to spot" to UsdClassTransfer("1".toHlDecimal(), toPerp = false),
+          "usdClassTransfer for a sub-account" to
+            UsdClassTransfer("1".toHlDecimal(), toPerp = true, subAccount = randomAddress()),
+        )
+      for ((name, action) in user) {
+        val outcome = client.exchange.submit(action, signer)
+        println("$name signed by ${signer.address}: $outcome")
+        assertRejectedNaming(outcome, signer)
+      }
+      val l1 =
+        mapOf(
+          "vaultTransfer deposit" to VaultTransfer.ofUsdc(TESTNET_HLP, isDeposit = true, "5".toHlDecimal()),
+          "vaultTransfer withdraw" to VaultTransfer.ofUsdc(TESTNET_HLP, isDeposit = false, "5".toHlDecimal()),
+          "twapOrder" to PlaceTwap(btc.id, isBuy = true, "0.002".toHlDecimal(), reduceOnly = false, minutes = 30, randomize = false),
+          "twapCancel" to CancelTwap(btc.id, 1L),
+        )
+      for ((name, action) in l1) {
+        val expiresAfter = Clock.System.now().toEpochMilliseconds() + 60_000L
+        val outcome = client.exchange.submit(action, signer, expiresAfter = expiresAfter)
+        println("$name signed by ${signer.address}: $outcome")
+        assertRejectedNaming(outcome, signer)
+      }
+    }
+  }
+
+  /**
+   * Actions for a sub-account, signed with its `vaultAddress`: Hyperliquid reads the signature (it
+   * names the signer it recovered) before it looks for the sub-account.
+   */
+  @Test
+  fun subAccountActionsRecoverTheSignersAddress() = runBlocking {
+    assumeLive()
+    liveHttpClient().use { http ->
+      val client = testnetClient(http)
+      val signer = freshSigner()
+      val btc = AssetDirectory(client.info.perpMeta(), client.info.spotMeta()).requireCoin("BTC")
+      val subAccount = randomAddress()
+      val shapes =
+        mapOf(
+          "twapOrder" to PlaceTwap(btc.id, isBuy = true, "0.002".toHlDecimal(), reduceOnly = false, minutes = 30, randomize = false),
+          "cancel" to CancelOrders(listOf(CancelRequest(btc.id, 1L))),
+          "updateLeverage" to UpdateLeverage(btc.id, isCross = false, leverage = 3),
+        )
+      for ((name, action) in shapes) {
+        val expiresAfter = Clock.System.now().toEpochMilliseconds() + 60_000L
+        val outcome = client.exchange.submit(action, signer, vaultAddress = subAccount, expiresAfter = expiresAfter)
+        println("$name for $subAccount signed by ${signer.address}: $outcome")
+        assertRejectedNaming(outcome, signer)
+      }
+    }
+  }
+
   private fun assertRejectedNaming(outcome: ExchangeOutcome, signer: EvmSigner) {
     val reason = assertIs<ExchangeOutcome.Rejected>(outcome).reason
     val addresses = ADDRESS.findAll(reason).map { it.value.lowercase() }.toList()
@@ -369,6 +439,7 @@ class HyperliquidTestnetSigningTest {
 
   private companion object {
     val ADDRESS = Regex("0x[0-9a-fA-F]{40}")
+    const val TESTNET_HLP = "0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0"
   }
 }
 

@@ -331,12 +331,10 @@ data class CancelTwap(val asset: Int, val twapId: Long) : L1Action {
  * `vaultTransfer`: deposits into or withdraws from a vault (HLP: 4-day lock-up after the latest
  * deposit; user vaults: 1 day), in micro-USDC.
  *
- * **Signer:** it is an L1 action — the SDK's `vault_usd_transfer` signs it with `sign_l1_action`,
- * the phantom-agent scheme API wallets use, always with `vaultAddress = None` — so structurally
- * an approved agent can sign it. Neither the SDK nor the docs restrict it to the owner (unlike
- * `approveBuilderFee`, whose docs say "must be signed by the user's main wallet"); the SDK's
- * `basic_agent.py` only says agents cannot "transfer or withdraw funds", which are the user-signed
- * `usdSend`/`withdraw3`. Not yet confirmed against the live chain; PR 3's testnet test should.
+ * **Signer:** an approved agent signs it. The SDK's `vault_usd_transfer` signs it with
+ * `sign_l1_action` (the phantom-agent scheme API wallets use), always with `vaultAddress = None`, and
+ * Hyperliquid's own app signs it with its agent wallet, also without a `vaultAddress`; the SDK's
+ * "agents cannot transfer or withdraw funds" means the user-signed `usdSend` and `withdraw3`.
  */
 class VaultTransfer(vaultAddress: String, val isDeposit: Boolean, val microUsdc: Long) : L1Action {
   val vaultAddress: String = normalizeEvmAddress(vaultAddress, "vaultAddress")
