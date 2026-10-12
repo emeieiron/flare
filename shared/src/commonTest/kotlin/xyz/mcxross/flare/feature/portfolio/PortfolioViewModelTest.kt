@@ -489,6 +489,35 @@ class PortfolioViewModelTest {
 
     assertTrue(state.spotHoldings.isEmpty())
     assertEquals(0.0, state.totalBalance)
+    // Spot isn't reported, so whether anything is held isn't known yet.
+    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null), state.holdingsPreview)
+  }
+
+  @Test
+  fun holdingsPreviewMatchesTheHoldingsPage() {
+    val empty =
+      AccountOverview(
+        equity = 0.0,
+        unrealizedPnl = 0.0,
+        marginRatio = 0.0,
+        availableToTrade = 0.0,
+        withdrawable = 0.0,
+        balances = Balances(collateral = 0.0, spot = SpotBalances()),
+      )
+    val live = PortfolioUiState(account = AccountSnapshot(account = "0xa", overview = empty, stale = false))
+
+    assertEquals(HoldingsPreview.Loading, PortfolioUiState().holdingsPreview)
+    assertEquals(HoldingsPreview.NoneHeld, live.holdingsPreview)
+    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
+      live.copy(account = live.account.copy(stale = true)).holdingsPreview)
+    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
+      live.copy(holdingsError = "offline").holdingsPreview)
+
+    val hype = SpotHolding("HYPE", "Hyperliquid", quantity = 2.0, markPrice = 40.0, valueUsd = 80.0)
+    assertEquals(HoldingsPreview.Holding("HYPE", "Hyperliquid", 80.0), live.copy(spotHoldings = listOf(hype)).holdingsPreview)
+    val usdc = SpotHolding("USDC", "Trading collateral", quantity = 5.0, markPrice = 1.0, valueUsd = 5.0, isCollateral = true)
+    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", 5.0),
+      live.copy(account = live.account.copy(stale = true), spotHoldings = listOf(usdc, hype)).holdingsPreview)
   }
 
   @Test

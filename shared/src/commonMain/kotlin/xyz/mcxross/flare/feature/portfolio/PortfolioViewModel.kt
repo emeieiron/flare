@@ -84,6 +84,16 @@ data class SpotHolding(
   val reservedQuantity: Double = 0.0,
 )
 
+/** What the portfolio overview's Holdings card shows. */
+sealed interface HoldingsPreview {
+  data object Loading : HoldingsPreview
+
+  data object NoneHeld : HoldingsPreview
+
+  /** [valueUsd] is null while it isn't known. */
+  data class Holding(val symbol: String, val subtitle: String, val valueUsd: Double?) : HoldingsPreview
+}
+
 data class PortfolioUiState(
   /** What the venue supports; screens hide the rest. */
   val capabilities: VenueCapabilities = VenueCapabilities.All,
@@ -153,6 +163,20 @@ data class PortfolioUiState(
   val totalSpotValue: Double
     get() = account.overview?.balances?.spot?.totalUsd
       ?: spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
+
+  val holdingsPreview: HoldingsPreview
+    get() {
+      val overview = account.overview
+      if (overview == null && account.error == null) return HoldingsPreview.Loading
+      val usdc = spotHoldings.filter { it.symbol.equals("USDC", ignoreCase = true) }
+      val top = spotHoldings.maxByOrNull { it.valueUsd }
+      return when {
+        usdc.isNotEmpty() -> HoldingsPreview.Holding("USDC", "Spot and trading collateral", usdc.sumOf { it.quantity })
+        top != null -> HoldingsPreview.Holding(top.symbol, top.name, top.valueUsd.takeIf { top.markPrice > 0 })
+        overview != null && !account.stale && !balanceIncomplete -> HoldingsPreview.NoneHeld
+        else -> HoldingsPreview.Holding("USDC", "Spot and trading collateral", null)
+      }
+    }
 
   val balanceIncomplete: Boolean
     get() = account.overview?.balances?.spot == null || holdingsError != null ||

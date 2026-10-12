@@ -343,13 +343,14 @@ private fun PortfolioOverview(
         })
     } else PositionsEmptyState(state)
   }
-  val usdc = state.spotHoldings.filter { it.symbol.equals("USDC", true) }
   val assets = state.spotHoldings.filter { it.quantity > 0 }.map { it.symbol.uppercase() }.distinct().size
   PortfolioDestination("Holdings", if (overview != null) "$assets ${if (assets == 1) "asset" else "assets"}" else null,
     { onPage(PortfolioPage.HOLDINGS) }) {
-    if (overview == null && state.account.error == null) PortfolioShimmer(rows = 1)
-    else PreviewValue("USDC", if (usdc.isNotEmpty() || (overview != null && !state.account.stale && !state.balanceIncomplete))
-      formatBalance(usdc.sumOf { it.quantity }) else "—", "Spot and trading collateral")
+    when (val preview = state.holdingsPreview) {
+      HoldingsPreview.Loading -> PortfolioShimmer(rows = 1)
+      HoldingsPreview.NoneHeld -> QuietPortfolioMessage("No assets held")
+      is HoldingsPreview.Holding -> PreviewValue(preview.symbol, preview.valueUsd?.let(::formatBalance) ?: "—", preview.subtitle)
+    }
   }
   if (state.capabilities.vaults) PortfolioDestination("Vaults",
     state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
