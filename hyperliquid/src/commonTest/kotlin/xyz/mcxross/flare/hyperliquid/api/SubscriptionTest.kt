@@ -61,6 +61,15 @@ class SubscriptionTest {
   }
 
   @Test
+  fun validatesBookAggregation() {
+    assertFailsWith<IllegalArgumentException> { Subscription.L2Book("BTC", significantFigures = 1) }
+    assertFailsWith<IllegalArgumentException> { Subscription.L2Book("BTC", mantissa = 2) }
+    assertFailsWith<IllegalArgumentException> {
+      Subscription.L2Book("BTC", significantFigures = 5, mantissa = 3)
+    }
+  }
+
+  @Test
   fun rejectsInvalidAddresses() {
     val invalid = listOf("", "0x1", "1000000000000000000000000000000000000001", "0x$lower", "0xZZ")
     invalid.forEach { address ->
