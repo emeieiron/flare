@@ -122,6 +122,8 @@ data class OnboardingUiState(
   /** Set when Flare couldn't cover the current step's network fee. */
   val setupFee: SetupFee? = null,
   val builderOptIn: Boolean = true,
+  /** Why builder support didn't turn on; setup is otherwise done and waits for the person to go on. */
+  val builderNotice: String? = null,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -165,6 +167,9 @@ sealed interface OnboardingIntent {
   data object EnableTrading : OnboardingIntent
 
   data object ContinueSetup : OnboardingIntent
+
+  /** Leaves setup after reading why builder support didn't turn on. */
+  data object FinishSetup : OnboardingIntent
 
   /** Checks whether the first deposit arrived, moving on to enabling trading once it has. */
   data object CheckFunding : OnboardingIntent
@@ -294,6 +299,13 @@ class OnboardingViewModel(
       OnboardingIntent.OpenAccount -> openAccount()
       OnboardingIntent.EnableTrading -> enableTrading()
       OnboardingIntent.ContinueSetup -> prepareOwnerAccount()
+      OnboardingIntent.FinishSetup ->
+        if (local.value.builderNotice != null) {
+          launchAction("Setup couldn’t finish.") {
+            local.value = local.value.copy(builderNotice = null)
+            finishSetupInternal()
+          }
+        }
       OnboardingIntent.CheckFunding -> checkFunding()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
@@ -620,22 +632,32 @@ class OnboardingViewModel(
     if (activeProfile()?.builderApproved == true) {
       // Approved by an earlier attempt; nothing to send again.
     } else if (setup.builderFee && local.value.builderOptIn && builderAddress.isNotBlank()) {
-      runSuspendCatching {
-        // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
-        accounts.approveBuilderFee(
-          builderAddress = builderAddress,
-          feeBps = maxBuilderFeeBps.toUInt(),
-          prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
-          feePayment = FeePayment.SPONSORED,
-        )
-      }.onSuccess {
+      val approval =
+        runSuspendCatching {
+          // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
+          accounts.approveBuilderFee(
+            builderAddress = builderAddress,
+            feeBps = maxBuilderFeeBps.toUInt(),
+            prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
+            feePayment = FeePayment.SPONSORED,
+          )
+        }
+      if (approval.getOrNull() is ActionState.Committed) {
         preferences.setBuilderFeeBps(builderFeeBps)
-      }.onFailure {
+      } else {
         preferences.setBuilderSupport(
           builderAddress = builderAddress,
           builderFeeBps = 0,
           builderApproved = false,
         )
+        val reason =
+          (approval.getOrNull() as? ActionState.Failed)?.message
+            ?: approval.exceptionOrNull()?.message
+        val outcome = "Trading is enabled, but builder support wasn’t turned on."
+        val explained = actionFailure(reason, outcome).takeIf { it.startsWith(outcome) } ?: outcome
+        local.value =
+          local.value.copy(builderNotice = "$explained You can turn it on later in Settings.")
+        return
       }
     } else {
       preferences.setBuilderSupport(

@@ -49,6 +49,8 @@ private fun failureCause(detail: String): String? =
     detail.isBlank() -> null
     detail.mentions("INSUFFICIENT_COLLATERAL", "INSUFFICIENT_MARGIN", "EINSUFFICIENT_EQUITY") ->
       "There isn’t enough available margin for it."
+    detail.mentions("EBUILDER_SUBACCOUNT_NOT_FOUND") ->
+      "Flare’s builder account isn’t set up on the exchange yet."
     detail.mentions("EBUILDER_NOT_REGISTERED") ->
       "Builder fees aren’t approved for this market yet."
     detail.mentions("EINVALID_MAX_FEE") -> "The builder fee is higher than the one you approved."

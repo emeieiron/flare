@@ -66,8 +66,13 @@ data class SettingsUiState(
   val busy: Boolean = false,
   /** The product whose builder approval is being written on-chain. */
   val builderPending: MarketKind? = null,
+  /** A builder change Flare couldn't sponsor, which the wallet can pay for once the person agrees. */
+  val builderSelfPay: BuilderSelfPay? = null,
   val error: String? = null,
 )
+
+/** [basisPoints] is the rate being approved, or null for a revocation. */
+data class BuilderSelfPay(val product: MarketKind, val basisPoints: Int?, val estimate: ULong)
 
 sealed interface SettingsIntent {
   data object LoadDelegations : SettingsIntent
@@ -110,6 +115,9 @@ sealed interface SettingsIntent {
   data class SetBuilderFeeBps(val product: MarketKind, val basisPoints: Int) : SettingsIntent
 
   data class RevokeBuilderFee(val product: MarketKind) : SettingsIntent
+
+  /** Retries the builder change Flare couldn't sponsor, with the wallet paying the network fee. */
+  data object ConfirmBuilderSelfPay : SettingsIntent
 
   data class ChangeReferralCode(val code: String) : SettingsIntent
 
@@ -322,33 +330,13 @@ class SettingsViewModel(
           preferences.setSlippageBps(intent.basisPoints)
         }
       is SettingsIntent.SetBuilderFeeBps ->
-        launchAction("Your builder fee setting didn’t change.") {
-          val current = preferences.values.first()
-          val approved =
-            if (intent.product == MarketKind.PERP) current.builderApproved
-            else current.spotBuilderApproved
-          // A rate only applies once its product is approved on-chain.
-          if (intent.basisPoints > 0 && !approved) approveBuilder(intent.product)
-          when (intent.product) {
-            MarketKind.PERP -> preferences.setBuilderFeeBps(intent.basisPoints)
-            MarketKind.SPOT -> preferences.setSpotBuilderFeeBps(intent.basisPoints)
-          }
-        }
-      is SettingsIntent.RevokeBuilderFee ->
-        launchAction("Builder support wasn’t revoked.") {
-          val current = preferences.values.first()
-          withBuilderPending(intent.product) {
-            val result =
-              accounts.revokeBuilderFee(
-                builderAddress = current.builderAddress ?: local.value.defaultBuilderAddress,
-                prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
-                product = intent.product,
-              )
-            check(result is ActionState.Committed) {
-              (result as? ActionState.Failed)?.message
-                ?: "Revoking builder support failed. Try again."
-            }
-          }
+        setBuilderRate(intent.product, intent.basisPoints, FeePayment.SPONSORED)
+      is SettingsIntent.RevokeBuilderFee -> revokeBuilder(intent.product, FeePayment.SPONSORED)
+      SettingsIntent.ConfirmBuilderSelfPay ->
+        local.value.builderSelfPay?.let { offer ->
+          val rate = offer.basisPoints
+          if (rate == null) revokeBuilder(offer.product, FeePayment.SELF_PAY)
+          else setBuilderRate(offer.product, rate, FeePayment.SELF_PAY)
         }
       SettingsIntent.ExportOwner ->
         reveal("Recovery phrase") {
@@ -391,23 +379,76 @@ class SettingsViewModel(
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
-  /** Approves Flare's builder up to the venue's cap, so later rate changes need no new approval. */
-  private suspend fun approveBuilder(product: MarketKind) = withBuilderPending(product) {
+  private fun setBuilderRate(product: MarketKind, basisPoints: Int, feePayment: FeePayment) =
+    launchAction("Your builder fee setting didn’t change.") {
+      local.update { it.copy(builderSelfPay = null) }
+      val current = preferences.values.first()
+      val approved =
+        if (product == MarketKind.PERP) current.builderApproved else current.spotBuilderApproved
+      // A rate only applies once its product is approved on-chain.
+      if (basisPoints > 0 && !approved && !approveBuilder(product, basisPoints, feePayment)) {
+        return@launchAction
+      }
+      when (product) {
+        MarketKind.PERP -> preferences.setBuilderFeeBps(basisPoints)
+        MarketKind.SPOT -> preferences.setSpotBuilderFeeBps(basisPoints)
+      }
+    }
+
+  private fun revokeBuilder(product: MarketKind, feePayment: FeePayment) =
+    launchAction("Builder support wasn’t revoked.") {
+      local.update { it.copy(builderSelfPay = null) }
+      val current = preferences.values.first()
+      withBuilderPending(product) {
+        val result =
+          accounts.revokeBuilderFee(
+            builderAddress = current.builderAddress ?: local.value.defaultBuilderAddress,
+            prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
+            feePayment = feePayment,
+            product = product,
+          )
+        check(result is ActionState.Committed || offerBuilderSelfPay(result, product, null)) {
+          (result as? ActionState.Failed)?.message ?: "Revoking builder support failed. Try again."
+        }
+      }
+    }
+
+  /**
+   * Approves Flare's builder up to the venue's cap, so later rate changes need no new approval.
+   * False when Flare couldn't sponsor it and the wallet's offer to pay is waiting for the person.
+   */
+  private suspend fun approveBuilder(
+    product: MarketKind,
+    basisPoints: Int,
+    feePayment: FeePayment,
+  ): Boolean = withBuilderPending(product) {
     val result =
       accounts.approveBuilderFee(
         builderAddress = local.value.defaultBuilderAddress,
         feeBps = maxBuilderFeeBps.toUInt(),
         prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
+        feePayment = feePayment,
         product = product,
       )
-    check(result is ActionState.Committed) {
+    if (result is ActionState.Committed) return@withBuilderPending true
+    check(offerBuilderSelfPay(result, product, basisPoints)) {
       (result as? ActionState.Failed)?.message ?: "Approving builder support failed. Try again."
     }
+    false
   }
 
-  private suspend fun withBuilderPending(product: MarketKind, block: suspend () -> Unit) {
+  /** Offers self-pay only for a sponsorship that definitely wasn't submitted. */
+  private fun offerBuilderSelfPay(result: ActionState, product: MarketKind, basisPoints: Int?): Boolean {
+    val estimate =
+      (result as? ActionState.Failed)?.selfPay?.estimate?.takeIf { capabilities.sponsoredFees }
+        ?: return false
+    local.update { it.copy(builderSelfPay = BuilderSelfPay(product, basisPoints, estimate)) }
+    return true
+  }
+
+  private suspend fun <T> withBuilderPending(product: MarketKind, block: suspend () -> T): T {
     local.update { it.copy(builderPending = product) }
-    try {
+    return try {
       block()
     } finally {
       local.update { it.copy(builderPending = null) }

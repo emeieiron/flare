@@ -311,6 +311,16 @@ internal fun ColumnScope.SetupActions(
   primary: @Composable ColumnScope.() -> Unit,
 ) {
   val chain = LocalVenue.current.chain
+  state.builderNotice?.let { notice ->
+    ActionNotice(notice)
+    FlareButton(
+      "Continue",
+      { onIntent(OnboardingIntent.FinishSetup) },
+      Modifier.fillMaxWidth(),
+      working = state.busy,
+    )
+    return
+  }
   when (val fee = state.setupFee) {
     null -> {
       state.error?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
