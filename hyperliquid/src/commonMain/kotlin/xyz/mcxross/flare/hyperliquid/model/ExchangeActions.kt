@@ -403,11 +403,12 @@ data class CreateSubAccount(val name: String) : L1Action {
  * **Replacing and revoking** (docs, "Nonces and API wallets › API wallet pruning"): approving a
  * new unnamed agent deregisters the existing unnamed one, and approving with an existing
  * [agentName] deregisters the agent registered under that name. Neither the SDK nor the docs have
- * a separate revoke action, so an agent is revoked by approving a replacement under the same name
- * (e.g. a fresh, discarded key). Agents also lapse when a `valid_until <ms>` suffix on the name
- * expires (at most 180 days ahead) or when the account no longer has funds. An account holds one
- * unnamed and up to 3 named agents, plus 2 per sub-account. Never reuse a deregistered agent's
- * key: its nonce set may be pruned, making old signed actions replayable.
+ * a separate revoke action; Hyperliquid's own app removes an agent by approving the zero address
+ * under its name (none for the unnamed agent), which is what [revoke] signs. Agents also lapse when
+ * a `valid_until <ms>` suffix on the name expires (at most 180 days ahead) or when the account no
+ * longer has funds. An account holds one unnamed and up to 3 named agents, plus 2 per sub-account.
+ * Never reuse a deregistered agent's key: its nonce set may be pruned, making old signed actions
+ * replayable.
  *
  * A `null` [agentName] signs `""` and leaves `agentName` off the wire, as the SDK does.
  */
@@ -444,6 +445,13 @@ class ApproveAgent(agentAddress: String, val agentName: String? = null) : UserSi
   override fun hashCode(): Int = 31 * agentAddress.hashCode() + agentName.hashCode()
 
   override fun toString(): String = "ApproveAgent($agentAddress, $agentName)"
+
+  companion object {
+    const val ZERO_ADDRESS: String = "0x0000000000000000000000000000000000000000"
+
+    /** Removes the agent registered under [agentName] (the unnamed one for null). */
+    fun revoke(agentName: String?): ApproveAgent = ApproveAgent(ZERO_ADDRESS, agentName)
+  }
 }
 
 /**
@@ -452,8 +460,8 @@ class ApproveAgent(agentAddress: String, val agentName: String? = null) : UserSi
  * "Builder codes"); one approval covers perps and spot. At most 10 active builder approvals.
  *
  * **Revoking:** the docs say a user "can revoke permissions at any time" but name no separate
- * action, and the SDK has none; the approval is a maximum, so approving `"0%"`
- * ([revoke]) takes the permission back. `maxBuilderFee` reads the current value to confirm it.
+ * action, and the SDK has none; the approval is a maximum, so approving `"0%"` ([revoke]), as other
+ * SDKs do, takes the permission back. `maxBuilderFee` reads the current value to confirm it.
  */
 class ApproveBuilderFee(builder: String, val maxFeeRate: String) : UserSignedAction {
   val builder: String = normalizeEvmAddress(builder, "builder")

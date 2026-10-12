@@ -280,6 +280,15 @@ class HyperliquidTestnetSigningTest {
       println("approveAgent signed by ${signer.address}: $approve")
       assertRejectedNaming(approve, signer)
 
+      // Removing an agent, as Hyperliquid's app does: the zero address under the agent's name.
+      val revoke = client.exchange.submit(ApproveAgent.revoke("flare-test"), signer)
+      println("approveAgent (revoke) signed by ${signer.address}: $revoke")
+      assertRejectedNaming(revoke, signer)
+
+      val fee = client.exchange.submit(ApproveBuilderFee.revoke(randomAddress()), signer)
+      println("approveBuilderFee 0% signed by ${signer.address}: $fee")
+      assertRejectedNaming(fee, signer)
+
       val send = client.exchange.submit(UsdSend(randomAddress(), HlDecimal.ONE), signer)
       println("usdSend signed by ${signer.address}: $send")
       assertRejectedNaming(send, signer)
@@ -350,15 +359,14 @@ class HyperliquidTestnetFundedTest {
         assertEquals(ExchangeOutcome.Accepted(ExchangeResponse.Default), deposit)
       }
 
-      // Revoke by approving a throwaway replacement under the same name; its key is discarded.
-      val replacement = freshSigner()
-      val revoke = exchange.submit(ApproveAgent(replacement.address, AGENT_NAME), owner)
-      println("approveAgent replacement ${replacement.address}: $revoke")
+      // Revoke as Hyperliquid's app does: the zero address under the agent's name.
+      val revoke = exchange.submit(ApproveAgent.revoke(AGENT_NAME), owner)
+      println("approveAgent revoke: $revoke")
       assertEquals(ExchangeOutcome.Accepted(ExchangeResponse.Default), revoke)
       val agentsAfter = info.extraAgents(owner.address)
       println("Agents after: ${agentsAfter.map { it.name to it.address }}")
       assertTrue(agentsAfter.none { it.address.lowercase() == agent.address })
-      assertTrue(agentsAfter.any { it.address.lowercase() == replacement.address })
+      assertTrue(agentsAfter.none { it.name == AGENT_NAME && it.address != ApproveAgent.ZERO_ADDRESS })
       val stale =
         exchange.submit(
           CancelOrdersByCloid(listOf(CancelByCloidRequest(btc.id, Cloid.random()))),

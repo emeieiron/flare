@@ -62,17 +62,23 @@ internal constructor(
 interface ExchangeService {
   /**
    * Signs an L1 action. [vaultAddress] acts for a sub-account or vault the signer's user controls;
-   * [expiresAfter] (ms) makes Hyperliquid reject the action after that time.
+   * [expiresAfter] (ms) makes Hyperliquid reject the action after that time. [nonce] overrides the
+   * client's [NonceSource], for callers that keep their own per-signer nonces.
    */
   suspend fun sign(
     action: L1Action,
     signer: EvmSigner,
     vaultAddress: String? = null,
     expiresAfter: Long? = null,
+    nonce: Long? = null,
   ): SignedExchangeRequest
 
   /** Signs a user-signed action; [signer] must be the account owner, not an agent. */
-  suspend fun sign(action: UserSignedAction, signer: EvmSigner): SignedExchangeRequest
+  suspend fun sign(
+    action: UserSignedAction,
+    signer: EvmSigner,
+    nonce: Long? = null,
+  ): SignedExchangeRequest
 
   /** Posts [request] once; a server or transport failure is an outcome, never an exception. */
   suspend fun send(request: SignedExchangeRequest): ExchangeOutcome
@@ -98,13 +104,14 @@ internal class DefaultExchangeService(
     signer: EvmSigner,
     vaultAddress: String?,
     expiresAfter: Long?,
+    nonce: Long?,
   ): SignedExchangeRequest {
     val vault = vaultAddress?.let { normalizeEvmAddress(it, "vaultAddress") }
     require(vault == null || action.allowsVaultAddress) {
       "${action.type} is signed without a vaultAddress"
     }
     val wire = action.toWire()
-    val nonce = nonces.next()
+    val nonce = checkedNonce(nonce)
     val signingInput = L1Signing.signingInput(wire, nonce, deployment, vault, expiresAfter)
     return SignedExchangeRequest(
       action = action,
@@ -117,8 +124,12 @@ internal class DefaultExchangeService(
     )
   }
 
-  override suspend fun sign(action: UserSignedAction, signer: EvmSigner): SignedExchangeRequest {
-    val nonce = nonces.next()
+  override suspend fun sign(
+    action: UserSignedAction,
+    signer: EvmSigner,
+    nonce: Long?,
+  ): SignedExchangeRequest {
+    val nonce = checkedNonce(nonce)
     val signingInput =
       UserSigning.signingInput(action.message(deployment, nonce), deployment.signatureChainId)
     return SignedExchangeRequest(
@@ -131,6 +142,9 @@ internal class DefaultExchangeService(
       signature = signer.signTypedData(signingInput),
     )
   }
+
+  private fun checkedNonce(given: Long?): Long =
+    given?.also { require(it > 0) { "A nonce must be positive" } } ?: nonces.next()
 
   override suspend fun send(request: SignedExchangeRequest): ExchangeOutcome {
     val reply =

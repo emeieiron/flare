@@ -76,6 +76,19 @@ class ExchangeServiceSigningTest {
     )
   }
 
+  @Test
+  fun signsWithTheCallersNonceOverTheClients() = runTest {
+    val action = UsdSend(VectorCases.DESTINATION, "1".toHlDecimal())
+    val fromSource = post(HyperliquidDeployment.Testnet, nonce = 1_687_816_341_423L) { submit(action, signer) }
+
+    val explicit =
+      post(HyperliquidDeployment.Testnet, nonce = 1L) {
+        send(sign(action, signer, nonce = 1_687_816_341_423L))
+      }
+
+    assertEquals(fromSource, explicit)
+  }
+
   private suspend fun post(
     deployment: HyperliquidDeployment,
     nonce: Long,
