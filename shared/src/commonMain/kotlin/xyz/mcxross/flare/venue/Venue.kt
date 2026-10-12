@@ -26,6 +26,12 @@ data class VenueDescriptor(
   val network: Network,
   val capabilities: VenueCapabilities,
   val explorer: VenueExplorer,
+  /** The backend the app reaches the venue through, shown in settings; null when it has none. */
+  val proxyUrl: String? = null,
+  /** Flare's builder address on the venue, which receives the optional builder fee. */
+  val builderAddress: String? = null,
+  /** What the venue calls its reward points, such as Decibel's Amps; null when it has none. */
+  val rewardPointsName: String? = null,
 )
 
 /** The features an exchange supports. The app hides what a venue can't do. */
@@ -42,7 +48,22 @@ data class VenueCapabilities(
   val networkFeeTopUp: Boolean,
   /** Deposits made from inside the app, rather than sent to an address shown in it. */
   val inAppDeposit: Boolean,
-)
+) {
+  companion object {
+    /** Every feature on: the starting state of screens before a venue's flags arrive. */
+    val All =
+      VenueCapabilities(
+        spot = true,
+        twap = true,
+        vaults = true,
+        subaccounts = true,
+        rewards = true,
+        sponsoredFees = true,
+        networkFeeTopUp = true,
+        inAppDeposit = true,
+      )
+  }
+}
 
 /** Where the app links to see an action on chain. */
 data class VenueExplorer(

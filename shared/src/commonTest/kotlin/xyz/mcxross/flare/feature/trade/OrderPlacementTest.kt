@@ -7,6 +7,7 @@ import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.*
+import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 
@@ -84,7 +85,7 @@ class OrderPlacementTest {
   @Test
   fun existingPositionsKeepTheirLeverageAndSkipConfiguration() = runTest {
     val position =
-      Position("0x123", "0xabc", "0.001", 5, 70_000.0, false, false, 0.0, 50_000.0, 1, false)
+      Position(marketId = "0x123", size = "0.001", leverage = 5, entryPrice = 70_000.0, isolated = false)
     assertNull(state.leverageCommand("0xabc", position))
     assertFailsWith<IllegalArgumentException> {
       state.copy(leverage = 2).leverageCommand("0xabc", position)

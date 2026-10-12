@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.MarginMode
-import xyz.mcxross.flare.decibel.model.Position
+import xyz.mcxross.flare.venue.model.Position
 
 internal enum class OrderStage {
   LEVERAGE,

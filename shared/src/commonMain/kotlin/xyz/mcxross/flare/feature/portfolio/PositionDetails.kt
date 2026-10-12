@@ -32,9 +32,6 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.Position
-import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
@@ -46,6 +43,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.Position
 
 /** One open position, reached from the portfolio. It shares the portfolio's state and actions. */
 @Composable
@@ -71,7 +69,7 @@ fun PositionScreen(
   onBack: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val position = state.account.positions.firstOrNull { it.market == market }
+  val position = state.account.positions.firstOrNull { it.marketId == market }
   val symbol = state.marketSymbols[market] ?: shortAddress(market)
   var confirmClose by rememberSaveable { mutableStateOf(false) }
   Column(modifier.fillMaxSize().background(FlareColors.Canvas)) {
@@ -111,7 +109,7 @@ private fun PositionDetails(
   position: Position,
   onIntent: (PortfolioIntent) -> Unit,
 ) {
-  val mark = state.markPrices[position.market]
+  val mark = state.markPrices[position.marketId]
   val size = position.size.toDoubleOrNull()
   val pnl = mark?.let { price -> size?.let { (price - position.entryPrice) * it } }
   // Close failures belong to the close sheet; only exit changes report here.
@@ -121,7 +119,7 @@ private fun PositionDetails(
       state.stopLossInput != exitPriceInput(position.stopLossTriggerPrice)
   Text(
     "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))} · " +
-      "${position.leverage}× · ${if (position.isIsolated) "isolated" else "cross"}",
+      "${position.leverage}× · ${if (position.isolated) "isolated" else "cross"}",
     color = FlareColors.TextSecondary,
     style = MaterialTheme.typography.bodyMedium,
   )
@@ -133,7 +131,7 @@ private fun PositionDetails(
       "Unrealized funding",
       (if (position.unrealizedFunding >= 0) "+" else "") + formatBalance(position.unrealizedFunding),
     )
-  DetailRow("Liquidation price", formatPrice(position.estimatedLiquidationPrice))
+  DetailRow("Liquidation price", position.liquidationPrice?.let(::formatPrice) ?: "—")
   position.takeProfitTriggerPrice?.let { DetailRow("Take profit", formatPrice(it)) }
   position.stopLossTriggerPrice?.let { DetailRow("Stop loss", formatPrice(it)) }
   Text("Set an exit", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.titleMedium)
@@ -180,19 +178,18 @@ fun ClosePositionSheet(
   onDismiss: () -> Unit,
   onClosed: () -> Unit,
 ) {
-  val symbol = state.marketSymbols[position.market] ?: shortAddress(position.market)
-  val closing = state.closingMarket == position.market
+  val symbol = state.marketSymbols[position.marketId] ?: shortAddress(position.marketId)
+  val closing = state.closingMarket == position.marketId
   LaunchedEffect(state.closedMarket) {
-    if (state.closedMarket == position.market) {
+    if (state.closedMarket == position.marketId) {
       onIntent(PortfolioIntent.CloseHandled)
       onClosed()
     }
   }
   val size = abs(position.size.toDoubleOrNull() ?: 0.0)
-  val mark = state.markPrices[position.market]
+  val mark = state.markPrices[position.marketId]
   val pnl = mark?.let { price -> position.size.toDoubleOrNull()?.let { (price - position.entryPrice) * it } }
-  val feeEstimate =
-    (state.positionTransaction as? TransactionState.Failed)?.selfPayEstimateOctas?.takeIf { closing }
+  val feeEstimate = state.selfPayEstimate(state.positionTransaction)?.takeIf { closing }
   FlareConfirmSheet(
     title = "Close this position?",
     message =
@@ -202,7 +199,7 @@ fun ClosePositionSheet(
     onConfirm = {
       onIntent(
         if (feeEstimate != null) PortfolioIntent.ConfirmPositionSelfPay
-        else PortfolioIntent.ClosePosition(position.market)
+        else PortfolioIntent.ClosePosition(position.marketId)
       )
     },
     onDismiss = {
@@ -228,7 +225,7 @@ private fun PositionFeeRecovery(
   onIntent: (PortfolioIntent) -> Unit,
   offerSelfPay: Boolean = true,
 ) {
-  val estimate = (state.positionTransaction as? TransactionState.Failed)?.selfPayEstimateOctas ?: return
+  val estimate = state.selfPayEstimate(state.positionTransaction) ?: return
   ActionNotice(
     "Flare can’t cover the network fee right now. Your wallet would pay about " +
       "${estimate.toDecimalString(8)} APT.",

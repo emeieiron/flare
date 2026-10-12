@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
@@ -21,12 +20,8 @@ import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Subaccount
-import xyz.mcxross.flare.decibel.model.TierInfo
-import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
@@ -34,24 +29,28 @@ import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingKey
 
 data class SettingsUiState(
+  /** What the venue supports; screens hide the rest. */
+  val capabilities: VenueCapabilities = VenueCapabilities.All,
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
   val proxyUrl: String = "",
   val defaultBuilderAddress: String = "",
   val revealedSecretLabel: String? = null,
   val revealedSecret: String? = null,
-  val delegations: List<Delegation> = emptyList(),
+  val delegations: List<TradingKey> = emptyList(),
   val delegationsLoaded: Boolean = false,
   val subaccountsByOwner: Map<String, List<Subaccount>> = emptyMap(),
   val creatingSubaccount: Boolean = false,
   val referralCodeInput: String = "",
   val referralRedeemed: Boolean = false,
   val referralMessage: String? = null,
-  val streak: TradingStreak? = null,
-  val amps: AmpsBreakdown? = null,
-  val tier: TierInfo? = null,
+  val rewards: Rewards? = null,
   val withdrawDestination: String = "",
   val withdrawAmount: String = "",
   val withdrawTransaction: TransactionState? = null,
@@ -128,23 +127,26 @@ class SettingsViewModel(
   private val accounts: AccountRepository,
   /** The venue's backend session, signed out when a key is removed; null when it has none. */
   private val sessions: SessionRepository?,
-  private val decibelConfig: DecibelRuntimeConfig,
+  venue: VenueDescriptor,
 ) : ViewModel() {
+  private val capabilities = venue.capabilities
   private val local =
     MutableStateFlow(
       SettingsUiState(
-        proxyUrl = decibelConfig.workerBaseUrl,
-        defaultBuilderAddress = decibelConfig.defaultBuilderAddress,
+        capabilities = capabilities,
+        proxyUrl = venue.proxyUrl.orEmpty(),
+        defaultBuilderAddress = venue.builderAddress.orEmpty(),
       )
     )
   private var secretClearJob: Job? = null
 
   init {
     viewModelScope.launch {
-      val streak = runSuspendCatching { accounts.tradingStreak() }.getOrNull()
-      val amps = runSuspendCatching { accounts.ampsBreakdown() }.getOrNull()
-      val tier = runSuspendCatching { accounts.tierInfo() }.getOrNull()
-      local.update { it.copy(streak = streak, amps = amps, tier = tier) }
+      if (capabilities.rewards) {
+        // Parts that fail to load are simply left out here.
+        val rewards = runSuspendCatching { accounts.rewards() }.getOrNull()
+        local.update { it.copy(rewards = rewards) }
+      }
       loadSubaccounts()
     }
   }
@@ -155,7 +157,7 @@ class SettingsViewModel(
         state.copy(
           preferences = persisted,
           profile = profile,
-          withdrawable = snapshot.overview?.crossWithdrawableBalance,
+          withdrawable = snapshot.overview?.withdrawable,
           pendingWithdrawal =
             persisted.profiles.firstOrNull { it.id == persisted.activeProfileId }?.withdrawal,
         )
@@ -324,7 +326,7 @@ class SettingsViewModel(
           withBuilderPending(intent.product) {
             val result =
               accounts.revokeBuilderFee(
-                builderAddress = current.builderAddress ?: decibelConfig.defaultBuilderAddress,
+                builderAddress = current.builderAddress ?: local.value.defaultBuilderAddress,
                 prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
                 product = intent.product,
               )
@@ -379,7 +381,7 @@ class SettingsViewModel(
   private suspend fun approveBuilder(product: AssetType) = withBuilderPending(product) {
     val result =
       accounts.approveBuilderFee(
-        builderAddress = decibelConfig.defaultBuilderAddress,
+        builderAddress = local.value.defaultBuilderAddress,
         feeBps = 10u,
         prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
         product = product,
@@ -459,6 +461,8 @@ class SettingsViewModel(
   }
 
   private fun loadSubaccounts() {
+    // Venues without trading accounts show the selected account alone.
+    if (!capabilities.subaccounts) return
     viewModelScope.launch {
       val profiles = preferences.values.first().profiles
       val map = mutableMapOf<String, List<Subaccount>>()

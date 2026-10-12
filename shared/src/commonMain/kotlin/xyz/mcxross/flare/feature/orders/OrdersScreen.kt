@@ -25,9 +25,6 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatRelativeTime
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
@@ -41,6 +38,10 @@ import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.FillDirection
+import xyz.mcxross.flare.venue.model.FundMovementKind
+import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OpenOrder
 
 @Composable
 fun OrdersRoute(
@@ -79,9 +80,10 @@ fun OrdersScreen(
         onIntent(OrdersIntent.SelectSection(if (history) OrdersSection.ORDERS else OrdersSection.OPEN))
       }, { if (it) "History" else "Open" }, Modifier.padding(bottom = 12.dp),
     )
-    val sections = if (historySelected)
+    val sections = (if (historySelected)
       listOf(OrdersSection.ORDERS, OrdersSection.TRADES, OrdersSection.FUNDING, OrdersSection.TRANSFERS, OrdersSection.TWAP)
-      else listOf(OrdersSection.OPEN, OrdersSection.TWAP)
+      else listOf(OrdersSection.OPEN, OrdersSection.TWAP))
+      .filter { it != OrdersSection.TWAP || state.capabilities.twap }
     FlareFilterChips(
       labels = sections.map { if (it == OrdersSection.OPEN) "Orders" else it.label },
       selectedIndex = sections.indexOf(state.section).coerceAtLeast(0),
@@ -95,7 +97,7 @@ fun OrdersScreen(
       androidx.compose.material3.TextButton({ onIntent(OrdersIntent.RetryAccount) }) { Text("Retry") }
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
-    (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas?.let { estimate ->
+    state.selfPayEstimate?.let { estimate ->
       ActionNotice(
         "Flare can’t cover the network fee right now. Your wallet would pay about " +
           "${estimate.toDecimalString(8)} APT.",
@@ -146,7 +148,7 @@ fun OrdersScreen(
             }
             state.account.openOrders.forEach { order ->
               val cancelling = state.busy && state.lastCancelOrderId == order.orderId
-              val isSpot = order.assetType == AssetType.SPOT || order.market in state.spotMarkets
+              val isSpot = order.kind == MarketKind.SPOT || order.marketId in state.spotMarkets
               Row(
                 Modifier.fillMaxWidth().padding(vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +160,7 @@ fun OrdersScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
                     Text(
-                      (state.marketSymbols[order.market] ?: shortAddress(order.market)),
+                      (state.marketSymbols[order.marketId] ?: shortAddress(order.marketId)),
                       style = MaterialTheme.typography.labelLarge,
                     )
                     if (isSpot) {
@@ -178,7 +180,7 @@ fun OrdersScreen(
                   text = if (cancelling) "Cancelling…" else "Cancel",
                   positive = false,
                   onClick = {
-                    onIntent(OrdersIntent.Cancel(order.market, order.orderId, order.isTpSl))
+                    onIntent(OrdersIntent.Cancel(order.marketId, order.orderId, order.isPositionTpSl))
                   },
                   enabled = !state.busy,
                 )
@@ -219,7 +221,7 @@ fun OrdersScreen(
                 modifier = Modifier.padding(bottom = 8.dp),
               )
               state.activeTwaps.forEach { twap ->
-                val cancelling = state.busy && state.lastCancelTwapId == twap.twapId
+                val cancelling = state.busy && state.lastCancelTwapId == twap.id
                 Row(
                   Modifier.fillMaxWidth().padding(vertical = 12.dp),
                   verticalAlignment = Alignment.CenterVertically,
@@ -227,7 +229,7 @@ fun OrdersScreen(
                 ) {
                   Column(Modifier.weight(1f)) {
                     Text(
-                      state.marketSymbols[twap.market] ?: shortAddress(twap.market),
+                      state.marketSymbols[twap.marketId] ?: shortAddress(twap.marketId),
                       style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
@@ -241,7 +243,7 @@ fun OrdersScreen(
                     text = if (cancelling) "Cancelling…" else "Cancel",
                     positive = false,
                     onClick = {
-                      onIntent(OrdersIntent.CancelTwap(twap.market, twap.twapId))
+                      onIntent(OrdersIntent.CancelTwap(twap.marketId, twap.id))
                     },
                     enabled = !state.busy,
                   )
@@ -264,11 +266,11 @@ fun OrdersScreen(
                 ) {
                   Column(Modifier.weight(1f)) {
                     Text(
-                      state.marketSymbols[twap.market] ?: shortAddress(twap.market),
+                      state.marketSymbols[twap.marketId] ?: shortAddress(twap.marketId),
                       style = MaterialTheme.typography.labelLarge,
                     )
                     Text(
-                      "${if (twap.isBuy) "Buy" else "Sell"} · Status: ${twap.status ?: "Finished"}",
+                      "${if (twap.isBuy) "Buy" else "Sell"} · Status: ${twap.status}",
                       color = FlareColors.TextSecondary,
                       style = MaterialTheme.typography.labelSmall,
                     )
@@ -288,8 +290,9 @@ fun OrdersScreen(
         if (state.history.orders.isEmpty()) {
           HistoryEmpty(state.history.stale, "No order history")
         } else {
-          state.history.orders.forEach { order ->
-            val isSpot = order.assetType == AssetType.SPOT || order.market in state.spotMarkets
+          state.history.orders.forEach { entry ->
+            val order = entry.order
+            val isSpot = order.kind == MarketKind.SPOT || order.marketId in state.spotMarkets
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
@@ -297,13 +300,13 @@ fun OrdersScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    Text(order.orderDirection.ifBlank { if (order.isBuy) "Buy" else "Sell" })
+                    Text(order.direction.ifBlank { if (order.isBuy) "Buy" else "Sell" })
                     if (isSpot) {
                       InstrumentBadge("SPOT")
                     }
                   }
                   Text(
-                    "${(state.marketSymbols[order.market] ?: shortAddress(order.market))} · ${order.status}",
+                    "${(state.marketSymbols[order.marketId] ?: shortAddress(order.marketId))} · ${entry.status}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                   )
@@ -317,7 +320,7 @@ fun OrdersScreen(
                 Column(horizontalAlignment = Alignment.End) {
                   Text(order.price?.let(::formatPrice) ?: "Market")
                   Text(
-                    formatRelativeTime(order.unixMs),
+                    formatRelativeTime(order.timeMs),
                     color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
@@ -333,7 +336,7 @@ fun OrdersScreen(
           HistoryEmpty(state.history.stale, "No trade history")
         } else {
           state.history.trades.forEach { trade ->
-            val isSpot = trade.assetType == AssetType.SPOT || trade.market in state.spotMarkets
+            val isSpot = trade.kind == MarketKind.SPOT || trade.marketId in state.spotMarkets
             Column(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
               Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
@@ -341,28 +344,28 @@ fun OrdersScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    Text(tradeActionLabel(trade.action))
+                    Text(fillLabel(trade.direction, trade.action))
                     if (isSpot) {
                       InstrumentBadge("SPOT")
                     }
                   }
                   Text(
-                    "${(state.marketSymbols[trade.market] ?: shortAddress(trade.market))} · ${formatQuantity(trade.size)} @ ${formatPrice(trade.price)}",
+                    "${(state.marketSymbols[trade.marketId] ?: shortAddress(trade.marketId))} · ${formatQuantity(trade.size)} @ ${formatPrice(trade.price)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                   )
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                  if (trade.realizedPnlAmount != 0.0)
+                  if (trade.realizedPnl != 0.0)
                     Text(
-                      signedAmount(trade.realizedPnlAmount),
+                      signedAmount(trade.realizedPnl),
                       color =
-                        if (trade.realizedPnlAmount > 0) FlareColors.Positive
+                        if (trade.realizedPnl > 0) FlareColors.Positive
                         else FlareColors.Negative,
                       style = MaterialTheme.typography.labelMedium,
                     )
                   Text(
-                    formatRelativeTime(trade.transactionUnixMs),
+                    formatRelativeTime(trade.timeMs),
                     color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
@@ -385,20 +388,20 @@ fun OrdersScreen(
               Column(Modifier.weight(1f)) {
                 Text(payment.action.ifBlank { "Funding payment" })
                 Text(
-                  "${state.marketSymbols[payment.market] ?: shortAddress(payment.market)} · ${formatQuantity(payment.size)}",
+                  "${state.marketSymbols[payment.marketId] ?: shortAddress(payment.marketId)} · ${formatQuantity(payment.size)}",
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   style = MaterialTheme.typography.labelSmall,
                 )
               }
               Column(horizontalAlignment = Alignment.End) {
                 Text(
-                  signedAmount(payment.realizedFundingAmount),
+                  signedAmount(payment.amount),
                   color =
-                    if (payment.realizedFundingAmount >= 0) FlareColors.Positive
+                    if (payment.amount >= 0) FlareColors.Positive
                     else FlareColors.Negative,
                 )
                 Text(
-                  formatRelativeTime(payment.transactionUnixMs),
+                  formatRelativeTime(payment.timeMs),
                   color = FlareColors.TextSecondary,
                   style = MaterialTheme.typography.labelSmall,
                 )
@@ -413,28 +416,28 @@ fun OrdersScreen(
           HistoryEmpty(state.history.stale, "No transfer history")
         } else {
           state.history.transfers.forEach { transfer ->
-            val isDeposit = transfer.type.lowercase().contains("deposit")
+            val incoming = transfer.kind.incoming
             Row(
               Modifier.fillMaxWidth().padding(vertical = 14.dp),
               horizontalArrangement = Arrangement.SpaceBetween,
             ) {
               Column(Modifier.weight(1f)) {
-                Text(if (isDeposit) "Deposit" else "Withdrawal")
+                Text(fundMovementLabel(transfer.kind))
                 Text(
                   "${transfer.assetSymbol} · ${transfer.status.replaceFirstChar { it.uppercase() }}" +
-                    (transfer.transactionHash?.let { " · ${shortAddress(it)}" } ?: ""),
+                    (transfer.reference?.let { " · ${shortAddress(it)}" } ?: ""),
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                   style = MaterialTheme.typography.labelSmall,
                 )
               }
               Column(horizontalAlignment = Alignment.End) {
                 Text(
-                  (if (isDeposit) "+" else "-") + formatBalance(transfer.amount),
-                  color = if (isDeposit) FlareColors.Positive else FlareColors.Negative,
+                  (if (incoming) "+" else "-") + formatBalance(transfer.amount),
+                  color = if (incoming) FlareColors.Positive else FlareColors.Negative,
                 )
-                if (transfer.timestamp > 0) {
+                if (transfer.timeMs > 0) {
                   Text(
-                    formatRelativeTime(transfer.timestamp),
+                    formatRelativeTime(transfer.timeMs),
                     color = FlareColors.TextSecondary,
                     style = MaterialTheme.typography.labelSmall,
                   )
@@ -482,22 +485,32 @@ private fun HistoryEmpty(stale: Boolean, title: String) {
 private fun signedAmount(value: Double): String =
   (if (value > 0) "+" else "") + formatBalance(value)
 
-private fun tradeActionLabel(action: String): String =
-  when (action) {
-    "OpenLong" -> "Opened long"
-    "CloseLong" -> "Closed long"
-    "OpenShort" -> "Opened short"
-    "CloseShort" -> "Closed short"
-    else -> action.ifBlank { "Fill" }
+private fun fillLabel(direction: FillDirection, action: String): String =
+  when (direction) {
+    FillDirection.OPEN_LONG -> "Opened long"
+    FillDirection.CLOSE_LONG -> "Closed long"
+    FillDirection.OPEN_SHORT -> "Opened short"
+    FillDirection.CLOSE_SHORT -> "Closed short"
+    FillDirection.OTHER -> action.ifBlank { "Fill" }
+  }
+
+private fun fundMovementLabel(kind: FundMovementKind): String =
+  when (kind) {
+    FundMovementKind.DEPOSIT -> "Deposit"
+    FundMovementKind.WITHDRAWAL -> "Withdrawal"
+    FundMovementKind.TRANSFER_IN -> "Transfer in"
+    FundMovementKind.TRANSFER_OUT -> "Transfer out"
+    FundMovementKind.VAULT_DEPOSIT -> "Vault deposit"
+    FundMovementKind.VAULT_WITHDRAWAL -> "Vault withdrawal"
   }
 
 @Composable
-private fun OrderConditions(order: Order) {
+private fun OrderConditions(order: OpenOrder) {
   val conditions = buildList {
     order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
-    order.takeProfitTriggerPrice?.let { add("TP ${formatPrice(it)}") }
-    order.stopLossTriggerPrice?.let { add("SL ${formatPrice(it)}") }
-    if (order.isReduceOnly) add("Reduce only")
+    order.takeProfit?.let { add("TP ${formatPrice(it.triggerPrice)}") }
+    order.stopLoss?.let { add("SL ${formatPrice(it.triggerPrice)}") }
+    if (order.reduceOnly) add("Reduce only")
   }
   if (conditions.isNotEmpty()) Text(conditions.joinToString(" · "),
     style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)

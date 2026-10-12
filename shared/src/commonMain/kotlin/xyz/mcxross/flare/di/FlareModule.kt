@@ -40,6 +40,8 @@ fun flareModule(
   walletVault: ForegroundWalletVault,
 ) = module {
   includes(venue.module())
+  // Screens read what the venue supports, and how it names things, from its descriptor.
+  single { venue.descriptor }
   single { runtime }
   single {
     HttpClient {

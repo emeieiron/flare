@@ -49,9 +49,6 @@ import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
-import xyz.mcxross.flare.decibel.model.Position
-import xyz.mcxross.flare.decibel.model.VaultInfo
-import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
@@ -67,6 +64,8 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.VaultSummary
 
 @Composable
 fun PortfolioRoute(
@@ -167,13 +166,13 @@ fun PortfolioScreen(
                 FlareSearchField(query, { query = it }, "Search positions", FlareIcons.Search,
                   Modifier.padding(bottom = 16.dp))
               }
-              val visible = positions.filter { (state.marketSymbols[it.market] ?: it.market).contains(query, true) }
+              val visible = positions.filter { (state.marketSymbols[it.marketId] ?: it.marketId).contains(query, true) }
               if (positions.isEmpty()) item { PositionsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
-              items(visible, key = { it.market }) { position ->
-                SwipeAction("Close", { closeTarget = position.market }, enabled = !state.busy) {
-                  PositionRow(position, state.marketSymbols[position.market] ?: shortAddress(position.market),
-                    state.markPrices[position.market], !state.busy, { onPositionClick(position.market) })
+              items(visible, key = { it.marketId }) { position ->
+                SwipeAction("Close", { closeTarget = position.marketId }, enabled = !state.busy) {
+                  PositionRow(position, state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
+                    state.markPrices[position.marketId], !state.busy, { onPositionClick(position.marketId) })
                 }
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
@@ -207,7 +206,7 @@ fun PortfolioScreen(
               item {
                 Text("Invested in vaults", color = FlareColors.TextSecondary)
                 if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(balance = true)
-                else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.currentValue }) else "—",
+                else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
                   Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
                 if (state.vaultsError != null) QuietPortfolioMessage(
                   if (state.vaultsLoaded) "Updating · showing your last vault balances" else "Vaults unavailable. Reconnecting automatically.")
@@ -217,15 +216,15 @@ fun PortfolioScreen(
                 else if (state.vaultsLoaded && owned.isEmpty() && query.isBlank()) QuietPortfolioMessage("No vault deposits yet")
               }
               items(ownedMatches, key = { "owned:${it.vault.address}" }) { position ->
-                VaultSummaryRow(position.vault.name, formatBalance(position.currentValue),
-                  "${formatQuantity(position.currentNumShares, 4)} shares") {
+                VaultSummaryRow(position.vault.name, formatBalance(position.value),
+                  "${formatQuantity(position.shares, 4)} shares") {
                   vaultAddress = position.vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
               }
               if (availableMatches.isNotEmpty()) item { SectionLabel("Discover") }
               items(availableMatches, key = { it.address }) { vault ->
-                VaultSummaryRow(vault.name, formatBalance(vault.totalAum),
+                VaultSummaryRow(vault.name, formatBalance(vault.totalValue),
                   "Assets managed · ${formatQuantity(vault.performanceFeePercent, 2)}% fee") {
                   vaultAddress = vault.address
                   page = PortfolioPage.VAULT_DETAIL
@@ -242,7 +241,8 @@ fun PortfolioScreen(
               else QuietPortfolioMessage("This vault is no longer available")
             }
             PortfolioPage.REWARDS -> item {
-              if (state.streak != null || state.amps != null || state.tier != null) {
+              val rewards = state.rewards
+              if (rewards?.streak != null || rewards?.points != null || rewards?.tier != null) {
                 Column { RewardsDetails(state) }
                 if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
@@ -254,7 +254,7 @@ fun PortfolioScreen(
     }
   }
   closeTarget?.let { market ->
-    val position = state.account.positions.firstOrNull { it.market == market }
+    val position = state.account.positions.firstOrNull { it.marketId == market }
     if (position != null) ClosePositionSheet(state, position, onIntent, { closeTarget = null }, { closeTarget = null })
     else LaunchedEffect(market) { closeTarget = null }
   }
@@ -292,11 +292,12 @@ private fun PortfolioOverview(
   }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
   AnimatedVisibility(expanded) {
     Column(Modifier.padding(top = 12.dp)) {
-      DetailRow("Trading equity", overview?.equityBalance?.let(::formatBalance) ?: "—")
-      DetailRow("Trading collateral", overview?.crossUsdcBalance?.let(::formatBalance) ?: "—")
-      DetailRow("Spot assets", if (overview?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
-      DetailRow("Free vault equity", overview?.freeVaultEquity?.let(::formatBalance) ?: "—")
-      DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.crossMarginRatio * 100, 2)}%" } ?: "—")
+      DetailRow("Trading equity", overview?.equity?.let(::formatBalance) ?: "—")
+      DetailRow("Trading collateral", overview?.balances?.collateral?.let(::formatBalance) ?: "—")
+      if (state.capabilities.spot) DetailRow("Spot assets",
+        if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
+      if (state.capabilities.vaults) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—")
       Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
         style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
     }
@@ -318,8 +319,8 @@ private fun PortfolioOverview(
     { onPage(PortfolioPage.POSITIONS) }) {
     if (position != null) {
       val size = position.size.toDoubleOrNull()
-      val pnl = state.markPrices[position.market]?.let { mark -> size?.let { (mark - position.entryPrice) * it } }
-      PreviewValue(state.marketSymbols[position.market] ?: shortAddress(position.market),
+      val pnl = state.markPrices[position.marketId]?.let { mark -> size?.let { (mark - position.entryPrice) * it } }
+      PreviewValue(state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
         pnl?.let(::formatSignedBalance) ?: "—",
         "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))}",
         valueColor = when {
@@ -337,15 +338,17 @@ private fun PortfolioOverview(
     else PreviewValue("USDC", if (usdc.isNotEmpty() || (overview != null && !state.account.stale && !state.balanceIncomplete))
       formatBalance(usdc.sumOf { it.quantity }) else "—", "Spot and trading collateral")
   }
-  PortfolioDestination("Vaults", state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
+  if (state.capabilities.vaults) PortfolioDestination("Vaults",
+    state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
     { onPage(PortfolioPage.VAULTS) }) {
     if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
-    else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.currentValue }) else "—",
+    else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
       if (state.vaultsError != null) "Updating automatically" else null)
   }
-  PortfolioDestination("Rewards", state.tier?.tier, { onPage(PortfolioPage.REWARDS) }) {
-    if (!state.rewardsLoaded && !state.rewardsError && state.amps == null) PortfolioShimmer(rows = 1)
-    else PreviewValue("Amps", state.amps?.let { formatCount(it.totalAmps) } ?: "—",
+  if (state.capabilities.rewards) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
+    val points = state.rewards?.points
+    if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
+    else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
       if (state.rewardsError) "Updating automatically" else null)
   }
 }
@@ -386,21 +389,21 @@ private fun SectionLabel(title: String) {
 }
 
 @Composable
-private fun VaultDetails(state: PortfolioUiState, vault: VaultInfo, onIntent: (PortfolioIntent) -> Unit) {
+private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent: (PortfolioIntent) -> Unit) {
   val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
   if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
   position?.let {
-    DetailRow("Your value", formatBalance(it.currentValue))
-    DetailRow("Your shares", formatQuantity(it.currentNumShares, 4))
-    DetailRow("Return", "${if (it.returnsPercent >= 0) "+" else ""}${formatQuantity(it.returnsPercent, 2)}%")
+    DetailRow("Your value", formatBalance(it.value))
+    DetailRow("Your shares", formatQuantity(it.shares, 4))
+    DetailRow("Return", "${if (it.returnPercent >= 0) "+" else ""}${formatQuantity(it.returnPercent, 2)}%")
   }
-  DetailRow("Share price", formatPrice(position?.effectiveSharePrice ?: vault.sharePrice))
-  DetailRow("Assets managed", formatBalance(vault.totalAum))
+  DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
+  DetailRow("Assets managed", formatBalance(vault.totalValue))
   DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     FlareButton("Deposit", { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
       Modifier.weight(1f), enabled = !state.busy)
-    if (position != null && position.currentNumShares > 0) FlareButton("Redeem",
+    if (position != null && position.shares > 0) FlareButton("Redeem",
       { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
       Modifier.weight(1f), style = FlareButtonStyle.OUTLINE, enabled = !state.busy)
   }
@@ -408,22 +411,22 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultInfo, onIntent: (P
 
 @Composable
 private fun RewardsDetails(state: PortfolioUiState) {
-  Text("Total Amps", color = FlareColors.TextSecondary)
-  Text(state.amps?.let { formatCount(it.totalAmps) } ?: "—",
+  val pointsName = state.rewardPointsName ?: "Points"
+  val points = state.rewards?.points
+  Text("Total $pointsName", color = FlareColors.TextSecondary)
+  Text(points?.let { formatCount(it.total) } ?: "—",
     Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
-  state.tier?.let { DetailRow("Tier", it.tier) }
-  state.amps?.rank?.let { DetailRow("Rank", "#$it") }
-  state.streak?.let {
-    DetailRow("Current streak", if (it.streakCount == 0) "No active streak" else "${it.streakCount} days")
-    if (it.longestStreak > 0) DetailRow("Longest streak", "${it.longestStreak} days")
+  state.rewards?.tier?.let { DetailRow("Tier", it.name) }
+  points?.rank?.let { DetailRow("Rank", "#$it") }
+  state.rewards?.streak?.let {
+    DetailRow("Current streak", if (it.days == 0) "No active streak" else "${it.days} days")
+    if (it.longestDays > 0) DetailRow("Longest streak", "${it.longestDays} days")
     if (it.graceDaysRemaining > 0) DetailRow("Grace remaining", "${it.graceDaysRemaining} days")
   }
-  state.amps?.let { amps ->
-    val breakdown = listOf("Trading" to amps.tradingAmps, "Streaks" to amps.streakAmps,
-      "Vaults" to amps.vaultAmps, "Referrals" to amps.referralAmps, "Bonuses" to amps.bonusAmps)
-      .filter { it.second > 0 }
-    if (breakdown.isNotEmpty()) SectionLabel("Amps earned")
-    breakdown.forEach { (label, value) -> DetailRow(label, formatQuantity(value, 0)) }
+  points?.let {
+    val breakdown = it.sources.filter { source -> source.amount > 0 }
+    if (breakdown.isNotEmpty()) SectionLabel("$pointsName earned")
+    breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
   }
 }
 

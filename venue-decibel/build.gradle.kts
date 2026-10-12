@@ -38,13 +38,11 @@ kotlin {
       implementation(libs.ktor.client.mock)
       implementation(libs.ktor.client.content.negotiation)
       implementation(libs.ktor.serialization.kotlinx.json)
+      // The account repository's tests keep preferences in memory.
+      implementation(libs.androidx.datastore.preferences)
     }
     getByName("androidHostTest").dependencies {
-      implementation(libs.androidx.datastore.preferences)
       implementation(libs.androidx.room3.runtime)
-    }
-    iosTest.dependencies {
-      implementation(libs.androidx.datastore.preferences)
     }
   }
 }

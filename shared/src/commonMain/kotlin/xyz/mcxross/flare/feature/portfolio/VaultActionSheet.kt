@@ -61,15 +61,15 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       if (vault.manager.isNotBlank()) {
         DetailRow("Manager", shortAddress(vault.manager))
       }
-      DetailRow("Total AUM", formatBalance(vault.totalAum))
+      DetailRow("Total AUM", formatBalance(vault.totalValue))
       DetailRow("Share price", formatPrice(vault.sharePrice))
       DetailRow("Performance fee", "${vault.performanceFeeBps / 100.0}%")
-      DetailRow("Deposit lockup", if (vault.lockupSeconds > 0)
-        "${formatQuantity(vault.lockupSeconds / 3600.0, 1)} hours" else if (vault.lockdownPeriodS == 0L) "None" else "Not available")
+      DetailRow("Deposit lockup", vault.lockupSeconds?.let { lockup ->
+        if (lockup > 0) "${formatQuantity(lockup / 3600.0, 1)} hours" else "None" } ?: "Not available")
 
       val userPerformance = state.accountVaults.firstOrNull { it.vault.address == vault.address }
-      val availableShares = userPerformance?.currentNumShares ?: 0.0
-      val effectivePrice = userPerformance?.effectiveSharePrice ?: vault.sharePrice
+      val availableShares = userPerformance?.shares ?: 0.0
+      val effectivePrice = userPerformance?.sharePrice ?: vault.sharePrice
       val parsedAmount = state.vaultAmountInput.toDoubleOrNull() ?: 0.0
 
       if (mode == VaultActionMode.DEPOSIT) {
@@ -79,7 +79,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
           "Shares held",
           "${formatQuantity(availableShares, 4)} shares",
         )
-        DetailRow("Current value", formatBalance(userPerformance?.currentValue ?: 0.0))
+        DetailRow("Current value", formatBalance(userPerformance?.value ?: 0.0))
         Text("Redemption depends on unlocked shares. Locked or pledged shares may be unavailable.",
           style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
       }

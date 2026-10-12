@@ -6,8 +6,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.decibel.api.TransactionState
 
-/** Repository-owned setup: retries only indexed reads, never key generation or transactions. */
-internal class TradingWalletSetup {
+/**
+ * Repository-owned setup: retries only indexed reads, never key generation or transactions. Public
+ * while Decibel's account repository in `:venue-decibel` uses it from here; it moves there with the
+ * trading repository.
+ */
+class TradingWalletSetup {
   private val mutex = Mutex()
 
   suspend fun prepare(actions: TradingWalletSetupActions) = mutex.withLock {
@@ -40,7 +44,7 @@ internal class TradingWalletSetup {
   }
 }
 
-internal interface TradingWalletSetupActions {
+interface TradingWalletSetupActions {
   suspend fun existingWallet(): String?
 
   suspend fun createWallet(): String
@@ -54,7 +58,7 @@ internal interface TradingWalletSetupActions {
   suspend fun verifyTradingKey()
 }
 
-internal class SetupTransactionException(val transaction: TransactionState) :
+class SetupTransactionException(val transaction: TransactionState) :
   IllegalStateException(
     (transaction as? TransactionState.Failed)?.let { failure ->
       "Enabling trading failed" + (failure.hash?.let { ". Transaction: $it" } ?: "")

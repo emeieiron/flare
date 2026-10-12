@@ -22,12 +22,13 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.TwapOrder
 
 enum class OrdersSection(val label: String) {
   OPEN("Open"),
@@ -39,6 +40,8 @@ enum class OrdersSection(val label: String) {
 }
 
 data class OrdersUiState(
+  /** What the venue supports; screens hide the rest. */
+  val capabilities: VenueCapabilities = VenueCapabilities.All,
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
   val spotMarkets: Set<String> = emptySet(),
@@ -58,7 +61,16 @@ data class OrdersUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
-)
+) {
+  /**
+   * What the wallet would pay for the last action's network fee once the venue's sponsor declined
+   * it; null when it wasn't declined, or the venue has no sponsored fees.
+   */
+  val selfPayEstimate: ULong?
+    get() =
+      if (capabilities.sponsoredFees) (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+      else null
+}
 
 sealed interface OrdersIntent {
   data class SelectSection(val section: OrdersSection) : OrdersIntent
@@ -85,8 +97,10 @@ class OrdersViewModel(
   wallets: WalletRepository,
   private val trading: TradingRepository,
   private val markets: MarketsRepository,
+  venue: VenueDescriptor,
 ) : ViewModel() {
-  private val local = MutableStateFlow(OrdersUiState())
+  private val capabilities = venue.capabilities
+  private val local = MutableStateFlow(OrdersUiState(capabilities = capabilities))
 
   init {
     viewModelScope.launch {
@@ -208,8 +222,10 @@ class OrdersViewModel(
         }
         is TransactionState.Failed -> {
           if (state.selfPayEstimateOctas == null) error(state.message)
-          trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
-            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+          if (capabilities.networkFeeTopUp) {
+            trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+            }
           }
         }
         else -> Unit
@@ -261,8 +277,10 @@ class OrdersViewModel(
         }
         is TransactionState.Failed -> {
           if (state.selfPayEstimateOctas == null) error(state.message)
-          trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
-            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+          if (capabilities.networkFeeTopUp) {
+            trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+            }
           }
         }
         else -> Unit
@@ -279,16 +297,16 @@ class OrdersViewModel(
         for (order in openOrders) {
           val isSpot =
             markets.catalog.value.quotes
-              .firstOrNull { it.market.id == order.market }
+              .firstOrNull { it.market.id == order.marketId }
               ?.market
-              ?.kind == MarketKind.SPOT || order.assetType == AssetType.SPOT
+              ?.kind == MarketKind.SPOT || order.kind == MarketKind.SPOT
           val command =
-            if (order.isTpSl) {
-              DecibelCommand.CancelPositionTpSl(subaccount, order.market, order.orderId)
+            if (order.isPositionTpSl) {
+              DecibelCommand.CancelPositionTpSl(subaccount, order.marketId, order.orderId)
             } else if (isSpot) {
-              DecibelCommand.CancelSpotOrder(subaccount, order.market, order.orderId)
+              DecibelCommand.CancelSpotOrder(subaccount, order.marketId, order.orderId)
             } else {
-              DecibelCommand.CancelOrder(subaccount, order.market, order.orderId)
+              DecibelCommand.CancelOrder(subaccount, order.marketId, order.orderId)
             }
           trading
             .execute(
@@ -304,6 +322,7 @@ class OrdersViewModel(
     }
 
   fun refreshTwaps() {
+    if (!capabilities.twap) return
     viewModelScope.launch {
       val active = runCatching { accounts.activeTwaps() }.getOrDefault(emptyList())
       val history = runCatching { accounts.twapHistory() }.getOrDefault(emptyList())

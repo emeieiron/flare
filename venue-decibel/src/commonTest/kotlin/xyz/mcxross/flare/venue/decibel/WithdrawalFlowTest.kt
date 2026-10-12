@@ -1,4 +1,4 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -11,6 +11,16 @@ import io.ktor.http.headersOf
 import kotlin.test.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
+import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AptosSigningWallet
+import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.OwnerBackup
+import xyz.mcxross.flare.data.PendingTransaction
+import xyz.mcxross.flare.data.ReconciliationResult
+import xyz.mcxross.flare.data.SessionRole
+import xyz.mcxross.flare.data.SessionStatus
+import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
@@ -109,7 +119,7 @@ class WithdrawalFlowTest {
       assertTrue(f.sessions.tradingPrompts.isEmpty())
       // The loaded balance shows the owner could read the account. Staleness isn't checked: the
       // live stream starts in the background and can't connect without a WebSocket server here.
-      assertEquals(100.0, f.accounts.snapshot.value.overview?.equityBalance)
+      assertEquals(100.0, f.accounts.snapshot.value.overview?.equity)
       assertTrue(f.sessions.boundRoles.all { it == SessionRole.OWNER })
     }
   }

@@ -35,19 +35,11 @@ import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
-import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
-import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.SlippageBps
-import xyz.mcxross.flare.decibel.model.TierInfo
-import xyz.mcxross.flare.decibel.model.TradingStreak
-import xyz.mcxross.flare.decibel.model.VaultInfo
-import xyz.mcxross.flare.decibel.model.absoluteSize
-import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.feature.trade.validate
@@ -55,23 +47,19 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.PortfolioChartRange
+import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.VaultPosition
+import xyz.mcxross.flare.venue.model.VaultSummary
 
 enum class FundingMode {
   DEPOSIT,
   WITHDRAW,
-}
-
-enum class PortfolioChartRange(val label: String, val wireValue: String) {
-  DAY_1("1D", "1D"),
-  WEEK_1("1W", "1W"),
-  MONTH_1("1M", "1M"),
-  ALL("ALL", "ALL"),
-}
-
-enum class PortfolioMetric(val label: String, val wireValue: String) {
-  EQUITY("Net value", "account_value"),
-  PNL("Realized P&L", "pnl"),
 }
 
 enum class VaultActionMode {
@@ -92,6 +80,10 @@ data class SpotHolding(
 )
 
 data class PortfolioUiState(
+  /** What the venue supports; screens hide the rest. */
+  val capabilities: VenueCapabilities = VenueCapabilities.All,
+  /** What the venue calls its reward points, such as Amps. */
+  val rewardPointsName: String? = null,
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
   val markPrices: Map<String, Double> = emptyMap(),
@@ -115,7 +107,7 @@ data class PortfolioUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
   val topUpTransaction: TransactionState? = null,
-  val chartPoints: List<PortfolioChartPoint> = emptyList(),
+  val chartPoints: List<PortfolioPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
   val chartLoading: Boolean = false,
@@ -128,12 +120,10 @@ data class PortfolioUiState(
   val vaultsError: String? = null,
   val rewardsLoaded: Boolean = false,
   val rewardsError: Boolean = false,
-  val streak: TradingStreak? = null,
-  val amps: AmpsBreakdown? = null,
-  val tier: TierInfo? = null,
-  val vaults: List<VaultInfo> = emptyList(),
-  val accountVaults: List<AccountVaultPerformance> = emptyList(),
-  val selectedVault: VaultInfo? = null,
+  val rewards: Rewards? = null,
+  val vaults: List<VaultSummary> = emptyList(),
+  val accountVaults: List<VaultPosition> = emptyList(),
+  val selectedVault: VaultSummary? = null,
   val vaultAction: VaultActionMode? = null,
   val vaultAmountInput: String = "",
   val vaultTransaction: TransactionState? = null,
@@ -145,22 +135,32 @@ data class PortfolioUiState(
 
   val totalBalance: Double
     get() {
-      val perpEquity = account.overview?.equityBalance ?: 0.0
+      val perpEquity = account.overview?.equity ?: 0.0
       val spotAssetsValue = totalSpotValue
-      val vaultAssetsValue = account.overview?.freeVaultEquity ?: 0.0
-      return perpEquity + spotAssetsValue + vaultAssetsValue
+      val vaultAssetsValue = account.overview?.vaultEquity ?: 0.0
+      // Spot value that also backs perpetuals is already in the perpetuals equity.
+      val shared = account.overview?.balances?.sharedWithEquity ?: 0.0
+      return perpEquity + spotAssetsValue + vaultAssetsValue - shared
     }
 
   val totalSpotValue: Double
-    get() = account.overview?.spot?.totalUsd
+    get() = account.overview?.balances?.spot?.totalUsd
       ?: spotHoldings.filterNot { it.isCollateral }.sumOf { it.valueUsd }
 
   val balanceIncomplete: Boolean
-    get() = account.overview?.spot == null || holdingsError != null ||
-      (account.overview?.freeVaultEquity == null && accountVaults.isNotEmpty()) || vaultsError != null
+    get() = account.overview?.balances?.spot == null || holdingsError != null ||
+      (account.overview?.vaultEquity == null && accountVaults.isNotEmpty()) || vaultsError != null
 
   val collateralBalance: Double
-    get() = account.overview?.crossWithdrawableBalance ?: account.overview?.availableToTrade ?: 0.0
+    get() = account.overview?.withdrawable ?: 0.0
+
+  /**
+   * What the wallet would pay for [transaction]'s network fee once the venue's sponsor declined it;
+   * null when it wasn't declined, or the venue has no sponsored fees.
+   */
+  fun selfPayEstimate(transaction: TransactionState?): ULong? =
+    if (capabilities.sponsoredFees) (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+    else null
 }
 
 sealed interface PortfolioIntent {
@@ -207,7 +207,7 @@ sealed interface PortfolioIntent {
 
   data object TopUpApiWallet : PortfolioIntent
 
-  data class OpenVaultAction(val vault: VaultInfo, val mode: VaultActionMode) : PortfolioIntent
+  data class OpenVaultAction(val vault: VaultSummary, val mode: VaultActionMode) : PortfolioIntent
 
   data class ChangeVaultAmount(val value: String) : PortfolioIntent
 
@@ -225,9 +225,14 @@ class PortfolioViewModel(
   private val trading: TradingRepository,
   private val markets: MarketsRepository,
   private val marketDetails: MarketDetailsRepository,
+  venue: VenueDescriptor,
   private val assetCatalog: AssetCatalogRepository? = null,
 ) : ViewModel() {
-  private val local = MutableStateFlow(PortfolioUiState())
+  private val capabilities = venue.capabilities
+  private val local =
+    MutableStateFlow(
+      PortfolioUiState(capabilities = capabilities, rewardPointsName = venue.rewardPointsName)
+    )
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private val primaryUsdcBalance = MutableStateFlow(0.0)
   private var chartJob: Job? = null
@@ -256,7 +261,7 @@ class PortfolioViewModel(
         .collect { subaccount ->
           fetchSpotBalances(subaccount)
           if (local.value.historyVisible) fetchPortfolioChart()
-          fetchStreaksAndAmps()
+          fetchRewards()
           refreshVaults()
         }
     }
@@ -316,26 +321,25 @@ class PortfolioViewModel(
         val nonSpotPositions =
           state.account.positions.filter { pos ->
             catalog.quotes.none {
-              it.market.id == pos.market && it.market.kind == MarketKind.SPOT
+              it.market.id == pos.marketId && it.market.kind == MarketKind.SPOT
             }
           }
 
         val holdings = mutableListOf<SpotHolding>()
 
         // Collateral is an owned balance, not the amount currently available to withdraw.
-        state.account.overview?.crossUsdcBalance?.let { cash ->
+        state.account.overview?.balances?.collateral?.let { cash ->
           holdings.add(SpotHolding("USDC", "Trading collateral", quantity = cash,
             markPrice = 1.0, valueUsd = cash, isCollateral = true, badge = "MARGIN"))
         }
-        val spot = state.account.overview?.spot
+        val spot = state.account.overview?.balances?.spot
         if (spot != null) {
-          val assets = (spot.positions.map { it.assetAddress } +
-            spot.reservations.map { it.assetAddress }).distinct()
+          val assets = (spot.assets.map { it.assetId } + spot.reserved.map { it.assetId }).distinct()
           assets.forEach { address ->
-            val position = spot.positions.firstOrNull { it.assetAddress == address }
-            val reserved = spot.reservations.filter { it.assetAddress == address }
+            val position = spot.assets.firstOrNull { it.assetId == address }
+            val reserved = spot.reserved.filter { it.assetId == address }
             val reservationMarket = reserved.firstOrNull()?.let { item ->
-              catalog.quotes.firstOrNull { it.market.id == item.market }
+              catalog.quotes.firstOrNull { it.market.id == item.marketId }
             }
             val symbol = position?.symbol?.takeIf { it.isNotBlank() }
               ?: if (reserved.firstOrNull()?.isBuy == true) "USDC"
@@ -377,7 +381,7 @@ class PortfolioViewModel(
           // Only the markets with open positions are ever looked up. Keeping the others out means a
           // price tick elsewhere leaves this state equal, so the portfolio doesn't recompose for it.
           markPrices =
-            nonSpotPositions.mapTo(HashSet()) { it.market }.let { held ->
+            nonSpotPositions.mapTo(HashSet()) { it.marketId }.let { held ->
               catalog.quotes.filter { it.market.id in held }.associate { it.market.id to it.markPrice }
             },
         )
@@ -410,17 +414,21 @@ class PortfolioViewModel(
             accounts.snapshot.value.account?.let { fetchSpotBalances(it) }
             uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
             fetchPortfolioChart()
-            fetchStreaksAndAmps()
+            fetchRewards()
             refreshVaults()
           }
         }
       is PortfolioIntent.ChangeWithdrawalDestination ->
         local.update { it.copy(withdrawalDestination = intent.value, fundingTransaction = null) }
       is PortfolioIntent.OpenFunding -> {
-        val pending = uiState.value.pendingWithdrawal.takeIf { intent.mode == FundingMode.WITHDRAW }
+        // Without in-app deposits, a transfer can only go out to the wallet.
+        val mode =
+          if (intent.mode == FundingMode.DEPOSIT && !capabilities.inAppDeposit) FundingMode.WITHDRAW
+          else intent.mode
+        val pending = uiState.value.pendingWithdrawal.takeIf { mode == FundingMode.WITHDRAW }
         local.update {
           it.copy(
-            fundingMode = intent.mode,
+            fundingMode = mode,
             fundingAmount = pending?.amount.orEmpty(),
             withdrawalDestination = pending?.destination.orEmpty(),
             fundingTransaction = null,
@@ -453,7 +461,7 @@ class PortfolioViewModel(
           )
         }
       is PortfolioIntent.ManagePosition -> {
-        val position = accounts.snapshot.value.positions.firstOrNull { it.market == intent.market }
+        val position = accounts.snapshot.value.positions.firstOrNull { it.marketId == intent.market }
         val tpStr = exitPriceInput(position?.takeProfitTriggerPrice)
         val slStr = exitPriceInput(position?.stopLossTriggerPrice)
         local.update {
@@ -535,10 +543,10 @@ class PortfolioViewModel(
   private fun closePosition(market: String, feePayment: FeePayment) =
     launchAction("Your position stayed open.") {
       val position =
-        uiState.value.account.positions.firstOrNull { it.market == market }
+        uiState.value.account.positions.firstOrNull { it.marketId == market }
           ?: error("This position is no longer open")
-      val quote = marketQuote(position.market)
-      marketDetails.refresh(position.market)
+      val quote = marketQuote(position.marketId)
+      marketDetails.refresh(position.marketId)
       val details = marketDetails.details.value
       require(!details.stale && details.orderBook != null) {
         "A live order book is required to close a position"
@@ -546,7 +554,7 @@ class PortfolioViewModel(
       val slippage = preferences.values.first().slippageBps
       val validated =
         OrderDraft(
-            marketAddress = position.market,
+            marketAddress = position.marketId,
             side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
             type = OrderType.MARKET,
             size = DecimalInput(position.absoluteSize),
@@ -564,7 +572,7 @@ class PortfolioViewModel(
     launchAction("Your exits weren’t changed.") {
       local.update { it.copy(closingMarket = null) }
       val position = managedPosition()
-      val quote = marketQuote(position.market)
+      val quote = marketQuote(position.marketId)
       val state = local.value
       val takeProfit = optionalPrice(state.takeProfitInput, quote.market.priceDecimals)
       val stopLoss = optionalPrice(state.stopLossInput, quote.market.priceDecimals)
@@ -580,7 +588,7 @@ class PortfolioViewModel(
       executePositionCommandInternal(
         DecibelCommand.SetPositionTpSl(
           subaccount = subaccount,
-          market = position.market,
+          market = position.marketId,
           takeProfitTrigger = takeProfit,
           takeProfitLimit = takeProfit,
           stopLossTrigger = stopLoss,
@@ -620,8 +628,11 @@ class PortfolioViewModel(
       }
       is TransactionState.Failed -> {
         if (terminal.selfPayEstimateOctas == null) error(terminal.message)
-        trading.apiWalletTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
-          local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+        // Venues without a fee token to send never offer a top-up.
+        if (capabilities.networkFeeTopUp) {
+          trading.apiWalletTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
+            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+          }
         }
       }
       else -> Unit
@@ -657,7 +668,7 @@ class PortfolioViewModel(
       }) ?: error("Market metadata is unavailable")
 
   private fun managedPosition() =
-    uiState.value.account.positions.firstOrNull { it.market == local.value.managedPositionMarket }
+    uiState.value.account.positions.firstOrNull { it.marketId == local.value.managedPositionMarket }
       ?: error("Select an open position")
 
   private fun optionalPrice(value: String, decimals: Int): ULong? =
@@ -680,7 +691,7 @@ class PortfolioViewModel(
     require(amount != null && amount > 0.0) { "Enter an amount to transfer" }
     val available =
       if (mode == FundingMode.DEPOSIT) uiState.value.primaryUsdcBalance
-      else uiState.value.account.overview?.crossWithdrawableBalance ?: 0.0
+      else uiState.value.account.overview?.withdrawable ?: 0.0
     require(amount <= available + 1e-9) {
       "You can transfer up to ${formatQuantity(available, 2)} USDC."
     }
@@ -717,7 +728,8 @@ class PortfolioViewModel(
   }
 
   private suspend fun fetchSpotBalances(subaccount: String) = balanceMutex.withLock {
-    if (accounts.snapshot.value.overview?.spot != null) {
+    // Spot holdings come with the account where the venue reports them, and not at all without spot.
+    if (accounts.snapshot.value.overview?.balances?.spot != null || !capabilities.spot) {
       local.update { it.copy(holdingsError = null) }
       return@withLock
     }
@@ -752,7 +764,7 @@ class PortfolioViewModel(
         fetchPortfolioChart()
       }
       if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
-      if (local.value.rewardsError && rewardsJob?.isActive != true) fetchStreaksAndAmps()
+      if (local.value.rewardsError && rewardsJob?.isActive != true) fetchRewards()
       if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
       waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
     }
@@ -769,7 +781,7 @@ class PortfolioViewModel(
         chartPoints = if (sameSelection) it.chartPoints else emptyList(),
         chartLoaded = sameSelection && it.chartLoaded,
         chartError = if (sameSelection) it.chartError else null) }
-      runSuspendCatching { accounts.portfolioChart(range.wireValue, metric.wireValue) }
+      runSuspendCatching { accounts.portfolioChart(range, metric) }
         .onSuccess { points ->
           local.update { it.copy(chartPoints = points, chartLoading = false, chartLoaded = true, chartError = null) }
         }.onFailure {
@@ -778,19 +790,18 @@ class PortfolioViewModel(
     }
   }
 
-  private fun fetchStreaksAndAmps() {
-    if (rewardsJob?.isActive == true) return
+  /** A part that fails to load keeps what was shown for it, and is retried while visible. */
+  private fun fetchRewards() {
+    if (!capabilities.rewards || rewardsJob?.isActive == true) return
     rewardsJob = viewModelScope.launch {
-      val streak = runSuspendCatching { accounts.tradingStreak() }
-      val amps = runSuspendCatching { accounts.ampsBreakdown() }
-      val tier = runSuspendCatching { accounts.tierInfo() }
+      val result = runSuspendCatching { accounts.rewards() }
       local.update {
+        val rewards = result.getOrNull()
         it.copy(
-          streak = if (streak.isSuccess) streak.getOrNull() else it.streak,
-          amps = if (amps.isSuccess) amps.getOrNull() else it.amps,
-          tier = if (tier.isSuccess) tier.getOrNull() else it.tier,
+          rewards =
+            if (result.isFailure) it.rewards else rewards?.keepingUnavailableFrom(it.rewards),
           rewardsLoaded = true,
-          rewardsError = streak.isFailure || amps.isFailure || tier.isFailure,
+          rewardsError = result.isFailure || rewards?.unavailable?.isNotEmpty() == true,
         )
       }
     }
@@ -814,12 +825,12 @@ class PortfolioViewModel(
   }
 
   fun refreshVaults() {
-    if (vaultsJob?.isActive == true) return
+    if (!capabilities.vaults || vaultsJob?.isActive == true) return
     vaultsJob = viewModelScope.launch {
       local.update { it.copy(vaultsLoading = true) }
       runSuspendCatching {
         val vaults = accounts.vaults()
-        val positions = accounts.accountVaultPerformance()
+        val positions = accounts.vaultPositions()
         local.update { it.copy(vaults = vaults, accountVaults = positions, vaultsLoaded = true, vaultsError = null) }
       }.onFailure {
         local.update { it.copy(vaultsError = "Vaults are temporarily unavailable. Reconnecting automatically.") }
@@ -844,7 +855,7 @@ class PortfolioViewModel(
     }
     if (mode == VaultActionMode.REDEEM) {
       val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
-      val maxShares = position?.currentNumShares ?: 0.0
+      val maxShares = position?.shares ?: 0.0
       if (parsedAmount < 5.0) {
         local.update { it.copy(actionError = "The minimum redemption for DLP vaults is 5 shares.") }
         return

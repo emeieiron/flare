@@ -19,7 +19,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
+import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
@@ -33,10 +33,20 @@ import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.testVenue
+import xyz.mcxross.flare.venue.model.PortfolioChartRange
+import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingKey
+import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultPosition
+import xyz.mcxross.flare.venue.model.VaultSummary
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
@@ -113,14 +123,19 @@ class SettingsViewModelTest {
     var withdrawCallCount = 0
     var lastWithdrawAmount = ""
     var lastWithdrawDestination: String? = null
+    var rewardReads = 0
+    var subaccountReads = 0
 
-    override suspend fun delegations(): List<Delegation> = emptyList()
+    override suspend fun delegations(): List<TradingKey> = emptyList()
     override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState =
       TransactionState.Committed("0x")
     override suspend fun restoreTrading() {}
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
     override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> = emptyList()
-    override suspend fun subaccounts(owner: String): List<Subaccount> = emptyList()
+    override suspend fun subaccounts(owner: String): List<Subaccount> {
+      subaccountReads++
+      return emptyList()
+    }
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
     override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): TransactionState =
       TransactionState.Committed("0xsub")
@@ -158,18 +173,18 @@ class SettingsViewModelTest {
     override suspend fun refreshHistory() {}
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
     override suspend fun portfolioChart(
-      timeRange: String,
-      metric: String,
-    ): List<xyz.mcxross.flare.decibel.model.PortfolioChartPoint> = emptyList()
-    override suspend fun tradingStreak(): xyz.mcxross.flare.decibel.model.TradingStreak? = null
-    override suspend fun ampsBreakdown(): xyz.mcxross.flare.decibel.model.AmpsBreakdown? = null
-    override suspend fun tierInfo(): xyz.mcxross.flare.decibel.model.TierInfo? = null
-    override suspend fun verifyReferralCode(code: String): xyz.mcxross.flare.decibel.model.ReferralCodeInfo? = null
+      range: PortfolioChartRange,
+      metric: PortfolioMetric,
+    ): List<PortfolioPoint> = emptyList()
+    override suspend fun rewards(): Rewards {
+      rewardReads++
+      return Rewards(points = RewardPoints(total = 120.0))
+    }
     override suspend fun redeemReferralCode(code: String): Boolean = true
-    override suspend fun activeTwaps(): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
-    override suspend fun twapHistory(limit: Int): List<xyz.mcxross.flare.decibel.model.TwapOrder> = emptyList()
-    override suspend fun vaults(limit: Int): List<xyz.mcxross.flare.decibel.model.VaultInfo> = emptyList()
-    override suspend fun accountVaultPerformance(): List<xyz.mcxross.flare.decibel.model.AccountVaultPerformance> = emptyList()
+    override suspend fun activeTwaps(): List<TwapOrder> = emptyList()
+    override suspend fun twapHistory(limit: Int): List<TwapOrder> = emptyList()
+    override suspend fun vaults(limit: Int): List<VaultSummary> = emptyList()
+    override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
     override fun contributeToVault(
       vaultAddress: String,
       amount: String,
@@ -194,7 +209,7 @@ class SettingsViewModelTest {
         wallets = FakeWalletRepository(),
         accounts = fakeAccounts,
         sessions = FakeSessionRepository(),
-        decibelConfig = DecibelRuntimeConfig(),
+        venue = testVenue(),
       )
 
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
@@ -260,12 +275,51 @@ class SettingsViewModelTest {
     assertNull(vm.uiState.value.error)
   }
 
+  @Test
+  fun venueSettingsComeFromTheDescriptor() = runTest {
+    val accounts = FakeAccountRepository()
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
+    val vm =
+      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, testVenue())
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    assertEquals("https://proxy.test", vm.uiState.value.proxyUrl)
+    assertEquals("0xb0b", vm.uiState.value.defaultBuilderAddress)
+    assertEquals(120.0, vm.uiState.value.rewards?.points?.total)
+    assertEquals(1, accounts.rewardReads)
+    assertEquals(1, accounts.subaccountReads)
+  }
+
+  @Test
+  fun venuesWithoutRewardsOrTradingAccountsNeverLoadThem() = runTest {
+    val accounts = FakeAccountRepository()
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        testVenue(BareCapabilities),
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(SettingsIntent.LoadSubaccounts)
+
+    assertEquals(BareCapabilities, vm.uiState.value.capabilities)
+    assertNull(vm.uiState.value.rewards)
+    assertEquals(0, accounts.rewardReads)
+    assertEquals(0, accounts.subaccountReads)
+  }
+
   private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =
     SettingsViewModel(
       preferences = AppPreferences(MemoryPreferences()),
       wallets = wallets,
       accounts = FakeAccountRepository(),
       sessions = sessions,
-      decibelConfig = DecibelRuntimeConfig(),
+      venue = testVenue(),
     )
 }

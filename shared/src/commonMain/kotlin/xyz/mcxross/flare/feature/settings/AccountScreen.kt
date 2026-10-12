@@ -45,7 +45,6 @@ import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.data.sameAptosAddress
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.toDecimalString
@@ -72,6 +71,7 @@ import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
 
@@ -179,7 +179,7 @@ fun AccountScreen(
         }
         HorizontalDivider(color = FlareColors.BorderSubtle)
       }
-      if (active.ownerAddress != null) {
+      if (active.ownerAddress != null && state.capabilities.subaccounts) {
         ActionRow(if (state.creatingSubaccount) "Creating trading account…" else "Add trading account",
           icon = FlareIcons.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })
@@ -296,7 +296,9 @@ fun WithdrawSheet(
   val resuming = rememberSaveable { state.pendingWithdrawal != null }
   val transaction = state.withdrawTransaction
   // A fee Flare can't sponsor keeps the review open with the choice to pay it.
-  val feeEstimate = (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+  val feeEstimate =
+    (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+      ?.takeIf { state.capabilities.sponsoredFees }
   val stage =
     when {
       transaction is TransactionState.Committed -> WithdrawStage.SENT
@@ -388,9 +390,10 @@ private fun WithdrawReview(
   // An unfinished withdrawal can only be completed as it was started, so it can't be edited.
   val pending = state.pendingWithdrawal?.takeIf { resuming || !state.withdrawing }
   // A withdrawal to the owner's own wallet is a single step, with nothing to send on.
+  val addresses = LocalCredentialParser.current
   val sendsOn =
     state.profile.ownerAddress?.let { owner ->
-      runCatching { !state.withdrawDestination.trim().sameAptosAddress(owner) }.getOrDefault(true)
+      !addresses.sameAddress(state.withdrawDestination.trim(), owner)
     } ?: true
   pending?.let {
     ActionNotice(
@@ -419,7 +422,8 @@ private fun WithdrawReview(
   )
   HorizontalDivider(Modifier.padding(top = 16.dp), color = FlareColors.BorderSubtle)
   DetailRow("Network", "Aptos")
-  DetailRow("Network fee", feeEstimate?.let { "About ${it.toDecimalString(8)} APT" } ?: "Sponsored by Flare")
+  if (feeEstimate != null) DetailRow("Network fee", "About ${feeEstimate.toDecimalString(8)} APT")
+  else if (state.capabilities.sponsoredFees) DetailRow("Network fee", "Sponsored by Flare")
   Text(
     "Withdrawals can’t be reversed. Check the address before you confirm.",
     Modifier.padding(top = 12.dp),
