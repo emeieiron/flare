@@ -28,6 +28,15 @@ sealed interface Subscription {
     val significantFigures: Int? = null,
     val mantissa: Int? = null,
   ) : Subscription {
+    init {
+      require(significantFigures == null || significantFigures in 2..5) {
+        "Book aggregation uses 2 to 5 significant figures"
+      }
+      require(mantissa == null || (significantFigures == 5 && mantissa in setOf(1, 2, 5))) {
+        "A book mantissa of 1, 2 or 5 needs five significant figures"
+      }
+    }
+
     override val wire: JsonObject =
       subscriptionOf("l2Book") {
         put("coin", coin)
