@@ -9,6 +9,7 @@ import xyz.mcxross.flare.decibel.model.AccountFees
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.FundHistory
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
@@ -39,7 +40,6 @@ import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
-import xyz.mcxross.flare.decibel.model.FundMovement as DecibelFundMovement
 import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
 import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
 import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
@@ -262,19 +262,21 @@ class DecibelAccountMappersTest {
     )
 
     val transfers =
-      json.decodeFromString<Page<DecibelFundMovement>>(
-        """{"items":[{"timestamp":1735758000000,"type":"deposit","amount":500.0,""" +
-          """"asset_symbol":"USDC","transaction_hash":"0xabc","status":"confirmed"}],""" +
-          """"total_count":1}"""
+      json.decodeFromString<FundHistory>(
+        """{"funds":[{"movement_type":"deposit","amount":500.0,"balance_after":500.0,""" +
+          """"timestamp":1735758000000,"transaction_version":42},""" +
+          """{"movement_type":"withdrawal","amount":25.0,"balance_after":475.0,""" +
+          """"timestamp":1735759000000,"transaction_version":43},""" +
+          """{"movement_type":"reward","amount":1.5,"balance_after":476.5,""" +
+          """"timestamp":1735760000000,"transaction_version":44}],"total":3}"""
       )
-    val deposit = transfers.items.single()
     assertEquals(
-      FundMovement(FundMovementKind.DEPOSIT, 500.0, "USDC", "confirmed", "0xabc", 1735758000000),
-      deposit.toFundMovement(),
-    )
-    assertEquals(
-      FundMovementKind.WITHDRAWAL,
-      deposit.copy(type = "withdraw").toFundMovement().kind,
+      listOf(
+        FundMovement(FundMovementKind.DEPOSIT, 500.0, "USDC", "confirmed", null, 1735758000000),
+        FundMovement(FundMovementKind.WITHDRAWAL, 25.0, "USDC", "confirmed", null, 1735759000000),
+        FundMovement(FundMovementKind.REWARD, 1.5, "USDC", "confirmed", null, 1735760000000),
+      ),
+      transfers.funds.map { it.toFundMovement() },
     )
   }
 

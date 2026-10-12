@@ -154,7 +154,8 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
       MockEngine { request ->
         val body = when (request.url.encodedPath.substringAfterLast('/')) {
           "account_positions" -> "[]"
-          "open_orders", "order_history", "trade_history", "funding_rate_history", "account_fund_history" -> """{"items":[],"total_count":0}"""
+          "open_orders", "order_history", "trade_history", "funding_rate_history" -> """{"items":[],"total_count":0}"""
+          "account_fund_history" -> """{"funds":[],"total":0}"""
           else -> """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}"""
         }
         respond(body,

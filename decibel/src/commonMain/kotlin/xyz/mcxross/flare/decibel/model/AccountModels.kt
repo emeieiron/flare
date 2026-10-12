@@ -184,13 +184,17 @@ data class PortfolioChartPoint(
 
 @Serializable
 data class FundMovement(
+  @SerialName("movement_type") val movementType: String,
+  val amount: Double,
+  @SerialName("balance_after") val balanceAfter: Double? = null,
   val timestamp: Long = 0L,
-  val type: String = "deposit",
-  val amount: Double = 0.0,
-  @SerialName("asset_symbol") val assetSymbol: String = "USDC",
-  @SerialName("transaction_hash") val transactionHash: String? = null,
   @SerialName("transaction_version") val transactionVersion: Long? = null,
-  val status: String = "confirmed",
+)
+
+@Serializable
+data class FundHistory(
+  val funds: List<FundMovement> = emptyList(),
+  val total: Long? = null,
 )
 
 @Serializable

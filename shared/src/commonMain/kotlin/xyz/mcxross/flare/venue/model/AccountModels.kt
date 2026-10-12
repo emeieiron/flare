@@ -182,6 +182,7 @@ enum class FundMovementKind(
   TRANSFER_OUT(false),
   VAULT_DEPOSIT(false),
   VAULT_WITHDRAWAL(true),
+  REWARD(true),
 }
 
 /** Money moving in or out of the account. Display only. */
