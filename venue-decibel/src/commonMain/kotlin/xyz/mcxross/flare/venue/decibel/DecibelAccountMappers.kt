@@ -12,6 +12,7 @@ import xyz.mcxross.flare.decibel.model.SpotOverview
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.VaultInfo
+import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.FeeRates
@@ -76,8 +77,10 @@ private fun SpotOverview.toSpotBalances(): SpotBalances =
     totalUsd = totalUsd,
   )
 
-internal fun DecibelPosition.toPosition(): Position =
-  Position(
+/** The position, with the exits set for it whole or, failing those, attached to its opening order. */
+internal fun DecibelPosition.toPosition(openOrders: List<OpenOrder> = emptyList()): Position {
+  val exits = openOrders.exitsFor(market, closesWithBuy = !isLong)
+  return Position(
     marketId = market,
     size = size,
     leverage = leverage,
@@ -85,9 +88,10 @@ internal fun DecibelPosition.toPosition(): Position =
     isolated = isIsolated,
     unrealizedFunding = unrealizedFunding,
     liquidationPrice = estimatedLiquidationPrice,
-    takeProfitTriggerPrice = takeProfitTriggerPrice,
-    stopLossTriggerPrice = stopLossTriggerPrice,
+    takeProfitTriggerPrice = takeProfitTriggerPrice ?: exits.latestTrigger(ExitKind.TAKE_PROFIT),
+    stopLossTriggerPrice = stopLossTriggerPrice ?: exits.latestTrigger(ExitKind.STOP_LOSS),
   )
+}
 
 internal fun Order.toOpenOrder(): OpenOrder =
   OpenOrder(
