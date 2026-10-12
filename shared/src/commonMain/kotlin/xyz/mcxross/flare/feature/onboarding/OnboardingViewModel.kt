@@ -42,8 +42,6 @@ enum class OnboardingStep {
   SUBACCOUNT,
   /** A wallet Flare created opens its trading account and enables trading in one go. */
   OPEN_ACCOUNT,
-  /** The account needs its first deposit before the venue lets it enable trading. */
-  FUND_ACCOUNT,
   ENABLE_TRADING,
 }
 
@@ -124,8 +122,6 @@ data class OnboardingUiState(
   val builderOptIn: Boolean = true,
   /** Why builder support didn't turn on; setup is otherwise done and waits for the person to go on. */
   val builderNotice: String? = null,
-  /** What the last check for the first deposit found, when the person asked for it. */
-  val fundingNotice: String? = null,
   /** Setup was opened from inside the app, rather than as the first thing it shows. */
   val inApp: Boolean = false,
   /** A resumed first setup went back to its start, so its first step is the welcome page again. */
@@ -177,15 +173,6 @@ sealed interface OnboardingIntent {
   /** Leaves setup after reading why builder support didn't turn on. */
   data object FinishSetup : OnboardingIntent
 
-  /** Checks whether the first deposit arrived, moving on to enabling trading once it has. */
-  data object CheckFunding : OnboardingIntent
-
-  /** The same check, asked for by the person, who sees it run and what it found. */
-  data object CheckFundingNow : OnboardingIntent
-
-  /** Leaves setup waiting for funds and opens the app; actions wait until setup finishes. */
-  data object DeferSetup : OnboardingIntent
-
   data class InitializeMode(val mode: String, val profileId: String? = null) : OnboardingIntent
 
   data object ClearSensitiveState : OnboardingIntent
@@ -218,7 +205,6 @@ class OnboardingViewModel(
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
   private var tradingAccountCheckJob: Job? = null
-  private var fundingCheckJob: Job? = null
   private var subflowMode: String? = null
   private var previousProfileId: String? = null
   private var createdProfileId: String? = null
@@ -251,7 +237,7 @@ class OnboardingViewModel(
             when (intent.mode.uppercase()) {
               "CREATE" -> createOwner()
               "IMPORT" -> show(OnboardingStep.IMPORT)
-              "CONTINUE" -> {
+              CONTINUE -> {
                 intent.profileId?.let { preferences.activateProfile(it) }
                 prepareOwnerAccount()
               }
@@ -321,9 +307,6 @@ class OnboardingViewModel(
             finishSetupInternal()
           }
         }
-      OnboardingIntent.CheckFunding -> checkFunding()
-      OnboardingIntent.CheckFundingNow -> checkFundingNow()
-      OnboardingIntent.DeferSetup -> deferSetup()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
@@ -472,48 +455,21 @@ class OnboardingViewModel(
     val owner = checkNotNull(wallets.profile.first().ownerAddress) { "No account to set up" }
     accounts.selectTradingAccount(owner, setupPrompt)
     if (!setup.enableTrading) return finishSetupInternal()
-    val step =
-      if (accounts.awaitsFirstDeposit()) OnboardingStep.FUND_ACCOUNT else OnboardingStep.ENABLE_TRADING
-    local.value = local.value.copy(step = step, selectedSubaccount = owner)
-  }
-
-  /** Quiet: a failed check leaves the step as it is, and the next one tries again. */
-  private fun checkFunding() {
-    if (local.value.step != OnboardingStep.FUND_ACCOUNT || fundingCheckJob?.isActive == true) return
-    fundingCheckJob =
-      viewModelScope.launch {
-        val waiting = runSuspendCatching { accounts.awaitsFirstDeposit() }.getOrNull() ?: return@launch
-        if (!waiting && local.value.step == OnboardingStep.FUND_ACCOUNT) {
-          local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, error = null)
-        }
-      }
-  }
-
-  private fun checkFundingNow() {
-    if (local.value.step != OnboardingStep.FUND_ACCOUNT) return
-    launchAction("Flare couldn’t check for your deposit.") {
-      local.value = local.value.copy(fundingNotice = null)
-      if (accounts.awaitsFirstDeposit()) {
-        local.value =
-          local.value.copy(fundingNotice = "No deposit has arrived yet. It can take a few minutes after you send it.")
-      } else if (local.value.step == OnboardingStep.FUND_ACCOUNT) {
-        local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING)
-      }
-    }
+    // Setup never stops to ask for a deposit. Only finishing it from the app enables trading here,
+    // and only once the first deposit has arrived.
+    if (subflowMode?.uppercase() != CONTINUE || accounts.awaitsFirstDeposit()) return leaveSetupForLater()
+    local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, selectedSubaccount = owner)
   }
 
   /**
-   * Opens the app for a wallet waiting on its first deposit. Only a step that can't finish without
-   * funds offers it, so the wallet and its backup are already in place.
+   * Opens the app with setup left for later: a wallet set up here starts on the markets, and adds
+   * funds and enables trading from there, where its actions say what they still wait for.
    */
-  private fun deferSetup() {
-    if (local.value.step != OnboardingStep.FUND_ACCOUNT) return
-    launchAction("Flare couldn’t open the app.") {
-      preferences.deferSetup()
-      createdProfileId = null
-      clearSensitiveState()
-      effectChannel.send(OnboardingEffect.Completed)
-    }
+  private suspend fun leaveSetupForLater() {
+    preferences.deferSetup()
+    createdProfileId = null
+    clearSensitiveState()
+    effectChannel.send(OnboardingEffect.Completed)
   }
 
   /**
@@ -877,6 +833,9 @@ private const val TRADING_ACCOUNT_CHECK_DELAY_MS = 400L
 
 /** A first setup picked up where it stopped, as opposed to one opened from inside the app. */
 const val RESUME = "RESUME"
+
+/** Finishing, from inside the app, a setup that was left for later. */
+private const val CONTINUE = "CONTINUE"
 
 private val OpenAccountPrompt = VaultPrompt("Open trading account", "Confirm your identity")
 private val EnableTradingPrompt = VaultPrompt("Enable trading", "Confirm your identity")

@@ -26,6 +26,7 @@ import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.testing.SetupBackupWords
 import xyz.mcxross.flare.testing.MemoryPreferences
 import xyz.mcxross.flare.testing.SETUP_OWNER
@@ -67,13 +68,13 @@ class OnboardingViewModelTest {
 
   @Test
   fun aVenueWithoutTradingAccountsTradesFromTheOwnerAndSkipsTheBuilderFee() = runTest {
-    val accounts = SetupAccounts()
-    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false))
+    val preferences = AppPreferences(MemoryPreferences())
+    val id = deferredWallet(preferences)
+    val accounts = SetupAccounts(preferences)
+    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false), preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
+    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
 
     assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
     assertEquals(OWNER, vm.uiState.value.selectedSubaccount)
@@ -86,18 +87,18 @@ class OnboardingViewModelTest {
 
   @Test
   fun aFailedBuilderApprovalIsExplainedBeforeSetupFinishes() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val id = deferredWallet(preferences)
     val accounts =
-      SetupAccounts().apply {
+      SetupAccounts(preferences).apply {
         approveResult =
           ActionState.Failed("Move abort in 0x1::dex_accounts_entry: EBUILDER_SUBACCOUNT_NOT_FOUND(0x1):")
       }
-    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = true))
+    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = true), preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
+    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
     vm.onIntent(OnboardingIntent.EnableTrading)
 
     assertEquals(listOf("select $OWNER", "prepare", "approve builder"), accounts.events)
@@ -114,32 +115,25 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun anUnfundedAccountWaitsForItsFirstDepositBeforeEnablingTrading() = runTest {
-    val accounts = SetupAccounts().apply { awaitingDeposit = true }
-    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false))
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+  fun anImportOpensTheMarketsWithoutAskingForADepositFundedOrNot() = runTest {
+    for (awaiting in listOf(true, false)) {
+      val preferences = AppPreferences(MemoryPreferences())
+      val accounts = SetupAccounts(preferences).apply { awaitingDeposit = awaiting }
+      val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+      val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertEquals(OWNER, vm.uiState.value.selectedSubaccount)
+      vm.onIntent(OnboardingIntent.ShowImport)
+      vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+      vm.onIntent(OnboardingIntent.ImportCredential)
 
-    vm.onIntent(OnboardingIntent.CheckFunding)
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-
-    accounts.depositCheckFails = true
-    vm.onIntent(OnboardingIntent.CheckFunding)
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertNull(vm.uiState.value.error)
-
-    accounts.depositCheckFails = false
-    accounts.awaitingDeposit = false
-    vm.onIntent(OnboardingIntent.CheckFunding)
-    assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
-
-    vm.onIntent(OnboardingIntent.EnableTrading)
-    assertEquals(listOf("select $OWNER", "prepare"), accounts.events)
+      assertEquals(OnboardingEffect.Completed, completed.await())
+      assertEquals(listOf("select $OWNER"), accounts.events)
+      assertEquals(0, accounts.depositChecks)
+      val profile = preferences.values.first().profiles.single()
+      assertTrue(profile.setupDeferred)
+      assertFalse(profile.onboardingComplete)
+    }
   }
 
   @Test
@@ -168,20 +162,14 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun aWalletWaitingForItsFirstDepositCanBrowseAndOpensTheAppOnRelaunch() = runTest {
+  fun createdAndBackedUpGoesStraightToTheMarketsAndRelaunchesIntoTheApp() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
     val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertFalse(vm.uiState.value.inApp)
-
-    vm.onIntent(OnboardingIntent.DeferSetup)
+    createAndConfirmBackup(vm)
 
     assertEquals(OnboardingEffect.Completed, completed.await())
     val saved = preferences.values.first()
@@ -197,20 +185,7 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun onlyAStepWaitingForFundsOffersToBrowse() = runTest {
-    val preferences = AppPreferences(MemoryPreferences())
-    // A funded account goes straight to enabling trading, which needs nothing it lacks.
-    val funded = viewModel(SetupAccounts(), HyperliquidSetup, preferences, SetupWallets(preferences))
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { funded.uiState.collect {} }
-    funded.onIntent(OnboardingIntent.ShowImport)
-    funded.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    funded.onIntent(OnboardingIntent.ImportCredential)
-    assertEquals(OnboardingStep.ENABLE_TRADING, funded.uiState.value.step)
-    funded.onIntent(OnboardingIntent.DeferSetup)
-    assertEquals(OnboardingStep.ENABLE_TRADING, funded.uiState.value.step)
-    assertFalse(preferences.values.first().profiles.single().setupDeferred)
-
-    // Decibel opens accounts unfunded: setup never waits for a deposit, so it never stops there.
+  fun decibelSetupIsUnchangedAndNeverChecksForADeposit() = runTest {
     val decibel = AppPreferences(MemoryPreferences())
     val accounts = SetupAccounts()
     val vm = viewModel(accounts, VenueSetup(), decibel, SetupWallets(decibel))
@@ -219,31 +194,31 @@ class OnboardingViewModelTest {
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
     vm.onIntent(OnboardingIntent.ImportCredential)
     assertEquals(OnboardingStep.SUBACCOUNT, vm.uiState.value.step)
-    vm.onIntent(OnboardingIntent.DeferSetup)
-    assertEquals(OnboardingStep.SUBACCOUNT, vm.uiState.value.step)
     assertFalse(decibel.values.first().profiles.single().setupDeferred)
     assertEquals(0, accounts.depositChecks)
   }
 
   @Test
-  fun theInAppPromptResumesSetupWhereItStopped() = runTest {
+  fun theInAppPromptEnablesTradingOnceFundsArrive() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     val id = deferredWallet(preferences)
-    val accounts = SetupAccounts().apply { awaitingDeposit = true }
-    val wallets = SetupWallets(preferences).apply {
-      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
-    }
-    val vm = viewModel(accounts, HyperliquidSetup, preferences, wallets)
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
+    val unfunded = viewModel(accounts, HyperliquidSetup, preferences, ownerWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { unfunded.uiState.collect {} }
+    val back = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { unfunded.effects.first() }
 
-    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertTrue(vm.uiState.value.inApp)
+    // Still waiting for its deposit, it goes back to the app instead of a step it can't finish.
+    unfunded.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
+    assertEquals(OnboardingEffect.Completed, back.await())
+    assertTrue(preferences.values.first().profiles.single().setupPending)
 
     accounts.awaitingDeposit = false
-    vm.onIntent(OnboardingIntent.CheckFundingNow)
+    val vm = viewModel(accounts, HyperliquidSetup, preferences, ownerWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
     assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
+    assertTrue(vm.uiState.value.inApp)
     vm.onIntent(OnboardingIntent.EnableTrading)
 
     assertEquals(OnboardingEffect.Completed, completed.await())
@@ -253,53 +228,30 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun backAfterTheAppUnlocksAgainReturnsToTheStartWithoutCrashing() = runTest {
-    val preferences = AppPreferences(MemoryPreferences())
-    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
-    val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
-    val id = preferences.values.first().profiles.single().id
-
-    // Backgrounding locks the app; unlocking shows setup again, which asks to resume this wallet.
-    vm.onIntent(OnboardingIntent.ClearSensitiveState)
-    vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-
-    vm.onIntent(OnboardingIntent.Back)
-
-    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
-    assertTrue(vm.uiState.value.showsWelcome(RESUME))
-    assertTrue(preferences.values.first().profiles.isEmpty())
-  }
-
-  @Test
-  fun backAtAddFundsMatchesWhetherOrNotTheAppWasLeft() = runTest {
-    suspend fun backFromAddFunds(relock: Boolean): Pair<OnboardingUiState, AppPreferences> {
+  fun backAtTheBackupQuizMatchesWhetherOrNotTheAppWasLeft() = runTest {
+    suspend fun backFromQuiz(relock: Boolean): Pair<OnboardingUiState, AppPreferences> {
       val preferences = AppPreferences(MemoryPreferences())
-      val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
-      val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+      val vm = viewModel(SetupAccounts(preferences), HyperliquidSetup, preferences, SetupWallets(preferences))
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-      vm.onIntent(OnboardingIntent.ShowImport)
-      vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-      vm.onIntent(OnboardingIntent.ImportCredential)
-      assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+      vm.onIntent(OnboardingIntent.CreateOwner)
+      vm.onIntent(OnboardingIntent.ReviewBackup)
       if (relock) {
-        val id = preferences.values.first().profiles.single().id
+        val id = assertNotNull(resumedSetup(preferences.values.first()))
         vm.onIntent(OnboardingIntent.ClearSensitiveState)
         vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
         // Unlocking twice, as when the app comes back again, keeps the place.
         vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
-        assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+        assertEquals(OnboardingStep.SHOW_BACKUP, vm.uiState.value.step)
+      } else {
+        vm.onIntent(OnboardingIntent.Back)
+        assertEquals(OnboardingStep.SHOW_BACKUP, vm.uiState.value.step)
       }
       vm.onIntent(OnboardingIntent.Back)
       return vm.uiState.value to preferences
     }
 
-    val (stayed, stayedPreferences) = backFromAddFunds(relock = false)
-    val (left, leftPreferences) = backFromAddFunds(relock = true)
+    val (stayed, stayedPreferences) = backFromQuiz(relock = false)
+    val (left, leftPreferences) = backFromQuiz(relock = true)
 
     assertTrue(stayed.showsWelcome(initialMode = null))
     assertTrue(left.showsWelcome(initialMode = RESUME))
@@ -380,7 +332,7 @@ class OnboardingViewModelTest {
   }
 
   @Test
-  fun aColdLaunchResumesTheFirstSetupAndBackStillReturnsToTheStart() = runTest {
+  fun anInstallLeftOnTheOldFundingStepOpensTheApp() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(
       AccountProfile("owner_$OWNER", ownerAddress = OWNER, ownerBackupConfirmed = true, selectedSubaccount = OWNER)
@@ -388,20 +340,15 @@ class OnboardingViewModelTest {
     val saved = preferences.values.first()
     assertEquals(LaunchStage.ONBOARDING, launchStage(saved, walletLoaded = true, unlocked = true))
     val id = assertNotNull(resumedSetup(saved))
-    val wallets = SetupWallets(preferences).apply {
-      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
-    }
-    val vm = viewModel(SetupAccounts().apply { awaitingDeposit = true }, HyperliquidSetup, preferences, wallets)
+    val vm = viewModel(SetupAccounts(preferences).apply { awaitingDeposit = true }, HyperliquidSetup, preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
     vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertFalse(vm.uiState.value.inApp)
 
-    vm.onIntent(OnboardingIntent.Back)
-    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
-    assertTrue(vm.uiState.value.showsWelcome(RESUME))
-    assertTrue(preferences.values.first().profiles.isEmpty())
+    assertEquals(OnboardingEffect.Completed, completed.await())
+    assertEquals(LaunchStage.READY, launchStage(preferences.values.first(), walletLoaded = true, unlocked = true))
+    assertTrue(preferences.values.first().profiles.single().setupPending)
   }
 
   @Test
@@ -420,47 +367,16 @@ class OnboardingViewModelTest {
   fun leavingAnInAppSetupWhoseWalletIsGoneDoesNotCrash() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     val id = deferredWallet(preferences)
-    val wallets = SetupWallets(preferences).apply {
-      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
-    }
-    val vm = viewModel(SetupAccounts().apply { awaitingDeposit = true }, HyperliquidSetup, preferences, wallets)
+    val vm = viewModel(SetupAccounts(), HyperliquidSetup, preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     val cancelled = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
     vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
+    assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
     preferences.removeProfile(id)
 
     vm.onIntent(OnboardingIntent.Back)
 
     assertEquals(OnboardingEffect.Cancelled, cancelled.await())
-  }
-
-  @Test
-  fun checkingForTheDepositShowsProgressAndWhatItFound() = runTest {
-    val preferences = AppPreferences(MemoryPreferences())
-    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
-    val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    vm.onIntent(OnboardingIntent.ShowImport)
-    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
-    vm.onIntent(OnboardingIntent.ImportCredential)
-
-    val gate = CompletableDeferred<Unit>()
-    accounts.depositCheckGate = gate
-    vm.onIntent(OnboardingIntent.CheckFundingNow)
-    assertTrue(vm.uiState.value.busy)
-    gate.complete(Unit)
-
-    assertFalse(vm.uiState.value.busy)
-    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
-    assertEquals(
-      "No deposit has arrived yet. It can take a few minutes after you send it.",
-      vm.uiState.value.fundingNotice,
-    )
-
-    accounts.depositCheckFails = true
-    vm.onIntent(OnboardingIntent.CheckFundingNow)
-    assertEquals("Offline", vm.uiState.value.error)
-    assertNull(vm.uiState.value.fundingNotice)
   }
 
   @Test
@@ -484,7 +400,12 @@ class OnboardingViewModelTest {
     assertEquals(right, vm.uiState.value.confirmations[index])
   }
 
-  /** A wallet whose setup was left at the funding step, as the app finds it. */
+  private fun ownerWallets(preferences: AppPreferences) =
+    SetupWallets(preferences).apply {
+      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
+    }
+
+  /** A wallet whose setup was left for later, as the app finds it. */
   private suspend fun deferredWallet(preferences: AppPreferences): String {
     val id = "owner_$OWNER"
     preferences.registerProfile(

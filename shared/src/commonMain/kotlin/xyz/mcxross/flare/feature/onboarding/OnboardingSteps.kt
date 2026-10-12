@@ -86,9 +86,6 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.TradingAccount
-import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.NoticeTone
-import xyz.mcxross.flare.design.FlareQrCode
 
 private val Whitespace = Regex("\\s+")
 
@@ -944,61 +941,6 @@ private fun SetupTask(
     }
   }
 }
-
-/**
- * Where to send the first deposit, for a venue that enables trading only once the account holds
- * funds. Checks quietly while it's on screen, and moves on once the deposit arrives.
- */
-@Composable
-internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
-  val venue = LocalVenue.current
-  val address = state.selectedSubaccount ?: state.profile.ownerAddress.orEmpty()
-  LaunchedEffect(Unit) {
-    while (true) {
-      delay(FUNDING_CHECK_INTERVAL_MS)
-      onIntent(OnboardingIntent.CheckFunding)
-    }
-  }
-  StepLayout(
-    title = "Add funds",
-    subtitle =
-      "${venue.displayName} lets an account enable trading once its first deposit arrives. " +
-        "Setup continues on its own when it does.",
-    actions = {
-      SetupActions(state, onIntent) {
-        state.fundingNotice?.let { ActionNotice(it) }
-        FlareButton(
-          "Check again",
-          { onIntent(OnboardingIntent.CheckFundingNow) },
-          Modifier.fillMaxWidth(),
-          working = state.busy,
-        )
-        FlareButton(
-          if (state.inApp) "Later" else "Browse markets",
-          { onIntent(OnboardingIntent.DeferSetup) },
-          Modifier.fillMaxWidth(),
-          enabled = !state.busy,
-          style = FlareButtonStyle.OUTLINE,
-        )
-      }
-    },
-  ) {
-    venue.receive?.summary?.let {
-      Text(it, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-    }
-    if (address.isNotBlank()) {
-      FlareQrCode(
-        address,
-        "QR code for your ${venue.chain.name} address",
-        Modifier.padding(top = 20.dp).size(200.dp).align(Alignment.CenterHorizontally),
-      )
-      FundingAddress(address, Modifier.padding(top = 20.dp))
-    }
-    venue.receive?.warning?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO) }
-  }
-}
-
-private const val FUNDING_CHECK_INTERVAL_MS = 5_000L
 
 @Composable
 internal fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
