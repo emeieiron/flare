@@ -6,11 +6,18 @@ Flare handles private keys and leveraged trading. A small patch can have financi
 
 1. Keep protocol and chain code out of ViewModels and composables.
 2. Use Kaptos for every Aptos payload, simulation, signature, submission, balance query, and transaction wait.
-3. Keep `:decibel` Compose-free and multiplatform.
+3. Keep `:decibel` and `:hyperliquid` Compose-free and multiplatform.
 4. Accept transaction prices, quantities, and collateral amounts as decimal strings. Do not introduce `Double` into transaction construction.
 5. Simulate before authorization, journal the signed hash before submission, and preserve uncertain outcomes for reconciliation.
 6. Never log secrets, signatures, complete transaction payloads, session tokens, or private account responses.
 7. Preserve Flare's pinned dependency baseline. When integration fails because Kaptos lacks an API, update Kaptos rather than lowering Flare's Compose, Kotlin, Android, or Vico versions.
+
+## Modules
+
+- `:shared` is exchange-neutral: screens, ViewModels, storage, and the venue interfaces (`Venue`, `VenueDescriptor`, the repositories, `OrderRules`, `CredentialParser`). It must not depend on any exchange SDK (`:decibel`, `:hyperliquid`, Kaptos, FastKrypto).
+- Each exchange lives in a `:venue-*` module that implements those interfaces with its SDK and binds them in `Venue.module()`. Its words, limits and links reach the screens through the `VenueDescriptor`.
+- Each app build links one venue: an Android product flavor (`decibel`) and, on iOS, an umbrella framework (`:ios-decibel`) built by its scheme (`Flare Decibel`).
+- Features one exchange lacks are gated by `VenueCapabilities`, never by checking which exchange it is.
 
 ## Local setup
 
@@ -62,11 +69,22 @@ testnet account needs a mainnet deposit from the same address first.
 - Explain any security-boundary change in the pull request and update [THREAT_MODEL.md](THREAT_MODEL.md) when an assumption changes.
 - Keep unrelated formatting and generated changes out of the patch.
 
-Minimum local gate:
+Local gate:
 
 ```sh
-./gradlew :decibel:jvmTest :shared:testAndroidHostTest :venue-decibel:testAndroidHostTest :androidApp:assembleDecibelDebug
-./gradlew :ios-decibel:compileKotlinIosSimulatorArm64
+./gradlew :decibel:jvmTest :hyperliquid:jvmTest \
+  :shared:testAndroidHostTest :venue-decibel:testAndroidHostTest \
+  :androidApp:assembleDecibelDebug :androidApp:lintDecibelDebug \
+  :shared:compileTestKotlinIosSimulatorArm64 :ios-decibel:compileKotlinIosSimulatorArm64 \
+  :venue-decibel:compileTestKotlinIosSimulatorArm64
+```
+
+On macOS, also run the iOS tests and build the app:
+
+```sh
+./gradlew :shared:iosSimulatorArm64Test :venue-decibel:iosSimulatorArm64Test
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Decibel" -configuration Debug-Decibel \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
 ```
 
 ## Protocol changes

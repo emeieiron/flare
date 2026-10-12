@@ -60,7 +60,7 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 | :--- | :--- |
 | **UI** | Compose Multiplatform, Vico charts, MVVM |
 | **Platforms** | Android, iOS (SwiftUI shell hosting the shared UI) |
-| **Blockchain** | [Kaptos](https://github.com/mcxross/kaptos) (Aptos) |
+| **Blockchain** | [Kaptos](https://github.com/mcxross/kaptos) (Aptos), FastKrypto (Hyperliquid signing) |
 | **State & DI** | Koin, Coroutines & Flow |
 | **Storage** | Room, DataStore, Android Keystore, iOS Keychain |
 | **Networking** | Ktor HTTP & WebSockets, Decibel Worker proxy |
@@ -69,15 +69,28 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 
 ```
 flare/
-├── androidApp/       # Android entry point and packaging
-├── iosApp/           # SwiftUI shell for the shared framework
-├── shared/           # Screens, ViewModels, repositories, storage
+├── androidApp/       # Android app: one product flavor per exchange
+├── iosApp/           # SwiftUI shell: one scheme per exchange
+├── ios-decibel/      # The iOS framework for the Decibel build
+├── venue-decibel/    # Decibel behind Flare's venue seam
+├── shared/           # Screens, ViewModels, storage and the neutral venue interfaces
 ├── decibel/          # Headless Decibel protocol SDK
+├── hyperliquid/      # Headless Hyperliquid protocol SDK
 ├── baselineprofile/  # Startup and journey baseline profiles
 └── skills/           # Agent skills distilled from Flare
 ```
 
-Dependencies point downward: platform apps → `:shared` → protocol modules → chain SDKs.
+```
+androidApp (decibel flavor)    iosApp ("Flare Decibel" scheme, via :ios-decibel)
+              └───────────────┬───────────────┘
+                        :venue-decibel  ───►  :shared
+                              │
+                          :decibel  ───►  Kaptos (Aptos)
+
+:hyperliquid  ───►  FastKrypto (signing)
+```
+
+Each build links one exchange. A `:venue-*` module implements `:shared`'s neutral interfaces with its exchange's SDK; `:shared` never depends on an exchange SDK.
 
 ## Agent skills
 
@@ -98,6 +111,8 @@ cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 # 2. Run Android (debug builds connect to http://10.0.2.2:8787)
 ./gradlew :androidApp:installDecibelDebug
 ```
+
+Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build.
 
 For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` scheme.
 
