@@ -257,9 +257,13 @@ class DecibelAccountMappersTest {
           """"transaction_unix_ms":1735758000000}],"total_count":7}"""
       )
     assertEquals(
-      FundingPayment("0x1", "Close Long", 1.0, -15.5, 0.01, 1735758000000),
+      FundingPayment("0x1", "Close Long", 1.0, -15.5, 0.01, 1735758000000, FillDirection.CLOSE_LONG),
       funding.items.single().toFundingPayment(),
     )
+    val payment = funding.items.single()
+    assertEquals(FillDirection.CLOSE_LONG, payment.copy(action = "CloseLong").toFundingPayment().direction)
+    assertEquals(FillDirection.OPEN_SHORT, payment.copy(action = "OpenShort").toFundingPayment().direction)
+    assertEquals(FillDirection.OTHER, payment.copy(action = "Liquidation").toFundingPayment().direction)
 
     val transfers =
       json.decodeFromString<FundHistory>(

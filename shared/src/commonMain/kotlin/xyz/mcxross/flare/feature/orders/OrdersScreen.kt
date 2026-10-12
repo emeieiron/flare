@@ -41,6 +41,7 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
+import xyz.mcxross.flare.venue.model.FundingPayment
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.ActionKind
@@ -398,7 +399,7 @@ fun OrdersScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
             ) {
               Column(Modifier.weight(1f)) {
-                Text(payment.action.ifBlank { "Funding payment" })
+                Text(fundingLabel(payment))
                 Text(
                   "${state.marketSymbols[payment.marketId] ?: shortAddress(payment.marketId)} · ${formatQuantity(payment.size)}",
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -505,6 +506,10 @@ private fun fillLabel(direction: FillDirection, action: String): String =
     FillDirection.CLOSE_SHORT -> "Closed short"
     FillDirection.OTHER -> action.ifBlank { "Fill" }
   }
+
+internal fun fundingLabel(payment: FundingPayment): String =
+  if (payment.direction == FillDirection.OTHER) payment.action.ifBlank { "Funding payment" }
+  else fillLabel(payment.direction, payment.action)
 
 private fun fundMovementLabel(kind: FundMovementKind): String =
   when (kind) {

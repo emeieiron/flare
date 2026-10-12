@@ -170,6 +170,8 @@ data class FundingPayment(
   val amount: Double,
   val fee: Double = 0.0,
   val timeMs: Long,
+  /** The trade that settled it, when the venue says; otherwise [action] describes it. */
+  val direction: FillDirection = FillDirection.OTHER,
 )
 
 enum class FundMovementKind(
