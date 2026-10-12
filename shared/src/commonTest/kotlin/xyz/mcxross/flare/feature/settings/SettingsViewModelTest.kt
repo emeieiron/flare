@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -45,6 +46,7 @@ import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
@@ -173,7 +175,12 @@ class SettingsViewModelTest {
       prompt: VaultPrompt,
       feePayment: FeePayment,
       product: MarketKind,
-    ): ActionState = ActionState.Committed("0x")
+    ): ActionState {
+      approvals += feePayment
+      return approveResult(feePayment)
+    }
+    val approvals = mutableListOf<FeePayment>()
+    var approveResult: (FeePayment) -> ActionState = { ActionState.Committed("0x") }
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
@@ -360,6 +367,60 @@ class SettingsViewModelTest {
     assertNull(vm.uiState.value.rewards)
     assertEquals(0, accounts.rewardReads)
     assertEquals(0, accounts.subaccountReads)
+  }
+
+  @Test
+  fun anUnsponsoredBuilderApprovalWaitsForTheWalletToPay() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.approveResult = { feePayment ->
+      if (feePayment == FeePayment.SPONSORED)
+        ActionState.Failed(
+          "Gas sponsorship is unavailable. You can choose to pay gas with APT.",
+          reference = "sponsor:0x1",
+          definitelyNotSubmitted = true,
+          selfPay = SelfPayOffer(200uL, 2_000uL),
+        )
+      else ActionState.Committed("0xapproved")
+    }
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
+    val vm =
+      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(SettingsIntent.SetBuilderFeeBps(MarketKind.PERP, 5))
+    assertEquals(BuilderSelfPay(MarketKind.PERP, 5, 200uL), vm.uiState.value.builderSelfPay)
+    assertNull(vm.uiState.value.error)
+
+    vm.onIntent(SettingsIntent.ConfirmBuilderSelfPay)
+    assertEquals(listOf(FeePayment.SPONSORED, FeePayment.SELF_PAY), accounts.approvals)
+    assertNull(vm.uiState.value.builderSelfPay)
+    assertNull(vm.uiState.value.error)
+    assertEquals(5, preferences.values.first().builderFeeBps)
+  }
+
+  @Test
+  fun anAbortedBuilderApprovalExplainsItselfWithoutOfferingSelfPay() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.approveResult = {
+      ActionState.Failed(
+        "Move abort in 0xd368::dex_accounts_entry: EBUILDER_SUBACCOUNT_NOT_FOUND(0x1):",
+        definitelyNotSubmitted = false,
+      )
+    }
+    val vm =
+      SettingsViewModel(
+        AppPreferences(MemoryPreferences()), FakeWalletRepository(), accounts, null, testVenue(), AddressCredentials,
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(SettingsIntent.SetBuilderFeeBps(MarketKind.PERP, 5))
+    assertNull(vm.uiState.value.builderSelfPay)
+    assertEquals(
+      "Your builder fee setting didn’t change. Flare’s builder account isn’t set up on the exchange yet.",
+      vm.uiState.value.error,
+    )
+    assertEquals(listOf(FeePayment.SPONSORED), accounts.approvals)
   }
 
   private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =

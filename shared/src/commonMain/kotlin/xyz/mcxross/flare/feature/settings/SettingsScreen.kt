@@ -325,6 +325,20 @@ fun SettingsScreen(
             onRevoke = { revokeProduct = product },
           )
         }
+      state.builderSelfPay?.let { offer ->
+        ActionNotice(
+          "Flare can’t cover the network fee right now, so your wallet pays it: about " +
+            "${venue.chain.feeAmount(offer.estimate)}.",
+          Modifier.padding(top = 16.dp),
+        )
+        FlareButton(
+          if (offer.basisPoints == null) "Pay the fee and revoke" else "Pay the fee and approve",
+          { onIntent(SettingsIntent.ConfirmBuilderSelfPay) },
+          Modifier.fillMaxWidth().padding(top = 12.dp),
+          working = state.builderPending == offer.product,
+          enabled = !state.busy,
+        )
+      }
       state.capabilities.unavailableReason(ActionKind.SETUP)?.let {
         ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO)
       }

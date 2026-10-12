@@ -99,6 +99,35 @@ class OnboardingViewModelTest {
   }
 
   @Test
+  fun aFailedBuilderApprovalIsExplainedBeforeSetupFinishes() = runTest {
+    val accounts =
+      SetupAccounts().apply {
+        approveResult =
+          ActionState.Failed("Move abort in 0x1::dex_accounts_entry: EBUILDER_SUBACCOUNT_NOT_FOUND(0x1):")
+      }
+    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = true))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    vm.onIntent(OnboardingIntent.EnableTrading)
+
+    assertEquals(listOf("select $OWNER", "prepare", "approve builder"), accounts.events)
+    assertEquals(
+      "Trading is enabled, but builder support wasn’t turned on. Flare’s builder account isn’t set " +
+        "up on the exchange yet. You can turn it on later in Settings.",
+      vm.uiState.value.builderNotice,
+    )
+    assertTrue(completed.isActive)
+
+    vm.onIntent(OnboardingIntent.FinishSetup)
+    assertEquals(OnboardingEffect.Completed, completed.await())
+    assertNull(vm.uiState.value.builderNotice)
+  }
+
+  @Test
   fun anUnfundedAccountWaitsForItsFirstDepositBeforeEnablingTrading() = runTest {
     val accounts = SetupAccounts().apply { awaitingDeposit = true }
     val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false))
@@ -261,6 +290,7 @@ class OnboardingViewModelTest {
     }
 
     var awaitingDeposit = false
+    var approveResult: ActionState = ActionState.Committed("0x")
     var depositCheckFails = false
 
     override suspend fun awaitsFirstDeposit(): Boolean {
@@ -286,7 +316,7 @@ class OnboardingViewModelTest {
       product: MarketKind,
     ): ActionState {
       events += "approve builder"
-      return ActionState.Committed("0x")
+      return approveResult
     }
 
     override suspend fun revokeBuilderFee(
