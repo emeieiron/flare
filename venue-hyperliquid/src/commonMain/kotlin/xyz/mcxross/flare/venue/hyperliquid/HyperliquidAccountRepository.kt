@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -54,14 +55,15 @@ import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
 /**
- * The wallet's own address is its Hyperliquid account, read over `/info` and kept live by the
- * account streams, which send a snapshot on every connection. Enabling trading and builder fees go
- * through [setup]; moving funds isn't offered yet.
+ * The wallet's own address is its Hyperliquid account, or one of its sub-accounts once selected,
+ * read over `/info` and kept live by the account streams, which send a snapshot on every
+ * connection. Enabling trading and builder fees go through [setup], moving funds through [funds].
  */
 class HyperliquidAccountRepository(
   private val client: HyperliquidClient,
   private val preferences: AppPreferences,
   private val setup: HyperliquidSetup,
+  private val funds: HyperliquidFunds,
   private val builderAddress: String? = null,
 ) : AccountRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
@@ -450,11 +452,18 @@ class HyperliquidAccountRepository(
     return client.info.userFees(account).toTradingFees()
   }
 
-  /** Hyperliquid's fee tier and referral aren't shown yet. */
-  override suspend fun rewards(): Rewards? = null
+  /** The fee tier and referral standing; Hyperliquid has no reward points or streaks. */
+  override suspend fun rewards(): Rewards? {
+    val account = currentAccount() ?: return null
+    return coroutineScope {
+      val fees = async { runSuspendCatching { client.info.userFees(account).toFeeTier() } }
+      val referral = async { runSuspendCatching { client.info.referral(account).toReferralSummary() } }
+      hyperliquidRewards(fees.await(), referral.await())
+    }
+  }
 
   override suspend fun redeemReferralCode(code: String): Boolean =
-    throw UnsupportedOperationException("Referral codes aren’t available on Hyperliquid yet.")
+    throw UnsupportedOperationException("Enter referral codes in Hyperliquid’s app.")
 
   /** From the TWAP stream once it has reported, otherwise from history. */
   override suspend fun activeTwaps(): List<TwapOrder> {
@@ -505,20 +514,26 @@ class HyperliquidAccountRepository(
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }
     preferences.setSelectedSubaccount(subaccount)
-    refresh()
-    refreshHistory()
+    restoreTrading()
   }
 
-  /** Hyperliquid trades from the wallet's own address. */
   override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> =
-    listOfNotNull(preferences.values.first().ownerAddress?.let(::ownAccount))
+    preferences.values.first().ownerAddress?.let { subaccounts(it) }.orEmpty()
 
-  override suspend fun subaccounts(owner: String): List<TradingAccount> = listOf(ownAccount(owner))
+  /**
+   * The wallet's own account, then the sub-accounts it already has, which the owner's keys trade
+   * for. Sub-accounts are created in Hyperliquid's app: it takes $100,000 of trading volume first.
+   */
+  override suspend fun subaccounts(owner: String): List<TradingAccount> =
+    listOf(TradingAccount(owner, owner, primary = true)) +
+      client.info.subAccounts(owner).map { TradingAccount(it.subAccountUser, owner, label = it.name) }
 
-  private fun ownAccount(owner: String) = TradingAccount(owner, owner, primary = true)
-
+  /** Agents are approved for the owner and trade for its sub-accounts too. */
   override suspend fun delegations(): List<TradingKey> =
-    setup.delegations(currentAccount() ?: error("Select a trading account"))
+    setup.delegations(
+      preferences.values.first().let { it.ownerAddress ?: it.selectedSubaccount }
+        ?: error("Select a trading account")
+    )
 
   override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
     setup.revoke(address, prompt)
@@ -530,7 +545,7 @@ class HyperliquidAccountRepository(
   }
 
   override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
-    unavailable("Hyperliquid trades from the wallet’s own account.")
+    unavailable("Create sub-accounts in Hyperliquid’s app; Flare lists them here.")
 
   override suspend fun openTradingAccount(prompt: VaultPrompt): String =
     throw UnsupportedOperationException("Hyperliquid accounts need no opening.")
@@ -553,14 +568,15 @@ class HyperliquidAccountRepository(
   }
 
   override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> =
-    flowOf(unavailable())
+    flowOf(unavailable(DEPOSIT_BY_ADDRESS))
 
+  /** Withdraws to Arbitrum: to [destination], or to the owner's own address there. */
   override fun withdrawUsdc(
     amount: String,
     destination: String?,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<ActionState> = flowOf(unavailable())
+  ): Flow<ActionState> = moving { account -> funds.withdraw(account, destination, amount, prompt) }
 
   /** One approval covers perpetuals and spot, whichever [product] asks. */
   override suspend fun approveBuilderFee(
@@ -578,19 +594,34 @@ class HyperliquidAccountRepository(
     product: MarketKind,
   ): ActionState = setup.revokeBuilderFee(builderAddress, prompt)
 
+  override fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> =
+    moving { account -> funds.send(account, destination, amount, prompt) }
+
   override fun contributeToVault(
     vaultAddress: String,
     amount: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<ActionState> = flowOf(unavailable())
+  ): Flow<ActionState> = moving { account -> funds.vault(account, vaultAddress, true, amount, prompt) }
 
+  /** Hyperliquid vault stakes are USDC amounts, so [shares] is the USDC to take out. */
   override fun redeemFromVault(
     vaultAddress: String,
     shares: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<ActionState> = flowOf(unavailable())
+  ): Flow<ActionState> = moving { account -> funds.vault(account, vaultAddress, false, shares, prompt) }
+
+  /** Runs a fund move for the selected account, then reloads what it changed. */
+  private fun moving(move: suspend (account: String) -> ActionState): Flow<ActionState> = flow {
+    val account = currentAccount() ?: error(NO_ACCOUNT)
+    emit(ActionState.AwaitingAuthorization)
+    try {
+      emit(move(account))
+    } finally {
+      runSuspendCatching { refresh() }
+    }
+  }
 
   private data class RawState(
     val account: String?,
@@ -638,9 +669,7 @@ class HyperliquidAccountRepository(
 internal fun String?.sameAs(other: String?): Boolean =
   this != null && other != null && equals(other, ignoreCase = true)
 
-internal const val TWAP_UNAVAILABLE = "TWAP orders on Hyperliquid aren’t available in Flare yet."
+internal const val DEPOSIT_BY_ADDRESS = "Deposit USDC by sending it to this account’s address on Hyperliquid."
 
-internal const val FUNDS_UNAVAILABLE = "Moving funds on Hyperliquid isn’t available in Flare yet."
-
-internal fun unavailable(reason: String = FUNDS_UNAVAILABLE): ActionState.Failed =
+internal fun unavailable(reason: String): ActionState.Failed =
   ActionState.Failed(reason, definitelyNotSubmitted = true)

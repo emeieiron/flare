@@ -88,9 +88,20 @@ class HyperliquidOrderRulesTest {
   fun aTwapRunsForWholeMinutesUpToADay() {
     val twap = OrderRequest("BTC", OrderSide.BUY, OrderType.TWAP, "0.5", twap = TwapSchedule(30, 1_800))
 
-    assertEquals("0.5", assertValid(btc.check(twap)).size)
-    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 180))), "A TWAP runs for 5 minutes to 24 hours, in whole minutes")
-    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 90_000))), "A TWAP runs for 5 minutes to 24 hours, in whole minutes")
+    assertEquals("0.5", assertValid(btc.check(twap, book)).size)
+    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 180)), book), HyperliquidOrderRules.TWAP_DURATION)
+    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 90_000)), book), HyperliquidOrderRules.TWAP_DURATION)
+  }
+
+  @Test
+  fun aTwapIsWorthAtLeastAHundredDollarsAtTheMidPrice() {
+    val twap = OrderRequest("BTC", OrderSide.SELL, OrderType.TWAP, "0.0012", twap = TwapSchedule(30, 600))
+
+    // 0.0012 × 83,108.5 = $99.73
+    assertInvalid(btc.check(twap, book), "Minimum TWAP value is $100")
+    assertValid(btc.check(twap.copy(size = "0.0013"), book))
+    assertValid(btc.check(twap.copy(reduceOnly = true), book))
+    assertInvalid(btc.check(twap), "A reliable best bid and ask are required")
   }
 
   private fun limit(size: String, price: String) =
@@ -103,4 +114,5 @@ class HyperliquidOrderRulesTest {
 
   private fun assertInvalid(check: OrderCheck, message: String) =
     assertEquals(listOf(message), assertIs<OrderCheck.Invalid>(check).errors)
+
 }

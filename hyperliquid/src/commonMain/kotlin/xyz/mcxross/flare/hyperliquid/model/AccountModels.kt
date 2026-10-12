@@ -324,6 +324,30 @@ data class FeeSchedule(
   val add: String,
   val spotCross: String? = null,
   val spotAdd: String? = null,
+  val tiers: FeeTiers? = null,
+)
+
+/** Volume tiers ([vip]) lower both rates; maker-share tiers ([mm]) pay a maker rebate. */
+@Serializable
+data class FeeTiers(
+  val vip: List<VipFeeTier> = emptyList(),
+  val mm: List<MakerFeeTier> = emptyList(),
+)
+
+/** Applies from [ntlCutoff] of 14-day volume (taker plus maker) upward. */
+@Serializable
+data class VipFeeTier(
+  val ntlCutoff: String,
+  val cross: String,
+  val add: String,
+  val spotCross: String? = null,
+  val spotAdd: String? = null,
+)
+
+@Serializable
+data class MakerFeeTier(
+  val makerFractionCutoff: String,
+  val add: String,
 )
 
 @Serializable

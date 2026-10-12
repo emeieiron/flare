@@ -17,6 +17,11 @@ data class AccountOverview(
   /** Equity held in vaults that isn't locked; null when the venue doesn't report it. */
   val vaultEquity: Double? = null,
   val balances: Balances = Balances(),
+  /**
+   * Perpetuals and spot hold separate USDC, so moving USDC between them means something (see
+   * [xyz.mcxross.flare.venue.VenueCapabilities.perpSpotTransfer]).
+   */
+  val perpSpotSeparate: Boolean = false,
 )
 
 /**
@@ -289,6 +294,8 @@ data class Rewards(
   val streak: TradingStreak? = null,
   val tier: RewardTier? = null,
   val referral: ReferralSummary? = null,
+  /** The account's trading-fee tier, where the venue sets fees by volume and staking. */
+  val feeTier: FeeTier? = null,
   /** Parts that couldn't be loaded this time. Screens keep what they showed for them. */
   val unavailable: Set<RewardPart> = emptySet(),
 ) {
@@ -299,6 +306,7 @@ data class Rewards(
       streak = if (RewardPart.STREAK in unavailable) previous?.streak else streak,
       tier = if (RewardPart.TIER in unavailable) previous?.tier else tier,
       referral = if (RewardPart.REFERRAL in unavailable) previous?.referral else referral,
+      feeTier = if (RewardPart.FEE_TIER in unavailable) previous?.feeTier else feeTier,
     )
 }
 
@@ -307,7 +315,23 @@ enum class RewardPart {
   STREAK,
   TIER,
   REFERRAL,
+  FEE_TIER,
 }
+
+/** Where the account stands on the venue's fee schedule. Rates are fractions of notional. */
+data class FeeTier(
+  /** Such as "Tier 1". */
+  val name: String,
+  /** The volume the tier is set by, in USD, such as the last 14 days'. */
+  val volumeUsd: Double,
+  /** What the account pays now, discounts and rebates included; negative is a rebate. */
+  val perp: FeeRates,
+  val spot: FeeRates? = null,
+  /** The share of fees taken off for staking, as a fraction; null when none. */
+  val stakingDiscount: Double? = null,
+  /** The share of fees taken off for being referred, as a fraction; null when none. */
+  val referralDiscount: Double? = null,
+)
 
 /** Reward points earned, such as Decibel's Amps; the venue descriptor names them. */
 data class RewardPoints(

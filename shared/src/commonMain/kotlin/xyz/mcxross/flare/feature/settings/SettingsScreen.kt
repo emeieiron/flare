@@ -138,7 +138,7 @@ fun SettingsScreen(
     )
 
     val offersBuilder = state.defaultBuilderAddress.isNotBlank()
-    if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.rewards)) {
+    if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.referralCodes)) {
       SectionLabel("Protocol & Rewards")
       if (offersBuilder) {
         ActionRow(
@@ -148,7 +148,7 @@ fun SettingsScreen(
           onClick = { showBuilderSheet = true },
         )
       }
-      if (state.capabilities.rewards) {
+      if (state.capabilities.referralCodes) {
         ActionRow(
           "Referral code",
           if (state.referralRedeemed) "Code active" else "Enter a referral code",

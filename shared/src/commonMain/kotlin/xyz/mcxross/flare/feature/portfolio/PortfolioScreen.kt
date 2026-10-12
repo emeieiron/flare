@@ -45,6 +45,7 @@ import kotlin.math.abs
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.formatBalance
+import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
@@ -64,7 +65,9 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.flare.venue.model.ActionKind
 
@@ -244,7 +247,8 @@ fun PortfolioScreen(
             }
             PortfolioPage.REWARDS -> item {
               val rewards = state.rewards
-              if (rewards?.streak != null || rewards?.points != null || rewards?.tier != null) {
+              if (rewards?.streak != null || rewards?.points != null || rewards?.tier != null ||
+                rewards?.feeTier != null || rewards?.referral != null) {
                 Column { RewardsDetails(state) }
                 if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
@@ -347,7 +351,15 @@ private fun PortfolioOverview(
     else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
       if (state.vaultsError != null) "Updating automatically" else null)
   }
-  if (state.capabilities.rewards) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
+  if (state.capabilities.rewards && state.rewardPointsName == null) {
+    // Without reward points, the card is the account's fee tier.
+    val feeTier = state.rewards?.feeTier
+    PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
+      if (!state.rewardsLoaded && !state.rewardsError && feeTier == null) PortfolioShimmer(rows = 1)
+      else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
+        if (state.rewardsError) "Updating automatically" else null)
+    }
+  } else if (state.capabilities.rewards) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
     val points = state.rewards?.points
     if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
     else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
@@ -418,7 +430,12 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
 
 @Composable
 private fun RewardsDetails(state: PortfolioUiState) {
-  val pointsName = state.rewardPointsName ?: "Points"
+  if (state.rewardPointsName == null) {
+    FeeTierDetails(state.rewards?.feeTier)
+    state.rewards?.referral?.let { ReferralDetails(it) }
+    return
+  }
+  val pointsName = state.rewardPointsName
   val points = state.rewards?.points
   Text("Total $pointsName", color = FlareColors.TextSecondary)
   Text(points?.let { formatCount(it.total) } ?: "—",
@@ -436,6 +453,33 @@ private fun RewardsDetails(state: PortfolioUiState) {
     breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
   }
 }
+
+@Composable
+private fun FeeTierDetails(tier: FeeTier?) {
+  if (tier == null) return
+  Text("Fee tier", color = FlareColors.TextSecondary)
+  Text(tier.name, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+  DetailRow("14-day volume", formatBalance(tier.volumeUsd))
+  DetailRow("Perps taker", feeRate(tier.perp.takerRate))
+  DetailRow("Perps maker", feeRate(tier.perp.makerRate))
+  tier.spot?.let {
+    DetailRow("Spot taker", feeRate(it.takerRate))
+    DetailRow("Spot maker", feeRate(it.makerRate))
+  }
+  tier.stakingDiscount?.let { DetailRow("Staking discount", formatPercent(it * 100)) }
+  tier.referralDiscount?.let { DetailRow("Referral discount", formatPercent(it * 100)) }
+}
+
+@Composable
+private fun ReferralDetails(referral: ReferralSummary) {
+  SectionLabel("Referrals")
+  DetailRow("Your code", referral.code ?: "None yet")
+  referral.referredBy?.let { DetailRow("Referred with", it) }
+  referral.earnedUsd?.let { DetailRow("Earned", formatBalance(it)) }
+}
+
+/** A fee rate as a percentage of notional, with a rebate shown as negative. */
+private fun feeRate(rate: Double): String = (if (rate < 0) "−" else "") + formatQuantity(abs(rate) * 100, 4) + "%"
 
 @Composable
 private fun QuietPortfolioMessage(message: String) {

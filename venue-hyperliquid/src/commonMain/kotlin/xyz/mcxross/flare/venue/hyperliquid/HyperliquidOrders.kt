@@ -13,18 +13,20 @@ import xyz.mcxross.flare.hyperliquid.model.HlDecimal
 import xyz.mcxross.flare.hyperliquid.model.HlRounding
 import xyz.mcxross.flare.hyperliquid.model.HyperliquidAsset
 import xyz.mcxross.flare.hyperliquid.model.OrderGrouping
+import xyz.mcxross.flare.hyperliquid.model.OrderRequest as WireOrder
 import xyz.mcxross.flare.hyperliquid.model.OrderStatus
 import xyz.mcxross.flare.hyperliquid.model.OrderType as WireOrderType
 import xyz.mcxross.flare.hyperliquid.model.PlaceOrders
+import xyz.mcxross.flare.hyperliquid.model.PlaceTwap
 import xyz.mcxross.flare.hyperliquid.model.TimeInForce as WireTimeInForce
 import xyz.mcxross.flare.hyperliquid.model.TpSl
+import xyz.mcxross.flare.hyperliquid.model.TwapOrderStatus
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderRequest
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TimeInForce
-import xyz.mcxross.flare.hyperliquid.model.OrderRequest as WireOrder
 
 /**
  * Hyperliquid's assets by coin, read from `meta` and `spotMeta` once and again when a coin isn't
@@ -108,6 +110,28 @@ internal object HyperliquidOrders {
     return PlaceOrders(
       orders = listOf(orders.first().copy(cloid = cloid)) + orders.drop(1),
       grouping = OrderGrouping.POSITION_TPSL,
+    )
+  }
+
+  /**
+   * [order]'s TWAP over its whole minutes. Hyperliquid places a slice every 30 seconds, so the
+   * entered interval has no say, and builder fees don't apply to TWAPs.
+   */
+  fun twap(asset: HyperliquidAsset, order: OrderRequest): PlaceTwap {
+    require(order.type == OrderType.TWAP) { "Not a TWAP order" }
+    val schedule = order.twap ?: throw IllegalArgumentException("Choose how long the TWAP runs")
+    require(schedule.durationSeconds > 0 && schedule.durationSeconds % 60 == 0L) {
+      "A TWAP runs for whole minutes"
+    }
+    val minutes = (schedule.durationSeconds / 60).toInt()
+    require(minutes in HyperliquidOrderRules.TWAP_MINUTES) { HyperliquidOrderRules.TWAP_DURATION }
+    return PlaceTwap(
+      asset = asset.id,
+      isBuy = order.side == OrderSide.BUY,
+      size = validSize(asset, order.size),
+      reduceOnly = order.reduceOnly,
+      minutes = minutes,
+      randomize = false,
     )
   }
 
@@ -233,6 +257,21 @@ internal object HyperliquidResults {
         )
     }
   }
+
+  /** A TWAP that answers `running` is committed; its id comes with the TWAP list. */
+  fun twapPlaced(response: ExchangeResponse, reference: String): ActionState? =
+    when (val status = (response as? ExchangeResponse.TwapPlaced)?.status) {
+      is TwapOrderStatus.Running -> ActionState.Committed(reference, "Your TWAP is running.")
+      is TwapOrderStatus.Error -> ActionState.Failed(status.message, reference, committed = true)
+      else -> null
+    }
+
+  fun twapCanceled(response: ExchangeResponse, reference: String): ActionState? =
+    when (val status = (response as? ExchangeResponse.TwapCanceled)?.status) {
+      CancelStatus.Success -> ActionState.Committed(reference)
+      is CancelStatus.Error -> ActionState.Failed(status.message, reference, committed = true)
+      else -> null
+    }
 
   /** `updateLeverage` answers `default` once it's applied. */
   fun default(response: ExchangeResponse, reference: String): ActionState? =

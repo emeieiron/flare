@@ -18,13 +18,14 @@ import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.venue.Faucet
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.ReceiveInstructions
+import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.VenueExplorer
 import xyz.mcxross.flare.venue.VenueSetup
-import xyz.mcxross.flare.venue.model.ActionKind
+import xyz.mcxross.flare.venue.WithdrawalTerms
 
 /**
  * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session.
@@ -63,6 +64,13 @@ class HyperliquidVenue(
           enableTrading = true,
         ),
       receive = receiveInstructions(network),
+      withdrawal =
+        WithdrawalTerms(
+          network = "Arbitrum",
+          feeUsdc = HyperliquidFunds.WITHDRAWAL_FEE.toWire(),
+          internalTransfers = true,
+        ),
+      vaultTerms = VaultTerms(stakeInUsdc = true, lockupPerDeposit = true),
     )
 
   override fun module(): Module = hyperliquidModule(deployment, network, builder)
@@ -72,25 +80,26 @@ class HyperliquidVenue(
     const val BUILDER_FEE_BPS = 5
 
     /**
-     * What the Hyperliquid build shows. Spot, TWAP and vaults are Hyperliquid features the screens
-     * keep room for; the rest are Decibel's (rewards, gas sponsorship and top-ups, in-app deposits,
-     * creating subaccounts), or not offered yet (moving USDC between perps and spot). Setup and
-     * trading actions are sent; TWAPs and fund moves aren't yet.
+     * What the Hyperliquid build shows: spot, TWAPs (a slice every 30 s, so no interval to choose),
+     * vaults, existing sub-accounts (created in Hyperliquid's app), moving USDC between perps and
+     * spot, and the fee tier and referral standing as its rewards. Decibel's Amps, streak, referral
+     * codes, gas sponsorship and top-ups, and in-app deposits have no Hyperliquid counterpart.
      */
     val Capabilities =
       VenueCapabilities(
         spot = true,
         twap = true,
         vaults = true,
-        subaccounts = false,
-        rewards = false,
+        subaccounts = true,
+        rewards = true,
         sponsoredFees = false,
         networkFeeTopUp = false,
         inAppDeposit = false,
-        perpSpotTransfer = false,
+        perpSpotTransfer = true,
         batchCancel = true,
-        unavailableActions =
-          mapOf(ActionKind.TWAP to TWAP_UNAVAILABLE, ActionKind.FUNDS to FUNDS_UNAVAILABLE),
+        twapInterval = false,
+        createSubaccounts = false,
+        referralCodes = false,
       )
 
     /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
@@ -158,7 +167,10 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
     singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
-    single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), builder) }
+    single { HyperliquidFunds(get(), get(), get()) }
+    single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), get(), builder) }
     single { HyperliquidAssets(get()) }
-    single<TradingRepository> { HyperliquidTradingRepository(get(), get(), get(), get()) }
+    single<TradingRepository> {
+      HyperliquidTradingRepository(client = get(), actions = get(), setup = get(), funds = get(), assets = get())
+    }
   }

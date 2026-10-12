@@ -80,8 +80,10 @@ internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatchin
     val duration = twapDurationMinutesInput.toULongOrNull()?.times(60uL) ?: 3600uL
     val frequency = twapFrequencyMinutesInput.toULongOrNull()?.times(60uL) ?: 60uL
     require(duration in 120uL..86400uL) { "Duration must be between 2 minutes and 24 hours" }
-    require(frequency >= 60uL) { "Frequency must be at least 1 minute" }
-    require(frequency <= duration) { "Frequency cannot exceed duration" }
+    if (capabilities.twapInterval) {
+      require(frequency >= 60uL) { "Frequency must be at least 1 minute" }
+      require(frequency <= duration) { "Frequency cannot exceed duration" }
+    }
   }
   checkedOrder(side)
 }

@@ -17,6 +17,7 @@ import xyz.mcxross.flare.hyperliquid.model.Cloid
 import xyz.mcxross.flare.hyperliquid.model.ExchangeOutcome
 import xyz.mcxross.flare.hyperliquid.model.ExchangeResponse
 import xyz.mcxross.flare.hyperliquid.model.L1Action
+import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
 import xyz.mcxross.flare.hyperliquid.model.UserSignedAction
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -116,6 +117,78 @@ internal sealed interface JournaledAction {
     override fun details() = listOf(coin.toHexText(), isCross.toString(), leverage.toString())
   }
 
+  /** A `withdraw3` to [destination] on Arbitrum; [amount] includes Hyperliquid's fee. */
+  data class Withdraw(
+    override val account: String,
+    val destination: String,
+    val amount: String,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "WITHDRAW"
+
+    override fun details() = listOf(destination, amount)
+  }
+
+  /** A `usdSend` to another Hyperliquid account. */
+  data class SendUsdc(
+    override val account: String,
+    val destination: String,
+    val amount: String,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "TRANSFER"
+
+    override fun details() = listOf(destination, amount)
+  }
+
+  /** A `usdClassTransfer` between the perp and spot balances. */
+  data class MovePerpSpot(
+    override val account: String,
+    val amount: String,
+    val toPerp: Boolean,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "MOVE_PERP_SPOT"
+
+    override fun details() = listOf(amount, toPerp.toString())
+  }
+
+  /** A `vaultTransfer` into or out of [vault]. */
+  data class VaultTransfer(
+    override val account: String,
+    val vault: String,
+    val isDeposit: Boolean,
+    val amount: String,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = if (isDeposit) "CONTRIBUTE_TO_VAULT" else "REDEEM_FROM_VAULT"
+
+    override fun details() = listOf(vault, amount)
+  }
+
+  data class PlaceTwap(
+    override val account: String,
+    val coin: String,
+    val isBuy: Boolean,
+    val size: String,
+    val minutes: Int,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "PLACE_TWAP_ORDER"
+
+    override fun details() = listOf(coin.toHexText(), isBuy.toString(), size, minutes.toString())
+  }
+
+  data class CancelTwap(
+    override val account: String,
+    val twapId: Long,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "CANCEL_TWAP_ORDER"
+
+    override fun details() = listOf(twapId.toString())
+  }
+
   companion object {
     fun encode(action: JournaledAction): String =
       (listOf(action.operation, action.account, action.lapsesAtMs.toString()) + action.details())
@@ -137,6 +210,14 @@ internal sealed interface JournaledAction {
             "CANCEL_ORDER" -> CancelOrders(account, rest[0].split(","), lapses)
             "CONFIGURE_MARKET" ->
               UpdateLeverage(account, rest[0].fromHexText(), rest[1].toBooleanStrict(), rest[2].toInt(), lapses)
+            "WITHDRAW" -> Withdraw(account, rest[0], rest[1], lapses)
+            "TRANSFER" -> SendUsdc(account, rest[0], rest[1], lapses)
+            "MOVE_PERP_SPOT" -> MovePerpSpot(account, rest[0], rest[1].toBooleanStrict(), lapses)
+            "CONTRIBUTE_TO_VAULT" -> VaultTransfer(account, rest[0], true, rest[1], lapses)
+            "REDEEM_FROM_VAULT" -> VaultTransfer(account, rest[0], false, rest[1], lapses)
+            "PLACE_TWAP_ORDER" ->
+              PlaceTwap(account, rest[0].fromHexText(), rest[1].toBooleanStrict(), rest[2], rest[3].toInt(), lapses)
+            "CANCEL_TWAP_ORDER" -> CancelTwap(account, rest[0].toLong(), lapses)
             else -> null
           }
         }
@@ -207,12 +288,14 @@ class HyperliquidActions(
    * Signs [action] with the device's agent key and sends it, to lapse [ACTION_TTL_MS] from now so
    * an answer that never comes resolves quickly. It's journaled under [cloid] when it places
    * orders, otherwise under its nonce. [settle] reads Hyperliquid's answer, given the reference;
-   * null means the answer doesn't say, and the action is reconciled.
+   * null means the answer doesn't say, and the action is reconciled. [vaultAddress] is the
+   * sub-account it acts for, if any.
    */
   internal suspend fun sendAsAgent(
     action: L1Action,
     prompt: VaultPrompt,
     cloid: Cloid? = null,
+    vaultAddress: String? = null,
     record: (lapsesAtMs: Long) -> JournaledAction,
     settle: (response: ExchangeResponse, reference: String) -> ActionState?,
   ): ActionState =
@@ -223,7 +306,7 @@ class HyperliquidActions(
         val expiresAfter = clockMs() + ACTION_TTL_MS
         send(action.type, reference, record(expiresAfter + CLOCK_SKEW_MS), { settle(it, reference) }) {
           beforeSend ->
-          submitter.submit(action, signer, nonce, null, expiresAfter, beforeSend)
+          submitter.submit(action, signer, nonce, vaultAddress, expiresAfter, beforeSend)
         }
       }
     }
@@ -353,6 +436,15 @@ class HyperliquidActions(
     }
   }
 
+  /**
+   * The sub-account an action for [account] signs for: the owner's keys act for its sub-accounts
+   * through `vaultAddress`. Null for the owner's own account, or when the device holds no owner.
+   */
+  internal suspend fun vaultFor(account: String): String? {
+    val owner = preferences.values.first().ownerAddress ?: return null
+    return account.takeUnless { it.sameAs(owner) }
+  }
+
   private suspend fun check(entry: PendingTransactionEntity): Reconciled {
     val action = JournaledAction.decode(entry.operationName) ?: return Reconciled.UNRESOLVED
     updateState(entry.hash, JournalState.RECONCILING)
@@ -381,6 +473,18 @@ class HyperliquidActions(
               client.info.activeAssetData(action.account, action.coin).leverage.let {
                 it.isCross == action.isCross && it.value == action.leverage
               }
+            is JournaledAction.Withdraw,
+            is JournaledAction.SendUsdc,
+            is JournaledAction.MovePerpSpot,
+            is JournaledAction.VaultTransfer -> ledgerEntry(action, entry.hash, entry.createdAtMs) != null
+            is JournaledAction.PlaceTwap ->
+              client.info.twapHistory(action.account).any { HyperliquidLedger.isTwap(it, action, entry.createdAtMs) }
+            // Once it's no longer running, the cancel has done what it was for.
+            is JournaledAction.CancelTwap ->
+              client.info.twapHistory(action.account)
+                .filter { it.twapId == action.twapId }
+                .maxByOrNull { it.time }
+                ?.let { it.status.status != TWAP_RUNNING } == true
           }
         }
         .getOrNull() ?: return Reconciled.UNRESOLVED
@@ -390,6 +494,14 @@ class HyperliquidActions(
       else -> Reconciled.UNRESOLVED
     }
   }
+
+  /**
+   * The ledger entry a fund move journaled under [nonce] made, if it has been made. It's looked
+   * for from shortly before [sentAtMs], when it was signed.
+   */
+  internal suspend fun ledgerEntry(action: JournaledAction, nonce: String, sentAtMs: Long): LedgerUpdate? =
+    client.info.ledgerUpdates(action.account, sentAtMs - CLOCK_SKEW_MS)
+      .firstOrNull { HyperliquidLedger.matches(it, action, nonce.toLongOrNull(), sentAtMs - CLOCK_SKEW_MS) }
 
   private suspend fun updateState(reference: String, state: String) {
     val current = journal.find(reference) ?: return
@@ -410,6 +522,8 @@ class HyperliquidActions(
     const val CLOCK_SKEW_MS: Long = 5 * 60 * 1000L
   }
 }
+
+private const val TWAP_RUNNING = "activated"
 
 internal object JournalState {
   const val PREPARED = "PREPARED"

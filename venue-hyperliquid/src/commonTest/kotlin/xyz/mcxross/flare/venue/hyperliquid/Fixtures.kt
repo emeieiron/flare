@@ -123,4 +123,15 @@ internal object Fixtures {
   /** `extraAgents`: one named agent. */
   const val EXTRA_AGENTS =
     """[{"name":"grid_bot","address":"0x1000000000000000000000000000000000000009","validUntil":1799909269142}]"""
+
+  /** `subAccounts` of USER: two of a mainnet master's, addresses replaced. */
+  const val SUB_ACCOUNTS =
+    """[{"name":"Grid","subAccountUser":"0x100000000000000000000000000000000000000d","master":"0x1000000000000000000000000000000000000001","clearinghouseState":{"marginSummary":{"accountValue":"0.0","totalNtlPos":"0.0","totalRawUsd":"0.0","totalMarginUsed":"0.0"},"crossMarginSummary":{"accountValue":"0.0","totalNtlPos":"0.0","totalRawUsd":"0.0","totalMarginUsed":"0.0"},"crossMaintenanceMarginUsed":"0.0","withdrawable":"0.0","assetPositions":[],"time":1791803045998},"spotState":{"balances":[{"coin":"USDC","token":0,"total":"0.007334","hold":"0.0","entryNtl":"0.0"}]}},{"name":"Hedge","subAccountUser":"0x100000000000000000000000000000000000000e","master":"0x1000000000000000000000000000000000000001","clearinghouseState":{"marginSummary":{"accountValue":"13342.724297","totalNtlPos":"0.0","totalRawUsd":"13342.724297","totalMarginUsed":"0.0"},"crossMarginSummary":{"accountValue":"13342.724297","totalNtlPos":"0.0","totalRawUsd":"13342.724297","totalMarginUsed":"0.0"},"crossMaintenanceMarginUsed":"0.0","withdrawable":"13342.724297","assetPositions":[],"time":1791803045998},"spotState":{"balances":[{"coin":"USDC","token":0,"total":"0.008994","hold":"0.0","entryNtl":"0.0"}]}}]"""
+
+  /**
+   * `referral` of USER, from SDK fixture's account with a code of its own and a referrer added in
+   * the shapes Hyperliquid's app reads (`referredBy.code`, `referrerState.data.code`).
+   */
+  const val REFERRAL =
+    """{"referredBy":{"referrer":"0x1000000000000000000000000000000000000007","code":"FRIEND"},"cumVlm":"125674407.5799999982","unclaimedRewards":"0.015443","claimedRewards":"1.5","builderRewards":"0.015443","referrerState":{"stage":"ready","data":{"code":"FLARE","nReferrals":0,"referralStates":[]}},"rewardHistory":[],"tokenToState":[]}"""
 }

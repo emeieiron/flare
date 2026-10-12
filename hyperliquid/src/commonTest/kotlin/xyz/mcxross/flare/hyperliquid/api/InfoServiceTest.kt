@@ -319,6 +319,11 @@ class InfoServiceTest {
     assertEquals("-0.00003", fees.userAddRate)
     assertEquals("0.00045", fees.feeSchedule?.cross)
     assertEquals(2, fees.dailyUserVlm.size)
+    val vip = fees.feeSchedule?.tiers?.vip.orEmpty()
+    assertEquals(6, vip.size)
+    assertEquals("5000000.0", vip.first().ntlCutoff)
+    assertEquals("0.00012", vip.first().add)
+    assertEquals("-0.00003", fees.feeSchedule?.tiers?.mm?.last()?.add)
 
     assertEquals("user", info.userRole(user).role)
   }

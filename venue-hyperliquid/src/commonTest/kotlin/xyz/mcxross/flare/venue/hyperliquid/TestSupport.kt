@@ -289,3 +289,20 @@ internal fun unusedSetup(client: HyperliquidClient, preferences: AppPreferences)
     HyperliquidActions(MemoryJournal(), preferences, wallet, client, FakeSubmitter(), nonces, Network.TESTNET)
   return HyperliquidSetup(client, preferences, wallet, actions, nonces)
 }
+
+/** An account repository over [client] whose setup and fund moves the test never reaches. */
+internal fun testAccounts(
+  client: HyperliquidClient,
+  preferences: AppPreferences,
+  setup: HyperliquidSetup = unusedSetup(client, preferences),
+  funds: HyperliquidFunds = unusedFunds(client, preferences),
+): HyperliquidAccountRepository = HyperliquidAccountRepository(client, preferences, setup, funds)
+
+internal fun unusedFunds(client: HyperliquidClient, preferences: AppPreferences): HyperliquidFunds {
+  val actions =
+    HyperliquidActions(
+      MemoryJournal(), preferences, FakeSigningWallet(preferences), client, FakeSubmitter(),
+      HyperliquidNonces(preferences), Network.TESTNET,
+    )
+  return HyperliquidFunds(client, actions, preferences)
+}
