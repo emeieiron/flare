@@ -22,8 +22,8 @@ import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Market
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MarketsViewModelTest {
@@ -43,33 +43,31 @@ class MarketsViewModelTest {
   private fun createMarket(
     name: String,
     address: String,
-    assetType: AssetType,
+    kind: MarketKind,
     category: String,
   ): Market =
     Market(
-      assetType = assetType,
-      address = address,
-      name = name,
+      id = address,
+      symbol = name.substringBefore('/'),
+      displayName = name,
+      kind = kind,
+      category = category,
+      priceDecimals = 2,
       sizeDecimals = 2,
       maxLeverage = 20,
+      isolatedOnly = false,
       tickSize = 1uL,
-      minSize = 1uL,
       lotSize = 1000uL,
-      maxOpenInterest = 1_000_000.0,
-      priceDecimals = 2,
-      mode = "Open",
-      unrealizedPnlHaircutBps = 0,
-      category = category,
+      minSize = 1uL,
       minPrice = 1uL,
       maxPrice = 100_000_000uL,
-      isIsolatedOnly = false,
     )
 
-  private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", AssetType.PERP, "crypto")
-  private val adaPerp = createMarket("ADA/USD", "0xada_perp", AssetType.PERP, "crypto")
-  private val goldPerp = createMarket("GOLD/USD", "0xgold_perp", AssetType.PERP, "commodity")
-  private val aptSpot = createMarket("APT/USDC", "0xapt_spot", AssetType.SPOT, "crypto")
-  private val usdcSpot = createMarket("USDC/USDT", "0xusdc_spot", AssetType.SPOT, "crypto")
+  private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", MarketKind.PERP, "crypto")
+  private val adaPerp = createMarket("ADA/USD", "0xada_perp", MarketKind.PERP, "crypto")
+  private val goldPerp = createMarket("GOLD/USD", "0xgold_perp", MarketKind.PERP, "commodity")
+  private val aptSpot = createMarket("APT/USDC", "0xapt_spot", MarketKind.SPOT, "crypto")
+  private val usdcSpot = createMarket("USDC/USDT", "0xusdc_spot", MarketKind.SPOT, "crypto")
 
   private val quotes =
     listOf(

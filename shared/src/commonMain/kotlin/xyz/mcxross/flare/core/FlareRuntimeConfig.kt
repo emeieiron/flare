@@ -1,11 +1,11 @@
 package xyz.mcxross.flare.core
 
-import xyz.mcxross.flare.decibel.DecibelNetwork
+import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.kaptos.TransactionDefaults
 
 /** Settings every Flare build shares, whichever exchange it trades on. */
 data class FlareRuntimeConfig(
-  val network: DecibelNetwork = DecibelNetwork.TESTNET,
+  val network: Network = Network.TESTNET,
   val appOrigin: String = "flare://mobile",
 ) {
   init {

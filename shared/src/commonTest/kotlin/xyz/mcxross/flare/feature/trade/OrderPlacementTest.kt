@@ -7,26 +7,26 @@ import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.*
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
 
 class OrderPlacementTest {
   private val market =
     Market(
-      AssetType.PERP,
-      "0x123",
-      "BTC/USD",
-      8,
-      40,
-      100uL,
-      2000uL,
-      1000uL,
-      1_000_000.0,
-      2,
-      "Open",
-      0,
-      "crypto",
-      1uL,
-      100_000_000uL,
-      false,
+      id = "0x123",
+      symbol = "BTC",
+      displayName = "BTC/USD",
+      kind = MarketKind.PERP,
+      category = "crypto",
+      priceDecimals = 2,
+      sizeDecimals = 8,
+      maxLeverage = 40,
+      isolatedOnly = false,
+      tickSize = 100uL,
+      lotSize = 1000uL,
+      minSize = 2000uL,
+      minPrice = 1uL,
+      maxPrice = 100_000_000uL,
     )
   private val state =
     TradeUiState(
@@ -119,7 +119,7 @@ class OrderPlacementTest {
     assertEquals(
       MarginMode.ISOLATED,
       state
-        .copy(quote = state.quote!!.copy(market = market.copy(isIsolatedOnly = true)))
+        .copy(quote = state.quote!!.copy(market = market.copy(isolatedOnly = true)))
         .leverageCommand("0xabc", null)
         ?.marginMode,
     )

@@ -26,7 +26,6 @@ import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.DecibelClient
-import xyz.mcxross.flare.decibel.DecibelNetwork
 import xyz.mcxross.flare.design.TransactionExplorer
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.UnavailableWalletVault
@@ -37,6 +36,7 @@ import xyz.mcxross.flare.store.FlareDatabaseConstructor
 import xyz.mcxross.flare.store.MarketCacheDao
 import xyz.mcxross.flare.store.PendingTransactionEntity
 import xyz.mcxross.flare.store.TransactionJournalDao
+import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.kaptos.Aptos
 
 class DecibelVenueTest {
@@ -67,10 +67,10 @@ class DecibelVenueTest {
 
   @Test
   fun descriptorReflectsWhatTheAppDoesOnDecibel() {
-    val descriptor = DecibelVenue(network = DecibelNetwork.MAINNET).descriptor
+    val descriptor = DecibelVenue(network = Network.MAINNET).descriptor
 
     assertEquals("decibel", descriptor.id)
-    assertEquals(DecibelNetwork.MAINNET, descriptor.network)
+    assertEquals(Network.MAINNET, descriptor.network)
     with(descriptor.capabilities) {
       assertTrue(
         spot && twap && vaults && subaccounts && rewards && sponsoredFees && networkFeeTopUp &&
@@ -81,7 +81,7 @@ class DecibelVenueTest {
 
   @Test
   fun explorerLinksMatchTheAppsTransactionExplorer() {
-    DecibelNetwork.entries.forEach { network ->
+    Network.entries.forEach { network ->
       assertEquals(
         TransactionExplorer(network).url("0xabc"),
         DecibelVenue(network = network).descriptor.explorer.transactionUrl("0xabc"),

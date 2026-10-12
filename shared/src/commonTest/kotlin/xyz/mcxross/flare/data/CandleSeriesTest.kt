@@ -3,7 +3,8 @@ package xyz.mcxross.flare.data
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
-import xyz.mcxross.flare.decibel.model.Candle
+import xyz.mcxross.flare.venue.model.Candle
+import xyz.mcxross.flare.venue.model.ChartTimeframe
 
 class CandleSeriesTest {
   private val minute = 60_000L
@@ -63,6 +64,6 @@ class CandleSeriesTest {
       low = minOf(1.0, close),
       close = close,
       volume = 0.0,
-      interval = "1m",
+      timeframe = ChartTimeframe.ONE_MINUTE,
     )
 }

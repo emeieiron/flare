@@ -12,21 +12,21 @@ import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.venue.model.MarketKind
 
 /** "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and result. */
 internal fun TradeUiState.orderSummary(side: OrderSide): Pair<String, String> {
   val market = quote?.market
-  val isSpot = market?.assetType == AssetType.SPOT
+  val isSpot = market?.kind == MarketKind.SPOT
   val title = "${if (side == OrderSide.BUY) "Buy" else "Sell"} $sizeInput ${market?.symbol.orEmpty()}".trim()
   val typeLabel =
     if (orderType == OrderType.TWAP) "TWAP"
     else orderType.name.lowercase().replaceFirstChar(Char::uppercase)
-  val margin = if (positionIsolated ?: market?.isIsolatedOnly == true) "isolated" else "cross"
+  val margin = if (positionIsolated ?: market?.isolatedOnly == true) "isolated" else "cross"
   val subtitle =
     if (isSpot) "$typeLabel · Spot"
     else "$typeLabel · ${if (side == OrderSide.BUY) "Long" else "Short"} · $leverage× $margin"
@@ -50,7 +50,7 @@ internal fun ReviewHeading(state: TradeUiState, side: OrderSide) {
 internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
   val quote = state.quote ?: return
   val estimate = state.orderEstimate(side)
-  val isSpot = quote.market.assetType == AssetType.SPOT
+  val isSpot = quote.market.kind == MarketKind.SPOT
   Column {
     DetailRow(
       if (state.orderType == OrderType.LIMIT) "Limit price" else "Estimated entry",
@@ -89,7 +89,7 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
 /** Only exits the person actually set are worth a row; the rest is noise on a confirmation screen. */
 @Composable
 internal fun ReviewExits(state: TradeUiState, side: OrderSide) {
-  val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+  val isSpot = state.quote?.market?.kind == MarketKind.SPOT
   if (isSpot || (state.takeProfitInput.isBlank() && state.stopLossInput.isBlank())) return
   val estimate = state.orderEstimate(side)
   Column {
@@ -100,7 +100,7 @@ internal fun ReviewExits(state: TradeUiState, side: OrderSide) {
 
 @Composable
 internal fun ReviewFootnote(state: TradeUiState, side: OrderSide) {
-  val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+  val isSpot = state.quote?.market?.kind == MarketKind.SPOT
   val exits = !isSpot && (state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
     state.limitDistanceFromMark(side)?.let { distance ->

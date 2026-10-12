@@ -18,7 +18,6 @@ import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
-import xyz.mcxross.flare.data.ChartTimeframe
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.LiveCandles
 import xyz.mcxross.flare.data.MarketDetails
@@ -35,20 +34,19 @@ import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.withLiveCandle
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Candle
-import xyz.mcxross.flare.decibel.model.Market
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
 import xyz.mcxross.flare.decibel.model.toDecimalString
-import xyz.mcxross.flare.decibel.model.validate
-import xyz.mcxross.flare.decibel.model.validateTwap
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.venue.model.Candle
+import xyz.mcxross.flare.venue.model.ChartTimeframe
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
 
 enum class ChartStyle {
   LINE,
@@ -101,7 +99,7 @@ data class TradeUiState(
   val twapFrequencyMinutesInput: String = "1",
 ) {
   fun availableDisplay(side: OrderSide): String? {
-    val isSpot = quote?.market?.assetType == AssetType.SPOT
+    val isSpot = quote?.market?.kind == MarketKind.SPOT
     return if (isSpot) {
       if (side == OrderSide.BUY) {
         quoteBalance?.let { formatBalance(it) }
@@ -184,9 +182,9 @@ class TradeViewModel(
       markets.catalog.collect { catalog ->
         val quote =
           requestedMarket?.let { address ->
-            catalog.quotes.firstOrNull { it.market.address == address }
+            catalog.quotes.firstOrNull { it.market.id == address }
           } ?: catalog.quotes.firstOrNull()
-        val changed = quote?.market?.address != mutableUiState.value.quote?.market?.address
+        val changed = quote?.market?.id != mutableUiState.value.quote?.market?.id
         mutableUiState.update {
           it.copy(
             quote = quote,
@@ -199,7 +197,7 @@ class TradeViewModel(
           syncPositionLeverage()
           syncBalances()
           if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
-          if (quote != null) loadMarketDetails(quote.market.address)
+          if (quote != null) loadMarketDetails(quote.market.id)
         }
       }
     }
@@ -250,7 +248,7 @@ class TradeViewModel(
 
   private fun syncPositionLeverage() {
     mutableUiState.update { state ->
-      val isSpot = state.quote?.market?.assetType == AssetType.SPOT
+      val isSpot = state.quote?.market?.kind == MarketKind.SPOT
       if (isSpot) {
         state.copy(
           positionLeverage = null,
@@ -260,7 +258,7 @@ class TradeViewModel(
       } else {
         val position =
           accounts.snapshot.value.positions.firstOrNull {
-            it.market == state.quote?.market?.address
+            it.market == state.quote?.market?.id
           }
         state.copy(
           positionLeverage = position?.leverage,
@@ -290,7 +288,7 @@ class TradeViewModel(
         }
       }
     }
-    if (quote?.market?.assetType == AssetType.SPOT) {
+    if (quote?.market?.kind == MarketKind.SPOT) {
       val spot = snapshot.overview?.spot
       val availableCash = spot?.positions?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
       mutableUiState.update {
@@ -302,7 +300,7 @@ class TradeViewModel(
         mutableUiState.update { it.copy(baseBalance = base) }
         return
       }
-      val key = "$subaccount:${quote.market.address}"
+      val key = "$subaccount:${quote.market.id}"
       if (subaccount != null && (forceBase || key != lastBaseBalanceKey)) {
         lastBaseBalanceKey = key
         baseBalanceJob?.cancel()
@@ -331,14 +329,14 @@ class TradeViewModel(
           requestedMarket = marketAddress
           val quote =
             marketAddress?.let { address ->
-              markets.catalog.value.quotes.firstOrNull { it.market.address == address }
+              markets.catalog.value.quotes.firstOrNull { it.market.id == address }
             } ?: markets.catalog.value.quotes.firstOrNull()
           mutableUiState.update { it.copy(quote = quote) }
           syncPositionLeverage()
           syncBalances(forceBase = true)
-          preferences.setSelectedMarket(quote?.market?.address)
+          preferences.setSelectedMarket(quote?.market?.id)
           if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
-          if (quote != null) loadMarketDetails(quote.market.address)
+          if (quote != null) loadMarketDetails(quote.market.id)
         }
       }
       is TradeIntent.SelectTimeframe -> {
@@ -382,7 +380,7 @@ class TradeViewModel(
           if (
             it.orderBusy ||
               it.positionLeverage != null ||
-              it.quote?.market?.assetType == AssetType.SPOT
+              it.quote?.market?.kind == MarketKind.SPOT
           )
             it
           else
@@ -462,7 +460,7 @@ class TradeViewModel(
             error("A live order book is required for a market order")
           }
           val draft = state.orderDraft(side)
-          val isSpot = market.assetType == AssetType.SPOT
+          val isSpot = market.kind == MarketKind.SPOT
           val entryCommand =
             if (isSpot) {
               val validation = draft.validate(market, state.marketDetails.orderBook)
@@ -500,7 +498,7 @@ class TradeViewModel(
           require(!snapshot.stale && snapshot.account == subaccount) {
             "Your account is still reconnecting. Try again in a moment."
           }
-          val position = snapshot.positions.firstOrNull { it.market == market.address }
+          val position = snapshot.positions.firstOrNull { it.market == market.id }
           val terminal =
             trading.confirmedAction(
               VaultPrompt(
@@ -612,7 +610,7 @@ class TradeViewModel(
     olderCandlesJob?.cancel()
     loadedChart.value = null
     historyComplete = false
-    val key = ChartKey(quote.market.address, timeframe)
+    val key = ChartKey(quote.market.id, timeframe)
     chartJob = viewModelScope.launch {
       var backoffMs = CHART_RETRY_BASE_MS
       while (true) {
@@ -743,7 +741,6 @@ private const val MAX_CHART_CANDLES = 10_000
  * raw on-chain integers the checks compare.
  */
 internal fun OrderValidationError.message(market: Market): String {
-  val precision = market.precision
   val asset = market.symbol.substringBefore('/')
   fun label(field: String) =
     when (field) {
@@ -754,8 +751,8 @@ internal fun OrderValidationError.message(market: Market): String {
       else -> field.replaceFirstChar(Char::uppercase)
     }
   fun amount(field: String, units: ULong): String =
-    if (field == "size") "${units.plainDecimal(precision.sizeDecimals)} $asset"
-    else "$${units.plainDecimal(precision.priceDecimals)}"
+    if (field == "size") "${units.plainDecimal(market.sizeDecimals)} $asset"
+    else "$${units.plainDecimal(market.priceDecimals)}"
   return when (this) {
     is OrderValidationError.InvalidDecimal -> "${label(field)}: $reason"
     is OrderValidationError.InvalidMarketAddress -> "${label(field)}: $reason"

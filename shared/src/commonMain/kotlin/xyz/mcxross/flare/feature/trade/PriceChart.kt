@@ -77,14 +77,14 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.pow
-import xyz.mcxross.flare.data.ChartTimeframe
-import xyz.mcxross.flare.decibel.model.Candle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.domain.MacdPoint
 import xyz.mcxross.flare.domain.TradingIndicators
+import xyz.mcxross.flare.venue.model.Candle
+import xyz.mcxross.flare.venue.model.ChartTimeframe
 
 /** The stretch of history the price chart shows, in candle slots, so other panels can follow it. */
 @Stable

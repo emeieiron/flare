@@ -11,9 +11,6 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.DefaultAccountRepository
-import xyz.mcxross.flare.data.DefaultChartRepository
-import xyz.mcxross.flare.data.DefaultMarketDetailsRepository
-import xyz.mcxross.flare.data.DefaultMarketsRepository
 import xyz.mcxross.flare.data.DefaultTradingRepository
 import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.GasSponsorshipRepository
@@ -27,7 +24,7 @@ import xyz.mcxross.flare.data.WorkerSessionRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
-import xyz.mcxross.flare.decibel.DecibelNetwork
+import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
@@ -36,7 +33,7 @@ import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.AptosConfig
 import xyz.mcxross.kaptos.AptosEndpointConfig
 import xyz.mcxross.kaptos.AptosEndpoints
-import xyz.mcxross.kaptos.model.Network
+import xyz.mcxross.kaptos.model.Network as AptosNetwork
 import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
 /**
@@ -45,7 +42,7 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
  */
 class DecibelVenue(
   private val config: DecibelRuntimeConfig = DecibelRuntimeConfig(),
-  network: DecibelNetwork = DecibelNetwork.TESTNET,
+  network: Network = Network.TESTNET,
 ) : Venue {
   override val descriptor: VenueDescriptor =
     VenueDescriptor(
@@ -81,8 +78,9 @@ class DecibelVenue(
 }
 
 /**
- * Decibel's repositories, still implemented in `:shared`. They read the common bindings from
- * `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and the wallet vault.
+ * Decibel's repositories. Markets, charts and market details live in this module; the rest are
+ * still implemented in `:shared`. They read the common bindings from `flareModule`: the
+ * [HttpClient], [FlareRuntimeConfig], storage and the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
   single { config }
@@ -93,7 +91,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     val sessionRepository = get<SessionRepository>()
     Aptos(
       AptosConfig(
-        network = Network.CUSTOM,
+        network = AptosNetwork.CUSTOM,
         transactionDefaults = config.transactionDefaults,
         endpoints = AptosEndpoints(fullNode = config.aptosFullnodeUrl),
         fullNode =
@@ -117,7 +115,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
       aptosClient = get(),
       config =
         DecibelConfig(
-          deployment = DecibelDeployment.forNetwork(runtime.network),
+          deployment = DecibelDeployment.forNetwork(runtime.network.toDecibelNetwork()),
           restBaseUrl = config.decibelRestUrl,
           webSocketUrl = config.decibelWebSocketUrl,
           accessToken = { sessionRepository.accessToken() },

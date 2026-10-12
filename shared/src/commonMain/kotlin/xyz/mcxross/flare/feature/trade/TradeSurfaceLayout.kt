@@ -40,12 +40,12 @@ import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.AssetIcon
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.PriceChartSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.venue.model.MarketKind
 
 /** The chart never shrinks below this, so the price and its trend stay readable. */
 private val MinContext = 120.dp
@@ -146,7 +146,7 @@ internal fun MarketContext(
       if (stage == TradeStage.MARKET && contextHeight >= 280.dp) 1f else 0f,
       tween(240), label = "assetHeaderExpansion",
     )
-    val identity = resolveAssetIdentity(quote.market.symbol, quote.market.name, assets[assetKey(quote.market.symbol)])
+    val identity = resolveAssetIdentity(quote.market.symbol, quote.market.displayName, assets[assetKey(quote.market.symbol)])
     Column(Modifier.fillMaxSize()) {
       Row(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).height((72 * expansion).dp).clipToBounds()
@@ -159,7 +159,7 @@ internal fun MarketContext(
           Text(identity.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
           Text(identity.symbol, color = FlareColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
         }
-        InstrumentBadge(if (quote.market.assetType == AssetType.SPOT) "SPOT" else "PERP")
+        InstrumentBadge(if (quote.market.kind == MarketKind.SPOT) "SPOT" else "PERP")
       }
       Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween) {

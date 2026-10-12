@@ -37,7 +37,6 @@ import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
@@ -50,12 +49,13 @@ import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.decibel.model.absoluteSize
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.decibel.model.toChainUnits
-import xyz.mcxross.flare.decibel.model.validate
 import xyz.mcxross.flare.design.actionFailure
+import xyz.mcxross.flare.feature.trade.validate
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.model.MarketKind
 
 enum class FundingMode {
   DEPOSIT,
@@ -264,8 +264,8 @@ class PortfolioViewModel(
       markets.catalog
         .map { catalog ->
           catalog.quotes
-            .filter { it.market.assetType == AssetType.SPOT }
-            .map { it.market.address }
+            .filter { it.market.kind == MarketKind.SPOT }
+            .map { it.market.id }
             .sorted()
         }
         .distinctUntilChanged()
@@ -316,7 +316,7 @@ class PortfolioViewModel(
         val nonSpotPositions =
           state.account.positions.filter { pos ->
             catalog.quotes.none {
-              it.market.address == pos.market && it.market.assetType == AssetType.SPOT
+              it.market.id == pos.market && it.market.kind == MarketKind.SPOT
             }
           }
 
@@ -335,20 +335,20 @@ class PortfolioViewModel(
             val position = spot.positions.firstOrNull { it.assetAddress == address }
             val reserved = spot.reservations.filter { it.assetAddress == address }
             val reservationMarket = reserved.firstOrNull()?.let { item ->
-              catalog.quotes.firstOrNull { it.market.address == item.market }
+              catalog.quotes.firstOrNull { it.market.id == item.market }
             }
             val symbol = position?.symbol?.takeIf { it.isNotBlank() }
               ?: if (reserved.firstOrNull()?.isBuy == true) "USDC"
               else reservationMarket?.market?.symbol ?: xyz.mcxross.flare.design.shortAddress(address)
             val quote = catalog.quotes.firstOrNull {
-              it.market.assetType == AssetType.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
+              it.market.kind == MarketKind.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
             }
             val reservedQuantity = reserved.sumOf { it.amount }
             val quantity = (position?.amount ?: 0.0) + reservedQuantity
             if (quantity > 0) {
               val value = (position?.valueUsd ?: 0.0) + reserved.sumOf { it.valueUsd }
               holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
-                marketAddress = quote?.market?.address, quantity = quantity,
+                marketAddress = quote?.market?.id, quantity = quantity,
                 markPrice = if (quantity > 0) value / quantity else 0.0, valueUsd = value,
                 badge = "SPOT", reservedQuantity = reservedQuantity))
             }
@@ -356,11 +356,11 @@ class PortfolioViewModel(
         } else {
           balances.filterValues { it > 0 }.forEach { (symbol, quantity) ->
             val quote = catalog.quotes.firstOrNull {
-              it.market.assetType == AssetType.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
+              it.market.kind == MarketKind.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
             }
             val price = if (symbol == "USDC") 1.0 else quote?.markPrice ?: 0.0
             holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
-              marketAddress = quote?.market?.address, quantity = quantity,
+              marketAddress = quote?.market?.id, quantity = quantity,
               markPrice = price, valueUsd = quantity * price, badge = "SPOT"))
           }
         }
@@ -373,12 +373,12 @@ class PortfolioViewModel(
         state.copy(
           account = state.account.copy(positions = nonSpotPositions),
           spotHoldings = sortedHoldings,
-          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
+          marketSymbols = catalog.quotes.associate { it.market.id to it.market.symbol },
           // Only the markets with open positions are ever looked up. Keeping the others out means a
           // price tick elsewhere leaves this state equal, so the portfolio doesn't recompose for it.
           markPrices =
             nonSpotPositions.mapTo(HashSet()) { it.market }.let { held ->
-              catalog.quotes.filter { it.market.address in held }.associate { it.market.address to it.markPrice }
+              catalog.quotes.filter { it.market.id in held }.associate { it.market.id to it.markPrice }
             },
         )
       }
@@ -566,14 +566,14 @@ class PortfolioViewModel(
       val position = managedPosition()
       val quote = marketQuote(position.market)
       val state = local.value
-      val takeProfit = optionalPrice(state.takeProfitInput, quote.market.precision.priceDecimals)
-      val stopLoss = optionalPrice(state.stopLossInput, quote.market.precision.priceDecimals)
+      val takeProfit = optionalPrice(state.takeProfitInput, quote.market.priceDecimals)
+      val stopLoss = optionalPrice(state.stopLossInput, quote.market.priceDecimals)
       require(takeProfit != null || stopLoss != null) { "Enter a take-profit or stop-loss price" }
       listOfNotNull(takeProfit, stopLoss).forEach { units ->
         require(
-          quote.market.precision.tickSize == 0uL || units % quote.market.precision.tickSize == 0uL
+          quote.market.tickSize == 0uL || units % quote.market.tickSize == 0uL
         ) {
-          "TP/SL prices must align to tick size ${quote.market.precision.tickSize}"
+          "TP/SL prices must align to tick size ${quote.market.tickSize}"
         }
       }
       val subaccount = checkNotNull(uiState.value.account.account)
@@ -650,10 +650,10 @@ class PortfolioViewModel(
     }
 
   private suspend fun marketQuote(market: String) =
-    (markets.catalog.value.quotes.firstOrNull { it.market.address == market }
+    (markets.catalog.value.quotes.firstOrNull { it.market.id == market }
       ?: run {
         markets.refresh()
-        markets.catalog.value.quotes.firstOrNull { it.market.address == market }
+        markets.catalog.value.quotes.firstOrNull { it.market.id == market }
       }) ?: error("Market metadata is unavailable")
 
   private fun managedPosition() =
@@ -722,7 +722,7 @@ class PortfolioViewModel(
       return@withLock
     }
     val symbols = markets.catalog.value.quotes
-      .filter { it.market.assetType == AssetType.SPOT }
+      .filter { it.market.kind == MarketKind.SPOT }
       .map { it.market.symbol }.distinct() + "USDC"
     val result = runSuspendCatching {
       symbols.associateWith { trading.baseAssetBalance(subaccount, it) }
