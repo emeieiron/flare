@@ -30,6 +30,7 @@ kotlin {
   sourceSets {
     commonMain.dependencies {
       api(libs.kotlinx.coroutines.core)
+      implementation(libs.fastkrypto)
       implementation(libs.kotlinx.datetime)
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.ktor.client.content.negotiation)
