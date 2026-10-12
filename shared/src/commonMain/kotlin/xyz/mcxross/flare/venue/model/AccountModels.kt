@@ -121,6 +121,10 @@ data class OpenOrder(
   val isPositionTpSl: Boolean = false,
   /** What makes a trigger order fire, in the venue's words; blank for an order that rests. */
   val triggerCondition: String = "",
+  /** The price that sets a trigger order off; null for an order that rests. */
+  val triggerPrice: Double? = null,
+  /** An exit that closes the whole position, whatever its size when it fires. */
+  val coversPosition: Boolean = false,
   /** The take-profit that comes with the order once it fills. */
   val takeProfit: OrderTrigger? = null,
   /** The stop-loss that comes with the order once it fills. */

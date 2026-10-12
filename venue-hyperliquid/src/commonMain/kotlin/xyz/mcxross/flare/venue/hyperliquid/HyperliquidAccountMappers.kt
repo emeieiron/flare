@@ -208,6 +208,9 @@ internal fun FrontendOrder.toOpenOrder(): OpenOrder =
     reduceOnly = reduceOnly,
     isPositionTpSl = isPositionTpsl,
     triggerCondition = if (isTrigger) triggerCondition.takeUnless { it == "N/A" }.orEmpty() else "",
+    triggerPrice = if (isTrigger) triggerPx.toDoubleOrNull()?.takeIf { it > 0.0 } else null,
+    // Hyperliquid sizes an exit set for the whole position at 0.
+    coversPosition = isPositionTpsl,
     takeProfit = children.firstOrNull { it.isTakeProfit }?.toTrigger(),
     stopLoss = children.firstOrNull { it.isStopLoss }?.toTrigger(),
     timeMs = timestamp,

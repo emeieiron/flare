@@ -173,6 +173,7 @@ class DecibelAccountMappersTest {
         reduceOnly = true,
         isPositionTpSl = true,
         triggerCondition = "mark >= 101",
+        triggerPrice = 101.0,
         takeProfit = OrderTrigger(110.0, 109.5),
         stopLoss = OrderTrigger(95.0, null),
         timeMs = 1735758000000,

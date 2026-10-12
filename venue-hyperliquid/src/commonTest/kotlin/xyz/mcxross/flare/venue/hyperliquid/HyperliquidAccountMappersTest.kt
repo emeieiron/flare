@@ -8,6 +8,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.data.AccountSnapshot
+import xyz.mcxross.flare.feature.orders.openOrderConditions
+import xyz.mcxross.flare.feature.orders.openOrderSummary
 import xyz.mcxross.flare.feature.portfolio.PortfolioUiState
 import xyz.mcxross.flare.feature.trade.spotQuoteBalance
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
@@ -271,6 +273,32 @@ class HyperliquidAccountMappersTest {
     val resting = decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS).first().toOpenOrder()
     assertEquals(2529.2, resting.price)
     assertEquals(MarketKind.PERP, resting.kind)
+  }
+
+  @Test
+  fun exitRowsShowTheirKindTriggerAndSize() {
+    fun rows(fixture: String) =
+      decode<List<FrontendOrder>>(fixture).map { it.toOpenOrder() }
+        .map { openOrderConditions(it) to openOrderSummary(it) }
+
+    assertEquals(
+      listOf(
+        "stop market · Reduce only" to "Sell entire position · at market · trigger \$35,000.00",
+        "take profit market · Reduce only" to "Sell entire position · at market · trigger \$130,000.00",
+      ),
+      rows(Fixtures.FRONTEND_OPEN_ORDERS_POSITION_EXITS),
+    )
+    assertEquals(
+      listOf(
+        "stop market · Reduce only" to "Sell 0.00016 · at market · trigger \$40,000.00",
+        "take profit market · Reduce only" to "Sell 0.00016 · at market · trigger \$120,000.00",
+      ),
+      rows(Fixtures.FRONTEND_OPEN_ORDERS_ATTACHED_EXITS),
+    )
+    val triggers = rows(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS).map { it.second }
+    assertEquals("Sell 0.06917 · at \$82,190.00 · trigger \$83,011.00", triggers[1])
+    // A resting order with exits attached has no trigger of its own.
+    assertEquals("Buy 8.5 · at \$2.250", triggers[3])
   }
 
   @Test
