@@ -52,6 +52,8 @@ data class SettingsUiState(
   val referralMessage: String? = null,
   val rewards: Rewards? = null,
   val withdrawDestination: String = "",
+  /** Sending to another account on the venue rather than withdrawing off it. */
+  val withdrawOnVenue: Boolean = false,
   val withdrawAmount: String = "",
   val withdrawTransaction: ActionState? = null,
   val withdrawing: Boolean = false,
@@ -83,6 +85,9 @@ sealed interface SettingsIntent {
   data class ChangeWithdrawDestination(val address: String) : SettingsIntent
 
   data class ChangeWithdrawAmount(val amount: String) : SettingsIntent
+
+  /** Whether the USDC goes to another account on the venue instead of leaving it. */
+  data class SetWithdrawOnVenue(val onVenue: Boolean) : SettingsIntent
 
   /** Opens the withdrawal, picking up an interrupted one where it stopped. */
   data object OpenWithdraw : SettingsIntent
@@ -132,6 +137,7 @@ class SettingsViewModel(
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chainName = venue.chain.name
+  private val withdrawalNetwork = venue.withdrawal?.network ?: chainName
   private val maxBuilderFeeBps = venue.maxBuilderFeeBps
   private val local =
     MutableStateFlow(
@@ -262,6 +268,10 @@ class SettingsViewModel(
         }
       is SettingsIntent.ChangeWithdrawDestination ->
         local.update { it.copy(withdrawDestination = intent.address, withdrawError = null) }
+      is SettingsIntent.SetWithdrawOnVenue ->
+        local.update {
+          if (it.withdrawing) it else it.copy(withdrawOnVenue = intent.onVenue, withdrawError = null)
+        }
       is SettingsIntent.ChangeWithdrawAmount ->
         local.update {
           it.copy(
@@ -273,6 +283,7 @@ class SettingsViewModel(
         local.update {
           if (it.withdrawing) it else it.copy(
             withdrawDestination = "",
+            withdrawOnVenue = false,
             withdrawAmount = "",
             withdrawTransaction = null,
             withdrawError = null,
@@ -409,7 +420,8 @@ class SettingsViewModel(
     val dest = current.withdrawDestination.trim()
     val amt = current.withdrawAmount.trim()
     if (!credentials.isAddress(dest)) {
-      local.update { it.copy(withdrawError = "Enter a valid $chainName address.") }
+      val network = if (current.withdrawOnVenue) chainName else withdrawalNetwork
+      local.update { it.copy(withdrawError = "Enter a valid $network address.") }
       return
     }
     if (amt.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true) {
@@ -420,7 +432,10 @@ class SettingsViewModel(
       local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }
       try {
         val prompt = VaultPrompt("Withdraw USDC", "Confirm your identity")
-        accounts.withdrawUsdc(amt, dest, prompt, feePayment).collect { tx ->
+        val flow =
+          if (current.withdrawOnVenue) accounts.transferUsdc(amt, dest, VaultPrompt("Send USDC", "Confirm your identity"))
+          else accounts.withdrawUsdc(amt, dest, prompt, feePayment)
+        flow.collect { tx ->
           local.update { it.copy(withdrawTransaction = tx) }
         }
         when (val terminal = local.value.withdrawTransaction) {

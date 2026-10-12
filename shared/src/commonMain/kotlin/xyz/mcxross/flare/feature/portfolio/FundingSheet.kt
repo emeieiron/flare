@@ -34,6 +34,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
+import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
@@ -45,14 +46,21 @@ import xyz.mcxross.flare.venue.model.ActionState
 fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   val mode = state.fundingMode ?: return
   val committed = state.fundingTransaction as? ActionState.Committed
+  val withdrawal = LocalVenue.current.withdrawal
   FlareSheet(
     title = if (committed != null) "Transfer complete" else "Transfer",
     onDismiss = { if (!state.busy) onIntent(PortfolioIntent.CloseFunding) },
   ) {
     if (committed != null) {
       TransactionReceipt(
-        if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading account."
-        else "Your USDC is now in your wallet.",
+        when (mode) {
+          FundingMode.DEPOSIT -> "Your USDC is now in your trading account."
+          FundingMode.TO_SPOT -> "Your USDC is now in spot."
+          FundingMode.TO_PERPS -> "Your USDC is now in perps."
+          FundingMode.WITHDRAW ->
+            withdrawal?.let { "Your USDC is on its way to your wallet on ${it.network}." }
+              ?: "Your USDC is now in your wallet."
+        },
         committed.reference,
         { onIntent(PortfolioIntent.CloseFunding) },
         enabled = !state.busy,
@@ -61,23 +69,31 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     }
 
     val isDeposit = mode == FundingMode.DEPOSIT
-    val fromLabel = if (isDeposit) "Wallet" else "Trading account"
-    val fromAddress =
-      if (isDeposit) state.profile.ownerAddress.orEmpty() else state.account.account.orEmpty()
-    val toLabel = if (isDeposit) "Trading account" else "Wallet"
-    val toAddress =
-      if (isDeposit) state.account.account.orEmpty() else state.profile.ownerAddress.orEmpty()
-    val availableUsdc =
-      if (isDeposit) {
-        state.primaryUsdcBalance
-      } else {
-        state.account.overview?.withdrawable ?: 0.0
+    val account = state.account.account.orEmpty()
+    val owner = state.profile.ownerAddress.orEmpty()
+    val walletLabel = withdrawal?.let { "Wallet on ${it.network}" } ?: "Wallet"
+    val (fromLabel, fromAddress) =
+      when (mode) {
+        FundingMode.DEPOSIT -> "Wallet" to owner
+        FundingMode.WITHDRAW -> "Trading account" to account
+        FundingMode.TO_SPOT -> "Perps" to account
+        FundingMode.TO_PERPS -> "Spot" to account
       }
+    val (toLabel, toAddress) =
+      when (mode) {
+        FundingMode.DEPOSIT -> "Trading account" to account
+        FundingMode.WITHDRAW -> walletLabel to owner
+        FundingMode.TO_SPOT -> "Spot" to account
+        FundingMode.TO_PERPS -> "Perps" to account
+      }
+    val availableUsdc = state.fundingAvailable(mode)
     val availableText = "Available: ${formatQuantity(availableUsdc, 2)} USDC"
     val amount = state.fundingAmount.toDoubleOrNull()
+    val fee = withdrawal?.feeUsdc?.toDoubleOrNull()?.takeIf { mode == FundingMode.WITHDRAW && it > 0.0 }
     // Guard at the field: an amount above the balance is flagged before anything is signed.
     val exceedsAvailable = amount != null && amount > availableUsdc + FUNDING_EPSILON
-    val canTransfer = amount != null && amount > 0.0 && !exceedsAvailable
+    val belowFee = fee != null && amount != null && amount > 0.0 && amount <= fee
+    val canTransfer = amount != null && amount > 0.0 && !exceedsAvailable && !belowFee
     val maxClick: (() -> Unit)? =
       if (availableUsdc > 0.0) {
         {
@@ -89,6 +105,22 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       } else null
 
     Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState())) {
+      if (state.canMovePerpSpot && !isDeposit) {
+        FlareSegmentedControl(
+          listOf(FundingMode.WITHDRAW, FundingMode.TO_SPOT, FundingMode.TO_PERPS),
+          mode,
+          { onIntent(PortfolioIntent.SelectFundingMode(it)) },
+          {
+            when (it) {
+              FundingMode.TO_SPOT -> "To spot"
+              FundingMode.TO_PERPS -> "To perps"
+              else -> "Withdraw"
+            }
+          },
+          Modifier.fillMaxWidth().padding(bottom = 16.dp),
+          enabled = !state.busy,
+        )
+      }
       // Intuitive From -> To direction card with switcher button
       Column(
         modifier =
@@ -191,10 +223,13 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
         onMaxClick = maxClick,
         placeholder = "0.00",
         enabled = !state.busy && state.pendingWithdrawal == null,
-        isError = exceedsAvailable,
+        isError = exceedsAvailable || belowFee,
         supportingText =
-          if (exceedsAvailable) "You can transfer up to ${formatQuantity(availableUsdc, 2)} USDC."
-          else null,
+          when {
+            exceedsAvailable -> "You can transfer up to ${formatQuantity(availableUsdc, 2)} USDC."
+            fee != null -> "${formatQuantity(fee, 6)} USDC of it pays the withdrawal fee."
+            else -> null
+          },
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
       )
       state.actionError?.let { error ->
@@ -219,6 +254,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
           when {
             state.busy -> "Transferring…"
             mode == FundingMode.DEPOSIT -> "Transfer to trading account"
+            mode == FundingMode.TO_SPOT -> "Move to spot"
+            mode == FundingMode.TO_PERPS -> "Move to perps"
             else -> "Transfer to wallet"
           },
         onClick = { onIntent(PortfolioIntent.SubmitFunding) },
