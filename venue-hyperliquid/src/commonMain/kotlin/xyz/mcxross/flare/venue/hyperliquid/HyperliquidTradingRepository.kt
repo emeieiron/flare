@@ -229,18 +229,17 @@ class HyperliquidTradingRepository(
       }
     val stopLoss =
       action.stopLossTrigger?.let { HyperliquidOrders.Exit(it, action.stopLossLimit, action.stopLossSize) }
+    val closesWithBuy = position.szi.trim().startsWith('-')
+    // Every exit of the kinds being set goes, whichever grouping placed it, so none is left twice.
     val replaced =
-      client.info.openOrders(action.account).filter { order ->
-        order.coin == coin &&
-          order.isPositionTpsl &&
-          ((takeProfit != null && order.orderType.startsWith("Take Profit")) ||
-            (stopLoss != null && order.orderType.startsWith("Stop")))
+      client.info.openOrders(action.account).exitsFor(coin, closesWithBuy).filter { order ->
+        (takeProfit != null && order.isTakeProfit) || (stopLoss != null && order.isStopLoss)
       }
     val cloid = newCloid()
     val orders =
       HyperliquidOrders.positionExits(
         asset,
-        closesWithBuy = position.szi.trim().startsWith('-'),
+        closesWithBuy = closesWithBuy,
         takeProfit = takeProfit,
         stopLoss = stopLoss,
         cloid = cloid,

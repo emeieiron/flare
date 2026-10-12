@@ -148,7 +148,7 @@ internal fun ClearinghouseState.toPositions(orders: List<FrontendOrder>): List<P
   assetPositions.mapNotNull { entry ->
     val position = entry.position
     if (position.szi.toDoubleOrZero() == 0.0) return@mapNotNull null
-    val exits = orders.filter { it.coin == position.coin && it.isPositionTpsl }
+    val exits = orders.exitsFor(position.coin, closesWithBuy = position.szi.trim().startsWith('-'))
     Position(
       marketId = position.coin,
       size = position.szi,
@@ -156,15 +156,33 @@ internal fun ClearinghouseState.toPositions(orders: List<FrontendOrder>): List<P
       entryPrice = position.entryPx.toDoubleOrZero(),
       isolated = !position.leverage.isCross,
       liquidationPrice = position.liquidationPx?.toDoubleOrNull(),
-      takeProfitTriggerPrice = exits.firstOrNull { it.isTakeProfit }?.triggerPx?.toDoubleOrNull(),
-      stopLossTriggerPrice = exits.firstOrNull { it.isStopLoss }?.triggerPx?.toDoubleOrNull(),
+      takeProfitTriggerPrice = exits.filter { it.isTakeProfit }.shownExit()?.triggerPx?.toDoubleOrNull(),
+      stopLossTriggerPrice = exits.filter { it.isStopLoss }.shownExit()?.triggerPx?.toDoubleOrNull(),
     )
   }
 
-private val FrontendOrder.isTakeProfit: Boolean
+/**
+ * The take-profits and stop-losses guarding the position in [coin]: reduce-only triggers on its
+ * closing side, set for the position (`positionTpsl`) or attached to the order that opened it
+ * (`normalTpsl`, listed as plain reduce-only triggers once that order fills). Exits of an order
+ * still resting don't guard the position yet.
+ */
+internal fun List<FrontendOrder>.exitsFor(coin: String, closesWithBuy: Boolean): List<FrontendOrder> {
+  val waiting = flatMap { it.children }.map { it.oid }.toSet()
+  return filter {
+    it.coin == coin && it.reduceOnly && (it.isTakeProfit || it.isStopLoss) &&
+      (it.side == Side.BUY) == closesWithBuy && it.oid !in waiting
+  }
+}
+
+/** A position-level exit first, otherwise the latest one attached to an order. */
+private fun List<FrontendOrder>.shownExit(): FrontendOrder? =
+  firstOrNull { it.isPositionTpsl } ?: maxByOrNull { it.timestamp }
+
+internal val FrontendOrder.isTakeProfit: Boolean
   get() = orderType.startsWith("Take Profit")
 
-private val FrontendOrder.isStopLoss: Boolean
+internal val FrontendOrder.isStopLoss: Boolean
   get() = orderType.startsWith("Stop")
 
 private val FrontendOrder.isMarket: Boolean
