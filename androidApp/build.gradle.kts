@@ -128,15 +128,10 @@ android {
   }
 }
 
-// After android {}: a flavor's configurations exist once the flavor is declared. Those of a flavor
-// and build type pair are created on demand, so that one is declared here first.
-val decibelDebugImplementation by configurations.creating
-
+// After android {}: a flavor's configurations exist once the flavor is declared.
 dependencies {
   // Each flavor links the exchange it trades on.
   "decibelImplementation"(project(":venue-decibel"))
-  // The design preview (src/decibelDebug) builds its sample screens from Decibel's models.
-  decibelDebugImplementation(project(":decibel"))
 }
 
 // The baseline profile plugin's build types don't read their own src/<buildType> folders, so the

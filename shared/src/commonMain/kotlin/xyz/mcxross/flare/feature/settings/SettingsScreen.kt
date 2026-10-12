@@ -42,11 +42,13 @@ import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTextField
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
@@ -70,6 +72,7 @@ fun SettingsScreen(
   onBack: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val venue = LocalVenue.current
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
   var showReferralSheet by remember { mutableStateOf(false) }
@@ -160,8 +163,8 @@ fun SettingsScreen(
     )
 
     SectionLabel("About")
-    DetailRow("Network", "Aptos Testnet")
-    DetailRow("DEX Protocol", "Decibel")
+    DetailRow("Network", "${venue.chain.name} ${venue.network.label()}")
+    DetailRow("DEX Protocol", venue.displayName)
     DetailRow("Version", "1.0.0 (Flare)")
 
     state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT) }
@@ -295,7 +298,8 @@ fun SettingsScreen(
     FlareSheet("Builder support", { showBuilderSheet = false }) {
       Text(
         "Support Flare with a small share of each order. Perpetuals and spot each have their own " +
-          "rate and on-chain approval, capped at 0.10% by Decibel.",
+          "rate and on-chain approval, capped at ${builderRateLabel(venue.maxBuilderFeeBps)} by " +
+          "${venue.displayName}.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
@@ -332,7 +336,8 @@ fun SettingsScreen(
   if (showReferralSheet) {
     FlareSheet("Referral code", { showReferralSheet = false }) {
       Text(
-        "Enter a Decibel referral code to link your account and earn trading fee discounts.",
+        "Enter a ${venue.displayName} referral code to link your account and earn trading fee " +
+          "discounts.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
@@ -376,6 +381,8 @@ fun SettingsScreen(
     )
   }
 }
+
+private fun Network.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 
 private val BuilderRates = listOf(0 to "Off", 2 to "0.02%", 5 to "0.05%", 10 to "0.10%")
 

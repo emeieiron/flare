@@ -29,4 +29,7 @@ interface CredentialParser {
    * when either isn't a valid address.
    */
   fun sameAddress(first: String, second: String): Boolean
+
+  /** Whether [input] is an account address on the venue's chain, such as a withdrawal recipient. */
+  fun isAddress(input: String): Boolean
 }

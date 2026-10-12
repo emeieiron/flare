@@ -157,6 +157,8 @@ class OnboardingViewModelTest {
     override fun keyAddress(input: String): String? = null
 
     override fun sameAddress(first: String, second: String) = first == second
+
+    override fun isAddress(input: String) = input.startsWith("0x")
   }
 
   private class SetupAccounts : AccountRepository {

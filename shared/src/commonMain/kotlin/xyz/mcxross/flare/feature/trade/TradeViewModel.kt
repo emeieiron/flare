@@ -85,7 +85,7 @@ data class TradeUiState(
   val tradingAccountAddress: String? = null,
   val lastSide: OrderSide? = null,
   val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUpOctas: ULong? = null,
+  val suggestedTopUp: ULong? = null,
   val topUpTransaction: ActionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
@@ -173,6 +173,7 @@ class TradeViewModel(
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val defaultBuilderAddress = venue.builderAddress
+  private val minimumFeeTopUp = venue.chain.minimumFeeTopUp
   private val mutableUiState = MutableStateFlow(TradeUiState(capabilities = capabilities))
   val uiState: StateFlow<TradeUiState> = mutableUiState.asStateFlow()
 
@@ -457,7 +458,7 @@ class TradeViewModel(
           transaction = null,
           lastSide = side,
           apiWalletNeedsTopUp = false,
-          suggestedTopUpOctas = null,
+          suggestedTopUp = null,
           leverageTransaction = null,
         )
       }
@@ -526,9 +527,9 @@ class TradeViewModel(
               }
               // Venues without a fee token to send never offer a top-up.
               if (capabilities.networkFeeTopUp) {
-                trading.tradingKeyTopUpFor(transaction, wallets.profile.first())?.let { topUp ->
+                trading.tradingKeyTopUpFor(transaction, wallets.profile.first(), minimumFeeTopUp)?.let { topUp ->
                   mutableUiState.update {
-                    it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp)
+                    it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp)
                   }
                 }
               }
@@ -559,7 +560,7 @@ class TradeViewModel(
       try {
         runSuspendCatching {
           val amount =
-            mutableUiState.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+            mutableUiState.value.suggestedTopUp ?: error("No network-fee top-up is required")
           trading
             .topUpTradingKey(
               amount,
@@ -575,7 +576,7 @@ class TradeViewModel(
           when (val terminal = mutableUiState.value.topUpTransaction) {
             is ActionState.Committed ->
               mutableUiState.update {
-                it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
+                it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null)
               }
             is ActionState.Failed -> error(terminal.message)
             else -> Unit

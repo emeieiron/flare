@@ -78,6 +78,7 @@ import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
 import xyz.mcxross.flare.design.LocalTransactionExplorer
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.SplashMarkSize
 import xyz.mcxross.flare.design.TransactionExplorer
 import xyz.mcxross.flare.design.pagePopEnter
@@ -147,9 +148,8 @@ fun App(
   ) {
     CompositionLocalProvider(
       LocalTransactionExplorer provides
-        remember(runtimeConfig) {
-          TransactionExplorer(runtimeConfig.network)
-        },
+        remember(venue) { TransactionExplorer(venue.descriptor.explorer) },
+      LocalVenue provides venue.descriptor,
       LocalCredentialParser provides koinInject<CredentialParser>(),
     ) {
       FlareTheme { FlareAppFlow() }

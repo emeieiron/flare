@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
@@ -36,6 +35,7 @@ import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.FillDirection
@@ -98,9 +98,10 @@ fun OrdersScreen(
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
     state.selfPayEstimate?.let { estimate ->
+      val chain = LocalVenue.current.chain
       ActionNotice(
         "Flare can’t cover the network fee right now. Your wallet would pay about " +
-          "${estimate.toDecimalString(8)} APT.",
+          "${chain.feeAmount(estimate)}.",
         Modifier.padding(bottom = 8.dp),
       )
       FlareButton(
@@ -111,13 +112,13 @@ fun OrdersScreen(
         style = FlareButtonStyle.OUTLINE,
       )
       if (state.apiWalletNeedsTopUp)
-        state.suggestedTopUpOctas?.let { amount ->
+        state.suggestedTopUp?.let { amount ->
           ActionNotice(
-            "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
+            "This device needs ${chain.feeAmount(amount)} to pay the fee itself.",
             Modifier.padding(bottom = 8.dp),
           )
           FlareButton(
-            "Send APT from your wallet",
+            "Send ${chain.feeToken} from your wallet",
             { onIntent(OrdersIntent.TopUpApiWallet) },
             Modifier.fillMaxWidth().padding(bottom = 12.dp),
             enabled = !state.busy,

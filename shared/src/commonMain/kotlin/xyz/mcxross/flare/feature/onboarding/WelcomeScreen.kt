@@ -52,6 +52,7 @@ import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.IGNITION_REST
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.SplashMarkSize
 import xyz.mcxross.flare.design.drawFlareAfterglow
 import xyz.mcxross.flare.design.drawLitFlareMark
@@ -157,7 +158,7 @@ internal fun WelcomeScreen(
         style = MaterialTheme.typography.displaySmall,
       )
       Text(
-        "Trade Decibel perps and spot\nfrom a wallet only you control.",
+        "Trade ${LocalVenue.current.displayName} perps and spot\nfrom a wallet only you control.",
         Modifier.padding(top = 16.dp).revealed(reveal::value, 2),
         style = MaterialTheme.typography.bodyLarge,
         color = FlareColors.TextSecondary,

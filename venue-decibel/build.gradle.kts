@@ -28,6 +28,7 @@ kotlin {
     commonMain.dependencies {
       api(project(":shared"))
       implementation(project(":decibel"))
+      implementation(libs.kaptos)
       implementation(libs.koin.core)
       implementation(libs.ktor.client.core)
       // The trading repository journals actions in the app's database.

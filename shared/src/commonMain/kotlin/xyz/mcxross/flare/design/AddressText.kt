@@ -62,11 +62,6 @@ fun emphasizedAddress(address: String): AnnotatedString {
   }
 }
 
-/** An Aptos account address: `0x` and up to 64 hex digits. */
-fun String.isAptosAddress(): Boolean = AptosAddress.matches(trim())
-
-private val AptosAddress = Regex("^0x[0-9a-fA-F]{1,64}$")
-
 /**
  * An address input on the same surface as [FlareAmountField]: the label sits inside, the border only
  * appears for an error. Empty, it offers to paste; filled, to clear.

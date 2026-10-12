@@ -79,6 +79,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.ProtectFromScreenCapture
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.rememberFlareShimmer
@@ -714,8 +715,8 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
       StepLayout(
         title = "Create your trading account",
         subtitle =
-          "This wallet doesn’t have a Decibel trading account yet. Flare will open one and enable " +
-            "trading on this phone. You’ll confirm twice.",
+          "This wallet doesn’t have a ${LocalVenue.current.displayName} trading account yet. " +
+            "Flare will open one and enable trading on this phone. You’ll confirm twice.",
         actions = {
           SetupActions(state, onIntent) {
             FlareButton(
@@ -818,10 +819,11 @@ private fun AccountOption(
 @Composable
 internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val stalled = !state.busy && (state.error != null || state.setupFee != null)
+  val venueName = LocalVenue.current.displayName
   StepLayout(
     title = "Open your trading account",
     subtitle =
-      "Flare opens a Decibel trading account for your new wallet and adds a trading key to this " +
+      "Flare opens a $venueName trading account for your new wallet and adds a trading key to this " +
         "phone, so your orders sign instantly. The key can trade, but it can’t move funds out.",
     actions = {
       SetupActions(state, onIntent) {
@@ -852,7 +854,7 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
           stalled -> TaskStatus.STALLED
           else -> TaskStatus.WAITING
         },
-        waiting = "A Decibel account for your new wallet",
+        waiting = "A $venueName account for your new wallet",
         working = "Opening…",
         done = "Open",
         stalled = "Not opened yet",

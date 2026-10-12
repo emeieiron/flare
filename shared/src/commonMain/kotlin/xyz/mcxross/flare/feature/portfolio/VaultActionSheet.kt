@@ -20,6 +20,7 @@ import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
@@ -106,14 +107,24 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
             } else null
         }
 
+      val venue = LocalVenue.current
+      val minimums = venue.vaultMinimums
+      val minimumDeposit = minimums?.let { formatQuantity(it.deposit, 2) }
+      val minimumShares = minimums?.let { formatQuantity(it.redemptionShares, 4) }
       val supportingText =
         if (mode == VaultActionMode.DEPOSIT) {
-          "Decibel protocol requires a minimum deposit of 10 USDC."
+          minimumDeposit?.let {
+            "${venue.displayName} protocol requires a minimum deposit of $it USDC."
+          }
         } else {
           when {
             parsedAmount > 0.0 ->
-              "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC · Min. 5 shares"
-            else -> "Decibel protocol requires a minimum redemption of 5 shares."
+              "≈ ${formatBalance(parsedAmount * effectivePrice)} USDC" +
+                minimumShares?.let { " · Min. $it shares" }.orEmpty()
+            else ->
+              minimumShares?.let {
+                "${venue.displayName} protocol requires a minimum redemption of $it shares."
+              }
           }
         }
 
@@ -125,7 +136,10 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         availableText =
           if (mode == VaultActionMode.DEPOSIT) "Available: ${formatBalance(state.collateralBalance)}"
           else "Held: ${formatQuantity(availableShares, 4)} shares",
-        placeholder = if (mode == VaultActionMode.DEPOSIT) "10.00" else "5",
+        placeholder =
+          if (mode == VaultActionMode.DEPOSIT) {
+            minimumDeposit?.let { if ('.' in it) it else "$it.00" } ?: "0.00"
+          } else minimumShares ?: "0",
         onMaxClick = maxClick,
         supportingText = supportingText,
         enabled = !state.busy,

@@ -49,8 +49,6 @@ kotlin {
       implementation(libs.ktor.client.okhttp)
     }
     commonMain.dependencies {
-      implementation(project(":decibel"))
-      api(libs.kaptos)
       implementation(libs.compose.runtime)
       implementation(libs.compose.foundation)
       implementation(libs.compose.material3)

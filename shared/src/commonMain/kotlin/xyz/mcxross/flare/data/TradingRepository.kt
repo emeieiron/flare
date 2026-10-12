@@ -64,18 +64,18 @@ interface TradingRepository {
 
 /**
  * Sponsorship can fall back to self-payment only when the signing key can pay the fee itself.
- * Returns the amount of fee token the device trading key is missing, or null when no top-up applies.
+ * Returns the amount of fee token to send the device trading key, at least [minimumTopUp], or null
+ * when no top-up applies.
  */
 suspend fun TradingRepository.tradingKeyTopUpFor(
   failure: ActionState.Failed,
   profile: WalletProfile,
+  minimumTopUp: ULong,
 ): ULong? {
   val estimate = failure.selfPay?.estimate ?: return null
   if (profile.apiWalletAddress == null || profile.ownerAddress == null) return null
   val balance = runSuspendCatching { tradingKeyFeeBalance() }.getOrNull() ?: return null
   if (balance >= estimate) return null
   val buffered = if (estimate <= ULong.MAX_VALUE / 3uL) estimate * 3uL else estimate
-  return maxOf(MINIMUM_TOP_UP, buffered)
+  return maxOf(minimumTopUp, buffered)
 }
-
-private const val MINIMUM_TOP_UP = 1_000_000uL

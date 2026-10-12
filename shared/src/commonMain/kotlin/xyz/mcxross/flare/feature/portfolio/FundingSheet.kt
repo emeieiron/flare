@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareAmountField
@@ -36,6 +35,7 @@ import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
@@ -203,7 +203,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       state.selfPayEstimate(state.fundingTransaction)?.let { estimate ->
         ActionNotice(
           "Flare can’t cover the network fee right now. Your wallet would pay about " +
-            "${estimate.toDecimalString(8)} APT.",
+            "${LocalVenue.current.chain.feeAmount(estimate)}.",
           Modifier.padding(top = 12.dp),
         )
         FlareButton(
