@@ -16,7 +16,7 @@ Flare handles private keys and leveraged trading. A small patch can have financi
 
 - `:shared` is exchange-neutral: screens, ViewModels, storage, and the venue interfaces (`Venue`, `VenueDescriptor`, the repositories, `OrderRules`, `CredentialParser`). It must not depend on any exchange SDK (`:decibel`, `:hyperliquid`, Kaptos, FastKrypto).
 - Each exchange lives in a `:venue-*` module that implements those interfaces with its SDK and binds them in `Venue.module()`. Its words, limits and links reach the screens through the `VenueDescriptor`.
-- Each app build links one venue: an Android product flavor (`decibel`) and, on iOS, an umbrella framework (`:ios-decibel`) built by its scheme (`Flare Decibel`).
+- Each app build links one venue: an Android product flavor (`decibel`, `hyperliquid`) and, on iOS, an umbrella framework (`:ios-decibel`, `:ios-hyperliquid`) built by its scheme (`Flare Decibel`, `Flare Hyperliquid`).
 - Features one exchange lacks are gated by `VenueCapabilities`, never by checking which exchange it is.
 
 ## Local setup
@@ -65,7 +65,7 @@ testnet account needs a mainnet deposit from the same address first.
 ## Change workflow
 
 - Add focused tests for protocol JSON, fixed-point math, BCS payloads, authentication policy, or UI-state transitions as appropriate.
-- Run Android, iOS compilation, and Decibel tests before opening a pull request. Changes spanning the proxy contract must also pass the separate `decibel-worker` repository's checks.
+- Run Android, iOS compilation, and Decibel tests before opening a pull request. Key derivation and signing call FastKrypto natively, whose Android artifact has device ABIs only, so those tests run in `:hyperliquid:jvmTest` or the iOS tests, never Android host tests. Changes spanning the proxy contract must also pass the separate `decibel-worker` repository's checks.
 - Explain any security-boundary change in the pull request and update [THREAT_MODEL.md](THREAT_MODEL.md) when an assumption changes.
 - Keep unrelated formatting and generated changes out of the patch.
 
@@ -73,17 +73,22 @@ Local gate:
 
 ```sh
 ./gradlew :decibel:jvmTest :hyperliquid:jvmTest \
-  :shared:testAndroidHostTest :venue-decibel:testAndroidHostTest \
-  :androidApp:assembleDecibelDebug :androidApp:lintDecibelDebug \
-  :shared:compileTestKotlinIosSimulatorArm64 :ios-decibel:compileKotlinIosSimulatorArm64 \
-  :venue-decibel:compileTestKotlinIosSimulatorArm64
+  :shared:testAndroidHostTest :venue-decibel:testAndroidHostTest :venue-hyperliquid:testAndroidHostTest \
+  :androidApp:assembleDecibelDebug :androidApp:assembleHyperliquidDebug \
+  :androidApp:lintDecibelDebug :androidApp:lintHyperliquidDebug \
+  :shared:compileTestKotlinIosSimulatorArm64 :venue-decibel:compileTestKotlinIosSimulatorArm64 \
+  :venue-hyperliquid:compileTestKotlinIosSimulatorArm64 \
+  :ios-decibel:compileKotlinIosSimulatorArm64 :ios-hyperliquid:compileKotlinIosSimulatorArm64
 ```
 
 On macOS, also run the iOS tests and build the app:
 
 ```sh
-./gradlew :shared:iosSimulatorArm64Test :venue-decibel:iosSimulatorArm64Test
+./gradlew :shared:iosSimulatorArm64Test :venue-decibel:iosSimulatorArm64Test \
+  :venue-hyperliquid:iosSimulatorArm64Test
 xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Decibel" -configuration Debug-Decibel \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Hyperliquid" -configuration Debug-Hyperliquid \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
 ```
 

@@ -44,6 +44,10 @@ include(":hyperliquid")
 
 include(":ios-decibel")
 
+include(":ios-hyperliquid")
+
 include(":shared")
 
 include(":venue-decibel")
+
+include(":venue-hyperliquid")
