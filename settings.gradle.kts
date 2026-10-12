@@ -40,6 +40,8 @@ include(":baselineprofile")
 
 include(":decibel")
 
+include(":hyperliquid")
+
 include(":ios-decibel")
 
 include(":shared")
