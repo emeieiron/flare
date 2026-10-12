@@ -28,8 +28,8 @@ data class DecibelDeployment(
     val Testnet =
       DecibelDeployment(
         network = DecibelNetwork.TESTNET,
-        packageAddress = "0xe7da2794b1d8af76532ed95f38bfdf1136abfd8ea3a240189971988a83101b7f",
-        usdcMetadataAddress = "0x5428acf5c112826d0c74ae1cd2de9030f53d1d01235e6c2621d967bf914ee1c8",
+        packageAddress = "0xd368b820fdfbfe004679cdb0facef4b920c4fc0c2c80bd2fecf3843a93427bd1",
+        usdcMetadataAddress = "0x6bedd9a12fbb6c80711bbedc037944e5b57e32fc9da7c78bbe834fdd8ffd5f5e",
         chainId = 2u,
         upstreamRestUrl = "https://api.testnet.aptoslabs.com/decibel",
         upstreamWebSocketUrl = "wss://api.testnet.aptoslabs.com/decibel/ws",
