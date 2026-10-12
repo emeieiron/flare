@@ -288,7 +288,7 @@ fun TradeScreen(
                     OrderResult(
                       state, side, editorHeight,
                       onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
-                      onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.reference)) } },
+                      onViewTransaction = explorer.url(committed.reference)?.let { url -> { runCatching { browser.openUri(url) } } },
                     )
                   }
                 }

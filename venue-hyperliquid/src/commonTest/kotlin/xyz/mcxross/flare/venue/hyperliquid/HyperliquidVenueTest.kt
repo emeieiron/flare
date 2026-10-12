@@ -26,10 +26,14 @@ class HyperliquidVenueTest {
     assertEquals("Hyperliquid", testnet.displayName)
     assertEquals(Network.TESTNET, testnet.network)
     assertEquals(
-      "https://app.hyperliquid-testnet.xyz/explorer/tx/0xabc",
-      testnet.explorer.transactionUrl("0xabc"),
+      "https://app.hyperliquid-testnet.xyz/explorer/tx/$TX_HASH",
+      testnet.explorer.transactionUrl(TX_HASH),
     )
-    assertEquals("https://app.hyperliquid.xyz/explorer/tx/0xabc", mainnet.explorer.transactionUrl("0xabc"))
+    assertEquals("https://app.hyperliquid.xyz/explorer/tx/$TX_HASH", mainnet.explorer.transactionUrl(TX_HASH))
+    // Order ids and nonces aren't transactions, so they get no link.
+    assertNull(mainnet.explorer.transactionUrl("123456789"))
+    assertNull(mainnet.explorer.transactionUrl("1784361909247"))
+    assertNull(mainnet.explorer.transactionUrl("0x0123456789abcdef0123456789abcdef"))
     assertEquals(listOf("USDC"), testnet.chain.depositAssets)
     assertEquals(10, testnet.maxBuilderFeeBps)
     assertNull(testnet.vaultMinimums)
@@ -96,5 +100,9 @@ class HyperliquidVenueTest {
       trading.execute(TradeAction.Withdraw(owner, "1"), VaultPrompt("Test", "Test")).first()
     assertTrue(assertIs<ActionState.Failed>(result).definitelyNotSubmitted)
     assertTrue(trading.pendingTransactions.first().isEmpty())
+  }
+
+  private companion object {
+    const val TX_HASH = "0x99ec2abc3983011c9b650424daff7000002742a1d4861fee3db4d60ef886db07"
   }
 }

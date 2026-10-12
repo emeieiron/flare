@@ -167,7 +167,8 @@ class TransactionExplorer(private val explorer: VenueExplorer) {
   val label: String
     get() = "View on ${explorer.name}"
 
-  fun url(hash: String): String = explorer.transactionUrl(hash)
+  /** Null when the explorer has no page for [hash]. */
+  fun url(hash: String): String? = explorer.transactionUrl(hash)
 }
 
 val LocalTransactionExplorer =
@@ -189,11 +190,9 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
       modifier = Modifier.size(48.dp),
     )
     Text(message, style = MaterialTheme.typography.bodyLarge)
-    ActionRow(
-      explorer.label,
-      icon = FlareIcons.External,
-      onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
-    )
+    explorer.url(hash)?.let { url ->
+      ActionRow(explorer.label, icon = FlareIcons.External, onClick = { runCatching { browser.openUri(url) } })
+    }
     FlareButton("Done", onDone, Modifier.fillMaxWidth(), enabled = enabled)
   }
 }

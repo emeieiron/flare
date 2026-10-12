@@ -162,14 +162,21 @@ data class VenueExplorer(
   val name: String,
   /** A transaction page URL, with [REFERENCE] where the hash or action reference goes. */
   val transactionUrlTemplate: String,
+  /**
+   * The references the explorer has a page for; null when it has one for every reference. Others,
+   * such as an exchange's order ids, get no link.
+   */
+  val transactionReference: Regex? = null,
 ) {
   init {
     require(transactionUrlTemplate.startsWith("https://")) { "Explorer links must use HTTPS" }
     require(REFERENCE in transactionUrlTemplate) { "The transaction URL needs a $REFERENCE slot" }
   }
 
-  fun transactionUrl(reference: String): String =
-    transactionUrlTemplate.replace(REFERENCE, reference)
+  /** Null when the explorer has no page for [reference]. */
+  fun transactionUrl(reference: String): String? =
+    if (transactionReference?.matches(reference) == false) null
+    else transactionUrlTemplate.replace(REFERENCE, reference)
 
   companion object {
     const val REFERENCE = "{reference}"

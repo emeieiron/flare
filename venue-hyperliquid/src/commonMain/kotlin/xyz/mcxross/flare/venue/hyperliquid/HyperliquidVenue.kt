@@ -124,7 +124,11 @@ class HyperliquidVenue(
             Network.MAINNET -> "https://app.hyperliquid.xyz/explorer/tx/"
             Network.TESTNET -> "https://app.hyperliquid-testnet.xyz/explorer/tx/"
           } + VenueExplorer.REFERENCE,
+        transactionReference = TRANSACTION_HASH,
       )
+
+    /** Only L1 transaction hashes have explorer pages; order ids and nonces don't. */
+    private val TRANSACTION_HASH = Regex("0x[0-9a-fA-F]{64}")
   }
 }
 
