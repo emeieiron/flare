@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.feature.settings
 
+import xyz.mcxross.flare.design.rememberAppVersion
 import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -169,7 +170,7 @@ fun SettingsScreen(
     SectionLabel("About")
     DetailRow("Network", "${venue.chain.name} ${venue.network.label()}")
     DetailRow("DEX Protocol", venue.displayName)
-    DetailRow("Version", "1.0.0 (Flare)")
+    rememberAppVersion().takeIf(String::isNotBlank)?.let { DetailRow("Version", it) }
 
     state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT) }
     Spacer(Modifier.height(24.dp))
