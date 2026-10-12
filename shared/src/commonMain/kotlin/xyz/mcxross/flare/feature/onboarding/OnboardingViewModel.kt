@@ -427,6 +427,7 @@ class OnboardingViewModel(
     }
     val owner = checkNotNull(wallets.profile.first().ownerAddress) { "No account to set up" }
     accounts.selectTradingAccount(owner, setupPrompt)
+    if (!setup.enableTrading) return finishSetupInternal()
     local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, selectedSubaccount = owner)
   }
 
