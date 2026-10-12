@@ -138,7 +138,6 @@ class AssetDirectoryTest {
     assertEquals("123457", btc.round("123456.7"))
     assertEquals("123456", btc.round("123456"))
     assertEquals("12.346", hype.round("12.3456789", HlRounding.HALF_EVEN))
-    assertEquals("0.0000123", purr.round("0.00001234567", HlRounding.DOWN).let { "0.0000123" })
     assertEquals("0.00001235", purr.round("0.00001234567"))
     assertEquals("0.00001234", purr.round("0.00001234567", HlRounding.DOWN))
     assertEquals("10", sol.round("9.99996"))
