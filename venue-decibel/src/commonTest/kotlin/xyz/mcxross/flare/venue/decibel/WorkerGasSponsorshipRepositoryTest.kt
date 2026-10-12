@@ -25,18 +25,22 @@ import xyz.mcxross.kaptos.model.AptosResult
 
 class WorkerGasSponsorshipRepositoryTest {
   @Test
-  fun onlyExplicitCredentialErrorsMakeServiceUnavailableSafeForSelfPay() = runTest {
+  fun onlyExplicitPreSubmissionCodesAreReportedAsDefinite() = runTest {
+    val unavailable = HttpStatusCode.ServiceUnavailable
+    val forbidden = HttpStatusCode.Forbidden
     val cases =
       listOf(
-        """{"code":"gas_station_not_configured","error":"unavailable"}""" to
-          "gas_station_not_configured",
-        """{"code":"gas_station_credentials_rejected","error":"unavailable"}""" to
-          "gas_station_credentials_rejected",
-        """{"code":"unknown","error":"unavailable"}""" to "gas_station_http_503",
-        """{"error":"Unable to journal sponsored transaction"}""" to "gas_station_http_503",
-        "upstream unavailable" to "gas_station_http_503",
+        Triple(unavailable, """{"code":"gas_station_not_configured","error":"unavailable"}""", "gas_station_not_configured"),
+        Triple(unavailable, """{"code":"gas_station_credentials_rejected","error":"unavailable"}""", "gas_station_credentials_rejected"),
+        Triple(forbidden, """{"code":"gas_station_transaction_not_allowed","error":"Entry function is outside the sponsorship route allowlist"}""", "gas_station_transaction_not_allowed"),
+        Triple(unavailable, """{"code":"gas_station_transaction_not_allowed","error":"unavailable"}""", "gas_station_http_503"),
+        Triple(forbidden, """{"code":"gas_station_not_configured","error":"forbidden"}""", "gas_station_http_403"),
+        Triple(forbidden, """{"error":"Owner authorization required"}""", "gas_station_http_403"),
+        Triple(unavailable, """{"code":"unknown","error":"unavailable"}""", "gas_station_http_503"),
+        Triple(unavailable, """{"error":"Unable to journal sponsored transaction"}""", "gas_station_http_503"),
+        Triple(unavailable, "upstream unavailable", "gas_station_http_503"),
       )
-    for ((body, expected) in cases) {
+    for ((status, body, expected) in cases) {
       val client =
         HttpClient(
           MockEngine { request ->
@@ -44,7 +48,7 @@ class WorkerGasSponsorshipRepositoryTest {
             assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
             respond(
               body,
-              HttpStatusCode.ServiceUnavailable,
+              status,
               headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )
           }
@@ -52,32 +56,68 @@ class WorkerGasSponsorshipRepositoryTest {
           install(ContentNegotiation) { json() }
         }
       try {
-        val repository =
-          WorkerGasSponsorshipRepository(
-            client,
-            FlareRuntimeConfig(),
-            DecibelRuntimeConfig(),
-            TestSessionRepository,
-          )
-        val result =
-          repository.submit(
-            xyz.mcxross.kaptos.model.ExternalFeePayerRequest(
-              byteArrayOf(1),
-              byteArrayOf(2),
-              fingerprint = "0x" + "11".repeat(32),
-            ),
-            ownerOnly = true,
-          )
-        val failure = assertIs<AptosResult.Failure>(result)
-        assertEquals(
-          expected,
-          assertIs<xyz.mcxross.kaptos.model.AptosError.Api>(failure.error).errorCode,
-        )
+        val failure = assertIs<AptosResult.Failure>(submit(client))
+        val error = assertIs<xyz.mcxross.kaptos.model.AptosError.Api>(failure.error)
+        assertEquals(expected, error.errorCode, body)
+        if (!expected.startsWith("gas_station_http_")) {
+          assertEquals("Gas sponsorship is unavailable. You can choose to pay gas with APT.", error.message)
+        }
       } finally {
         client.close()
       }
     }
   }
+
+  @Test
+  fun transportFailureIsNeverReportedAsDefinite() = runTest {
+    val client = HttpClient(MockEngine { throw RuntimeException("connection reset") }) {
+      install(ContentNegotiation) { json() }
+    }
+    try {
+      val failure = assertIs<AptosResult.Failure>(submit(client))
+      assertIs<xyz.mcxross.kaptos.model.AptosError.Transport>(failure.error)
+    } finally {
+      client.close()
+    }
+  }
+
+  @Test
+  fun tradingKeySubmissionsUseTheTradingRoute() = runTest {
+    val client =
+      HttpClient(
+        MockEngine { request ->
+          assertEquals("/gas/sponsor/trading", request.url.encodedPath)
+          respond(
+            """{"transactionHash":"0x${"22".repeat(32)}"}""",
+            HttpStatusCode.OK,
+            headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+          )
+        }
+      ) {
+        install(ContentNegotiation) { json() }
+      }
+    try {
+      assertIs<AptosResult.Success<String>>(submit(client, ownerOnly = false))
+    } finally {
+      client.close()
+    }
+  }
+
+  private suspend fun submit(client: HttpClient, ownerOnly: Boolean = true) =
+    WorkerGasSponsorshipRepository(
+        client,
+        FlareRuntimeConfig(),
+        DecibelRuntimeConfig(),
+        TestSessionRepository,
+      )
+      .submit(
+        xyz.mcxross.kaptos.model.ExternalFeePayerRequest(
+          byteArrayOf(1),
+          byteArrayOf(2),
+          fingerprint = "0x" + "11".repeat(32),
+        ),
+        ownerOnly = ownerOnly,
+      )
 
   @Test
   fun resolvesSubmittedFingerprintToOnChainHash() = runTest {

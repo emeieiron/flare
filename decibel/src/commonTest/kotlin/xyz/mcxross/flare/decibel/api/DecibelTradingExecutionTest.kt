@@ -162,7 +162,14 @@ class DecibelTradingExecutionTest {
 
   @Test
   fun unavailableSponsorCredentialsAreSafeForExplicitSelfPay() = runTest {
-    for (code in listOf("gas_station_not_configured", "gas_station_credentials_rejected")) {
+    for (
+      code in
+        listOf(
+          "gas_station_not_configured",
+          "gas_station_credentials_rejected",
+          "gas_station_transaction_not_allowed",
+        )
+    ) {
       fixture { f ->
         val failed =
           assertIs<TransactionState.Failed>(
@@ -268,6 +275,47 @@ class DecibelTradingExecutionTest {
     for (command in commands) fixture { f ->
       assertIs<TransactionState.Committed>(f.execute(command = command).last())
       assertEquals(1, f.events.count { it == "submit" })
+    }
+  }
+
+  @Test
+  fun everyCommandIsSponsoredWithoutADirectSubmission() = runTest {
+    for (command in everyCommand()) fixture { f ->
+      var requests = 0
+      val states =
+        f.execute(
+          sponsor =
+            ExternalFeePayerSubmitter {
+              requests += 1
+              AptosResult.Success(OTHER_HASH)
+            },
+          command = command,
+        )
+      assertEquals(TransactionState.Committed(OTHER_HASH), states.last(), "$command")
+      assertEquals(1, requests, "$command")
+      assertTrue(f.hash.startsWith("sponsor:"), "$command")
+      assertFalse("submit" in f.events, "$command")
+    }
+  }
+
+  @Test
+  fun uncertainSponsorOutcomesNeverOfferSelfPayForAnyCommand() = runTest {
+    val outcomes =
+      listOf(
+        AptosError.Api("unavailable", errorCode = "gas_station_http_503"),
+        AptosError.Api("unknown", errorCode = "gas_station_http_502"),
+        AptosError.Transport("timeout"),
+        AptosError.Serialization("bad response"),
+      )
+    for (command in everyCommand()) for (outcome in outcomes) fixture { f ->
+      val failed =
+        assertIs<TransactionState.Failed>(
+          f.execute(ExternalFeePayerSubmitter { AptosResult.Failure(outcome) }, command).last()
+        )
+      assertFalse(failed.definitelyNotSubmitted, "$command $outcome")
+      assertNull(failed.selfPayEstimateOctas, "$command $outcome")
+      assertEquals(f.hash, failed.hash)
+      assertFalse("submit" in f.events)
     }
   }
 
@@ -426,6 +474,48 @@ private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
 }
 
 private val OTHER_HASH = "0x" + "ab".repeat(32)
+
+private fun everyCommand(): List<DecibelCommand> {
+  val order =
+    ValidatedOrder(
+      "0x22",
+      OrderSide.BUY,
+      10uL,
+      1uL,
+      TimeInForce.GOOD_TILL_CANCELLED,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    )
+  val maxU128 = "340282366920938463463374607431768211455"
+  return listOf(
+    DecibelCommand.CreateSubaccount,
+    DecibelCommand.Deposit("0x11", "0x33", 1uL),
+    DecibelCommand.Withdraw("0x11", "0x33", 1uL),
+    DecibelCommand.TransferCollateral("0x11", "0x33", "0x66", 1uL),
+    DecibelCommand.DelegateTrading("0x11", "0x44"),
+    DecibelCommand.RevokeDelegation("0x11", "0x44"),
+    DecibelCommand.ConfigureMarket("0x11", "0x22", MarginMode.CROSS, 1u),
+    DecibelCommand.PlaceOrder("0x11", order),
+    DecibelCommand.PlaceSpotOrder("0x11", order),
+    DecibelCommand.PlaceTwapOrder("0x11", ValidatedTwapOrder("0x22", OrderSide.BUY, 10uL)),
+    DecibelCommand.CancelOrder("0x11", "0x22", maxU128),
+    DecibelCommand.CancelSpotOrder("0x11", "0x22", maxU128),
+    DecibelCommand.CancelTwapOrder("0x11", "0x22", maxU128),
+    DecibelCommand.SetPositionTpSl("0x11", "0x22", stopLossTrigger = 1uL),
+    DecibelCommand.CancelPositionTpSl("0x11", "0x22", "1"),
+    DecibelCommand.ApproveMaxBuilderFee("0x11", "0x55", 500uL),
+    DecibelCommand.RevokeMaxBuilderFee("0x11", "0x55"),
+    DecibelCommand.ApproveMaxSpotBuilderFee("0x11", "0x55", 500uL),
+    DecibelCommand.RevokeMaxSpotBuilderFee("0x11", "0x55"),
+    DecibelCommand.ContributeToVault("0x11", "0x77", "0x33", 1uL),
+    DecibelCommand.RedeemFromVault("0x11", "0x77", 1uL),
+  )
+}
 
 private fun pendingResponse(hash: String) =
   """{"type":"pending_transaction","hash":"$hash","sender":"0x1","sequence_number":"0","max_gas_amount":"2000000","gas_unit_price":"100","expiration_timestamp_secs":"9999999999"}"""
