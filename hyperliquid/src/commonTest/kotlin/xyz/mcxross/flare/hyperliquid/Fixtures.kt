@@ -96,6 +96,10 @@ internal object Fixtures {
     """{"status":"order","order":{"order":{"coin":"ETH","side":"B","limitPx":"2529.2","sz":"5.0","oid":62467226234,"timestamp":1791768486999,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"5.0","tif":"Alo","cloid":null},"status":"canceled","statusTimestamp":1791768491623}}"""
 
   /** `orderStatus` for an unknown oid or cloid. */
+  /** `activeAssetData` of the testnet HLP vault on ETH. */
+  const val ACTIVE_ASSET_DATA =
+    """{"user":"0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0","coin":"ETH","leverage":{"type":"cross","value":20},"maxTradeSzs":["7.8146","7.8146"],"availableToTrade":["13692157.5423300005","13692157.5423300005"],"markPx":"2559.3"}"""
+
   const val ORDER_STATUS_UNKNOWN =
     """{"status":"unknownOid"}"""
 

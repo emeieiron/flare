@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
+import xyz.mcxross.flare.hyperliquid.model.ActiveAssetData
 import xyz.mcxross.flare.hyperliquid.model.Candle
 import xyz.mcxross.flare.hyperliquid.model.CandleInterval
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
@@ -100,6 +101,9 @@ interface InfoService {
   suspend fun orderStatus(user: String, oid: Long): OrderStatusResult
 
   suspend fun orderStatus(user: String, cloid: Cloid): OrderStatusResult
+
+  /** [user]'s leverage and margin mode on the perp [coin]. */
+  suspend fun activeAssetData(user: String, coin: String): ActiveAssetData
 
   suspend fun portfolio(user: String): Portfolio
 
@@ -237,6 +241,12 @@ internal class DefaultInfoService(private val api: HyperliquidApi) : InfoService
     read("orderStatus", "order status") {
       putUser(user)
       put("oid", cloid.hex)
+    }
+
+  override suspend fun activeAssetData(user: String, coin: String): ActiveAssetData =
+    read("activeAssetData", "leverage") {
+      putUser(user)
+      put("coin", coin)
     }
 
   override suspend fun portfolio(user: String): Portfolio =

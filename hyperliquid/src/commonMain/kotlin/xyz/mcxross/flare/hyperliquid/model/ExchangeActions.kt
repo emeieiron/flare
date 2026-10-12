@@ -105,7 +105,8 @@ class BuilderFee(address: String, val tenthsOfBasisPoint: Int) {
 /**
  * One order: wire keys `a` (asset), `b` (is buy), `p` (price), `s` (size), `r` (reduce only),
  * `t` (type) and optional `c` (cloid). Prices and sizes go out via [HlDecimal.toWire]; round them
- * with [HyperliquidAsset.roundPrice] and [HyperliquidAsset.roundSize] first.
+ * with [HyperliquidAsset.roundPrice] and [HyperliquidAsset.roundSize] first. A reduce-only trigger
+ * of size zero is a `positionTpsl` exit for the whole position, as Hyperliquid's app sends it.
  */
 data class OrderRequest(
   val asset: Int,
@@ -119,7 +120,9 @@ data class OrderRequest(
   init {
     require(asset >= 0) { "Asset id must not be negative" }
     require(price.signum > 0) { "Price must be positive" }
-    require(size.signum > 0) { "Size must be positive" }
+    require(size.signum > 0 || (size.signum == 0 && reduceOnly && type is OrderType.Trigger)) {
+      "Size must be positive"
+    }
   }
 
   internal fun toWire(): JsonObject = buildJsonObject {
