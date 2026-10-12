@@ -26,7 +26,7 @@ internal fun OrderResult(
   side: OrderSide,
   minHeight: Dp,
   onOpenActivity: (() -> Unit)?,
-  onViewTransaction: () -> Unit,
+  onViewTransaction: (() -> Unit)?,
 ) {
   OrderOutcome(
     state, side, minHeight, Outcome.SUCCESS,
@@ -35,7 +35,7 @@ internal fun OrderResult(
       ?: "Your order is confirmed on-chain. Follow its status and fills in Activity.",
   ) {
     onOpenActivity?.let { ActionRow("View Activity", onClick = it) }
-    ActionRow("View transaction", onClick = onViewTransaction)
+    onViewTransaction?.let { ActionRow("View transaction", onClick = it) }
   }
 }
 

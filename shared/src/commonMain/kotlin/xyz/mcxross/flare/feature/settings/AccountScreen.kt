@@ -504,11 +504,9 @@ private fun WithdrawSent(state: SettingsUiState, hash: String, onDone: () -> Uni
   Column(Modifier.padding(top = 16.dp).then(revealed)) {
     DetailRow("Amount", "$amount USDC")
     DetailRow("To", recipient)
-    ActionRow(
-      explorer.label,
-      icon = FlareIcons.External,
-      onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
-    )
+    explorer.url(hash)?.let { url ->
+      ActionRow(explorer.label, icon = FlareIcons.External, onClick = { runCatching { browser.openUri(url) } })
+    }
   }
   FlareButton("Done", onDone, Modifier.fillMaxWidth().padding(top = 24.dp))
 }
