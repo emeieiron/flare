@@ -25,9 +25,9 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.WorkerSessionRepository
-import xyz.mcxross.flare.decibel.DecibelNetwork
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.kaptos.core.crypto.Ed25519PublicKey
 import xyz.mcxross.kaptos.core.crypto.Ed25519Signature
 import xyz.mcxross.kaptos.model.HexInput
@@ -91,7 +91,7 @@ class WorkerSessionRepositoryIosTest {
     val repository =
       WorkerSessionRepository(
         client = client,
-        runtime = FlareRuntimeConfig(DecibelNetwork.TESTNET),
+        runtime = FlareRuntimeConfig(Network.TESTNET),
         decibelConfig = DecibelRuntimeConfig("http://127.0.0.1:8787"),
         preferences = preferences,
         wallets = wallets,

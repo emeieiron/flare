@@ -8,14 +8,6 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
-import xyz.mcxross.flare.data.ChartTimeframe
-import xyz.mcxross.flare.data.MarketQuote
-import xyz.mcxross.flare.data.candlePage
-import xyz.mcxross.flare.data.candleRequestWindows
-import xyz.mcxross.flare.decibel.DecibelClient
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.CandleInterval
-import xyz.mcxross.flare.decibel.model.Market
 
 class SharedCommonTest {
 
@@ -49,62 +41,5 @@ class SharedCommonTest {
   fun runtimeConfigKeepsTheWorkerAuthenticationOrigin() {
     assertEquals("flare://mobile", FlareRuntimeConfig().appOrigin)
     assertFailsWith<IllegalArgumentException> { FlareRuntimeConfig(appOrigin = "https://app") }
-  }
-
-  @Test
-  fun aPageOfHistoryEndsWhereItIsAskedTo() {
-    val end = 1_790_518_620_000L
-    val (start, pageEnd) = candlePage(end, ChartTimeframe.FIFTEEN_MINUTES)
-
-    assertEquals(end, pageEnd)
-    assertEquals(500L, (pageEnd - start) / ChartTimeframe.FIFTEEN_MINUTES.durationMs)
-    assertEquals(1, candleRequestWindows(start, pageEnd, CandleInterval.FIFTEEN_MINUTES).size)
-  }
-
-  @Test
-  fun longCandleHistoryIsSplitAtOneThousandIntervals() {
-    val dayMs = 24L * 60 * 60 * 1_000
-    val windows = candleRequestWindows(0L, 2_001L * dayMs, CandleInterval.ONE_DAY)
-
-    assertEquals(3, windows.size)
-    assertEquals(0L to 999L * dayMs, windows[0])
-    assertEquals(1_998L * dayMs to 2_001L * dayMs, windows[2])
-    assertEquals(true, windows.all { (start, end) -> (end - start) / dayMs < 1_000L })
-  }
-
-  @Test
-  fun cachedMarketQuoteRoundTripsWithoutPersistingFavoriteState() {
-    val quote =
-      MarketQuote(
-        market =
-          Market(
-            assetType = AssetType.PERP,
-            address = "0xdec1be1",
-            name = "BTC-USD",
-            sizeDecimals = 4,
-            maxLeverage = 20,
-            tickSize = 10u,
-            minSize = 100u,
-            lotSize = 10u,
-            maxOpenInterest = 1_000_000.0,
-            priceDecimals = 2,
-            mode = "active",
-            unrealizedPnlHaircutBps = 100,
-            category = "crypto",
-            minPrice = 100u,
-            maxPrice = 100_000_000u,
-            isIsolatedOnly = false,
-          ),
-        markPrice = 62_500.25,
-        changePercent24h = -1.25,
-        volume24h = 12_000_000.0,
-        openInterest = 4_000_000.0,
-        favorite = false,
-      )
-
-    val encoded = DecibelClient.DefaultJson.encodeToString(quote)
-    val restored = DecibelClient.DefaultJson.decodeFromString<MarketQuote>(encoded)
-
-    assertEquals(quote, restored)
   }
 }

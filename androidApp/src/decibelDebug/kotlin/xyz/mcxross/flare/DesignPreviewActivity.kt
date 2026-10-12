@@ -24,6 +24,12 @@ import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.model.Candle
+import xyz.mcxross.flare.venue.model.ChartTimeframe
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 
 /** Offline design harness. Decibel debug builds only; no repositories, keys, or transactions. */
 class DesignPreviewActivity : FragmentActivity() {
@@ -97,12 +103,12 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                 MarketInstrumentFilter.PERPETUALS to MarketPage(
                   favoritesOnly = favorites,
                   categories = listOf("commodity", "crypto", "equity"),
-                  quotes = quotes.filter { it.market.assetType == AssetType.PERP && (!favorites || it.favorite) },
+                  quotes = quotes.filter { it.market.kind == MarketKind.PERP && (!favorites || it.favorite) },
                 ),
                 MarketInstrumentFilter.SPOT to MarketPage(
                   favoritesOnly = false,
                   categories = listOf("crypto"),
-                  quotes = quotes.filter { it.market.assetType == AssetType.SPOT },
+                  quotes = quotes.filter { it.market.kind == MarketKind.SPOT },
                 ),
               ),
               pageQuotes = marketPageQuotes(quotes, emptyMap()),
@@ -114,14 +120,14 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                 MarketsIntent.CloseSearch -> { searching = false; query = "" }
                 is MarketsIntent.SetFavoritesOnly -> favorites = intent.enabled
                 is MarketsIntent.ToggleFavorite -> quotes = quotes.map {
-                    if (it.market.address == intent.marketAddress) it.copy(favorite = !it.favorite)
+                    if (it.market.id == intent.marketAddress) it.copy(favorite = !it.favorite)
                     else it
                   }
                 else -> Unit
               }
             },
             { address ->
-              val quote = quotes.first { it.market.address == address }
+              val quote = quotes.first { it.market.id == address }
               trade = trade.copy(quote = quote, marketDetails = previewBook(quote))
               screen = "chart"
             },
@@ -321,22 +327,20 @@ private fun previewQuotes(): List<MarketQuote> =
     .mapIndexed { index, (symbol, price, change) ->
       MarketQuote(
         Market(
-          AssetType.PERP,
-          "0x${index + 100}",
-          "$symbol/USD",
-          4,
-          20,
-          1u,
-          1u,
-          1u,
-          1000000.0,
-          2,
-          "open",
-          0,
-          "crypto",
-          1u,
-          100000000u,
-          false,
+          id = "0x${index + 100}",
+          symbol = symbol,
+          displayName = "$symbol/USD",
+          kind = MarketKind.PERP,
+          category = "crypto",
+          priceDecimals = 2,
+          sizeDecimals = 4,
+          maxLeverage = 20,
+          isolatedOnly = false,
+          tickSize = 1u,
+          lotSize = 1u,
+          minSize = 1u,
+          minPrice = 1u,
+          maxPrice = 100000000u,
         ),
         price,
         change,
@@ -357,19 +361,18 @@ private fun previewCandles(): List<Candle> =
       close - 90,
       close,
       100.0,
-      "1m",
+      ChartTimeframe.ONE_MINUTE,
     )
   }
 
 private fun previewBook(quote: MarketQuote) =
   MarketDetails(
-    market = quote.market.address,
+    market = quote.market.id,
     orderBook =
       OrderBook(
-        market = quote.market.address,
-        timestamp = "0",
-        bids = listOf(listOf(formatQuantity(quote.markPrice, 2), "10")),
-        asks = listOf(listOf(formatQuantity(quote.markPrice, 2), "10")),
+        marketId = quote.market.id,
+        bids = listOf(OrderBookLevel(formatQuantity(quote.markPrice, 2), "10")),
+        asks = listOf(OrderBookLevel(formatQuantity(quote.markPrice, 2), "10")),
       ),
     stale = false,
   )

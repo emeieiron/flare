@@ -13,7 +13,7 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.assetKey
-import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.venue.model.MarketKind
 
 enum class MarketInstrumentFilter {
   PERPETUALS,
@@ -214,8 +214,8 @@ private fun MarketQuote.matches(
 ): Boolean {
   val matchesInstrument =
     when (key.instrument) {
-      MarketInstrumentFilter.PERPETUALS -> market.assetType == AssetType.PERP
-      MarketInstrumentFilter.SPOT -> market.assetType == AssetType.SPOT
+      MarketInstrumentFilter.PERPETUALS -> market.kind == MarketKind.PERP
+      MarketInstrumentFilter.SPOT -> market.kind == MarketKind.SPOT
     }
   return matchesInstrument &&
     (!key.favoritesOnly || favorite) &&
@@ -273,8 +273,8 @@ fun searchMarkets(
         .sortedBy { it.second }
         .map { it.first }
   return MarketSearchResults(
-    perpetuals = matches.filter { it.market.assetType == AssetType.PERP },
-    spot = matches.filter { it.market.assetType == AssetType.SPOT },
+    perpetuals = matches.filter { it.market.kind == MarketKind.PERP },
+    spot = matches.filter { it.market.kind == MarketKind.SPOT },
   )
 }
 
@@ -284,7 +284,7 @@ private fun marketMatchRank(
   query: String,
 ): Int? {
   val ticker = quote.market.symbol.substringBefore('/').lowercase()
-  val names = listOfNotNull(quote.market.name, asset?.name).map { it.lowercase() }
+  val names = listOfNotNull(quote.market.displayName, asset?.name).map { it.lowercase() }
   val kind = (asset?.kind ?: quote.market.category).lowercase()
   return when {
     ticker == query -> 0

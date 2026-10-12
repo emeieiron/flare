@@ -22,7 +22,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import xyz.mcxross.flare.decibel.DecibelNetwork
+import xyz.mcxross.flare.venue.Network
 
 /** A single label/value rhythm for account, market, and transaction details. */
 @Composable
@@ -162,13 +162,13 @@ fun shortAddress(address: String): String =
  * Where a settled action can be inspected. Receipts link out instead of printing a hash, so the
  * record stays available without turning the screen into a log.
  */
-class TransactionExplorer(private val network: DecibelNetwork) {
+class TransactionExplorer(private val network: Network) {
   fun url(hash: String): String =
     "https://explorer.aptoslabs.com/txn/$hash?network=${network.name.lowercase()}"
 }
 
 val LocalTransactionExplorer = staticCompositionLocalOf {
-  TransactionExplorer(DecibelNetwork.TESTNET)
+  TransactionExplorer(Network.TESTNET)
 }
 
 /** Shared completion state: a settled receipt has one unambiguous exit. */

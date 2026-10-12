@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okio.Path.Companion.toPath
-import xyz.mcxross.flare.decibel.DecibelNetwork
+import xyz.mcxross.flare.venue.Network
 
 /**
  * Identifies the profile migrated from an installation that predates multiple accounts. Its secrets
@@ -62,7 +62,7 @@ data class AccountProfile(
 data class FlarePreferences(
   val activeProfileId: String = "legacy",
   val profiles: List<AccountProfile> = emptyList(),
-  val network: DecibelNetwork = DecibelNetwork.TESTNET,
+  val network: Network = Network.TESTNET,
   val chartRange: String = "FIVE_MINUTES",
   val chartStyle: String = "LINE",
   val showRsi: Boolean = false,
@@ -101,8 +101,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         profiles = profiles,
         network =
           preferences[NetworkKey]?.let { value ->
-            DecibelNetwork.entries.firstOrNull { it.name == value }
-          } ?: DecibelNetwork.TESTNET,
+            Network.entries.firstOrNull { it.name == value }
+          } ?: Network.TESTNET,
         chartRange = preferences[ChartRangeKey] ?: "FIVE_MINUTES",
         chartStyle = preferences[ChartStyleKey] ?: "LINE",
         showRsi = preferences[ShowRsiKey] ?: false,
@@ -129,7 +129,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   val favoriteMarkets: Flow<Set<String>> = values.map { it.favoriteMarkets }
   val spotWatchlistSeeded: Flow<Boolean> = values.map { it.spotWatchlistSeeded }
 
-  suspend fun setNetwork(network: DecibelNetwork) {
+  suspend fun setNetwork(network: Network) {
     dataStore.edit { it[NetworkKey] = network.name }
   }
 

@@ -4,26 +4,28 @@ import kotlin.test.*
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.decibel.model.*
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 
 class OrderEntryTest {
   private val market =
     Market(
-      AssetType.PERP,
-      "0x123",
-      "BTC/USD",
-      8,
-      40,
-      100uL,
-      2000uL,
-      1000uL,
-      1_000_000.0,
-      2,
-      "Open",
-      0,
-      "crypto",
-      1uL,
-      100_000_000uL,
-      false,
+      id = "0x123",
+      symbol = "BTC",
+      displayName = "BTC/USD",
+      kind = MarketKind.PERP,
+      category = "crypto",
+      priceDecimals = 2,
+      sizeDecimals = 8,
+      maxLeverage = 40,
+      isolatedOnly = false,
+      tickSize = 100uL,
+      lotSize = 1000uL,
+      minSize = 2000uL,
+      minPrice = 1uL,
+      maxPrice = 100_000_000uL,
     )
 
   private fun state() =
@@ -72,7 +74,7 @@ class OrderEntryTest {
 
   @Test
   fun optionalExitsStayAbsentAndMarketEstimatesUseTheCorrectBookSide() {
-    val book = OrderBook("0x123", "0", listOf(listOf("69990", "1")), listOf(listOf("70010", "1")))
+    val book = OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
     val state =
       state()
         .copy(
@@ -93,7 +95,7 @@ class OrderEntryTest {
 
   @Test
   fun marketEntryKeepsAttachedExitsAndInvalidEstimatesNeverBecomeZero() {
-    val book = OrderBook("0x123", "0", listOf(listOf("69990", "1")), listOf(listOf("70010", "1")))
+    val book = OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
     val state =
       state().copy(orderType = OrderType.MARKET, marketDetails = MarketDetails(orderBook = book))
     val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market, book).value)

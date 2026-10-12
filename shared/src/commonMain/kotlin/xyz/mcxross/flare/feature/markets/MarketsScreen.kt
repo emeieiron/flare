@@ -52,7 +52,6 @@ import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareColors
@@ -63,6 +62,7 @@ import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
 import xyz.mcxross.flare.design.MarketListSkeleton
 import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.venue.model.MarketKind
 
 @Composable
 fun MarketsRoute(
@@ -254,7 +254,7 @@ private fun MarketPageContent(
       contentPadding = PaddingValues(horizontal = 24.dp),
     ) {
       item { MarketSectionHeader(title, showPriceLabel = true) }
-      items(quotes, key = { it.market.address }) { quote ->
+      items(quotes, key = { it.market.id }) { quote ->
         MarketQuoteRow(quote, assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
@@ -339,7 +339,7 @@ private fun MarketSearchResults(
           subdued = query.isEmpty(),
         )
       }
-      items(quotes, key = { "search-${it.market.address}" }) { quote ->
+      items(quotes, key = { "search-${it.market.id}" }) { quote ->
         MarketQuoteRow(quote, state.assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
@@ -375,16 +375,16 @@ private fun MarketQuoteRow(
   onIntent: (MarketsIntent) -> Unit,
   onMarketClick: (String) -> Unit,
 ) {
-  val address = quote.market.address
+  val address = quote.market.id
   MarketListRow(
-    asset = resolveAssetIdentity(quote.market.symbol, quote.market.name, asset),
+    asset = resolveAssetIdentity(quote.market.symbol, quote.market.displayName, asset),
     price = formatPrice(quote.markPrice),
     delta = formatPercent(quote.changePercent24h),
     positive = quote.changePercent24h >= 0,
     favorite = quote.favorite,
     onClick = { onMarketClick(address) },
     onFavorite = { onIntent(MarketsIntent.ToggleFavorite(address)) },
-    badgeText = if (quote.market.assetType == AssetType.SPOT) "SPOT" else null,
+    badgeText = if (quote.market.kind == MarketKind.SPOT) "SPOT" else null,
   )
 }
 

@@ -1,6 +1,6 @@
 package xyz.mcxross.flare.data
 
-import xyz.mcxross.flare.decibel.model.Candle
+import xyz.mcxross.flare.venue.model.Candle
 
 /** Joins two runs of candles by open time, oldest first. Where they overlap, [newer] wins. */
 fun mergeCandles(older: List<Candle>, newer: List<Candle>): List<Candle> {

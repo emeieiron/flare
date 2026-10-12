@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.toDecimalString
@@ -56,6 +55,7 @@ import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
+import xyz.mcxross.flare.venue.model.MarketKind
 
 @Composable
 internal fun OrderEditor(
@@ -68,7 +68,7 @@ internal fun OrderEditor(
   minHeight: Dp,
 ) {
   val quote = state.quote ?: return
-  val isSpot = quote.market.assetType == AssetType.SPOT
+  val isSpot = quote.market.kind == MarketKind.SPOT
   val estimate = state.orderEstimate(side)
   val inputError = state.orderInputError(side)
   val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()

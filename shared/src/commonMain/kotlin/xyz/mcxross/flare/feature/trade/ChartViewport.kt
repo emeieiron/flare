@@ -2,8 +2,7 @@ package xyz.mcxross.flare.feature.trade
 
 import kotlin.math.abs
 import kotlin.math.max
-import xyz.mcxross.flare.data.candleDurationMs
-import xyz.mcxross.flare.decibel.model.Candle
+import xyz.mcxross.flare.venue.model.Candle
 
 /** Keep price movement readable without anchoring financial prices to zero. */
 internal fun priceBounds(values: List<Double>): ClosedFloatingPointRange<Double> {
@@ -20,7 +19,7 @@ internal fun priceBounds(values: List<Double>): ClosedFloatingPointRange<Double>
  * added at either end.
  */
 internal fun candleSlots(candles: List<Candle>): List<Long> {
-  val intervalMs = candles.firstOrNull()?.let { candleDurationMs(it.interval) } ?: 60_000L
+  val intervalMs = candles.firstOrNull()?.timeframe?.durationMs ?: 60_000L
   return candles.map { it.openTimeMs / intervalMs }
 }
 

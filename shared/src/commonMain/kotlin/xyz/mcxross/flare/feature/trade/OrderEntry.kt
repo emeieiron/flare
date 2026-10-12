@@ -1,14 +1,12 @@
 package xyz.mcxross.flare.feature.trade
 
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.OrderDraft
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.decibel.model.SlippageBps
 import xyz.mcxross.flare.decibel.model.toChainUnits
-import xyz.mcxross.flare.decibel.model.validate
-import xyz.mcxross.flare.decibel.model.validateTwap
+import xyz.mcxross.flare.venue.model.MarketKind
 
 internal fun TradeUiState.entryPrice(side: OrderSide): String? =
   if (orderType == OrderType.LIMIT) limitPriceInput.takeIf(String::isNotBlank)
@@ -18,7 +16,7 @@ internal fun TradeUiState.entryPrice(side: OrderSide): String? =
 /** Entry and attached exit prices remain decimal strings until exact chain-unit validation. */
 internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
   val market = quote?.market ?: error("Select a market first")
-  val isSpot = market.assetType == AssetType.SPOT
+  val isSpot = market.kind == MarketKind.SPOT
   val takeProfit =
     if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
   val stopLoss = if (isSpot) null else stopLossInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
@@ -37,10 +35,10 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
     checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
     checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
   }
-  val activeBuilderFeeBps = builderFeeFor(market.assetType == AssetType.SPOT)?.toUInt()
+  val activeBuilderFeeBps = builderFeeFor(market.kind == MarketKind.SPOT)?.toUInt()
   val activeBuilderAddress = if (activeBuilderFeeBps != null) builderAddress else null
   return OrderDraft(
-    marketAddress = market.address,
+    marketAddress = market.id,
     side = side,
     type = orderType,
     size = DecimalInput(sizeInput),
@@ -58,7 +56,7 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
 internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatching {
   require(sizeInput.isNotBlank()) { "Enter an order size" }
   val market = quote?.market ?: error("Select a market first")
-  if (market.assetType != AssetType.SPOT) {
+  if (market.kind != MarketKind.SPOT) {
     require(leverage in 1..market.maxLeverage.coerceAtMost(100)) {
       "Choose leverage within this market’s limit"
     }
@@ -94,7 +92,7 @@ internal fun TradeUiState.orderEstimate(side: OrderSide): OrderEstimate? {
   val entry = entryPrice(side)?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return null
   val size = sizeInput.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return null
   val value = (entry * size).takeIf(Double::isFinite) ?: return null
-  val isSpot = quote?.market?.assetType == AssetType.SPOT
+  val isSpot = quote?.market?.kind == MarketKind.SPOT
   val effLeverage = if (isSpot) 1 else leverage
   if (effLeverage < 1) return null
   val direction = if (side == OrderSide.BUY) 1 else -1

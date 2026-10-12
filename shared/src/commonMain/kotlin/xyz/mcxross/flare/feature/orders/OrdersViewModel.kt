@@ -27,6 +27,7 @@ import xyz.mcxross.flare.decibel.model.TwapOrder
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
+import xyz.mcxross.flare.venue.model.MarketKind
 
 enum class OrdersSection(val label: String) {
   OPEN("Open"),
@@ -107,11 +108,11 @@ class OrdersViewModel(
       }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
-          marketSymbols = catalog.quotes.associate { it.market.address to it.market.symbol },
+          marketSymbols = catalog.quotes.associate { it.market.id to it.market.symbol },
           spotMarkets =
             catalog.quotes
-              .filter { it.market.assetType == AssetType.SPOT }
-              .map { it.market.address }
+              .filter { it.market.kind == MarketKind.SPOT }
+              .map { it.market.id }
               .toSet(),
         )
       }
@@ -184,9 +185,9 @@ class OrdersViewModel(
       }
       val isSpot =
         markets.catalog.value.quotes
-          .firstOrNull { it.market.address == market }
+          .firstOrNull { it.market.id == market }
           ?.market
-          ?.assetType == AssetType.SPOT
+          ?.kind == MarketKind.SPOT
       trading
         .execute(
           if (isTpSl) {
@@ -278,9 +279,9 @@ class OrdersViewModel(
         for (order in openOrders) {
           val isSpot =
             markets.catalog.value.quotes
-              .firstOrNull { it.market.address == order.market }
+              .firstOrNull { it.market.id == order.market }
               ?.market
-              ?.assetType == AssetType.SPOT || order.assetType == AssetType.SPOT
+              ?.kind == MarketKind.SPOT || order.assetType == AssetType.SPOT
           val command =
             if (order.isTpSl) {
               DecibelCommand.CancelPositionTpSl(subaccount, order.market, order.orderId)

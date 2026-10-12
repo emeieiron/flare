@@ -27,8 +27,8 @@ internal fun TradeUiState.leverageCommand(
   }
   return DecibelCommand.ConfigureMarket(
     subaccount,
-    market.address,
-    if (market.isIsolatedOnly) MarginMode.ISOLATED else MarginMode.CROSS,
+    market.id,
+    if (market.isolatedOnly) MarginMode.ISOLATED else MarginMode.CROSS,
     leverage.toUByte(),
   )
 }

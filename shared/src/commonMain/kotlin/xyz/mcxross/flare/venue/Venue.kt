@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.venue
 
 import org.koin.core.module.Module
-import xyz.mcxross.flare.decibel.DecibelNetwork
 
 /**
  * The exchange a Flare build trades on. Each build links exactly one venue module
@@ -19,17 +18,12 @@ interface Venue {
   fun module(): Module
 }
 
-/**
- * Describes a venue to the app.
- *
- * [network] is still Decibel's enum: it becomes an exchange-neutral `Network` with the same names
- * once the repositories behind the seam use neutral types.
- */
+/** Describes a venue to the app. */
 data class VenueDescriptor(
   /** Stable lowercase identifier, such as `decibel`. Matches the build flavor and iOS scheme. */
   val id: String,
   val displayName: String,
-  val network: DecibelNetwork,
+  val network: Network,
   val capabilities: VenueCapabilities,
   val explorer: VenueExplorer,
 )

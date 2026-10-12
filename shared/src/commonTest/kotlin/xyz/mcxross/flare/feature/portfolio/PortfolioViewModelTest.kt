@@ -47,11 +47,12 @@ import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.model.AccountOverview
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.Delegation
-import xyz.mcxross.flare.decibel.model.Market
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.Ed25519Account
 
@@ -73,30 +74,28 @@ class PortfolioViewModelTest {
   private fun createMarket(
     name: String,
     address: String,
-    assetType: AssetType,
+    kind: MarketKind,
     category: String,
   ): Market =
     Market(
-      assetType = assetType,
-      address = address,
-      name = name,
+      id = address,
+      symbol = name.substringBefore('/'),
+      displayName = name,
+      kind = kind,
+      category = category,
+      priceDecimals = 2,
       sizeDecimals = 2,
       maxLeverage = 20,
+      isolatedOnly = false,
       tickSize = 1uL,
-      minSize = 1uL,
       lotSize = 1000uL,
-      maxOpenInterest = 1_000_000.0,
-      priceDecimals = 2,
-      mode = "Open",
-      unrealizedPnlHaircutBps = 0,
-      category = category,
+      minSize = 1uL,
       minPrice = 1uL,
       maxPrice = 100_000_000uL,
-      isIsolatedOnly = false,
     )
 
-  private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", AssetType.PERP, "crypto")
-  private val aptSpot = createMarket("APT/USDC", "0xapt_spot", AssetType.SPOT, "crypto")
+  private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", MarketKind.PERP, "crypto")
+  private val aptSpot = createMarket("APT/USDC", "0xapt_spot", MarketKind.SPOT, "crypto")
 
   private val quotes =
     listOf(

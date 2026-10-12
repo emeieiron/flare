@@ -56,8 +56,6 @@ import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.ActionNotice
@@ -71,6 +69,9 @@ import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TradeScreenSkeleton
+import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.MarketTrade
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 
 @Composable
 fun TradeRoute(
@@ -105,17 +106,17 @@ fun TradeScreen(
   onOpenActivity: (() -> Unit)? = null,
 ) {
   val quote = state.quote
-  var showBook by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
-  var trading by rememberSaveable(quote?.market?.address) { mutableStateOf(false) }
-  var side by rememberSaveable(quote?.market?.address) { mutableStateOf(OrderSide.BUY) }
-  var exitsOpen by rememberSaveable(quote?.market?.address) {
+  var showBook by rememberSaveable(quote?.market?.id) { mutableStateOf(false) }
+  var trading by rememberSaveable(quote?.market?.id) { mutableStateOf(false) }
+  var side by rememberSaveable(quote?.market?.id) { mutableStateOf(OrderSide.BUY) }
+  var exitsOpen by rememberSaveable(quote?.market?.id) {
     mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
   }
   var showTimeframes by rememberSaveable { mutableStateOf(false) }
   // Shared by the price chart and the indicators under it; a new market or timeframe starts over.
-  val chartWindow = remember(quote?.market?.address, state.timeframe) { ChartWindow() }
+  val chartWindow = remember(quote?.market?.id, state.timeframe) { ChartWindow() }
   var reviewing by rememberSaveable(
-    quote?.market?.address, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
+    quote?.market?.id, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
     state.stopLossInput, state.orderType, state.leverage,
     state.twapDurationMinutesInput, state.twapFrequencyMinutesInput, side,
   ) { mutableStateOf(false) }
@@ -352,12 +353,12 @@ fun TradeScreen(
 @Composable
 private fun MarketInformation(state: TradeUiState, showBook: Boolean, onToggleBook: () -> Unit) {
   val quote = state.quote ?: return
-  val isSpot = quote.market.assetType == AssetType.SPOT
+  val isSpot = quote.market.kind == MarketKind.SPOT
   SectionLabel("Market stats")
   if (isSpot) {
     DetailRow("24h volume", formatCompact(quote.volume24h))
     DetailRow("Base asset", quote.market.symbol)
-    DetailRow("Quote asset", quote.market.name.substringAfter('/', "USDC").trim())
+    DetailRow("Quote asset", quote.market.displayName.substringAfter('/', "USDC").trim())
   } else {
     DetailRow("24h volume", formatCompact(quote.volume24h))
     DetailRow("Open interest", formatCompact(quote.openInterest))
@@ -417,7 +418,7 @@ private fun MarketInformation(state: TradeUiState, showBook: Boolean, onToggleBo
 
 @Composable
 private fun RecentTradeRow(trade: MarketTrade) {
-  val isBuy = trade.action.equals("buy", ignoreCase = true)
+  val isBuy = trade.isBuy
   Row(
     modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
     horizontalArrangement = Arrangement.SpaceBetween,
@@ -445,7 +446,7 @@ private fun RecentTradeRow(trade: MarketTrade) {
 @Composable
 private fun OrderBookSide(
   label: String,
-  levels: List<List<String>>,
+  levels: List<OrderBookLevel>,
   modifier: Modifier = Modifier,
 ) {
   Column(modifier) {
@@ -459,9 +460,9 @@ private fun OrderBookSide(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Text(level.getOrNull(0)?.toDoubleOrNull()?.let(::formatPrice) ?: "—", style = MaterialTheme.typography.labelSmall)
+        Text(level.price.toDoubleOrNull()?.let(::formatPrice) ?: "—", style = MaterialTheme.typography.labelSmall)
         Text(
-          level.getOrNull(1)?.toDoubleOrNull()?.let { formatQuantity(it) } ?: "—",
+          level.size.toDoubleOrNull()?.let { formatQuantity(it) } ?: "—",
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           style = MaterialTheme.typography.labelSmall,
         )
