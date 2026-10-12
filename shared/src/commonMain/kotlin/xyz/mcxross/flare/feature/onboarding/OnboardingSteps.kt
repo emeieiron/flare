@@ -140,7 +140,8 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
         else -> Hint("Enter 12 or 24 words, or a private key.", HintTone.NEUTRAL)
       }
     )
-    AnimatedVisibility(format == CredentialFormat.PRIVATE_KEY || state.apiImport) {
+    val tradingKeys = LocalVenue.current.setup.enableTrading
+    AnimatedVisibility(tradingKeys && (format == CredentialFormat.PRIVATE_KEY || state.apiImport)) {
       Column(Modifier.padding(top = 20.dp)) {
         FlareSegmentedControl(
           listOf(false, true),

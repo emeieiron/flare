@@ -10,10 +10,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -93,6 +95,31 @@ class OnboardingViewModelTest {
     vm.onIntent(OnboardingIntent.EnableTrading)
     assertEquals(listOf("select $OWNER", "prepare"), accounts.events)
     assertTrue(vm.uiState.value.error == null)
+  }
+
+  @Test
+  fun aVenueWithoutTradingKeysFinishesSetupOnceTheWalletExists() = runTest {
+    val accounts = SetupAccounts()
+    val vm =
+      viewModel(
+        accounts,
+        VenueSetup(
+          tradingAccounts = false,
+          openTradingAccount = false,
+          builderFee = false,
+          enableTrading = false,
+        ),
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+
+    assertEquals(OnboardingEffect.Completed, completed.await())
+    assertEquals(listOf("select $OWNER"), accounts.events)
+    assertEquals(null, vm.uiState.value.profile.apiWalletAddress)
   }
 
   private fun viewModel(accounts: SetupAccounts, setup: VenueSetup) =

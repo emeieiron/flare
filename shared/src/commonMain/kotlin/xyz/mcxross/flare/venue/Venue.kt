@@ -79,6 +79,11 @@ data class VenueSetup(
   val openTradingAccount: Boolean = true,
   /** Setup offers to approve Flare's builder fee. */
   val builderFee: Boolean = true,
+  /**
+   * Setup ends by enabling trading with a device trading key. Without it, setup ends once the wallet
+   * exists and its own address is the account.
+   */
+  val enableTrading: Boolean = true,
 )
 
 /** The features an exchange supports. The app hides what a venue can't do. */
