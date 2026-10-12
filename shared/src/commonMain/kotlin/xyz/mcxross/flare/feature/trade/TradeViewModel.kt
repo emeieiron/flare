@@ -82,6 +82,8 @@ data class TradeUiState(
   val leverage: Int = 1,
   val positionLeverage: Int? = null,
   val positionIsolated: Boolean? = null,
+  /** The open position's signed size in this market, negative for a short; null with none. */
+  val positionSize: String? = null,
   val leverageTransaction: ActionState? = null,
   val slippageBps: Int = 50,
   val orderBusy: Boolean = false,
@@ -279,6 +281,7 @@ class TradeViewModel(
         state.copy(
           positionLeverage = null,
           positionIsolated = null,
+          positionSize = null,
           leverage = 1,
         )
       } else {
@@ -289,6 +292,7 @@ class TradeViewModel(
         state.copy(
           positionLeverage = position?.leverage,
           positionIsolated = position?.isolated,
+          positionSize = position?.size,
           leverage =
             position?.leverage
               ?: state.leverage.coerceIn(

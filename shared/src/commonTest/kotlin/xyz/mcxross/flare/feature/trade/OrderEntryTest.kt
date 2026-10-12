@@ -4,12 +4,14 @@ import kotlin.test.*
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.testing.AcceptingOrderRules
+import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.TradingFees
 
 class OrderEntryTest {
   private val market =
@@ -159,5 +161,54 @@ class OrderEntryTest {
     val zeroOrder = zeroFee.orderRequest(OrderSide.BUY)
     assertNull(zeroOrder.builderAddress)
     assertNull(zeroOrder.builderFeeBps)
+  }
+
+  @Test
+  fun aPerpOrderNeedsTheMarginItUsesBeforeReview() {
+    // 0.001 BTC at 70,000 and 1× needs $70 of margin.
+    val unfunded = state().copy(quoteBalance = 0.0)
+    assertEquals(
+      "Not enough margin for this order. Available \$0.00",
+      unfunded.orderInputError(OrderSide.BUY),
+    )
+    assertNull(state().copy(quoteBalance = 70.0).orderInputError(OrderSide.BUY))
+    assertNull(state().copy(quoteBalance = 20.0, leverage = 4).orderInputError(OrderSide.BUY))
+    assertNotNull(
+      state().copy(quoteBalance = 70.0, fees = TradingFees(perp = FeeRates(0.0, 0.001)))
+        .orderInputError(OrderSide.BUY)
+    )
+    // An unknown balance never blocks the ticket.
+    assertNull(state().orderInputError(OrderSide.BUY))
+  }
+
+  @Test
+  fun closingAnOppositePositionNeedsNoNewMargin() {
+    val short = state().copy(quoteBalance = 0.0, positionSize = "-0.001", takeProfitInput = "", stopLossInput = "")
+    assertNull(short.orderInputError(OrderSide.BUY))
+    assertNotNull(short.copy(sizeInput = "0.002").orderInputError(OrderSide.BUY))
+    assertNotNull(short.orderInputError(OrderSide.SELL))
+  }
+
+  @Test
+  fun aSpotOrderStaysWithinWhatTheAccountHolds() {
+    val apt =
+      market.copy(id = "0xapt", symbol = "APT", displayName = "APT/USDC", kind = MarketKind.SPOT, maxLeverage = 1)
+    val spot =
+      TradeUiState(
+        quote = MarketQuote(apt, 0.8415, 0.0, 0.0, 0.0),
+        orderType = OrderType.LIMIT,
+        sizeInput = "10",
+        limitPriceInput = "0.8415",
+        quoteBalance = 5.0,
+        baseBalance = 9.993,
+      )
+
+    assertEquals("You have 9.993 APT to sell", spot.orderInputError(OrderSide.SELL))
+    assertNull(spot.copy(sizeInput = "9.993").orderInputError(OrderSide.SELL))
+    assertEquals(
+      "Not enough USDC for this order. Available \$5.00",
+      spot.orderInputError(OrderSide.BUY),
+    )
+    assertNull(spot.copy(quoteBalance = 8.415).orderInputError(OrderSide.BUY))
   }
 }
