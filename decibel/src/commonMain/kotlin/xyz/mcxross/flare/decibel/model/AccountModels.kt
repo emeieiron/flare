@@ -243,19 +243,20 @@ data class ReferralRedemptionResponse(
 @Serializable
 data class TwapOrder(
   @SerialName("order_id") val orderId: String = "",
-  @SerialName("account") val account: String = "",
-  @SerialName("market") val market: String = "",
-  @SerialName("side") val side: OrderSide = OrderSide.BUY,
-  @SerialName("total_size") val totalSize: Double = 0.0,
-  @SerialName("executed_size") val executedSize: Double = 0.0,
-  @SerialName("status") val status: String = "active",
-  @SerialName("duration_seconds") val durationSeconds: Long = 0L,
-  @SerialName("frequency_seconds") val frequencySeconds: Long = 0L,
-  @SerialName("created_at") val createdAt: Long = 0L,
+  val market: String = "",
+  @SerialName("is_buy") val isBuy: Boolean,
+  @SerialName("is_reduce_only") val isReduceOnly: Boolean = false,
+  @SerialName("orig_size") val originalSize: Double = 0.0,
+  @SerialName("remaining_size") val remainingSize: Double = 0.0,
+  val status: String = "",
+  @SerialName("duration_s") val durationSeconds: Long = 0L,
+  @SerialName("frequency_s") val frequencySeconds: Long = 0L,
+  @SerialName("start_unix_ms") val startUnixMs: Long = 0L,
+  @SerialName("transaction_unix_ms") val transactionUnixMs: Long = 0L,
   @SerialName("client_order_id") val clientOrderId: String? = null,
 ) {
   val twapId: String get() = orderId
-  val isBuy: Boolean get() = side == OrderSide.BUY
+  val executedSize: Double get() = (originalSize - remainingSize).coerceAtLeast(0.0)
 }
 
 @Serializable

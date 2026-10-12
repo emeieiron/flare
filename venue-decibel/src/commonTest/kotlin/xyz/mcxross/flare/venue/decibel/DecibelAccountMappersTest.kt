@@ -308,12 +308,13 @@ class DecibelAccountMappersTest {
 
     val twap =
       json.decodeFromString<DecibelTwapOrder>(
-        """{"order_id":"t1","account":"0x1","market":"0x2","side":"SELL","total_size":10.0,""" +
-          """"executed_size":2.5,"status":"active","duration_seconds":3600,""" +
-          """"frequency_seconds":60,""" +
-          """"created_at":1735758000}"""
+        """{"market":"0x2","is_buy":false,"order_id":"t1","is_reduce_only":false,""" +
+          """"start_unix_ms":1735758000000,"frequency_s":60,"duration_s":3600,""" +
+          """"orig_size":10.0,"remaining_size":7.5,"status":"Activated",""" +
+          """"client_order_id":"","transaction_unix_ms":1735758000000,""" +
+          """"transaction_version":123}"""
       )
-    assertEquals(TwapOrder("t1", "0x2", false, 10.0, 2.5, "active", 3600, 60), twap.toTwapOrder())
+    assertEquals(TwapOrder("t1", "0x2", false, 10.0, 2.5, "Activated", 3600, 60), twap.toTwapOrder())
 
     val delegation =
       json.decodeFromString<Delegation>(
