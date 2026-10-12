@@ -114,7 +114,30 @@ internal fun Order.toOpenOrder(): OpenOrder =
   )
 
 internal fun Order.toOrderHistoryEntry(): OrderHistoryEntry =
-  OrderHistoryEntry(order = toOpenOrder(), status = status)
+  OrderHistoryEntry(order = toOpenOrder(), status = cancellationNote()?.let { "$status: $it" } ?: status)
+
+/**
+ * Why Decibel cancelled the order, in a few words; null when it didn't or the person did. An order
+ * the account couldn't pay for is cancelled after its transaction confirms, with only this to say so.
+ */
+private fun Order.cancellationNote(): String? {
+  if (!status.lowercase().startsWith("cancel")) return null
+  val reason = cancellationReason.filter(Char::isLetter).lowercase()
+  val detail = details.trim()
+  return when {
+    detail.contains("margin", ignoreCase = true) -> "insufficient margin"
+    detail.contains("balance", ignoreCase = true) -> "insufficient balance"
+    reason.isEmpty() || reason == "ordercancelledbyuser" -> null
+    reason == "postonlyviolation" -> "post-only would have crossed"
+    reason == "iocviolation" -> "couldn’t fill immediately"
+    reason == "reduceonlyviolation" -> "reduce-only"
+    reason == "disallowedselftrading" -> "self-trade"
+    reason == "deadmansswitchexpired" -> "scheduled"
+    detail.isNotEmpty() -> detail.replaceFirstChar(Char::lowercase)
+    else ->
+      cancellationReason.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()
+  }
+}
 
 internal fun DecibelMarketTrade.toFill(): Fill =
   Fill(
