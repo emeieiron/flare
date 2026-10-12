@@ -5,6 +5,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlinx.serialization.json.Json
 import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.design.resolveMarketIdentity
+import xyz.mcxross.flare.testing.AcceptingOrderRules
+import xyz.mcxross.flare.venue.model.Market
+import xyz.mcxross.flare.venue.model.MarketKind
 
 class AssetCatalogTest {
   @Test
@@ -48,5 +52,15 @@ class AssetCatalogTest {
     assertEquals("kPEPE", known.symbol)
     assertEquals("NEW-USD", unknown.name)
     assertEquals("NEW", unknown.symbol)
+  }
+
+  @Test
+  fun aPairWithAnUnusualQuoteIsNamedAsThePair() {
+    val hype = AssetMetadata("HYPE", "Hyperliquid", "crypto", null, null)
+    fun spot(id: String, pair: String, quote: String?) =
+      Market(id, "HYPE", pair, MarketKind.SPOT, "crypto", 4, 2, 1, false, AcceptingOrderRules, quoteAsset = quote)
+
+    assertEquals("Hyperliquid", resolveMarketIdentity(spot("@1", "HYPE/USDC", null), hype).name)
+    assertEquals("HYPE/TZERO", resolveMarketIdentity(spot("@2", "HYPE/TZERO", "TZERO"), hype).name)
   }
 }

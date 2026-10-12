@@ -49,6 +49,8 @@ internal data class CachedMarket(
   val volume24h: Double,
   val openInterest: Double,
   val fundingRateBps: Double? = null,
+  /** A spot pair's quote token. */
+  val quote: String? = null,
 ) {
   fun toMarket(): Market {
     val kind = if (spot) MarketKind.SPOT else MarketKind.PERP
@@ -64,6 +66,7 @@ internal data class CachedMarket(
       maxLeverage = maxLeverage,
       isolatedOnly = isolatedOnly,
       rules = rules,
+      quoteAsset = quote?.takeIf { it != USDC },
     )
   }
 
@@ -113,18 +116,20 @@ internal fun PerpMetaAndContexts.toCachedMarkets(): List<CachedMarket> =
   }
 
 /**
- * Spot pairs with a context, matched by coin. Of Hyperliquid's many spot pairs, only those that
- * traded in the last day, or are canonical, are listed.
+ * Spot pairs with a context, matched by coin. Most of Hyperliquid's spot pairs are tests or barely
+ * trade, so only pairs quoted in a dollar stablecoin are listed, and only if they're canonical or
+ * traded at least [minDayVolume] dollars in the last day.
  */
-internal fun SpotMetaAndContexts.toCachedMarkets(): List<CachedMarket> {
+internal fun SpotMetaAndContexts.toCachedMarkets(minDayVolume: Double): List<CachedMarket> {
   val contexts = contextByCoin
   val canonical = meta.universe.filter { it.isCanonical }.mapTo(mutableSetOf()) { it.name }
   return AssetDirectory(EmptyPerpMeta, meta).spots.mapNotNull { asset ->
     val context = contexts[asset.coin] ?: return@mapNotNull null
-    val volume = context.dayNtlVlm.toDoubleOrZero()
-    if (volume <= 0.0 && asset.coin !in canonical) return@mapNotNull null
-    val base = asset.baseToken?.name?.trim().orEmpty()
     val quote = asset.quoteToken?.name?.trim().orEmpty()
+    if (quote !in StableQuotes) return@mapNotNull null
+    val volume = context.dayNtlVlm.toDoubleOrZero()
+    if (volume < minDayVolume && asset.coin !in canonical) return@mapNotNull null
+    val base = asset.baseToken?.name?.trim().orEmpty()
     CachedMarket(
       coin = asset.coin,
       assetId = asset.id,
@@ -138,9 +143,19 @@ internal fun SpotMetaAndContexts.toCachedMarkets(): List<CachedMarket> {
       previousDayPrice = context.prevDayPx.toDoubleOrZero(),
       volume24h = volume,
       openInterest = 0.0,
+      quote = quote,
     )
   }
 }
+
+/** The least a spot pair trades in a day to be listed; testnet volumes are far smaller. */
+internal fun minSpotDayVolume(network: HyperliquidNetwork): Double =
+  when (network) {
+    HyperliquidNetwork.MAINNET -> 1_000.0
+    HyperliquidNetwork.TESTNET -> 100.0
+  }
+
+private val StableQuotes = setOf(USDC, "USDT0", "USDH", "USDE")
 
 private val EmptyPerpMeta = xyz.mcxross.flare.hyperliquid.model.PerpMeta(universe = emptyList())
 

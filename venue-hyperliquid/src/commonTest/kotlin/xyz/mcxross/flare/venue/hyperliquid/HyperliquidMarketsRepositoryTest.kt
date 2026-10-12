@@ -8,6 +8,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import xyz.mcxross.flare.hyperliquid.HyperliquidNetwork
 import xyz.mcxross.flare.venue.model.MarketKind
 
 class HyperliquidMarketsRepositoryTest {
@@ -95,5 +96,62 @@ class HyperliquidMarketsRepositoryTest {
     assertEquals(10.0, quotes.getValue("BTC").changePercent24h, 1e-9)
     assertEquals(40.0, quotes.getValue("@1035").markPrice)
     assertEquals(111.27, quotes.getValue("SOL").markPrice)
+  }
+
+  @Test
+  fun listsOnlyStablecoinPairsThatTradeAndNamesAnUnusualQuote() = runTest {
+    val preferences = memoryPreferences()
+    val repository =
+      HyperliquidMarketsRepository(
+        testClient(MarketResponses + ("spotMetaAndAssetCtxs" to MixedSpots)),
+        preferences,
+        MemoryMarketCache(),
+      )
+
+    repository.refresh()
+
+    val spots = repository.catalog.value.quotes.filter { it.market.kind == MarketKind.SPOT }.associateBy { it.market.id }
+    // Testnet: PURR/TZERO is canonical but quoted in a test token, and JUNK barely traded.
+    assertEquals(setOf("PURR/USDC", "@1", "@3", "@6"), spots.keys)
+    assertNull(spots.getValue("@1").market.quoteAsset)
+    assertEquals("USDT0", spots.getValue("@3").market.quoteAsset)
+    val favorites = preferences.favoriteMarkets.first()
+    assertTrue("@1" in favorites)
+    assertFalse("@3" in favorites)
+  }
+
+  @Test
+  fun mainnetAsksForMoreVolumeThanTestnet() = runTest {
+    val spots = testClient(mapOf("spotMetaAndAssetCtxs" to MixedSpots)).info.spotMetaAndContexts()
+    val mainnet = spots.toCachedMarkets(minSpotDayVolume(HyperliquidNetwork.MAINNET)).map { it.coin }.toSet()
+    val testnet = spots.toCachedMarkets(minSpotDayVolume(HyperliquidNetwork.TESTNET)).map { it.coin }.toSet()
+    assertEquals(setOf("PURR/USDC", "@1", "@3"), mainnet)
+    assertEquals(mainnet + "@6", testnet)
+  }
+
+  private companion object {
+    const val MixedSpots =
+      """[{"universe":[""" +
+        """{"tokens":[4,0],"name":"PURR/USDC","index":0,"isCanonical":true},""" +
+        """{"tokens":[1,0],"name":"@1","index":1},""" +
+        """{"tokens":[1,2],"name":"@2","index":2},""" +
+        """{"tokens":[1,3],"name":"@3","index":3},""" +
+        """{"tokens":[4,2],"name":"@4","index":4,"isCanonical":true},""" +
+        """{"tokens":[5,0],"name":"@5","index":5},""" +
+        """{"tokens":[6,0],"name":"@6","index":6}],"tokens":[""" +
+        """{"name":"USDC","szDecimals":8,"weiDecimals":8,"index":0,"tokenId":"0x0","isCanonical":true},""" +
+        """{"name":"HYPE","szDecimals":2,"weiDecimals":8,"index":1,"tokenId":"0x1"},""" +
+        """{"name":"TZERO","szDecimals":2,"weiDecimals":8,"index":2,"tokenId":"0x2"},""" +
+        """{"name":"USDT0","szDecimals":2,"weiDecimals":8,"index":3,"tokenId":"0x3"},""" +
+        """{"name":"PURR","szDecimals":0,"weiDecimals":5,"index":4,"tokenId":"0x4","isCanonical":true},""" +
+        """{"name":"JUNK","szDecimals":0,"weiDecimals":5,"index":5,"tokenId":"0x5"},""" +
+        """{"name":"UETH","szDecimals":4,"weiDecimals":8,"index":6,"tokenId":"0x6"}]},[""" +
+        """{"coin":"PURR/USDC","prevDayPx":"4.5","dayNtlVlm":"0.0","markPx":"4.6"},""" +
+        """{"coin":"@1","prevDayPx":"32.0","dayNtlVlm":"50000.0","markPx":"32.7"},""" +
+        """{"coin":"@2","prevDayPx":"120.0","dayNtlVlm":"500.0","markPx":"124.1"},""" +
+        """{"coin":"@3","prevDayPx":"32.0","dayNtlVlm":"5000.0","markPx":"32.8"},""" +
+        """{"coin":"@4","prevDayPx":"0.0","dayNtlVlm":"0.0","markPx":"5.0"},""" +
+        """{"coin":"@5","prevDayPx":"0.0","dayNtlVlm":"50.0","markPx":"0.005"},""" +
+        """{"coin":"@6","prevDayPx":"100.0","dayNtlVlm":"500.0","markPx":"105.6"}]]"""
   }
 }

@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.design
 
 import xyz.mcxross.flare.data.AssetMetadata
+import xyz.mcxross.flare.venue.model.Market
 
 /** Display metadata only. Protocol symbols and addresses remain unchanged. */
 data class AssetIdentity(
@@ -21,6 +22,12 @@ fun resolveAssetIdentity(
     kind = metadata?.kind,
     iconUrl = metadata?.iconUrl,
   )
+
+/** A market's asset, named as the pair when its quote is unusual, so pairs of one asset differ. */
+fun resolveMarketIdentity(market: Market, metadata: AssetMetadata?): AssetIdentity =
+  resolveAssetIdentity(market.symbol, market.displayName, metadata).let {
+    if (market.quoteAsset != null) it.copy(name = market.displayName) else it
+  }
 
 fun assetMonogram(symbol: String): String = symbol.trim().firstOrNull()?.uppercase() ?: "?"
 
