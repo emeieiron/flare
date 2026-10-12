@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
  * Generates the baseline profile shipped with release builds:
  *
  *   ./gradlew :androidApp:generateDecibelReleaseBaselineProfile
+ *   ./gradlew :androidApp:generateHyperliquidReleaseBaselineProfile
  *
  * The journeys are the paths people take first, so their code is compiled ahead of time on install
  * instead of being interpreted and JIT-compiled while someone is using the app.
