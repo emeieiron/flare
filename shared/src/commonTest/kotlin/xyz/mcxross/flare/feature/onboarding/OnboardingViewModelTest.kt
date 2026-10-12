@@ -269,7 +269,41 @@ class OnboardingViewModelTest {
     vm.onIntent(OnboardingIntent.Back)
 
     assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertTrue(vm.uiState.value.showsWelcome(RESUME))
     assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun backAtAddFundsMatchesWhetherOrNotTheAppWasLeft() = runTest {
+    suspend fun backFromAddFunds(relock: Boolean): Pair<OnboardingUiState, AppPreferences> {
+      val preferences = AppPreferences(MemoryPreferences())
+      val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
+      val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+      vm.onIntent(OnboardingIntent.ShowImport)
+      vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+      vm.onIntent(OnboardingIntent.ImportCredential)
+      assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+      if (relock) {
+        val id = preferences.values.first().profiles.single().id
+        vm.onIntent(OnboardingIntent.ClearSensitiveState)
+        vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+        // Unlocking twice, as when the app comes back again, keeps the place.
+        vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+        assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+      }
+      vm.onIntent(OnboardingIntent.Back)
+      return vm.uiState.value to preferences
+    }
+
+    val (stayed, stayedPreferences) = backFromAddFunds(relock = false)
+    val (left, leftPreferences) = backFromAddFunds(relock = true)
+
+    assertTrue(stayed.showsWelcome(initialMode = null))
+    assertTrue(left.showsWelcome(initialMode = RESUME))
+    assertEquals(stayed, left)
+    assertTrue(stayedPreferences.values.first().profiles.isEmpty())
+    assertTrue(leftPreferences.values.first().profiles.isEmpty())
   }
 
   @Test
@@ -293,7 +327,20 @@ class OnboardingViewModelTest {
 
     vm.onIntent(OnboardingIntent.Back)
     assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertTrue(vm.uiState.value.showsWelcome(RESUME))
     assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun resumingAWalletThatIsGoneShowsTheWelcomePage() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val vm = viewModel(SetupAccounts(), HyperliquidSetup, preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    assertFalse(vm.uiState.value.showsWelcome(RESUME))
+
+    vm.onIntent(OnboardingIntent.InitializeMode(RESUME, "owner_$OWNER"))
+
+    assertTrue(vm.uiState.value.showsWelcome(RESUME))
   }
 
   @Test

@@ -128,6 +128,8 @@ data class OnboardingUiState(
   val fundingNotice: String? = null,
   /** Setup was opened from inside the app, rather than as the first thing it shows. */
   val inApp: Boolean = false,
+  /** A resumed first setup went back to its start, so its first step is the welcome page again. */
+  val startedOver: Boolean = false,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -367,6 +369,7 @@ class OnboardingViewModel(
               if (profile?.onboardingComplete != true) preferences.removeProfile(toClean)
             }
             show(OnboardingStep.WELCOME)
+            local.value = local.value.copy(startedOver = true)
           }
         }
       }
@@ -526,6 +529,8 @@ class OnboardingViewModel(
       if (preferences.values.first().profiles.any { it.id == profileId }) {
         preferences.activateProfile(profileId)
         prepareOwnerAccount()
+      } else {
+        local.value = local.value.copy(startedOver = true)
       }
     }
   }
@@ -808,6 +813,7 @@ class OnboardingViewModel(
         busy = local.value.busy,
         builderOptIn = local.value.builderOptIn,
         inApp = local.value.inApp,
+        startedOver = local.value.startedOver,
       )
   }
 

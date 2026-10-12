@@ -130,7 +130,7 @@ fun OnboardingScreen(
     onBackCompleted = goBack,
   )
   AnimatedContent(
-    targetState = state.step == OnboardingStep.WELCOME && initialMode == null,
+    targetState = state.showsWelcome(initialMode),
     modifier = modifier.fillMaxSize(),
     transitionSpec = {
       val move =
@@ -191,6 +191,13 @@ private fun SetupFlow(
     }
   }
 }
+
+/**
+ * Whether the welcome page shows. A setup started with a mode shows a spinner on that step while it
+ * finds where to begin, until a resumed first setup steps back to its start.
+ */
+internal fun OnboardingUiState.showsWelcome(initialMode: String?): Boolean =
+  step == OnboardingStep.WELCOME && (initialMode == null || startedOver)
 
 /** Once a new wallet's trading account is open on chain, setup only goes forward. */
 private val OnboardingUiState.pastReturn: Boolean
