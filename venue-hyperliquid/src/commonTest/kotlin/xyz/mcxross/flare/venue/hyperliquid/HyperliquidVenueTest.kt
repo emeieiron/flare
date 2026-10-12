@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradeAction
 
@@ -51,7 +52,7 @@ class HyperliquidVenueTest {
     assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
     assertFalse(capabilities.rewards || capabilities.sponsoredFees || capabilities.networkFeeTopUp)
     assertFalse(capabilities.inAppDeposit || capabilities.subaccounts || capabilities.perpSpotTransfer)
-    assertEquals(ACTIONS_UNAVAILABLE, capabilities.actionsUnavailableReason)
+    ActionKind.entries.forEach { assertEquals(ACTIONS_UNAVAILABLE, capabilities.unavailableReason(it)) }
   }
 
   @Test

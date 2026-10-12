@@ -71,6 +71,7 @@ import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.venue.model.ActionKind
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
 
@@ -155,9 +156,9 @@ fun AccountScreen(
           FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
             style = FlareButtonStyle.OUTLINE,
             enabled = active.selectedSubaccount != null && !state.busy &&
-              state.capabilities.actionsUnavailableReason == null)
+              state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
         }
-        state.capabilities.actionsUnavailableReason?.let {
+        state.capabilities.unavailableReason(ActionKind.FUNDS)?.let {
           Text(it, Modifier.padding(bottom = 16.dp), color = FlareColors.TextSecondary,
             style = MaterialTheme.typography.bodySmall)
         }

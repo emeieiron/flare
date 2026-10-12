@@ -72,6 +72,7 @@ import xyz.mcxross.flare.venue.model.MarketTrade
 import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun TradeRoute(
@@ -300,7 +301,7 @@ fun TradeScreen(
         val inputError = state.orderInputError(side)
         // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
         val selfPayOffered = state.selfPayEstimate != null
-        val actionsUnavailable = state.capabilities.actionsUnavailableReason
+        val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
         val enabled = when (stage) {
           TradeStage.MARKET -> !state.orderBusy && actionsUnavailable == null
           TradeStage.RESULT -> !state.orderBusy

@@ -185,6 +185,7 @@ private fun SetupFlow(
         OnboardingStep.CONFIRM_BACKUP -> ConfirmBackupStep(state, onIntent)
         OnboardingStep.SUBACCOUNT -> SubaccountStep(state, onIntent)
         OnboardingStep.OPEN_ACCOUNT -> OpenAccountStep(state, onIntent)
+        OnboardingStep.FUND_ACCOUNT -> FundAccountStep(state, onIntent)
         OnboardingStep.ENABLE_TRADING -> EnableTradingStep(state, onIntent)
       }
     }
@@ -207,7 +208,8 @@ private val OnboardingUiState.stage: Int
       OnboardingStep.IMPORT,
       OnboardingStep.SHOW_BACKUP,
       OnboardingStep.CONFIRM_BACKUP -> 0
-      OnboardingStep.SUBACCOUNT -> 1
+      OnboardingStep.SUBACCOUNT,
+      OnboardingStep.FUND_ACCOUNT -> 1
       OnboardingStep.OPEN_ACCOUNT -> if (accountOpened) 2 else 1
       OnboardingStep.ENABLE_TRADING -> 2
     }
@@ -220,7 +222,8 @@ private val OnboardingStep.order: Int
       OnboardingStep.SHOW_BACKUP -> 1
       OnboardingStep.CONFIRM_BACKUP -> 2
       OnboardingStep.SUBACCOUNT,
-      OnboardingStep.OPEN_ACCOUNT -> 3
+      OnboardingStep.OPEN_ACCOUNT,
+      OnboardingStep.FUND_ACCOUNT -> 3
       OnboardingStep.ENABLE_TRADING -> 4
     }
 
@@ -376,11 +379,11 @@ internal fun ColumnScope.SetupActions(
 
 /** Where to send the fee token so the wallet can pay the fee, one tap from the clipboard. */
 @Composable
-private fun FundingAddress(address: String) {
+internal fun FundingAddress(address: String, modifier: Modifier = Modifier) {
   val clipboard = LocalClipboardManager.current
   val shape = RoundedCornerShape(14.dp)
   Row(
-    Modifier.fillMaxWidth().clip(shape).background(FlareColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
+    modifier.fillMaxWidth().clip(shape).background(FlareColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Column(Modifier.weight(1f)) {

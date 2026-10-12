@@ -109,6 +109,12 @@ interface AccountRepository {
    */
   suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T = block()
 
+  /**
+   * True while the exchange won't let the owner enable trading because the account has never been
+   * funded. Setup then shows where to deposit and waits for the first deposit.
+   */
+  suspend fun awaitsFirstDeposit(): Boolean = false
+
   suspend fun delegateApiWallet(
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
