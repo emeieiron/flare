@@ -27,6 +27,8 @@ jobs:
         run: >-
           ./gradlew
           :decibel:jvmTest
+          :hyperliquid:jvmTest
+          :hyperliquid:testAndroidHostTest
           :shared:testAndroidHostTest
           :venue-decibel:testAndroidHostTest
           :androidApp:lintDecibelDebug
@@ -46,6 +48,7 @@ jobs:
         run: >-
           ./gradlew
           :decibel:iosSimulatorArm64Test
+          :hyperliquid:iosSimulatorArm64Test
           :shared:iosSimulatorArm64Test
           :ios-decibel:compileKotlinIosSimulatorArm64
       - name: Build the iOS simulator application
