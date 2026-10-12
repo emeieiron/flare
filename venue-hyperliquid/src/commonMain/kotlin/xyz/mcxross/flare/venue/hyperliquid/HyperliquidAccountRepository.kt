@@ -638,7 +638,7 @@ class HyperliquidAccountRepository(
 internal fun String?.sameAs(other: String?): Boolean =
   this != null && other != null && equals(other, ignoreCase = true)
 
-internal const val ORDERS_UNAVAILABLE = "Trading on Hyperliquid isn’t available in Flare yet."
+internal const val TWAP_UNAVAILABLE = "TWAP orders on Hyperliquid aren’t available in Flare yet."
 
 internal const val FUNDS_UNAVAILABLE = "Moving funds on Hyperliquid isn’t available in Flare yet."
 

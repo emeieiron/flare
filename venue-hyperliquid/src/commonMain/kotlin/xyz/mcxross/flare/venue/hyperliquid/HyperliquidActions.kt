@@ -15,6 +15,8 @@ import xyz.mcxross.flare.data.ReconciliationResult
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.model.Cloid
 import xyz.mcxross.flare.hyperliquid.model.ExchangeOutcome
+import xyz.mcxross.flare.hyperliquid.model.ExchangeResponse
+import xyz.mcxross.flare.hyperliquid.model.L1Action
 import xyz.mcxross.flare.hyperliquid.model.UserSignedAction
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -91,6 +93,29 @@ internal sealed interface JournaledAction {
     override fun details() = emptyList<String>()
   }
 
+  /** Cancels of the orders [orders] names, each by oid or cloid. */
+  data class CancelOrders(
+    override val account: String,
+    val orders: List<String>,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "CANCEL_ORDER"
+
+    override fun details() = listOf(orders.joinToString(","))
+  }
+
+  data class UpdateLeverage(
+    override val account: String,
+    val coin: String,
+    val isCross: Boolean,
+    val leverage: Int,
+    override val lapsesAtMs: Long,
+  ) : JournaledAction {
+    override val operation = "CONFIGURE_MARKET"
+
+    override fun details() = listOf(coin.toHexText(), isCross.toString(), leverage.toString())
+  }
+
   companion object {
     fun encode(action: JournaledAction): String =
       (listOf(action.operation, action.account, action.lapsesAtMs.toString()) + action.details())
@@ -109,6 +134,9 @@ internal sealed interface JournaledAction {
             "APPROVE_MAX_BUILDER_FEE" -> ApproveBuilderFee(account, rest[0], rest[1].toInt(), lapses)
             "REVOKE_MAX_BUILDER_FEE" -> RevokeBuilderFee(account, rest[0], lapses)
             "PLACE_ORDER" -> PlaceOrder(account, lapses)
+            "CANCEL_ORDER" -> CancelOrders(account, rest[0].split(","), lapses)
+            "CONFIGURE_MARKET" ->
+              UpdateLeverage(account, rest[0].fromHexText(), rest[1].toBooleanStrict(), rest[2].toInt(), lapses)
             else -> null
           }
         }
@@ -164,43 +192,71 @@ class HyperliquidActions(
     action: UserSignedAction,
     prompt: VaultPrompt,
     record: (nonce: Long) -> JournaledAction,
-  ): ActionState {
+  ): ActionState =
+    exclusively(action.type) {
+      wallets.withOwnerSigner(prompt) { signer ->
+        val nonce = uniqueNonce(signer.address)
+        send(action.type, nonce.toString(), record(nonce), { ActionState.Committed(nonce.toString()) }) {
+          beforeSend ->
+          submitter.submit(action, signer, nonce, beforeSend)
+        }
+      }
+    }
+
+  /**
+   * Signs [action] with the device's agent key and sends it, to lapse [ACTION_TTL_MS] from now so
+   * an answer that never comes resolves quickly. It's journaled under [cloid] when it places
+   * orders, otherwise under its nonce. [settle] reads Hyperliquid's answer, given the reference;
+   * null means the answer doesn't say, and the action is reconciled.
+   */
+  internal suspend fun sendAsAgent(
+    action: L1Action,
+    prompt: VaultPrompt,
+    cloid: Cloid? = null,
+    record: (lapsesAtMs: Long) -> JournaledAction,
+    settle: (response: ExchangeResponse, reference: String) -> ActionState?,
+  ): ActionState =
+    exclusively(action.type) {
+      wallets.withAgentSigner(prompt) { signer ->
+        val nonce = uniqueNonce(signer.address)
+        val reference = cloid?.hex ?: nonce.toString()
+        val expiresAfter = clockMs() + ACTION_TTL_MS
+        send(action.type, reference, record(expiresAfter + CLOCK_SKEW_MS), { settle(it, reference) }) {
+          beforeSend ->
+          submitter.submit(action, signer, nonce, null, expiresAfter, beforeSend)
+        }
+      }
+    }
+
+  private suspend fun exclusively(type: String, block: suspend () -> ActionState): ActionState {
     if (!submissionMutex.tryLock()) {
       return ActionState.Failed("Another action is already being authorized", definitelyNotSubmitted = true)
     }
     try {
-      return wallets.withOwnerSigner(prompt) { signer ->
-        send(action, signer.address, record) { nonce, beforeSend ->
-          submitter.submit(action, signer, nonce, beforeSend)
-        }
-      }
+      return block()
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
-      return ActionState.Failed(
-        error.message ?: "The action wasn’t signed",
-        definitelyNotSubmitted = true,
-      )
+      return ActionState.Failed(error.message ?: "$type wasn’t signed", definitelyNotSubmitted = true)
     } finally {
       submissionMutex.unlock()
     }
   }
 
   private suspend fun send(
-    action: UserSignedAction,
-    signer: String,
-    record: (nonce: Long) -> JournaledAction,
-    submit: suspend (nonce: Long, beforeSend: suspend () -> Unit) -> ExchangeOutcome,
+    type: String,
+    reference: String,
+    journaled: JournaledAction,
+    settle: (ExchangeResponse) -> ActionState?,
+    submit: suspend (beforeSend: suspend () -> Unit) -> ExchangeOutcome,
   ): ActionState {
-    val nonce = uniqueNonce(signer)
-    val reference = nonce.toString()
     val profile = preferences.values.first().activeProfileId
     val now = clockMs()
     journal.upsert(
       PendingTransactionEntity(
         hash = reference,
         network = network.name,
-        operation = journalOperation(JournaledAction.encode(record(nonce)), profile),
+        operation = journalOperation(JournaledAction.encode(journaled), profile),
         state = JournalState.PREPARED,
         createdAtMs = now,
         updatedAtMs = now,
@@ -209,7 +265,7 @@ class HyperliquidActions(
     var sent = false
     val outcome =
       try {
-        submit(nonce) {
+        submit {
           updateState(reference, JournalState.SUBMITTING)
           sent = true
         }
@@ -219,27 +275,21 @@ class HyperliquidActions(
       } catch (error: Exception) {
         settleInterrupted(reference, sent)
         return if (sent) ActionState.Pending(reference)
-        else
-          ActionState.Failed(
-            error.message ?: "${action.type} wasn’t signed",
-            definitelyNotSubmitted = true,
-          )
+        else ActionState.Failed(error.message ?: "$type wasn’t signed", definitelyNotSubmitted = true)
       }
-    return when (outcome) {
-      is ExchangeOutcome.Accepted -> {
-        journal.remove(reference)
-        ActionState.Committed(reference)
+    val settled =
+      when (outcome) {
+        is ExchangeOutcome.Accepted -> settle(outcome.response)
+        is ExchangeOutcome.Rejected -> ActionState.Failed(outcome.reason, reference, committed = true)
+        is ExchangeOutcome.Unknown -> null
       }
-      is ExchangeOutcome.Rejected -> {
-        journal.remove(reference)
-        ActionState.Failed(outcome.reason, reference, committed = true)
-      }
-      // It may have executed: it stays journaled until Hyperliquid's state says what happened.
-      is ExchangeOutcome.Unknown -> {
-        updateState(reference, JournalState.RECONCILE_REQUIRED)
-        ActionState.Pending(reference)
-      }
+    // Without a definite answer it may have executed: it stays journaled until Hyperliquid's state says.
+    if (settled == null) {
+      updateState(reference, JournalState.RECONCILE_REQUIRED)
+      return ActionState.Pending(reference)
     }
+    journal.remove(reference)
+    return settled
   }
 
   private suspend fun settleInterrupted(reference: String, sent: Boolean) {
@@ -320,6 +370,17 @@ class HyperliquidActions(
             // Any status means Hyperliquid has the order; `unknownOid` means it doesn't (yet).
             is JournaledAction.PlaceOrder ->
               client.info.orderStatus(action.account, Cloid.parse(entry.hash)).isKnown
+            // Once none of them is open, the cancel has done what it was for, whoever did it.
+            is JournaledAction.CancelOrders -> {
+              val wanted = action.orders.map(String::lowercase).toSet()
+              client.info.openOrders(action.account).none {
+                it.oid.toString() in wanted || it.cloid?.lowercase() in wanted
+              }
+            }
+            is JournaledAction.UpdateLeverage ->
+              client.info.activeAssetData(action.account, action.coin).leverage.let {
+                it.isCross == action.isCross && it.value == action.leverage
+              }
           }
         }
         .getOrNull() ?: return Reconciled.UNRESOLVED
@@ -341,6 +402,12 @@ class HyperliquidActions(
      * signed action not executed within two days never will be. The margin covers clock skew.
      */
     const val NONCE_WINDOW_MS: Long = 2 * 24 * 60 * 60 * 1000L + 10 * 60 * 1000L
+
+    /** How long Hyperliquid may take to execute an agent-signed action (`expiresAfter`). */
+    const val ACTION_TTL_MS: Long = 60_000L
+
+    /** How far this device's clock may run ahead of Hyperliquid's. */
+    const val CLOCK_SKEW_MS: Long = 5 * 60 * 1000L
   }
 }
 

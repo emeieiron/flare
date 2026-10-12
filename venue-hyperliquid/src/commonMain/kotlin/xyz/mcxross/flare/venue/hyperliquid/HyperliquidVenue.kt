@@ -74,8 +74,8 @@ class HyperliquidVenue(
     /**
      * What the Hyperliquid build shows. Spot, TWAP and vaults are Hyperliquid features the screens
      * keep room for; the rest are Decibel's (rewards, gas sponsorship and top-ups, in-app deposits,
-     * creating subaccounts), or not offered yet (moving USDC between perps and spot). Setup actions
-     * are sent; orders and fund moves aren't yet.
+     * creating subaccounts), or not offered yet (moving USDC between perps and spot). Setup and
+     * trading actions are sent; TWAPs and fund moves aren't yet.
      */
     val Capabilities =
       VenueCapabilities(
@@ -88,8 +88,9 @@ class HyperliquidVenue(
         networkFeeTopUp = false,
         inAppDeposit = false,
         perpSpotTransfer = false,
+        batchCancel = true,
         unavailableActions =
-          mapOf(ActionKind.TRADING to ORDERS_UNAVAILABLE, ActionKind.FUNDS to FUNDS_UNAVAILABLE),
+          mapOf(ActionKind.TWAP to TWAP_UNAVAILABLE, ActionKind.FUNDS to FUNDS_UNAVAILABLE),
       )
 
     /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
@@ -154,5 +155,6 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
     single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), builder) }
-    single<TradingRepository> { HyperliquidTradingRepository(get(), get(), get()) }
+    single { HyperliquidAssets(get()) }
+    single<TradingRepository> { HyperliquidTradingRepository(get(), get(), get(), get()) }
   }

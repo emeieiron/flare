@@ -32,6 +32,7 @@ import xyz.mcxross.flare.hyperliquid.model.ApproveAgent
 import xyz.mcxross.flare.hyperliquid.model.ApproveBuilderFee
 import xyz.mcxross.flare.hyperliquid.model.AssetDirectory
 import xyz.mcxross.flare.hyperliquid.model.AssetKind
+import xyz.mcxross.flare.hyperliquid.model.BuilderFee
 import xyz.mcxross.flare.hyperliquid.model.CancelByCloidRequest
 import xyz.mcxross.flare.hyperliquid.model.CancelOrders
 import xyz.mcxross.flare.hyperliquid.model.CancelOrdersByCloid
@@ -46,9 +47,11 @@ import xyz.mcxross.flare.hyperliquid.model.HlRounding
 import xyz.mcxross.flare.hyperliquid.model.HyperliquidAsset
 import xyz.mcxross.flare.hyperliquid.model.OrderRequest
 import xyz.mcxross.flare.hyperliquid.model.OrderStatus
+import xyz.mcxross.flare.hyperliquid.model.OrderGrouping
 import xyz.mcxross.flare.hyperliquid.model.OrderType
 import xyz.mcxross.flare.hyperliquid.model.PlaceOrders
 import xyz.mcxross.flare.hyperliquid.model.TimeInForce
+import xyz.mcxross.flare.hyperliquid.model.TpSl
 import xyz.mcxross.flare.hyperliquid.model.UpdateLeverage
 import xyz.mcxross.flare.hyperliquid.model.UsdSend
 import xyz.mcxross.flare.hyperliquid.model.VaultTransfer
@@ -292,6 +295,69 @@ class HyperliquidTestnetSigningTest {
       val send = client.exchange.submit(UsdSend(randomAddress(), HlDecimal.ONE), signer)
       println("usdSend signed by ${signer.address}: $send")
       assertRejectedNaming(send, signer)
+    }
+  }
+
+  /**
+   * Every order shape Flare sends, expiring as Flare's do: the address Hyperliquid recovers is the
+   * signer's only if it hashed the same action Flare signed, so each payload is read as intended.
+   */
+  @Test
+  fun orderShapesRecoverTheSignersAddress() = runBlocking {
+    assumeLive()
+    liveHttpClient().use { http ->
+      val client = testnetClient(http)
+      val signer = freshSigner()
+      val assets = AssetDirectory(client.info.perpMeta(), client.info.spotMeta())
+      val btc = assets.requireCoin("BTC")
+      val spot = assets.spots.first()
+      val builder = BuilderFee(randomAddress(), 50)
+      fun order(
+        asset: HyperliquidAsset,
+        isBuy: Boolean,
+        price: String,
+        size: String,
+        type: OrderType,
+        reduceOnly: Boolean = false,
+        cloid: Cloid? = null,
+      ) = OrderRequest(asset.id, isBuy, price.toHlDecimal(), size.toHlDecimal(), reduceOnly, type, cloid)
+      fun trigger(price: String, tpsl: TpSl) = OrderType.Trigger(price.toHlDecimal(), isMarket = true, tpsl = tpsl)
+      val shapes =
+        mapOf(
+          "market IOC with builder" to
+            PlaceOrders(listOf(order(btc, true, "65325", "0.01", OrderType.Limit(TimeInForce.IOC), cloid = Cloid.random())), builder = builder),
+          "limit Alo" to PlaceOrders(listOf(order(btc, false, "70000", "0.5", OrderType.Limit(TimeInForce.ALO), cloid = Cloid.random()))),
+          "reduce-only IOC" to
+            PlaceOrders(listOf(order(btc, false, "64000", "0.01", OrderType.Limit(TimeInForce.IOC), reduceOnly = true))),
+          "spot Gtc" to
+            PlaceOrders(listOf(order(spot, true, "1", "100", OrderType.Limit(TimeInForce.GTC), cloid = Cloid.random()))),
+          "normalTpsl" to
+            PlaceOrders(
+              listOf(
+                order(btc, true, "65000", "0.01", OrderType.Limit(TimeInForce.GTC), cloid = Cloid.random()),
+                order(btc, false, "63000", "0.01", trigger("70000", TpSl.TAKE_PROFIT), reduceOnly = true),
+                order(btc, false, "54000", "0.01", trigger("60000", TpSl.STOP_LOSS), reduceOnly = true),
+              ),
+              OrderGrouping.NORMAL_TPSL,
+              builder,
+            ),
+          "positionTpsl, whole position" to
+            PlaceOrders(
+              listOf(
+                order(btc, true, "66000", "0", trigger("60000", TpSl.TAKE_PROFIT), reduceOnly = true, cloid = Cloid.random()),
+                order(btc, true, "77000", "0", trigger("70000", TpSl.STOP_LOSS), reduceOnly = true),
+              ),
+              OrderGrouping.POSITION_TPSL,
+            ),
+          "cancelByCloid" to CancelOrdersByCloid(listOf(CancelByCloidRequest(btc.id, Cloid.random()))),
+          "updateLeverage isolated" to UpdateLeverage(btc.id, isCross = false, leverage = 3),
+        )
+      for ((name, action) in shapes) {
+        val expiresAfter = Clock.System.now().toEpochMilliseconds() + 60_000L
+        val outcome = client.exchange.submit(action, signer, expiresAfter = expiresAfter)
+        println("$name signed by ${signer.address}: $outcome")
+        assertRejectedNaming(outcome, signer)
+      }
     }
   }
 

@@ -698,7 +698,7 @@ class TradeViewModel(
  * unified margin whose spot USDC already holds the perpetuals' value, else spot USDC plus what
  * perpetuals can withdraw.
  */
-internal fun spotQuoteBalance(overview: AccountOverview?): Double? {
+fun spotQuoteBalance(overview: AccountOverview?): Double? {
   val balances = overview?.balances ?: return null
   balances.spotBuyingPower?.let { return it }
   val cash = balances.spot?.assets?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }

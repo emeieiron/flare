@@ -58,7 +58,9 @@ class HyperliquidVenueTest {
     assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
     assertFalse(capabilities.rewards || capabilities.sponsoredFees || capabilities.networkFeeTopUp)
     assertFalse(capabilities.inAppDeposit || capabilities.subaccounts || capabilities.perpSpotTransfer)
-    assertEquals(ORDERS_UNAVAILABLE, capabilities.unavailableReason(ActionKind.TRADING))
+    assertTrue(capabilities.batchCancel)
+    assertNull(capabilities.unavailableReason(ActionKind.TRADING))
+    assertEquals(TWAP_UNAVAILABLE, capabilities.unavailableReason(ActionKind.TWAP))
     assertEquals(FUNDS_UNAVAILABLE, capabilities.unavailableReason(ActionKind.FUNDS))
     assertNull(capabilities.unavailableReason(ActionKind.SETUP))
   }

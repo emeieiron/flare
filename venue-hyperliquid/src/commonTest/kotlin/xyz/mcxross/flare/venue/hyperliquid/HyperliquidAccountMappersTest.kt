@@ -8,6 +8,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.feature.portfolio.PortfolioUiState
+import xyz.mcxross.flare.feature.trade.spotQuoteBalance
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
@@ -83,6 +84,23 @@ class HyperliquidAccountMappersTest {
     val separate = accountOverview(perp, spot, standard, prices, null, 0L)
     val doubled = PortfolioUiState(account = AccountSnapshot(overview = separate)).totalBalance
     assertEquals(716.428468 + 716.428232, doubled, 1e-6)
+  }
+
+  @Test
+  fun aSpotBuyCanSpendOnlyFreeUsdc() {
+    val spot =
+      decode<SpotClearinghouseState>(
+        """{"balances":[{"coin":"USDC","token":0,"total":"983.489225","hold":"0.998232","entryNtl":"0.0"}]}"""
+      )
+    val perp = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
+    val free = 983.489225 - 0.998232
+
+    // Unified: spot USDC is also the perps' margin, so the perps' withdrawable isn't added again.
+    val unifiedOverview = accountOverview(perp, spot, unified, mapOf("USDC" to 1.0), null, 0L)
+    assertEquals(free, spotQuoteBalance(unifiedOverview)!!, 1e-9)
+    // Standard: the perps' USDC sits in another account, which spot can't spend from.
+    val standardOverview = accountOverview(perp, spot, standard, mapOf("USDC" to 1.0), null, 0L)
+    assertEquals(free, spotQuoteBalance(standardOverview)!!, 1e-9)
   }
 
   @Test
