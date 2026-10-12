@@ -40,12 +40,15 @@ data class HyperliquidAsset(
         (price.significantFigures <= MAX_SIGNIFICANT_FIGURES &&
           price.decimalPlaces <= maxPriceDecimals))
 
-  /** The nearest valid price in the [rounding] direction. */
+  /**
+   * The nearest valid price in the [rounding] direction. The price is rounded once, at whichever of
+   * the significant-figure and decimal limits is stricter (rounding twice can double-round a tie),
+   * and never past the units, since an integer price is always valid.
+   */
   fun roundPrice(price: HlDecimal, rounding: HlRounding): HlDecimal {
     if (price.isInteger) return price
-    return price
-      .roundToSignificantFigures(MAX_SIGNIFICANT_FIGURES, rounding)
-      .roundToDecimals(maxPriceDecimals, rounding)
+    val figureDecimals = price.decimalsForSignificantFigures(MAX_SIGNIFICANT_FIGURES)
+    return price.roundToDecimals(minOf(maxPriceDecimals, maxOf(figureDecimals, 0)), rounding)
   }
 
   fun isValidSize(size: HlDecimal): Boolean = size.signum > 0 && size.decimalPlaces <= szDecimals
