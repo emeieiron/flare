@@ -40,4 +40,8 @@ include(":baselineprofile")
 
 include(":decibel")
 
+include(":ios-decibel")
+
 include(":shared")
+
+include(":venue-decibel")

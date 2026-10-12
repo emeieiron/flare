@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
@@ -56,7 +57,12 @@ class WorkerGasSponsorshipRepositoryTest {
         }
       try {
         val repository =
-          WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), TestSessionRepository)
+          WorkerGasSponsorshipRepository(
+            client,
+            FlareRuntimeConfig(),
+            DecibelRuntimeConfig(),
+            TestSessionRepository,
+          )
         val result =
           repository.submit(
             xyz.mcxross.kaptos.model.ExternalFeePayerRequest(
@@ -94,6 +100,7 @@ class WorkerGasSponsorshipRepositoryTest {
       WorkerGasSponsorshipRepository(
         client = HttpClient(engine) { install(ContentNegotiation) { json() } },
         runtime = FlareRuntimeConfig(),
+        decibelConfig = DecibelRuntimeConfig(),
         sessions = TestSessionRepository,
       )
 
@@ -116,6 +123,7 @@ class WorkerGasSponsorshipRepositoryTest {
       WorkerGasSponsorshipRepository(
         client = HttpClient(engine) { install(ContentNegotiation) { json() } },
         runtime = FlareRuntimeConfig(),
+        decibelConfig = DecibelRuntimeConfig(),
         sessions = TestSessionRepository,
       )
 

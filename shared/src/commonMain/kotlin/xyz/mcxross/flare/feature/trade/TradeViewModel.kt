@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
@@ -162,7 +162,7 @@ class TradeViewModel(
   private val accounts: AccountRepository,
   private val wallets: WalletRepository,
   private val preferences: AppPreferences,
-  private val runtime: FlareRuntimeConfig,
+  private val decibelConfig: DecibelRuntimeConfig,
 ) : ViewModel() {
   private val mutableUiState = MutableStateFlow(TradeUiState())
   val uiState: StateFlow<TradeUiState> = mutableUiState.asStateFlow()
@@ -230,7 +230,7 @@ class TradeViewModel(
             showMacd = values.showMacd,
             slippageBps = values.slippageBps,
             tradingAccountAddress = values.selectedSubaccount,
-            builderAddress = values.builderAddress ?: runtime.defaultBuilderAddress,
+            builderAddress = values.builderAddress ?: decibelConfig.defaultBuilderAddress,
             builderFeeBps = values.builderFeeBps,
             builderApproved = values.builderApproved,
             spotBuilderFeeBps = values.spotBuilderFeeBps,

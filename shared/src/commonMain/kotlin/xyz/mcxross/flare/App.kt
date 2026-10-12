@@ -102,6 +102,7 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
+import xyz.mcxross.flare.venue.Venue
 
 /** Reconnection is automatic and unobtrusive: quick at first, then patient. */
 private const val RECONNECT_BASE_DELAY_MS = 2_000L
@@ -123,18 +124,23 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 
 @Serializable data class AccountSetupDestination(val mode: String = "CREATE", val profileId: String? = null)
 
+/**
+ * Flare on top of [venue], the exchange this build trades on. Each platform shell passes the venue
+ * its build links: an Android flavor's `VenueEntry`, or an iOS umbrella's `MainViewController`.
+ */
 @Composable
 fun App(
+  venue: Venue,
   databaseBuilder: RoomDatabase.Builder<FlareDatabase>,
   preferences: DataStore<Preferences>,
   walletVault: WalletVault,
-  runtimeConfig: FlareRuntimeConfig = remember { FlareRuntimeConfig() },
 ) {
   val foregroundVault = remember(walletVault) { ForegroundWalletVault(walletVault) }
+  val runtimeConfig = remember(venue) { FlareRuntimeConfig(network = venue.descriptor.network) }
   KoinApplication(
     configuration =
       koinConfiguration {
-        modules(flareModule(runtimeConfig, databaseBuilder, preferences, foregroundVault))
+        modules(flareModule(venue, runtimeConfig, databaseBuilder, preferences, foregroundVault))
       }
   ) {
     CompositionLocalProvider(

@@ -1,6 +1,7 @@
 name: Release Android
 
 # Push a tag like v1.2.3 from main to build, sign and publish the Android APK for direct download.
+# Each exchange is its own app (product flavor); this builds the decibel flavor.
 # Signing secrets live in the android-release environment, which only v* tags can use and which
 # waits for approval before each run.
 
@@ -79,7 +80,8 @@ jobs:
           ./gradlew
           :decibel:jvmTest
           :shared:testAndroidHostTest
-          :androidApp:lintRelease
+          :venue-decibel:testAndroidHostTest
+          :androidApp:lintDecibelRelease
 
       - name: Build the signed APK
         env:
@@ -90,7 +92,7 @@ jobs:
         run: |
           keystore="$RUNNER_TEMP/flare-release.keystore"
           echo "$KEYSTORE_B64" | base64 --decode > "$keystore"
-          ./gradlew :androidApp:assembleRelease \
+          ./gradlew :androidApp:assembleDecibelRelease \
             -PflareKeystoreFile="$keystore" \
             -PflareWorkerUrl="$FLARE_WORKER_URL" \
             -PflareBuilderAddress="$FLARE_BUILDER_ADDRESS" \
@@ -101,7 +103,7 @@ jobs:
       - name: Check the APK before it ships
         id: apk
         run: |
-          apk=androidApp/build/outputs/apk/release/androidApp-release.apk
+          apk=androidApp/build/outputs/apk/decibel/release/androidApp-decibel-release.apk
           tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
           "$tools/apksigner" verify --print-certs "$apk" > signers.txt
           cert=$(grep -m1 "certificate SHA-256 digest" signers.txt | awk '{print $NF}')
@@ -114,10 +116,12 @@ jobs:
             || { echo "::error::The APK does not carry builder $FLARE_BUILDER_ADDRESS"; exit 1; }
           "$tools/aapt2" dump badging "$apk" | grep -q "versionName='${{ steps.version.outputs.name }}'" \
             || { echo "::error::Version mismatch"; exit 1; }
+          "$tools/aapt2" dump badging "$apk" | grep -q "package: name='xyz.mcxross.flare.decibel'" \
+            || { echo "::error::The APK is not the Decibel app"; exit 1; }
           mkdir dist
-          cp "$apk" "dist/flare-${{ steps.version.outputs.name }}.apk"
-          # A stable name, so /releases/latest/download/flare-android.apk always serves the newest.
-          cp "$apk" dist/flare-android.apk
+          cp "$apk" "dist/flare-decibel-${{ steps.version.outputs.name }}.apk"
+          # A stable name, so /releases/latest/download/flare-decibel-android.apk always serves the newest.
+          cp "$apk" dist/flare-decibel-android.apk
           (cd dist && sha256sum *.apk > SHA256SUMS)
           cat dist/SHA256SUMS
 
@@ -133,13 +137,13 @@ jobs:
           cat > notes.md <<EOF
           ## Install
 
-          Download \`flare-android.apk\` below and open it on your phone. Android asks once to allow installs from your browser.
+          Download \`flare-decibel-android.apk\` below and open it on your phone. Android asks once to allow installs from your browser.
 
           ## Verify
 
           - SHA-256 checksums are in \`SHA256SUMS\`.
           - Signing certificate SHA-256: \`${EXPECTED_CERT_SHA256}\`
-          - Build provenance: \`gh attestation verify flare-android.apk --repo ${GITHUB_REPOSITORY}\`
+          - Build provenance: \`gh attestation verify flare-decibel-android.apk --repo ${GITHUB_REPOSITORY}\`
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "Flare ${{ steps.version.outputs.name }}" \

@@ -18,6 +18,19 @@ android {
 
   targetProjectPath = ":androidApp"
 
+  // The same flavors as :androidApp, so each app build gets its own profile and benchmarks.
+  flavorDimensions += "venue"
+  productFlavors {
+    create("decibel") {
+      dimension = "venue"
+      buildConfigField("String", "TARGET_PACKAGE", "\"xyz.mcxross.flare.decibel\"")
+    }
+  }
+
+  buildFeatures {
+    buildConfig = true
+  }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11

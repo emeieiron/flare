@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.data.SessionRole
@@ -90,7 +91,8 @@ class WorkerSessionRepositoryIosTest {
     val repository =
       WorkerSessionRepository(
         client = client,
-        runtime = FlareRuntimeConfig(DecibelNetwork.TESTNET, "http://127.0.0.1:8787"),
+        runtime = FlareRuntimeConfig(DecibelNetwork.TESTNET),
+        decibelConfig = DecibelRuntimeConfig("http://127.0.0.1:8787"),
         preferences = preferences,
         wallets = wallets,
       )

@@ -25,7 +25,7 @@ import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 
-/** Offline design harness. Debug source set only; no repositories, keys, or transactions. */
+/** Offline design harness. Decibel debug builds only; no repositories, keys, or transactions. */
 class DesignPreviewActivity : FragmentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)

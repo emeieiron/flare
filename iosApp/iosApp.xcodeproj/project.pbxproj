@@ -152,7 +152,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\nif [ -z \"$FLARE_VENUE\" ]; then\n  echo \"error: FLARE_VENUE is not set. Build a venue scheme, such as Flare Decibel.\"\n  exit 1\nfi\ncd \"$SRCROOT/..\"\n./gradlew \":ios-${FLARE_VENUE}:embedAndSignAppleFrameworkForXcode\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -167,10 +167,10 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		52B1F0F22F1B45A5DA919FC8 /* Debug */ = {
+		52B1F0F22F1B45A5DA919FC8 /* Debug-Decibel */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 4FA3320B7539173E518452AD /* Configuration */;
-			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			baseConfigurationReferenceRelativePath = Decibel.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -230,12 +230,12 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
-			name = Debug;
+			name = "Debug-Decibel";
 		};
-		291B4F7886FEA341EE43518D /* Release */ = {
+		291B4F7886FEA341EE43518D /* Release-Decibel */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 4FA3320B7539173E518452AD /* Configuration */;
-			baseConfigurationReferenceRelativePath = Config.xcconfig;
+			baseConfigurationReferenceRelativePath = Decibel.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -288,9 +288,9 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
-			name = Release;
+			name = "Release-Decibel";
 		};
-		2BCDC1E4BD2F61E5FBA3EB0E /* Debug */ = {
+		2BCDC1E4BD2F61E5FBA3EB0E /* Debug-Decibel */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
@@ -316,9 +316,9 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Debug;
+			name = "Debug-Decibel";
 		};
-		95F6E7B9B049B8857149570F /* Release */ = {
+		95F6E7B9B049B8857149570F /* Release-Decibel */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
@@ -344,7 +344,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Release;
+			name = "Release-Decibel";
 		};
 /* End XCBuildConfiguration section */
 
@@ -352,20 +352,20 @@
 		0B7E5268F826629C66922137 /* Build configuration list for PBXProject "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				52B1F0F22F1B45A5DA919FC8 /* Debug */,
-				291B4F7886FEA341EE43518D /* Release */,
+				52B1F0F22F1B45A5DA919FC8 /* Debug-Decibel */,
+				291B4F7886FEA341EE43518D /* Release-Decibel */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Release-Decibel";
 		};
 		F5B71B34A7F09C1E52331887 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				2BCDC1E4BD2F61E5FBA3EB0E /* Debug */,
-				95F6E7B9B049B8857149570F /* Release */,
+				2BCDC1E4BD2F61E5FBA3EB0E /* Debug-Decibel */,
+				95F6E7B9B049B8857149570F /* Release-Decibel */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = "Release-Decibel";
 		};
 /* End XCConfigurationList section */
 	};

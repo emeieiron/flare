@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
@@ -127,13 +127,13 @@ class SettingsViewModel(
   private val wallets: WalletRepository,
   private val accounts: AccountRepository,
   private val sessions: SessionRepository,
-  private val runtime: FlareRuntimeConfig,
+  private val decibelConfig: DecibelRuntimeConfig,
 ) : ViewModel() {
   private val local =
     MutableStateFlow(
       SettingsUiState(
-        proxyUrl = runtime.workerBaseUrl,
-        defaultBuilderAddress = runtime.defaultBuilderAddress,
+        proxyUrl = decibelConfig.workerBaseUrl,
+        defaultBuilderAddress = decibelConfig.defaultBuilderAddress,
       )
     )
   private var secretClearJob: Job? = null
@@ -323,7 +323,7 @@ class SettingsViewModel(
           withBuilderPending(intent.product) {
             val result =
               accounts.revokeBuilderFee(
-                builderAddress = current.builderAddress ?: runtime.defaultBuilderAddress,
+                builderAddress = current.builderAddress ?: decibelConfig.defaultBuilderAddress,
                 prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
                 product = intent.product,
               )
@@ -378,7 +378,7 @@ class SettingsViewModel(
   private suspend fun approveBuilder(product: AssetType) = withBuilderPending(product) {
     val result =
       accounts.approveBuilderFee(
-        builderAddress = runtime.defaultBuilderAddress,
+        builderAddress = decibelConfig.defaultBuilderAddress,
         feeBps = 10u,
         prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
         product = product,

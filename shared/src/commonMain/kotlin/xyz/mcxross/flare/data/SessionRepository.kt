@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -80,6 +81,7 @@ interface SessionRepository {
 class WorkerSessionRepository(
   private val client: HttpClient,
   private val runtime: FlareRuntimeConfig,
+  private val decibelConfig: DecibelRuntimeConfig,
   private val preferences: AppPreferences,
   private val wallets: WalletRepository,
 ) : SessionRepository {
@@ -191,7 +193,7 @@ class WorkerSessionRepository(
     mutex.withLock {
       try {
         session?.let { active ->
-          client.post("${runtime.workerBaseUrl.trimEnd('/')}/v1/session/revoke") {
+          client.post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/session/revoke") {
             bearerAuth(active.token)
             header(io.ktor.http.HttpHeaders.Origin, runtime.appOrigin)
           }
@@ -213,7 +215,7 @@ class WorkerSessionRepository(
     val address = account.accountAddress.toString()
     val challenge =
       client
-        .post("${runtime.workerBaseUrl.trimEnd('/')}/v1/auth/challenge") {
+        .post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/auth/challenge") {
           contentType(ContentType.Application.Json)
           setBody(
             ChallengeRequest(
@@ -243,7 +245,7 @@ class WorkerSessionRepository(
     val response =
       try {
         val result = client
-          .post("${runtime.workerBaseUrl.trimEnd('/')}/v1/auth/session") {
+          .post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/auth/session") {
             contentType(ContentType.Application.Json)
             setBody(
               AuthenticatedSessionRequest(
@@ -295,7 +297,7 @@ class WorkerSessionRepository(
   private suspend fun createAnonymousSession(now: Long): WorkerSession {
     val refreshed =
       client
-        .post("${runtime.workerBaseUrl.trimEnd('/')}/v1/session/anonymous") {
+        .post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/session/anonymous") {
           contentType(ContentType.Application.Json)
           setBody(AnonymousSessionRequest(preferences.installationId()))
         }

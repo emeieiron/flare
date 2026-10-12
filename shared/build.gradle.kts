@@ -11,17 +11,8 @@ plugins {
 }
 
 kotlin {
-  listOf(
-      iosArm64(),
-      iosSimulatorArm64(),
-    )
-    .forEach { iosTarget ->
-      iosTarget.binaries.framework {
-        baseName = "Shared"
-        isStatic = true
-        binaryOption("bundleId", "xyz.mcxross.flare.shared")
-      }
-    }
+  // The iOS framework is built by the umbrella of each exchange (:ios-decibel), not here.
+  listOf(iosArm64(), iosSimulatorArm64())
 
   android {
     namespace = "xyz.mcxross.flare.shared"

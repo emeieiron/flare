@@ -46,8 +46,8 @@ Do not commit absolute paths or use checkout paths as Gradle dependencies.
 Minimum local gate:
 
 ```sh
-./gradlew :decibel:jvmTest :shared:testAndroidHostTest :androidApp:assembleDebug
-./gradlew :shared:compileKotlinIosSimulatorArm64
+./gradlew :decibel:jvmTest :shared:testAndroidHostTest :venue-decibel:testAndroidHostTest :androidApp:assembleDecibelDebug
+./gradlew :ios-decibel:compileKotlinIosSimulatorArm64
 ```
 
 ## Protocol changes

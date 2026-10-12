@@ -13,6 +13,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
@@ -34,6 +35,7 @@ interface GasSponsorshipRepository {
 class WorkerGasSponsorshipRepository(
   private val client: HttpClient,
   private val runtime: FlareRuntimeConfig,
+  private val decibelConfig: DecibelRuntimeConfig,
   private val sessions: SessionRepository,
 ) : GasSponsorshipRepository {
   override suspend fun submit(
@@ -43,7 +45,7 @@ class WorkerGasSponsorshipRepository(
     try {
       val route = if (ownerOnly) "owner" else "trading"
       val response =
-        client.post("${runtime.workerBaseUrl.trimEnd('/')}/gas/sponsor/$route") {
+        client.post("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/$route") {
           bearerAuth(sessions.accessToken())
           header(HttpHeaders.Origin, runtime.appOrigin)
           contentType(ContentType.Application.Json)
@@ -104,7 +106,7 @@ class WorkerGasSponsorshipRepository(
         return AptosResult.Failure(AptosError.Validation("Invalid sponsorship fingerprint"))
       }
       val response =
-        client.get("${runtime.workerBaseUrl.trimEnd('/')}/gas/sponsor/status/$fingerprint") {
+        client.get("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/status/$fingerprint") {
           bearerAuth(sessions.accessToken())
           header(HttpHeaders.Origin, runtime.appOrigin)
         }
