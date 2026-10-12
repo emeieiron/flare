@@ -175,16 +175,18 @@ internal val PortfolioMetric.decibelWireValue: String
       PortfolioMetric.PNL -> "pnl"
     }
 
-/** Decibel names the plotted value differently by endpoint version; any of them will do. */
+/**
+ * Decibel names the plotted value differently by endpoint version; any of them will do. Its
+ * account value is perps only, and spot holdings come beside it, so they are added back.
+ */
 internal fun PortfolioChartPoint.toPortfolioPoint(metric: PortfolioMetric): PortfolioPoint =
   PortfolioPoint(
     timeMs = timestamp,
     value =
-      dataPoints
-        ?: when (metric) {
-          PortfolioMetric.EQUITY -> accountValue ?: value
-          PortfolioMetric.PNL -> realizedPnl ?: value
-        },
+      when (metric) {
+        PortfolioMetric.EQUITY -> (dataPoints ?: accountValue ?: value) + (spotValue ?: 0.0)
+        PortfolioMetric.PNL -> dataPoints ?: realizedPnl ?: value
+      },
   )
 
 internal fun AccountFees.toTradingFees(): TradingFees =

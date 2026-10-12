@@ -296,6 +296,16 @@ class DecibelAccountMappersTest {
     assertEquals(2.0, named.toPortfolioPoint(PortfolioMetric.PNL).value)
     val plain = PortfolioChartPoint(timestamp = 1, value = 3.0)
     assertEquals(3.0, plain.toPortfolioPoint(PortfolioMetric.PNL).value)
+    val withSpot =
+      json.decodeFromString<List<PortfolioChartPoint>>(
+        """[{"timestamp":1735758000000,"data_points":366.1,"spot_value":17.02,"vault_equity":null}]"""
+      )
+    assertEquals(383.12, withSpot.single().toPortfolioPoint(PortfolioMetric.EQUITY).value, 1e-9)
+    val pnl =
+      json.decodeFromString<List<PortfolioChartPoint>>(
+        """[{"timestamp":1735758000000,"data_points":-3.5,"spot_pnl":0.4,"spot_value":null}]"""
+      )
+    assertEquals(-3.5, pnl.single().toPortfolioPoint(PortfolioMetric.PNL).value)
     assertEquals("account_value", PortfolioMetric.EQUITY.decibelWireValue)
     assertEquals("pnl", PortfolioMetric.PNL.decibelWireValue)
   }
