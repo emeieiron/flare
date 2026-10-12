@@ -61,6 +61,10 @@ class DecibelTradingPayloadTest {
             ("dex_accounts_entry" to "approve_max_builder_fee_for_subaccount"),
           DecibelCommand.RevokeMaxBuilderFee(SUBACCOUNT, BUILDER) to
             ("dex_accounts_entry" to "revoke_max_builder_fee_for_subaccount"),
+          DecibelCommand.ApproveMaxSpotBuilderFee(SUBACCOUNT, BUILDER, 500uL) to
+            ("dex_accounts_spot_entry" to "approve_max_spot_builder_fee_for_subaccount"),
+          DecibelCommand.RevokeMaxSpotBuilderFee(SUBACCOUNT, BUILDER) to
+            ("dex_accounts_spot_entry" to "revoke_max_spot_builder_fee_for_subaccount"),
           DecibelCommand.PlaceTwapOrder(
             SUBACCOUNT,
             xyz.mcxross.flare.decibel.model.ValidatedTwapOrder(
@@ -532,6 +536,17 @@ internal val DECIBEL_SPOT_ENTRY_ABI =
               "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
               "0x1::object::Object<${DEPLOYMENT.packageAddress}::spot_market::SpotMarket>",
               "u128",
+            ),
+            function(
+              "approve_max_spot_builder_fee_for_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
+              "u64",
+            ),
+            function(
+              "revoke_max_spot_builder_fee_for_subaccount",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "address",
             ),
           ),
         structs = emptyList(),

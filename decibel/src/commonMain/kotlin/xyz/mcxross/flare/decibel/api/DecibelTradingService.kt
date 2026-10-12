@@ -741,6 +741,7 @@ private fun AptosError.safeForSelfPay(): Boolean =
       setOf(
         "gas_station_not_configured",
         "gas_station_credentials_rejected",
+        "gas_station_transaction_not_allowed",
         "gas_station_http_400",
         "gas_station_http_401",
         "gas_station_http_403",

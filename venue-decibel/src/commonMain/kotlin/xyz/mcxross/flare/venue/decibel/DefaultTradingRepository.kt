@@ -24,7 +24,6 @@ import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.ExternalFeePayerSubmitter
 import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -183,16 +182,8 @@ class DefaultTradingRepository(
                   signer = account,
                   command = command,
                   externalFeePayer =
-                    if (feePayment == FeePayment.SPONSORED) {
-                      ExternalFeePayerSubmitter { request ->
-                        gasSponsorship.submit(
-                          request = request,
-                          ownerOnly = signer == TradingSigner.OWNER,
-                        )
-                      }
-                    } else {
-                      null
-                    },
+                    if (feePayment == FeePayment.SPONSORED) gasSponsorship.submitterFor(command)
+                    else null,
                   beforeSign = {
                     wallets.requireAuthorization(generation)
                     val current = preferences.values.first()
