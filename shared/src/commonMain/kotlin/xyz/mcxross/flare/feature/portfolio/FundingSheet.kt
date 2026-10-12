@@ -27,9 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
@@ -40,11 +39,12 @@ import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.ActionState
 
 @Composable
 fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   val mode = state.fundingMode ?: return
-  val committed = state.fundingTransaction as? TransactionState.Committed
+  val committed = state.fundingTransaction as? ActionState.Committed
   FlareSheet(
     title = if (committed != null) "Transfer complete" else "Transfer",
     onDismiss = { if (!state.busy) onIntent(PortfolioIntent.CloseFunding) },
@@ -53,7 +53,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       TransactionReceipt(
         if (mode == FundingMode.DEPOSIT) "Your USDC is now in your trading account."
         else "Your USDC is now in your wallet.",
-        committed.hash,
+        committed.reference,
         { onIntent(PortfolioIntent.CloseFunding) },
         enabled = !state.busy,
       )

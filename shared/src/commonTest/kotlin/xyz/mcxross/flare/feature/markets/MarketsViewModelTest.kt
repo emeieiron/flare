@@ -22,6 +22,7 @@ import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 
@@ -56,11 +57,7 @@ class MarketsViewModelTest {
       sizeDecimals = 2,
       maxLeverage = 20,
       isolatedOnly = false,
-      tickSize = 1uL,
-      lotSize = 1000uL,
-      minSize = 1uL,
-      minPrice = 1uL,
-      maxPrice = 100_000_000uL,
+      rules = AcceptingOrderRules,
     )
 
   private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", MarketKind.PERP, "crypto")

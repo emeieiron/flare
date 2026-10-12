@@ -6,14 +6,10 @@ import org.koin.core.module.Module
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.data.DefaultTradingRepository
-import xyz.mcxross.flare.data.GasSponsorshipRepository
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository
@@ -57,13 +53,14 @@ class DecibelVenue(
         ),
       proxyUrl = config.workerBaseUrl,
       builderAddress = config.defaultBuilderAddress,
+      builderFeeBps = config.defaultBuilderFeeBps.toInt(),
       rewardPointsName = "Amps",
     )
 
   override fun module(): Module = decibelModule(config)
 
   companion object {
-    /** Everything the app does on Decibel today. */
+    /** Everything the app does on Decibel today. Perpetuals and spot share one margin. */
     val Capabilities =
       VenueCapabilities(
         spot = true,
@@ -74,14 +71,14 @@ class DecibelVenue(
         sponsoredFees = true,
         networkFeeTopUp = true,
         inAppDeposit = true,
+        perpSpotTransfer = false,
       )
   }
 }
 
 /**
- * Decibel's repositories. Markets, charts, market details, accounts, the wallet, the Worker session
- * and gas sponsorship live in this module; trading is still implemented in `:shared`. They
- * read the common bindings from `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and
+ * Decibel's repositories: markets, charts, market details, accounts, trading, the wallet, the
+ * Worker session and gas sponsorship. They read the common bindings from `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and
  * the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
@@ -136,6 +133,9 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }
   singleOf(::WorkerGasSponsorshipRepository) { bind<GasSponsorshipRepository>() }
-  singleOf(::DefaultTradingRepository) { bind<TradingRepository>() }
+  singleOf(::DefaultTradingRepository) {
+    bind<TradingRepository>()
+    bind<DecibelTrading>()
+  }
   singleOf(::DefaultAccountRepository) { bind<AccountRepository>() }
 }

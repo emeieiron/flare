@@ -21,12 +21,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
-import xyz.mcxross.flare.data.sameAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.account.Account

@@ -2,7 +2,6 @@ package xyz.mcxross.flare.venue.decibel
 
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.data.sameAptosAddress
 import xyz.mcxross.kaptos.core.crypto.Aip80PrivateKey
 import xyz.mcxross.kaptos.core.crypto.MnemonicPhrase
 

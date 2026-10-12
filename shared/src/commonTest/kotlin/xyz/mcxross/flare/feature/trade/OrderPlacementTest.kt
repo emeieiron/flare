@@ -4,12 +4,17 @@ import kotlin.test.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.data.MarketQuote
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.*
-import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.testing.AcceptingOrderRules
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.MarginMode
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.SelfPayOffer
+import xyz.mcxross.flare.venue.model.TradeAction
 
 class OrderPlacementTest {
   private val market =
@@ -23,11 +28,7 @@ class OrderPlacementTest {
       sizeDecimals = 8,
       maxLeverage = 40,
       isolatedOnly = false,
-      tickSize = 100uL,
-      lotSize = 1000uL,
-      minSize = 2000uL,
-      minPrice = 1uL,
-      maxPrice = 100_000_000uL,
+      rules = AcceptingOrderRules,
     )
   private val state =
     TradeUiState(
@@ -39,13 +40,12 @@ class OrderPlacementTest {
       takeProfitInput = "72000",
       stopLossInput = "69000",
     )
-  private val entry =
-    DecibelCommand.PlaceOrder("0xabc", state.orderDraft(OrderSide.BUY).validate(market).value!!)
+  private val entry = TradeAction.PlaceOrder("0xabc", market, state.checkedOrder(OrderSide.BUY))
   private val configuration = state.leverageCommand("0xabc", null)!!
 
   @Test
   fun leverageMustCommitBeforeTheEntryIsSubmitted() = runTest {
-    val commands = mutableListOf<DecibelCommand>()
+    val commands = mutableListOf<TradeAction>()
     val stages = mutableListOf<OrderStage>()
     val result =
       placeConfiguredOrder(
@@ -53,20 +53,20 @@ class OrderPlacementTest {
         entry,
         { command ->
           commands += command
-          flowOf(TransactionState.Committed(if (command == configuration) "settings" else "entry"))
+          flowOf(ActionState.Committed(if (command == configuration) "settings" else "entry"))
         },
         { stage, _ -> stages += stage },
       )
     assertEquals(listOf(configuration, entry), commands)
     assertEquals(listOf(OrderStage.LEVERAGE, OrderStage.ENTRY), stages)
-    assertEquals("entry", assertIs<TransactionState.Committed>(result).hash)
+    assertEquals("entry", assertIs<ActionState.Committed>(result).reference)
   }
 
   @Test
   fun failedOrUnresolvedLeverageNeverSubmitsTheEntry() = runTest {
     for (terminal in
-      listOf(TransactionState.Failed("rejected"), TransactionState.Pending("pending-settings"))) {
-      val commands = mutableListOf<DecibelCommand>()
+      listOf(ActionState.Failed("rejected"), ActionState.Pending("pending-settings"))) {
+      val commands = mutableListOf<TradeAction>()
       val result =
         placeConfiguredOrder(
           configuration,
@@ -77,7 +77,7 @@ class OrderPlacementTest {
           },
           { _, _ -> },
         )
-      assertEquals(listOf<DecibelCommand>(configuration), commands)
+      assertEquals(listOf<TradeAction>(configuration), commands)
       assertEquals(terminal, result)
     }
   }
@@ -90,17 +90,17 @@ class OrderPlacementTest {
     assertFailsWith<IllegalArgumentException> {
       state.copy(leverage = 2).leverageCommand("0xabc", position)
     }
-    val commands = mutableListOf<DecibelCommand>()
+    val commands = mutableListOf<TradeAction>()
     placeConfiguredOrder(
       null,
       entry,
       { command ->
         commands += command
-        flowOf(TransactionState.Committed("entry"))
+        flowOf(ActionState.Committed("entry"))
       },
       { _, _ -> },
     )
-    assertEquals(listOf<DecibelCommand>(entry), commands)
+    assertEquals(listOf<TradeAction>(entry), commands)
   }
 
   @Test
@@ -112,7 +112,7 @@ class OrderPlacementTest {
     assertEquals(one.value, five.value)
     assertEquals(one.profit, five.profit)
     assertEquals(one.loss, five.loss)
-    assertEquals(5.toUByte(), configuration.leverage)
+    assertEquals(5, configuration.leverage)
     assertEquals(MarginMode.CROSS, configuration.marginMode)
     assertFailsWith<IllegalArgumentException> {
       state.copy(leverage = 41).leverageCommand("0xabc", null)
@@ -124,5 +124,18 @@ class OrderPlacementTest {
         .leverageCommand("0xabc", null)
         ?.marginMode,
     )
+  }
+
+  @Test
+  fun aDeclinedFeeIsOfferedToTheWalletOnlyWhereTheVenueSponsorsFees() {
+    val declined =
+      state.copy(transaction = ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(2_400uL)))
+    assertEquals(2_400uL, declined.selfPayEstimate)
+    assertNull(
+      declined
+        .copy(capabilities = VenueCapabilities.All.copy(sponsoredFees = false))
+        .selfPayEstimate
+    )
+    assertNull(state.copy(transaction = ActionState.Failed("Rejected")).selfPayEstimate)
   }
 }

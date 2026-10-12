@@ -17,13 +17,10 @@ import kotlinx.coroutines.flow.flowOf
 import org.koin.core.Koin
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.data.GasSponsorshipRepository
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository

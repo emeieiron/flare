@@ -1,8 +1,7 @@
-package xyz.mcxross.flare
+package xyz.mcxross.flare.venue.decibel
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 
 class SharedLogicAndroidHostTest {
 

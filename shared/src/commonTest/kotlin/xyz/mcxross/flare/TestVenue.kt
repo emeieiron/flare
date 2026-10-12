@@ -4,9 +4,13 @@ import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.VenueExplorer
+import xyz.mcxross.flare.venue.VenueSetup
 
 /** A venue for ViewModel tests: every feature on unless [capabilities] says otherwise. */
-fun testVenue(capabilities: VenueCapabilities = VenueCapabilities.All) =
+fun testVenue(
+  capabilities: VenueCapabilities = VenueCapabilities.All,
+  setup: VenueSetup = VenueSetup(),
+) =
   VenueDescriptor(
     id = "test",
     displayName = "Test",
@@ -15,7 +19,9 @@ fun testVenue(capabilities: VenueCapabilities = VenueCapabilities.All) =
     explorer = VenueExplorer("Test Explorer", "https://explorer.test/${VenueExplorer.REFERENCE}"),
     proxyUrl = "https://proxy.test",
     builderAddress = "0xb0b",
+    builderFeeBps = 5,
     rewardPointsName = "Amps",
+    setup = setup,
   )
 
 /** A venue with none of the exchange-specific features. */

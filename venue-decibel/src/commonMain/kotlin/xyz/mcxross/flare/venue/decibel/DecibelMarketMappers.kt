@@ -31,7 +31,6 @@ internal fun AssetType.toMarketKind(): MarketKind =
     AssetType.SPOT -> MarketKind.SPOT
   }
 
-/** Decibel's steps and limits are already whole numbers of the market's smallest unit. */
 internal fun DecibelMarket.toMarket(): Market =
   Market(
     id = address,
@@ -43,11 +42,7 @@ internal fun DecibelMarket.toMarket(): Market =
     sizeDecimals = sizeDecimals,
     maxLeverage = maxLeverage,
     isolatedOnly = isIsolatedOnly,
-    tickSize = tickSize,
-    lotSize = lotSize,
-    minSize = minSize,
-    minPrice = minPrice,
-    maxPrice = maxPrice,
+    rules = orderRules(),
   )
 
 internal fun ChartTimeframe.toCandleInterval(): CandleInterval =

@@ -3,7 +3,6 @@ package xyz.mcxross.flare.venue.decibel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.security.ForegroundWalletVault

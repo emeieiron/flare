@@ -27,12 +27,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,11 +67,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.design.FlareAddressField
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
@@ -84,7 +84,7 @@ import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
-import com.valentinilk.shimmer.shimmer
+import xyz.mcxross.flare.venue.model.TradingAccount
 
 private val Whitespace = Regex("\\s+")
 
@@ -772,7 +772,7 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
 
 @Composable
 private fun AccountOption(
-  subaccount: Subaccount,
+  subaccount: TradingAccount,
   position: Int,
   selected: Boolean,
   enabled: Boolean,
@@ -792,7 +792,7 @@ private fun AccountOption(
   ) {
     Column(Modifier.weight(1f)) {
       Text(
-        subaccount.name.ifBlank { if (subaccount.isPrimary) "Primary account" else "Account ${position + 1}" },
+        subaccount.label.orEmpty().ifBlank { if (subaccount.primary) "Primary account" else "Account ${position + 1}" },
         style = MaterialTheme.typography.titleMedium,
       )
       Text(

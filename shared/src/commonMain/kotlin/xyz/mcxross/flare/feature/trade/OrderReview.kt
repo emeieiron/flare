@@ -12,11 +12,11 @@ import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
 
 /** "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and result. */
 internal fun TradeUiState.orderSummary(side: OrderSide): Pair<String, String> {

@@ -1,9 +1,9 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
 import kotlin.test.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
-import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.venue.model.ActionState
 
 class TradingWalletSetupTest {
   @Test
@@ -59,7 +59,7 @@ class TradingWalletSetupTest {
   fun uncertainDelegationStopsWithoutVerifyingOrRetrying() = runTest {
     val actions =
       SetupActions().apply {
-        result = TransactionState.Failed("timeout", hash = "sponsor:reference")
+        result = ActionState.Failed("timeout", reference = "sponsor:reference")
       }
     val error = assertFailsWith<IllegalStateException> { TradingWalletSetup().prepare(actions) }
     assertTrue(error.message.orEmpty().contains("sponsor:reference"))
@@ -94,7 +94,7 @@ private class SetupActions : TradingWalletSetupActions {
   var pending = false
   var cancel = false
   var verificationFailures = 0
-  var result: TransactionState = TransactionState.Committed("hash")
+  var result: ActionState = ActionState.Committed("hash")
 
   override suspend fun existingWallet() = address
 
@@ -115,9 +115,9 @@ private class SetupActions : TradingWalletSetupActions {
     check(!pending)
   }
 
-  override suspend fun delegate(): TransactionState {
+  override suspend fun delegate(): ActionState {
     events += "delegate"
-    delegated = result is TransactionState.Committed
+    delegated = result is ActionState.Committed
     return result
   }
 

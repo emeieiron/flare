@@ -1,8 +1,8 @@
 package xyz.mcxross.flare
 
 import android.content.Context
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.venue.Venue
+import xyz.mcxross.flare.venue.decibel.DecibelRuntimeConfig
 import xyz.mcxross.flare.venue.decibel.DecibelVenue
 
 /**

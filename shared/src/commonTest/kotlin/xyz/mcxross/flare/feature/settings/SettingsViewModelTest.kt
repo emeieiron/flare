@@ -31,18 +31,18 @@ import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.testVenue
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.venue.model.VaultPosition
@@ -127,48 +127,48 @@ class SettingsViewModelTest {
     var subaccountReads = 0
 
     override suspend fun delegations(): List<TradingKey> = emptyList()
-    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState =
-      TransactionState.Committed("0x")
+    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
+      ActionState.Committed("0x")
     override suspend fun restoreTrading() {}
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
-    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> = emptyList()
-    override suspend fun subaccounts(owner: String): List<Subaccount> {
+    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> = emptyList()
+    override suspend fun subaccounts(owner: String): List<TradingAccount> {
       subaccountReads++
       return emptyList()
     }
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
-    override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): TransactionState =
-      TransactionState.Committed("0xsub")
+    override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
+      ActionState.Committed("0xsub")
     override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0xsub"
-    override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): TransactionState =
-      TransactionState.Committed("0xdel")
+    override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
+      ActionState.Committed("0xdel")
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}
-    override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<TransactionState> =
-      flowOf(TransactionState.Committed("0xdep"))
+    override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> =
+      flowOf(ActionState.Committed("0xdep"))
     override fun withdrawUsdc(
       amount: String,
       destination: String?,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> {
+    ): Flow<ActionState> {
       withdrawCallCount++
       lastWithdrawAmount = amount
       lastWithdrawDestination = destination
-      return flowOf(TransactionState.Committed("0xwithdraw_hash_123"))
+      return flowOf(ActionState.Committed("0xwithdraw_hash_123"))
     }
     override suspend fun approveBuilderFee(
       builderAddress: String,
       feeBps: UInt,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-      product: AssetType,
-    ): TransactionState = TransactionState.Committed("0x")
+      product: MarketKind,
+    ): ActionState = ActionState.Committed("0x")
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-      product: AssetType,
-    ): TransactionState = TransactionState.Committed("0x")
+      product: MarketKind,
+    ): ActionState = ActionState.Committed("0x")
     override suspend fun refresh() {}
     override suspend fun refreshHistory() {}
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
@@ -190,13 +190,13 @@ class SettingsViewModelTest {
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = flowOf(TransactionState.Committed("0xvault"))
+    ): Flow<ActionState> = flowOf(ActionState.Committed("0xvault"))
     override fun redeemFromVault(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = flowOf(TransactionState.Committed("0xvault"))
+    ): Flow<ActionState> = flowOf(ActionState.Committed("0xvault"))
     override fun startLive() {}
   }
 
@@ -239,8 +239,8 @@ class SettingsViewModelTest {
     assertEquals("50.0", fakeAccounts.lastWithdrawAmount)
     assertEquals("0xa11ce", fakeAccounts.lastWithdrawDestination)
     val tx = vm.uiState.value.withdrawTransaction
-    kotlin.test.assertIs<TransactionState.Committed>(tx)
-    assertEquals("0xwithdraw_hash_123", tx.hash)
+    kotlin.test.assertIs<ActionState.Committed>(tx)
+    assertEquals("0xwithdraw_hash_123", tx.reference)
 
     // Test dismiss
     vm.onIntent(SettingsIntent.DismissWithdraw)

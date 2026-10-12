@@ -19,9 +19,6 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
@@ -31,7 +28,10 @@ import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 
 data class SettingsUiState(
@@ -45,7 +45,7 @@ data class SettingsUiState(
   val revealedSecret: String? = null,
   val delegations: List<TradingKey> = emptyList(),
   val delegationsLoaded: Boolean = false,
-  val subaccountsByOwner: Map<String, List<Subaccount>> = emptyMap(),
+  val subaccountsByOwner: Map<String, List<TradingAccount>> = emptyMap(),
   val creatingSubaccount: Boolean = false,
   val referralCodeInput: String = "",
   val referralRedeemed: Boolean = false,
@@ -53,7 +53,7 @@ data class SettingsUiState(
   val rewards: Rewards? = null,
   val withdrawDestination: String = "",
   val withdrawAmount: String = "",
-  val withdrawTransaction: TransactionState? = null,
+  val withdrawTransaction: ActionState? = null,
   val withdrawing: Boolean = false,
   /** Why the last withdrawal attempt failed, as reported; screens phrase it for people. */
   val withdrawError: String? = null,
@@ -63,7 +63,7 @@ data class SettingsUiState(
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val busy: Boolean = false,
   /** The product whose builder approval is being written on-chain. */
-  val builderPending: AssetType? = null,
+  val builderPending: MarketKind? = null,
   val error: String? = null,
 )
 
@@ -102,9 +102,9 @@ sealed interface SettingsIntent {
   data class SetConfirmTransactions(val confirm: Boolean) : SettingsIntent
 
   /** Perpetuals and spot each hold their own rate and on-chain approval. */
-  data class SetBuilderFeeBps(val product: AssetType, val basisPoints: Int) : SettingsIntent
+  data class SetBuilderFeeBps(val product: MarketKind, val basisPoints: Int) : SettingsIntent
 
-  data class RevokeBuilderFee(val product: AssetType) : SettingsIntent
+  data class RevokeBuilderFee(val product: MarketKind) : SettingsIntent
 
   data class ChangeReferralCode(val code: String) : SettingsIntent
 
@@ -202,7 +202,7 @@ class SettingsViewModel(
               intent.address,
               VaultPrompt("Revoke trading access", "Confirm your identity"),
             )
-          check(result is TransactionState.Committed) { "Revoking access failed. Try again." }
+          check(result is ActionState.Committed) { "Revoking access failed. Try again." }
           val delegates = accounts.delegations()
           local.update { it.copy(delegations = delegates) }
         }
@@ -234,8 +234,8 @@ class SettingsViewModel(
               runSuspendCatching { accounts.subaccounts(owner) }.getOrDefault(emptyList()).map { it.address }.toSet()
             val prompt = VaultPrompt("Create trading subaccount", "Confirm your identity")
             val result = accounts.createSubaccount(prompt)
-            check(result is TransactionState.Committed) {
-              (result as? TransactionState.Failed)?.message ?: "Subaccount transaction failed. Try again."
+            check(result is ActionState.Committed) {
+              (result as? ActionState.Failed)?.message ?: "Subaccount transaction failed. Try again."
             }
             var newAddress: String? = null
             repeat(10) {
@@ -311,13 +311,13 @@ class SettingsViewModel(
         launchAction("Your builder fee setting didn’t change.") {
           val current = preferences.values.first()
           val approved =
-            if (intent.product == AssetType.PERP) current.builderApproved
+            if (intent.product == MarketKind.PERP) current.builderApproved
             else current.spotBuilderApproved
           // A rate only applies once its product is approved on-chain.
           if (intent.basisPoints > 0 && !approved) approveBuilder(intent.product)
           when (intent.product) {
-            AssetType.PERP -> preferences.setBuilderFeeBps(intent.basisPoints)
-            AssetType.SPOT -> preferences.setSpotBuilderFeeBps(intent.basisPoints)
+            MarketKind.PERP -> preferences.setBuilderFeeBps(intent.basisPoints)
+            MarketKind.SPOT -> preferences.setSpotBuilderFeeBps(intent.basisPoints)
           }
         }
       is SettingsIntent.RevokeBuilderFee ->
@@ -330,8 +330,8 @@ class SettingsViewModel(
                 prompt = VaultPrompt("Revoke builder support", "Confirm your identity"),
                 product = intent.product,
               )
-            check(result is TransactionState.Committed) {
-              (result as? TransactionState.Failed)?.message
+            check(result is ActionState.Committed) {
+              (result as? ActionState.Failed)?.message
                 ?: "Revoking builder support failed. Try again."
             }
           }
@@ -378,7 +378,7 @@ class SettingsViewModel(
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   /** Approves Flare's builder up to the protocol cap, so later rate changes need no new approval. */
-  private suspend fun approveBuilder(product: AssetType) = withBuilderPending(product) {
+  private suspend fun approveBuilder(product: MarketKind) = withBuilderPending(product) {
     val result =
       accounts.approveBuilderFee(
         builderAddress = local.value.defaultBuilderAddress,
@@ -386,12 +386,12 @@ class SettingsViewModel(
         prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
         product = product,
       )
-    check(result is TransactionState.Committed) {
-      (result as? TransactionState.Failed)?.message ?: "Approving builder support failed. Try again."
+    check(result is ActionState.Committed) {
+      (result as? ActionState.Failed)?.message ?: "Approving builder support failed. Try again."
     }
   }
 
-  private suspend fun withBuilderPending(product: AssetType, block: suspend () -> Unit) {
+  private suspend fun withBuilderPending(product: MarketKind, block: suspend () -> Unit) {
     local.update { it.copy(builderPending = product) }
     try {
       block()
@@ -402,7 +402,7 @@ class SettingsViewModel(
 
   private fun submitWithdraw(feePayment: FeePayment) {
     val current = local.value
-    if (current.withdrawing || current.withdrawTransaction is TransactionState.Committed) return
+    if (current.withdrawing || current.withdrawTransaction is ActionState.Committed) return
     val dest = current.withdrawDestination.trim()
     val amt = current.withdrawAmount.trim()
     if (!dest.isAptosAddress()) {
@@ -421,13 +421,13 @@ class SettingsViewModel(
           local.update { it.copy(withdrawTransaction = tx) }
         }
         when (val terminal = local.value.withdrawTransaction) {
-          is TransactionState.Committed -> {
+          is ActionState.Committed -> {
             accounts.refresh()
             loadSubaccounts()
           }
           // A fee Flare can't sponsor is a choice for the person, not a failure.
-          is TransactionState.Failed ->
-            if (terminal.selfPayEstimateOctas == null) {
+          is ActionState.Failed ->
+            if (terminal.selfPay?.estimate == null) {
               local.update { it.copy(withdrawError = terminal.message) }
             }
           else -> Unit
@@ -465,7 +465,7 @@ class SettingsViewModel(
     if (!capabilities.subaccounts) return
     viewModelScope.launch {
       val profiles = preferences.values.first().profiles
-      val map = mutableMapOf<String, List<Subaccount>>()
+      val map = mutableMapOf<String, List<TradingAccount>>()
       for (p in profiles) {
         val owner = p.ownerAddress ?: continue
         runSuspendCatching {

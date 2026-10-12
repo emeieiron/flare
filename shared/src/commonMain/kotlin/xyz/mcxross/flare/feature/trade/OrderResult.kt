@@ -10,13 +10,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
 import xyz.mcxross.flare.design.rememberOutcomeReveal
+import xyz.mcxross.flare.venue.model.OrderSide
 
 
 @Composable

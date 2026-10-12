@@ -30,6 +30,8 @@ kotlin {
       implementation(project(":decibel"))
       implementation(libs.koin.core)
       implementation(libs.ktor.client.core)
+      // The trading repository journals actions in the app's database.
+      implementation(libs.androidx.room3.runtime)
       implementation(libs.kotlinx.serialization.json)
     }
     commonTest.dependencies {
@@ -40,9 +42,6 @@ kotlin {
       implementation(libs.ktor.serialization.kotlinx.json)
       // The account repository's tests keep preferences in memory.
       implementation(libs.androidx.datastore.preferences)
-    }
-    getByName("androidHostTest").dependencies {
-      implementation(libs.androidx.room3.runtime)
     }
   }
 }

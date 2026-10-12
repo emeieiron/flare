@@ -44,10 +44,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.Subaccount
-import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.DetailRow
@@ -72,6 +70,8 @@ import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.TradingAccount
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
 
@@ -124,8 +124,7 @@ fun AccountScreen(
   val subaccounts = active?.ownerAddress?.let { state.subaccountsByOwner[it] }.orEmpty()
     .ifEmpty {
       active?.selectedSubaccount?.let {
-        listOf(Subaccount(address = it, owner = active.ownerAddress.orEmpty(),
-          customLabel = null, isPrimary = true, isActive = true))
+        listOf(TradingAccount(address = it, owner = active.ownerAddress.orEmpty(), primary = true))
       }.orEmpty()
     }
   LaunchedEffect(copied) {
@@ -165,7 +164,7 @@ fun AccountScreen(
           onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
         }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
           Column(Modifier.weight(1f)) {
-            Text(account.customLabel?.takeIf { it.isNotBlank() } ?: "Trading account ${index + 1}",
+            Text(account.label?.takeIf { it.isNotBlank() } ?: "Trading account ${index + 1}",
               style = MaterialTheme.typography.bodyLarge)
             Text(shortAddress(account.address), style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary)
@@ -297,13 +296,13 @@ fun WithdrawSheet(
   val transaction = state.withdrawTransaction
   // A fee Flare can't sponsor keeps the review open with the choice to pay it.
   val feeEstimate =
-    (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+    (transaction as? ActionState.Failed)?.selfPay?.estimate
       ?.takeIf { state.capabilities.sponsoredFees }
   val stage =
     when {
-      transaction is TransactionState.Committed -> WithdrawStage.SENT
+      transaction is ActionState.Committed -> WithdrawStage.SENT
       !state.withdrawing && feeEstimate == null && transaction != null &&
-        (transaction is TransactionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
+        (transaction is ActionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
       reviewing || state.withdrawing || feeEstimate != null -> WithdrawStage.REVIEW
       else -> WithdrawStage.FORM
     }
@@ -323,7 +322,7 @@ fun WithdrawSheet(
       when (stage) {
         WithdrawStage.FORM -> WithdrawForm(state, onIntent) { reviewing = true }
         WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, feeEstimate, resuming) { reviewing = false }
-        WithdrawStage.SENT -> WithdrawSent(state, (transaction as TransactionState.Committed).hash, onDismiss)
+        WithdrawStage.SENT -> WithdrawSent(state, (transaction as ActionState.Committed).reference, onDismiss)
         WithdrawStage.FAILED ->
           WithdrawFailed(state, onIntent) {
             onIntent(SettingsIntent.EditWithdraw)
@@ -491,7 +490,7 @@ private fun WithdrawSent(state: SettingsUiState, hash: String, onDone: () -> Uni
 private fun WithdrawFailed(state: SettingsUiState, onIntent: (SettingsIntent) -> Unit, onEdit: () -> Unit) {
   val pending = state.pendingWithdrawal
   val revealed = rememberOutcomeReveal()
-  val raw = state.withdrawError ?: (state.withdrawTransaction as? TransactionState.Failed)?.message
+  val raw = state.withdrawError ?: (state.withdrawTransaction as? ActionState.Failed)?.message
   val cause = actionFailure(raw, "").trim().takeIf { it.isNotEmpty() }?.let { if (it.endsWith('.')) it else "$it." }
   // Say where the money is: that is what someone needs to know after a failure.
   val funds =

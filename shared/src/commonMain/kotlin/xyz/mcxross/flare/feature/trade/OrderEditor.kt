@@ -41,11 +41,8 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
-import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ExitPriceFields
@@ -55,7 +52,10 @@ import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
 
 @Composable
 internal fun OrderEditor(
@@ -126,7 +126,7 @@ internal fun OrderEditor(
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
         Text(
-          "Min ${quote.market.minSize.toDecimalString(quote.market.sizeDecimals)} ${quote.market.symbol}",
+          quote.market.rules.minimumSize?.let { "Min $it ${quote.market.symbol}" }.orEmpty(),
           Modifier.weight(1f, fill = false).padding(end = 12.dp),
           style = MaterialTheme.typography.labelSmall,
           color = FlareColors.TextSecondary,
@@ -268,8 +268,11 @@ internal fun OrderReviewStatus(
   minHeight: Dp,
 ) {
   val inputError = state.orderInputError(side)
-  val selfPayEstimate = (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas
-  val topUp = state.suggestedTopUpOctas?.takeIf { state.apiWalletNeedsTopUp && selfPayEstimate != null }
+  val selfPayEstimate = state.selfPayEstimate
+  val topUp =
+    state.suggestedTopUpOctas?.takeIf {
+      state.capabilities.networkFeeTopUp && state.apiWalletNeedsTopUp && selfPayEstimate != null
+    }
   SpacedGroups(minHeight) {
     // Submission failures get their own outcome stage; only pre-flight problems belong here.
     if (inputError != null || selfPayEstimate != null) {

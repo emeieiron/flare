@@ -6,12 +6,7 @@ enum class MarketKind {
   SPOT,
 }
 
-/**
- * A market as the app shows and trades it, whichever exchange lists it.
- *
- * Steps and limits are whole numbers of the market's smallest unit: [tickSize], [minPrice] and
- * [maxPrice] count 10^-[priceDecimals], and [lotSize] and [minSize] count 10^-[sizeDecimals].
- */
+/** A market as the app shows and trades it, whichever exchange lists it. */
 data class Market(
   /** The exchange's own market id, such as Decibel's market address. */
   val id: String,
@@ -27,11 +22,8 @@ data class Market(
   val maxLeverage: Int,
   /** Positions in this market are always isolated. */
   val isolatedOnly: Boolean,
-  val tickSize: ULong,
-  val lotSize: ULong,
-  val minSize: ULong,
-  val minPrice: ULong = 0u,
-  val maxPrice: ULong = ULong.MAX_VALUE,
+  /** The exchange's checks for this market's orders. */
+  val rules: OrderRules,
 )
 
 /**

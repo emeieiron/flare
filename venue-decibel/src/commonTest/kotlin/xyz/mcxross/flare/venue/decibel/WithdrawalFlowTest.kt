@@ -12,24 +12,23 @@ import kotlin.test.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
-import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.UnavailableWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.account.Account
 
@@ -40,7 +39,7 @@ class WithdrawalFlowTest {
   fun ownerDestinationUsesOneTransaction() = runTest {
     fixture { f ->
       val states = f.accounts.withdrawUsdc("10", null, prompt).toList()
-      assertIs<TransactionState.Committed>(states.last())
+      assertIs<ActionState.Committed>(states.last())
       assertEquals(1, f.trading.commands.size)
       assertIs<DecibelCommand.Withdraw>(f.trading.commands.single())
       assertNull(f.progress())
@@ -83,7 +82,7 @@ class WithdrawalFlowTest {
       f.trading.uncertain = true
       f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertNotNull(f.progress()!!.withdrawalReference)
-      assertIs<TransactionState.Pending>(
+      assertIs<ActionState.Pending>(
         f.accounts.withdrawUsdc("10", "0x3", prompt).toList().last()
       )
       assertEquals(1, f.trading.commands.size)
@@ -284,7 +283,7 @@ private class WithdrawalSessions : AptosSessionRepository {
   override suspend fun invalidate() {}
 }
 
-private class WithdrawalTrading(val preferences: AppPreferences) : TradingRepository {
+private class WithdrawalTrading(val preferences: AppPreferences) : DecibelTrading {
   val commands = mutableListOf<DecibelCommand>()
   val prompts = mutableListOf<VaultPrompt>()
   val recordedBeforeSubmission = mutableListOf<Boolean>()
@@ -294,11 +293,18 @@ private class WithdrawalTrading(val preferences: AppPreferences) : TradingReposi
   override val pendingTransactions = flowOf(emptyList<PendingTransaction>())
 
   override fun execute(
+    action: TradeAction,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+    onPrepared: suspend (String) -> Unit,
+  ): Flow<ActionState> = error("Not used")
+
+  override fun executeCommand(
     command: DecibelCommand,
     prompt: VaultPrompt,
     feePayment: FeePayment,
     onPrepared: suspend (String) -> Unit,
-  ): Flow<TransactionState> = flow {
+  ): Flow<ActionState> = flow {
     commands += command
     prompts += prompt
     val hash = "0x" + commands.size.toString().padStart(64, '0')
@@ -307,19 +313,18 @@ private class WithdrawalTrading(val preferences: AppPreferences) : TradingReposi
     recordedBeforeSubmission +=
       if (command is DecibelCommand.Withdraw) progress.withdrawalReference == hash
       else progress.transferReference == hash
-    if (uncertain) emit(TransactionState.Failed("Timeout", hash))
+    if (uncertain) emit(ActionState.Failed("Timeout", hash))
     else if (rejectTransfer && command is DecibelCommand.TransferCollateral)
-      emit(TransactionState.Failed("Rejected", hash, definitelyNotSubmitted = true))
-    else emit(TransactionState.Committed(hash))
+      emit(ActionState.Failed("Rejected", hash, definitelyNotSubmitted = true))
+    else emit(ActionState.Committed(hash))
   }
 
-  override suspend fun transactionStatus(reference: String): TransactionState =
-    if (resolved) TransactionState.Committed(reference) else TransactionState.Pending(reference)
+  override suspend fun transactionStatus(reference: String): ActionState =
+    if (resolved) ActionState.Committed(reference) else ActionState.Pending(reference)
 
-  override suspend fun apiWalletAptBalance() = 0uL
+  override suspend fun tradingKeyFeeBalance() = 0uL
 
-  override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
-    emptyFlow()
+  override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> = emptyFlow()
 
   override suspend fun reconcilePending() = ReconciliationResult(0, 0)
 }

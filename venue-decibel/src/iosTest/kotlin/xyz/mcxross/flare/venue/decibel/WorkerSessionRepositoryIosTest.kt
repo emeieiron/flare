@@ -20,7 +20,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.security.ForegroundWalletVault

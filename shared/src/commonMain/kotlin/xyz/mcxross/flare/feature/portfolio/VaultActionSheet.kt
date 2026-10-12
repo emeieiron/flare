@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareAmountField
@@ -24,12 +23,13 @@ import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.TransactionReceipt
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.ActionState
 
 @Composable
 fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   val vault = state.selectedVault ?: return
   val mode = state.vaultAction ?: return
-  val committed = state.vaultTransaction as? TransactionState.Committed
+  val committed = state.vaultTransaction as? ActionState.Committed
 
   val title =
     if (committed != null) {
@@ -49,7 +49,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
           if (mode == VaultActionMode.DEPOSIT)
             "Your USDC has been contributed to ${vault.name.ifBlank { "the vault" }}."
           else "Your shares have been redeemed from ${vault.name.ifBlank { "the vault" }}.",
-        hash = committed.hash,
+        hash = committed.reference,
         onDone = { onIntent(PortfolioIntent.DismissVaultAction) },
         enabled = !state.busy,
       )

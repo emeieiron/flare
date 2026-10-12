@@ -28,11 +28,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.abs
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
-import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
