@@ -988,15 +988,7 @@ internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
     venue.receive?.summary?.let {
       Text(it, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
-    if (address.isNotBlank()) {
-      FlareQrCode(
-        address,
-        "QR code for your ${venue.chain.name} address",
-        Modifier.padding(top = 20.dp).size(200.dp).align(Alignment.CenterHorizontally),
-      )
-      FundingAddress(address, Modifier.padding(top = 20.dp))
-    }
-    venue.receive?.warning?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO) }
+    // Above the address, so a notice among the actions never pushes it out of view.
     venue.receive?.faucet?.let { faucet ->
       faucet.note?.let {
         Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
@@ -1009,6 +1001,15 @@ internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
         style = FlareButtonStyle.OUTLINE,
       )
     }
+    if (address.isNotBlank()) {
+      FlareQrCode(
+        address,
+        "QR code for your ${venue.chain.name} address",
+        Modifier.padding(top = 20.dp).size(200.dp).align(Alignment.CenterHorizontally),
+      )
+      FundingAddress(address, Modifier.padding(top = 20.dp))
+    }
+    venue.receive?.warning?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO) }
   }
 }
 
