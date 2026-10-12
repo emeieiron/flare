@@ -124,6 +124,10 @@ data class OnboardingUiState(
   val builderOptIn: Boolean = true,
   /** Why builder support didn't turn on; setup is otherwise done and waits for the person to go on. */
   val builderNotice: String? = null,
+  /** What the last check for the first deposit found, when the person asked for it. */
+  val fundingNotice: String? = null,
+  /** Setup was opened from inside the app, rather than as the first thing it shows. */
+  val inApp: Boolean = false,
   val busy: Boolean = false,
   val error: String? = null,
 )
@@ -173,6 +177,12 @@ sealed interface OnboardingIntent {
 
   /** Checks whether the first deposit arrived, moving on to enabling trading once it has. */
   data object CheckFunding : OnboardingIntent
+
+  /** The same check, asked for by the person, who sees it run and what it found. */
+  data object CheckFundingNow : OnboardingIntent
+
+  /** Leaves setup waiting for funds and opens the app; actions wait until setup finishes. */
+  data object DeferSetup : OnboardingIntent
 
   data class InitializeMode(val mode: String, val profileId: String? = null) : OnboardingIntent
 
@@ -230,7 +240,9 @@ class OnboardingViewModel(
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
       is OnboardingIntent.InitializeMode -> {
-        if (subflowMode == null) {
+        if (intent.mode.uppercase() == RESUME) {
+          resume(intent.profileId)
+        } else if (subflowMode == null) {
           subflowMode = intent.mode
           viewModelScope.launch {
             previousProfileId = preferences.values.first().activeProfileId
@@ -243,6 +255,7 @@ class OnboardingViewModel(
               }
             }
           }
+          local.value = local.value.copy(inApp = true)
         }
       }
       is OnboardingIntent.SetBuilderOptIn ->
@@ -307,6 +320,8 @@ class OnboardingViewModel(
           }
         }
       OnboardingIntent.CheckFunding -> checkFunding()
+      OnboardingIntent.CheckFundingNow -> checkFundingNow()
+      OnboardingIntent.DeferSetup -> deferSetup()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
@@ -336,7 +351,10 @@ class OnboardingViewModel(
                 preferences.removeProfile(toClean)
               }
             }
-            previousProfileId?.let { preferences.activateProfile(it) }
+            val previous = previousProfileId
+            if (previous != null && preferences.values.first().profiles.any { it.id == previous }) {
+              preferences.activateProfile(previous)
+            }
             effectChannel.send(OnboardingEffect.Cancelled)
           }
         } else {
@@ -356,12 +374,16 @@ class OnboardingViewModel(
         local.value = local.value.copy(input = intent.value, error = null)
         checkTradingAccount()
       }
-      is OnboardingIntent.ChangeConfirmation ->
+      is OnboardingIntent.ChangeConfirmation -> {
+        val state = local.value
+        val word = state.backupWords.getOrNull(intent.index)
         local.value =
-          local.value.copy(
-            confirmations = local.value.confirmations + (intent.index to intent.value),
-            error = null,
-          )
+          if (word == null || intent.value.trim().equals(word, ignoreCase = true)) {
+            state.copy(confirmations = state.confirmations + (intent.index to intent.value), error = null)
+          } else {
+            state.copy(error = "That’s not word ${intent.index + 1}. Try another.")
+          }
+      }
     }
   }
 
@@ -462,6 +484,50 @@ class OnboardingViewModel(
           local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, error = null)
         }
       }
+  }
+
+  private fun checkFundingNow() {
+    if (local.value.step != OnboardingStep.FUND_ACCOUNT) return
+    launchAction("Flare couldn’t check for your deposit.") {
+      local.value = local.value.copy(fundingNotice = null)
+      if (accounts.awaitsFirstDeposit()) {
+        local.value =
+          local.value.copy(fundingNotice = "No deposit has arrived yet. It can take a few minutes after you send it.")
+      } else if (local.value.step == OnboardingStep.FUND_ACCOUNT) {
+        local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING)
+      }
+    }
+  }
+
+  /**
+   * Opens the app for a wallet waiting on its first deposit. Only a step that can't finish without
+   * funds offers it, so the wallet and its backup are already in place.
+   */
+  private fun deferSetup() {
+    if (local.value.step != OnboardingStep.FUND_ACCOUNT) return
+    launchAction("Flare couldn’t open the app.") {
+      preferences.deferSetup()
+      createdProfileId = null
+      clearSensitiveState()
+      effectChannel.send(OnboardingEffect.Completed)
+    }
+  }
+
+  /**
+   * Picks up a first setup that stopped, such as after the app was closed. It stays the first setup:
+   * stepping back from it returns to the start and leaves no half-made wallet behind. Asked again,
+   * as when the app unlocks once more, it keeps the place it already has.
+   */
+  private fun resume(profileId: String?) {
+    if (profileId == null) return
+    createdProfileId = profileId
+    if (local.value.step != OnboardingStep.WELCOME) return
+    viewModelScope.launch {
+      if (preferences.values.first().profiles.any { it.id == profileId }) {
+        preferences.activateProfile(profileId)
+        prepareOwnerAccount()
+      }
+    }
   }
 
   private fun discoverSubaccounts() =
@@ -741,6 +807,7 @@ class OnboardingViewModel(
         profile = local.value.profile,
         busy = local.value.busy,
         builderOptIn = local.value.builderOptIn,
+        inApp = local.value.inApp,
       )
   }
 
@@ -801,6 +868,9 @@ class OnboardingViewModel(
 }
 
 private const val TRADING_ACCOUNT_CHECK_DELAY_MS = 400L
+
+/** A first setup picked up where it stopped, as opposed to one opened from inside the app. */
+const val RESUME = "RESUME"
 
 private val OpenAccountPrompt = VaultPrompt("Open trading account", "Confirm your identity")
 private val EnableTradingPrompt = VaultPrompt("Enable trading", "Confirm your identity")

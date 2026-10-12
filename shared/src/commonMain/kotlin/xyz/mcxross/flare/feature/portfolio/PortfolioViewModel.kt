@@ -21,6 +21,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.FeePayment
@@ -84,6 +87,8 @@ data class SpotHolding(
 data class PortfolioUiState(
   /** What the venue supports; screens hide the rest. */
   val capabilities: VenueCapabilities = VenueCapabilities.All,
+  /** What the wallet still needs when its setup was left for later; its actions wait meanwhile. */
+  val setupNeed: SetupNeed? = null,
   /** What the venue calls its reward points, such as Amps. */
   val rewardPointsName: String? = null,
   val profile: WalletProfile = WalletProfile(),
@@ -252,6 +257,7 @@ class PortfolioViewModel(
   private val marketDetails: MarketDetailsRepository,
   venue: VenueDescriptor,
   private val assetCatalog: AssetCatalogRepository? = null,
+  private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chain = venue.chain
@@ -271,6 +277,13 @@ class PortfolioViewModel(
   private var lastPositionAction: TradeAction? = null
 
   init {
+    setupGate?.let { gate ->
+      viewModelScope.launch {
+        gate.need.collect { need ->
+          local.update { it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need)) }
+        }
+      }
+    }
     viewModelScope.launch {
       runSuspendCatching { accounts.refresh() }
     }

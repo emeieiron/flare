@@ -14,6 +14,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.DefaultAssetCatalogRepository
 import xyz.mcxross.flare.feature.markets.MarketsViewModel
@@ -62,6 +63,7 @@ fun flareModule(
   single { preferences }
   single { walletVault }
   singleOf(::AppPreferences)
+  single { AccountSetupGate(get(), get()) }
   singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }
   viewModelOf(::MarketsViewModel)
   viewModelOf(::OnboardingViewModel)
@@ -69,5 +71,5 @@ fun flareModule(
   viewModelOf(::OrdersViewModel)
   viewModelOf(::TradeViewModel)
   // Only venues with a backend session (Decibel's Worker) bind a SessionRepository.
-  viewModel { SettingsViewModel(get(), get(), get(), getOrNull(), get(), get()) }
+  viewModel { SettingsViewModel(get(), get(), get(), getOrNull(), get(), get(), get()) }
 }

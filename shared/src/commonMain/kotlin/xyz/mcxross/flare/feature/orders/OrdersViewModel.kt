@@ -13,6 +13,9 @@ import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketsRepository
@@ -43,6 +46,8 @@ enum class OrdersSection(val label: String) {
 data class OrdersUiState(
   /** What the venue supports; screens hide the rest. */
   val capabilities: VenueCapabilities = VenueCapabilities.All,
+  /** What the wallet still needs when its setup was left for later; its actions wait meanwhile. */
+  val setupNeed: SetupNeed? = null,
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
   val spotMarkets: Set<String> = emptySet(),
@@ -99,12 +104,20 @@ class OrdersViewModel(
   private val trading: TradingRepository,
   private val markets: MarketsRepository,
   venue: VenueDescriptor,
+  private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val minimumFeeTopUp = venue.chain.minimumFeeTopUp
   private val local = MutableStateFlow(OrdersUiState(capabilities = capabilities))
 
   init {
+    setupGate?.let { gate ->
+      viewModelScope.launch {
+        gate.need.collect { need ->
+          local.update { it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need)) }
+        }
+      }
+    }
     viewModelScope.launch {
       accounts.snapshot.collect {
         if (local.value.section == OrdersSection.TWAP) {

@@ -1,56 +1,40 @@
 package xyz.mcxross.flare.feature.onboarding
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import xyz.mcxross.flare.data.AccountHistoryKind
-import xyz.mcxross.flare.data.AccountHistorySnapshot
-import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.AccountSnapshot
-import xyz.mcxross.flare.data.CredentialFormat
-import xyz.mcxross.flare.data.CredentialParser
-import xyz.mcxross.flare.data.FeePayment
-import xyz.mcxross.flare.data.OwnerBackup
-import xyz.mcxross.flare.data.PendingTransaction
-import xyz.mcxross.flare.data.ReconciliationResult
-import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.WalletProfile
-import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.LaunchStage
+import xyz.mcxross.flare.launchStage
+import xyz.mcxross.flare.resumedSetup
+import xyz.mcxross.flare.shownWallet
+import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.testing.SetupBackupWords
+import xyz.mcxross.flare.testing.MemoryPreferences
+import xyz.mcxross.flare.testing.SETUP_OWNER
+import xyz.mcxross.flare.testing.SETUP_PHRASE
+import xyz.mcxross.flare.testing.SetupAccounts
+import xyz.mcxross.flare.testing.SetupCredentials
+import xyz.mcxross.flare.testing.SetupTrading
+import xyz.mcxross.flare.testing.SetupWallets
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.VenueSetup
-import xyz.mcxross.flare.venue.model.ActionState
-import xyz.mcxross.flare.venue.model.MarketKind
-import xyz.mcxross.flare.venue.model.PortfolioChartRange
-import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
-import xyz.mcxross.flare.venue.model.Rewards
-import xyz.mcxross.flare.venue.model.TradeAction
-import xyz.mcxross.flare.venue.model.TradingAccount
-import xyz.mcxross.flare.venue.model.TradingKey
-import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.venue.model.VaultPosition
-import xyz.mcxross.flare.venue.model.VaultSummary
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OnboardingViewModelTest {
@@ -181,211 +165,233 @@ class OnboardingViewModelTest {
     assertEquals(null, vm.uiState.value.profile.apiWalletAddress)
   }
 
-  private fun viewModel(accounts: SetupAccounts, setup: VenueSetup) =
+  @Test
+  fun aWalletWaitingForItsFirstDepositCanBrowseAndOpensTheAppOnRelaunch() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
+    val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertFalse(vm.uiState.value.inApp)
+
+    vm.onIntent(OnboardingIntent.DeferSetup)
+
+    assertEquals(OnboardingEffect.Completed, completed.await())
+    val saved = preferences.values.first()
+    val profile = saved.profiles.single()
+    assertTrue(profile.setupDeferred)
+    assertFalse(profile.onboardingComplete)
+    assertEquals(OWNER, profile.selectedSubaccount)
+    // The next launch unlocks straight into the app rather than setup.
+    assertEquals(LaunchStage.LOCKED, launchStage(saved, walletLoaded = true, unlocked = false))
+    assertEquals(LaunchStage.READY, launchStage(saved, walletLoaded = true, unlocked = true))
+    assertNull(resumedSetup(saved))
+    assertEquals(profile.id, shownWallet(saved, null))
+  }
+
+  @Test
+  fun onlyAStepWaitingForFundsOffersToBrowse() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    // A funded account goes straight to enabling trading, which needs nothing it lacks.
+    val funded = viewModel(SetupAccounts(), HyperliquidSetup, preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { funded.uiState.collect {} }
+    funded.onIntent(OnboardingIntent.ShowImport)
+    funded.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    funded.onIntent(OnboardingIntent.ImportCredential)
+    assertEquals(OnboardingStep.ENABLE_TRADING, funded.uiState.value.step)
+    funded.onIntent(OnboardingIntent.DeferSetup)
+    assertEquals(OnboardingStep.ENABLE_TRADING, funded.uiState.value.step)
+    assertFalse(preferences.values.first().profiles.single().setupDeferred)
+
+    // Decibel opens accounts unfunded: setup never waits for a deposit, so it never stops there.
+    val decibel = AppPreferences(MemoryPreferences())
+    val accounts = SetupAccounts()
+    val vm = viewModel(accounts, VenueSetup(), decibel, SetupWallets(decibel))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    assertEquals(OnboardingStep.SUBACCOUNT, vm.uiState.value.step)
+    vm.onIntent(OnboardingIntent.DeferSetup)
+    assertEquals(OnboardingStep.SUBACCOUNT, vm.uiState.value.step)
+    assertFalse(decibel.values.first().profiles.single().setupDeferred)
+    assertEquals(0, accounts.depositChecks)
+  }
+
+  @Test
+  fun theInAppPromptResumesSetupWhereItStopped() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val id = deferredWallet(preferences)
+    val accounts = SetupAccounts().apply { awaitingDeposit = true }
+    val wallets = SetupWallets(preferences).apply {
+      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
+    }
+    val vm = viewModel(accounts, HyperliquidSetup, preferences, wallets)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+
+    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertTrue(vm.uiState.value.inApp)
+
+    accounts.awaitingDeposit = false
+    vm.onIntent(OnboardingIntent.CheckFundingNow)
+    assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
+    vm.onIntent(OnboardingIntent.EnableTrading)
+
+    assertEquals(OnboardingEffect.Completed, completed.await())
+    val profile = preferences.values.first().profiles.single()
+    assertTrue(profile.onboardingComplete)
+    assertFalse(profile.setupDeferred)
+  }
+
+  @Test
+  fun backAfterTheAppUnlocksAgainReturnsToTheStartWithoutCrashing() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
+    val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    val id = preferences.values.first().profiles.single().id
+
+    // Backgrounding locks the app; unlocking shows setup again, which asks to resume this wallet.
+    vm.onIntent(OnboardingIntent.ClearSensitiveState)
+    vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+
+    vm.onIntent(OnboardingIntent.Back)
+
+    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun aColdLaunchResumesTheFirstSetupAndBackStillReturnsToTheStart() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(
+      AccountProfile("owner_$OWNER", ownerAddress = OWNER, ownerBackupConfirmed = true, selectedSubaccount = OWNER)
+    )
+    val saved = preferences.values.first()
+    assertEquals(LaunchStage.ONBOARDING, launchStage(saved, walletLoaded = true, unlocked = true))
+    val id = assertNotNull(resumedSetup(saved))
+    val wallets = SetupWallets(preferences).apply {
+      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
+    }
+    val vm = viewModel(SetupAccounts().apply { awaitingDeposit = true }, HyperliquidSetup, preferences, wallets)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertFalse(vm.uiState.value.inApp)
+
+    vm.onIntent(OnboardingIntent.Back)
+    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun leavingAnInAppSetupWhoseWalletIsGoneDoesNotCrash() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val id = deferredWallet(preferences)
+    val wallets = SetupWallets(preferences).apply {
+      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
+    }
+    val vm = viewModel(SetupAccounts().apply { awaitingDeposit = true }, HyperliquidSetup, preferences, wallets)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    val cancelled = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
+    preferences.removeProfile(id)
+
+    vm.onIntent(OnboardingIntent.Back)
+
+    assertEquals(OnboardingEffect.Cancelled, cancelled.await())
+  }
+
+  @Test
+  fun checkingForTheDepositShowsProgressAndWhatItFound() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
+    val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+
+    val gate = CompletableDeferred<Unit>()
+    accounts.depositCheckGate = gate
+    vm.onIntent(OnboardingIntent.CheckFundingNow)
+    assertTrue(vm.uiState.value.busy)
+    gate.complete(Unit)
+
+    assertFalse(vm.uiState.value.busy)
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertEquals(
+      "No deposit has arrived yet. It can take a few minutes after you send it.",
+      vm.uiState.value.fundingNotice,
+    )
+
+    accounts.depositCheckFails = true
+    vm.onIntent(OnboardingIntent.CheckFundingNow)
+    assertEquals("Offline", vm.uiState.value.error)
+    assertNull(vm.uiState.value.fundingNotice)
+  }
+
+  @Test
+  fun aWrongWordInTheBackupQuizSaysSo() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val vm = viewModel(SetupAccounts(), VenueSetup(), preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.CreateOwner)
+    vm.onIntent(OnboardingIntent.ReviewBackup)
+    assertEquals(OnboardingStep.CONFIRM_BACKUP, vm.uiState.value.step)
+    val index = vm.uiState.value.confirmationIndices.first()
+    val right = SetupBackupWords[index]
+    val wrong = vm.uiState.value.confirmationOptions.getValue(index).first { it != right }
+
+    vm.onIntent(OnboardingIntent.ChangeConfirmation(index, wrong))
+    assertEquals("That’s not word ${index + 1}. Try another.", vm.uiState.value.error)
+    assertTrue(vm.uiState.value.confirmations.isEmpty())
+
+    vm.onIntent(OnboardingIntent.ChangeConfirmation(index, right))
+    assertNull(vm.uiState.value.error)
+    assertEquals(right, vm.uiState.value.confirmations[index])
+  }
+
+  /** A wallet whose setup was left at the funding step, as the app finds it. */
+  private suspend fun deferredWallet(preferences: AppPreferences): String {
+    val id = "owner_$OWNER"
+    preferences.registerProfile(
+      AccountProfile(id, ownerAddress = OWNER, ownerBackupConfirmed = true, selectedSubaccount = OWNER)
+    )
+    preferences.deferSetup()
+    return id
+  }
+
+  private fun viewModel(
+    accounts: SetupAccounts,
+    setup: VenueSetup,
+    preferences: AppPreferences = AppPreferences(MemoryPreferences()),
+    wallets: SetupWallets = SetupWallets(),
+  ) =
     OnboardingViewModel(
-      wallets = SetupWallets(),
+      wallets = wallets,
       credentials = SetupCredentials,
       accounts = accounts,
-      preferences = AppPreferences(MemoryPreferences()),
+      preferences = preferences,
       venue = testVenue(setup = setup),
       trading = SetupTrading,
     )
 
-  private class MemoryPreferences : DataStore<Preferences> {
-    override val data = MutableStateFlow(emptyPreferences())
-
-    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
-      transform(data.value).also { data.value = it }
-  }
-
-  private class SetupWallets : WalletRepository {
-    override val profile = MutableStateFlow(WalletProfile())
-    override val authorizationGeneration: Long = 0L
-
-    override fun requireAuthorization(generation: Long) {}
-
-    override suspend fun createOwner(prompt: VaultPrompt) = error("Not used")
-
-    override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String {
-      profile.value = profile.value.copy(ownerAddress = OWNER, ownerBackupConfirmed = true)
-      return OWNER
-    }
-
-    override suspend fun confirmOwnerBackup() {}
-
-    override suspend fun createApiWallet(prompt: VaultPrompt): String {
-      profile.value = profile.value.copy(apiWalletAddress = "0xapi")
-      return "0xapi"
-    }
-
-    override suspend fun importApiWallet(
-      key: String,
-      prompt: VaultPrompt,
-      verify: suspend (address: String) -> Unit,
-    ): String = error("Not used")
-
-    override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = error("Not used")
-
-    override suspend fun exportApiWallet(prompt: VaultPrompt): String = error("Not used")
-
-    override suspend fun removeOwner(prompt: VaultPrompt) {}
-
-    override suspend fun removeApiWallet(prompt: VaultPrompt) {}
-
-    override fun lock() {}
-  }
-
-  private object SetupCredentials : CredentialParser {
-    override fun detect(input: String) = CredentialFormat.RECOVERY_PHRASE
-
-    override fun normalize(input: String) = input
-
-    override fun keyAddress(input: String): String? = null
-
-    override fun sameAddress(first: String, second: String) = first == second
-
-    override fun isAddress(input: String) = input.startsWith("0x")
-  }
-
-  private class SetupAccounts : AccountRepository {
-    val events = mutableListOf<String>()
-    val listed =
-      listOf(
-        TradingAccount("0xa1", OWNER, primary = true),
-        TradingAccount("0xa2", OWNER),
-      )
-    override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(AccountSnapshot())
-    override val history: StateFlow<AccountHistorySnapshot> =
-      MutableStateFlow(AccountHistorySnapshot())
-
-    override suspend fun delegations(): List<TradingKey> = emptyList()
-
-    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt) = error("Not used")
-
-    override suspend fun restoreTrading() {}
-
-    override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
-
-    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
-      events += "discover"
-      return listed
-    }
-
-    override suspend fun subaccounts(owner: String): List<TradingAccount> = listed
-
-    override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
-      events += "select $subaccount"
-    }
-
-    override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment) =
-      error("Not used")
-
-    override suspend fun openTradingAccount(prompt: VaultPrompt): String = error("Not used")
-
-    override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment) =
-      error("Not used")
-
-    override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {
-      events += "prepare"
-    }
-
-    var awaitingDeposit = false
-    var approveResult: ActionState = ActionState.Committed("0x")
-    var depositCheckFails = false
-
-    override suspend fun awaitsFirstDeposit(): Boolean {
-      check(!depositCheckFails) { "Offline" }
-      return awaitingDeposit
-    }
-
-    override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
-      emptyFlow<ActionState>()
-
-    override fun withdrawUsdc(
-      amount: String,
-      destination: String?,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-    ) = emptyFlow<ActionState>()
-
-    override suspend fun approveBuilderFee(
-      builderAddress: String,
-      feeBps: UInt,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-      product: MarketKind,
-    ): ActionState {
-      events += "approve builder"
-      return approveResult
-    }
-
-    override suspend fun revokeBuilderFee(
-      builderAddress: String,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-      product: MarketKind,
-    ) = error("Not used")
-
-    override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric) =
-      emptyList<PortfolioPoint>()
-
-    override suspend fun rewards(): Rewards? = null
-
-    override suspend fun redeemReferralCode(code: String) = false
-
-    override suspend fun activeTwaps() = emptyList<TwapOrder>()
-
-    override suspend fun twapHistory(limit: Int) = emptyList<TwapOrder>()
-
-    override suspend fun vaults(limit: Int) = emptyList<VaultSummary>()
-
-    override suspend fun vaultPositions() = emptyList<VaultPosition>()
-
-    override fun contributeToVault(
-      vaultAddress: String,
-      amount: String,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-    ) = emptyFlow<ActionState>()
-
-    override fun redeemFromVault(
-      vaultAddress: String,
-      shares: String,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-    ) = emptyFlow<ActionState>()
-
-    override suspend fun refresh() {}
-
-    override suspend fun refreshHistory() {}
-
-    override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
-
-    override fun startLive() {}
-  }
-
-  private object SetupTrading : TradingRepository {
-    override val pendingTransactions: Flow<List<PendingTransaction>> =
-      MutableStateFlow(emptyList())
-
-    override fun execute(
-      action: TradeAction,
-      prompt: VaultPrompt,
-      feePayment: FeePayment,
-      onPrepared: suspend (String) -> Unit,
-    ): Flow<ActionState> = emptyFlow()
-
-    override suspend fun transactionStatus(reference: String) = ActionState.Pending(reference)
-
-    override suspend fun tradingKeyFeeBalance() = 0uL
-
-    override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt) = emptyFlow<ActionState>()
-
-    override suspend fun reconcilePending() = ReconciliationResult(0, 0)
-  }
-
   private companion object {
-    const val OWNER = "0xowner"
-    const val PHRASE = "abandon abandon about"
+    val HyperliquidSetup = VenueSetup(tradingAccounts = false, openTradingAccount = false, builderFee = false)
+    const val OWNER = SETUP_OWNER
+    const val PHRASE = SETUP_PHRASE
   }
 }

@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.feature.settings
 
+import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -340,7 +341,7 @@ fun SettingsScreen(
         )
       }
       state.capabilities.unavailableReason(ActionKind.SETUP)?.let {
-        ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO)
+        UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 16.dp))
       }
       Spacer(Modifier.height(24.dp))
       Text(

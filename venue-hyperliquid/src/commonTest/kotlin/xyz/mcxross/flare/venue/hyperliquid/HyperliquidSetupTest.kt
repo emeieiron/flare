@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.hyperliquid.model.ApproveAgent
 import xyz.mcxross.flare.hyperliquid.model.ApproveBuilderFee
@@ -52,6 +54,34 @@ class HyperliquidSetupTest {
     assertTrue("Deposit" in error.message.orEmpty())
     assertTrue(harness.submitter.sent.isEmpty())
     assertNull(harness.preferences.values.first().apiWalletAddress)
+  }
+
+  @Test
+  fun aWalletBrowsingBeforeItsFirstDepositIsAskedToFundThenToEnableTrading() = runTest {
+    var role = "missing"
+    var roleChecks = 0
+    val harness =
+      SetupHarness { type, _ ->
+          if (type == "userRole") {
+            roleChecks++
+            """{"role":"$role"}"""
+          } else null
+        }
+        .withOwner()
+    harness.preferences.setSelectedSubaccount(SetupHarness.OWNER)
+    harness.preferences.deferSetup()
+    val accounts = testAccounts(harness.client, harness.preferences, harness.setup)
+    val gate = AccountSetupGate(harness.preferences, accounts) { harness.now }
+
+    gate.refresh()
+    assertEquals(SetupNeed.FUNDS, gate.need.first())
+    role = "user"
+    gate.refresh()
+    assertEquals(1, roleChecks, "a check made moments ago is reused")
+    harness.now += 60_000
+    gate.refresh()
+    assertEquals(SetupNeed.TRADING, gate.need.first())
+    assertEquals(2, roleChecks)
   }
 
   @Test

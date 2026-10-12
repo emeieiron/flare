@@ -67,6 +67,8 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
@@ -77,6 +79,7 @@ import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareNavigationItem
 import xyz.mcxross.flare.design.FlareSplashScreen
 import xyz.mcxross.flare.design.FlareTheme
+import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.SplashMarkSize
@@ -93,6 +96,7 @@ import xyz.mcxross.flare.di.flareModule
 import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
+import xyz.mcxross.flare.feature.onboarding.RESUME
 import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
 import xyz.mcxross.flare.feature.portfolio.PositionRoute
@@ -105,6 +109,7 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlareDatabase
+import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.Venue
 
 /** Reconnection is automatic and unobtrusive: quick at first, then patient. */
@@ -242,42 +247,42 @@ private fun FlareAppFlow() {
         }
       }
   }
-  val hasCompletedProfile = persisted?.profiles?.any { it.onboardingComplete } == true
-  // The finished wallet the shell shows. While another wallet is being set up it becomes the active
-  // one, and the shell keeps showing the wallet it had rather than jumping to another finished one.
   val shownWallet = remember { arrayOf<String?>(null) }
   val lastCompletedProfileId = remember(persisted?.profiles, persisted?.activeProfileId) {
-    val activeFinished =
-      persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && it.onboardingComplete }?.id
-    val stillFinished = shownWallet[0]?.takeIf { id -> persisted?.profiles?.any { it.id == id && it.onboardingComplete } == true }
-    (activeFinished ?: stillFinished ?: persisted?.profiles?.firstOrNull { it.onboardingComplete }?.id)
-      .also { shownWallet[0] = it }
+    shownWallet(persisted, shownWallet[0]).also { shownWallet[0] = it }
   }
   val savedScreens = rememberSaveableStateHolder()
-  val stage =
-    when {
-      persisted == null || walletProfile == null -> LaunchStage.LOADING
-      hasCredentials && !unlocked -> LaunchStage.LOCKED
-      !hasCompletedProfile -> LaunchStage.ONBOARDING
-      else -> LaunchStage.READY
-    }
+  val stage = launchStage(persisted, walletLoaded = walletProfile != null, unlocked = unlocked)
   // Whether this is the moment setup finished, worked out as the stage changes so the curtain covers
-  // the app in that same frame.
+  // the app in that same frame. A wallet that left setup for later isn't ready to trade yet.
   val lastStage = remember { arrayOf(stage) }
   val finishedSetup =
     remember(stage) {
-      (lastStage[0] == LaunchStage.ONBOARDING && stage == LaunchStage.READY).also { lastStage[0] = stage }
+      (lastStage[0] == LaunchStage.ONBOARDING && stage == LaunchStage.READY &&
+        persisted?.profiles?.any { it.id == lastCompletedProfileId && it.onboardingComplete } == true)
+        .also { lastStage[0] = stage }
     }
+  // A wallet waiting on its first deposit is checked again each time the app comes back, and when
+  // its account changes, never more often than the gate allows.
+  val setupGate: AccountSetupGate = koinInject()
+  val setupPending =
+    persisted?.profiles?.any { it.id == persisted?.activeProfileId && it.setupPending } == true
+  LaunchedEffect(unlocked, foreground, setupPending, persisted?.activeProfileId) {
+    if (!unlocked || !foreground || !setupPending) return@LaunchedEffect
+    setupGate.refresh()
+    accounts.snapshot
+      .map { it.account to it.overview }
+      .distinctUntilChanged()
+      .collectLatest { setupGate.refresh(whenDue = true) }
+  }
   Box(Modifier.fillMaxSize()) {
     when (stage) {
       LaunchStage.ONBOARDING -> {
         // A setup that was interrupted picks up where it stopped instead of starting a second account.
-        val unfinished = remember {
-          persisted?.profiles?.firstOrNull { it.id == persisted?.activeProfileId && !it.onboardingComplete }?.id
-        }
+        val unfinished = remember { resumedSetup(persisted) }
         OnboardingRoute(
           onCompleted = {},
-          initialMode = unfinished?.let { "CONTINUE" },
+          initialMode = unfinished?.let { RESUME },
           profileId = unfinished,
         )
       }
@@ -297,13 +302,6 @@ private fun FlareAppFlow() {
     }
     LaunchCurtain(stage, finishedSetup, locked = unlockError != null, onUnlock = { retry++ })
   }
-}
-
-private enum class LaunchStage {
-  LOADING,
-  LOCKED,
-  ONBOARDING,
-  READY,
 }
 
 /**
@@ -443,111 +441,128 @@ private fun FlareShell() {
   }
 
   val onOpenSetup = { navigateTo(3) }
+  val preferences: AppPreferences = koinInject()
+  val saved by preferences.values.collectAsStateWithLifecycle(initialValue = null)
+  var receiveRequested by remember { mutableStateOf(false) }
+  val finishSetup: (SetupNeed) -> Unit = { need ->
+    when (need) {
+      SetupNeed.FUNDS -> {
+        receiveRequested = true
+        navigateTo(3)
+      }
+      SetupNeed.TRADING ->
+        saved?.activeProfileId?.let { navController.navigate(AccountSetupDestination("CONTINUE", it)) }
+    }
+  }
 
-  Scaffold(
-    contentWindowInsets = WindowInsets.safeDrawing,
-    bottomBar = {
-      if (!isDetailDestination)
-        FlareBottomNavigation(
-          items = navigationItems,
-          selectedIndex = selectedIndex,
-          onSelected = ::navigateTo,
-          modifier = Modifier.navigationBarsPadding(),
-        )
-    },
-  ) { contentPadding ->
-    // No background of its own: the scaffold paints the same black beneath, and each detail page paints
-    // its own as it slides over, so another full-screen layer here would only be overdraw.
-    NavHost(
-      navController = navController,
-      startDestination = MarketsDestination,
-      modifier =
-        Modifier.fillMaxSize()
-          .padding(contentPadding)
-          .consumeWindowInsets(contentPadding)
-          .clipToBounds(),
-      enterTransition = {
-        if (targetState.destination.isDetailPage()) pagePushEnter() else EnterTransition.None
+  CompositionLocalProvider(LocalFinishSetup provides finishSetup) {
+    Scaffold(
+      contentWindowInsets = WindowInsets.safeDrawing,
+      bottomBar = {
+        if (!isDetailDestination)
+          FlareBottomNavigation(
+            items = navigationItems,
+            selectedIndex = selectedIndex,
+            onSelected = ::navigateTo,
+            modifier = Modifier.navigationBarsPadding(),
+          )
       },
-      exitTransition = {
-        if (targetState.destination.isDetailPage()) pagePushExit() else ExitTransition.None
-      },
-      popEnterTransition = {
-        if (initialState.destination.isDetailPage()) pagePopEnter() else EnterTransition.None
-      },
-      popExitTransition = {
-        if (initialState.destination.isDetailPage()) pagePopExit() else ExitTransition.None
-      },
-      predictivePopEnterTransition = { edge ->
-        if (initialState.destination.isDetailPage()) pagePredictivePopEnter(edge) else EnterTransition.None
-      },
-      predictivePopExitTransition = { edge ->
-        if (initialState.destination.isDetailPage()) pagePredictivePopExit(edge) else ExitTransition.None
-      },
-      sizeTransform = { null },
-    ) {
-      composable<PortfolioDestination> {
-        PortfolioRoute(
-          onOpenSetup = onOpenSetup,
-          onMarketClick = { marketAddress ->
-            navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
-          },
-          onPositionClick = { market ->
-            navController.navigate(PositionDestination(market)) { launchSingleTop = true }
-          },
-        )
-      }
-      composable<PositionDestination> { backStackEntry ->
-        // Shares the portfolio's view model, so the list and the position never disagree.
-        val portfolioEntry =
-          remember(backStackEntry) { navController.getBackStackEntry<PortfolioDestination>() }
-        PositionRoute(
-          market = backStackEntry.toRoute<PositionDestination>().market,
-          onBack = { navController.popBackStack() },
-          viewModel = koinViewModel(viewModelStoreOwner = portfolioEntry),
-        )
-      }
-      composable<MarketsDestination> {
-        MarketsRoute(
-          onMarketClick = { marketAddress ->
-            navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
-          }
-        )
-      }
-      composable<TradeDestination> { backStackEntry ->
-        TradeRoute(
-          onOpenActivity = {
-            // The finished order isn't kept: returning to Markets shows the list, not the receipt.
-            navController.popBackStack()
-            navigateTo(2)
-          },
-          marketAddress = backStackEntry.toRoute<TradeDestination>().marketAddress,
-          onBack = { navController.popBackStack() },
-          onOpenSetup = onOpenSetup,
-        )
-      }
-      composable<OrdersDestination> { OrdersRoute(onOpenSetup) }
-      composable<AccountDestination> {
-        AccountRoute(
-          onOpenSettings = { navController.navigate(SettingsDestination) },
-          onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
-          onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
-          onContinueSetup = { id -> navController.navigate(AccountSetupDestination("CONTINUE", id)) },
-        )
-      }
-      composable<SettingsDestination> {
-        SettingsRoute(
-          onBack = { navController.popBackStack() },
-        )
-      }
-      composable<AccountSetupDestination> { backStackEntry ->
-        val setup = backStackEntry.toRoute<AccountSetupDestination>()
-        OnboardingRoute(
-          initialMode = setup.mode,
-          profileId = setup.profileId,
-          onCompleted = { navController.popBackStack() },
-          onBack = { navController.popBackStack() },
-        )
+    ) { contentPadding ->
+      // No background of its own: the scaffold paints the same black beneath, and each detail page paints
+      // its own as it slides over, so another full-screen layer here would only be overdraw.
+      NavHost(
+        navController = navController,
+        startDestination = MarketsDestination,
+        modifier =
+          Modifier.fillMaxSize()
+            .padding(contentPadding)
+            .consumeWindowInsets(contentPadding)
+            .clipToBounds(),
+        enterTransition = {
+          if (targetState.destination.isDetailPage()) pagePushEnter() else EnterTransition.None
+        },
+        exitTransition = {
+          if (targetState.destination.isDetailPage()) pagePushExit() else ExitTransition.None
+        },
+        popEnterTransition = {
+          if (initialState.destination.isDetailPage()) pagePopEnter() else EnterTransition.None
+        },
+        popExitTransition = {
+          if (initialState.destination.isDetailPage()) pagePopExit() else ExitTransition.None
+        },
+        predictivePopEnterTransition = { edge ->
+          if (initialState.destination.isDetailPage()) pagePredictivePopEnter(edge) else EnterTransition.None
+        },
+        predictivePopExitTransition = { edge ->
+          if (initialState.destination.isDetailPage()) pagePredictivePopExit(edge) else ExitTransition.None
+        },
+        sizeTransform = { null },
+      ) {
+        composable<PortfolioDestination> {
+          PortfolioRoute(
+            onOpenSetup = onOpenSetup,
+            onMarketClick = { marketAddress ->
+              navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
+            },
+            onPositionClick = { market ->
+              navController.navigate(PositionDestination(market)) { launchSingleTop = true }
+            },
+          )
+        }
+        composable<PositionDestination> { backStackEntry ->
+          // Shares the portfolio's view model, so the list and the position never disagree.
+          val portfolioEntry =
+            remember(backStackEntry) { navController.getBackStackEntry<PortfolioDestination>() }
+          PositionRoute(
+            market = backStackEntry.toRoute<PositionDestination>().market,
+            onBack = { navController.popBackStack() },
+            viewModel = koinViewModel(viewModelStoreOwner = portfolioEntry),
+          )
+        }
+        composable<MarketsDestination> {
+          MarketsRoute(
+            onMarketClick = { marketAddress ->
+              navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
+            }
+          )
+        }
+        composable<TradeDestination> { backStackEntry ->
+          TradeRoute(
+            onOpenActivity = {
+              // The finished order isn't kept: returning to Markets shows the list, not the receipt.
+              navController.popBackStack()
+              navigateTo(2)
+            },
+            marketAddress = backStackEntry.toRoute<TradeDestination>().marketAddress,
+            onBack = { navController.popBackStack() },
+            onOpenSetup = onOpenSetup,
+          )
+        }
+        composable<OrdersDestination> { OrdersRoute(onOpenSetup) }
+        composable<AccountDestination> {
+          AccountRoute(
+            onOpenSettings = { navController.navigate(SettingsDestination) },
+            onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
+            onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
+            onContinueSetup = { id -> navController.navigate(AccountSetupDestination("CONTINUE", id)) },
+            openReceive = receiveRequested,
+            onReceiveOpened = { receiveRequested = false },
+          )
+        }
+        composable<SettingsDestination> {
+          SettingsRoute(
+            onBack = { navController.popBackStack() },
+          )
+        }
+        composable<AccountSetupDestination> { backStackEntry ->
+          val setup = backStackEntry.toRoute<AccountSetupDestination>()
+          OnboardingRoute(
+            initialMode = setup.mode,
+            profileId = setup.profileId,
+            onCompleted = { navController.popBackStack() },
+            onBack = { navController.popBackStack() },
+          )
+        }
       }
     }
   }

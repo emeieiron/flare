@@ -58,7 +58,20 @@ data class AccountProfile(
   val createdInApp: Boolean = false,
   /** Its trading account went through on chain, so it's never opened a second time. */
   val tradingAccountOpened: Boolean = false,
+  /**
+   * Setup stopped at a step that waits for funds and the person chose to look around meanwhile: the
+   * wallet opens the app, and actions wait until setup finishes.
+   */
+  val setupDeferred: Boolean = false,
 )
+
+/** The wallet opens the app: its setup finished, or was left for later while it waits for funds. */
+val AccountProfile.opensApp: Boolean
+  get() = onboardingComplete || setupDeferred
+
+/** Setup was left for later and hasn't finished since. */
+val AccountProfile.setupPending: Boolean
+  get() = setupDeferred && !onboardingComplete
 
 data class FlarePreferences(
   val activeProfileId: String = "legacy",
@@ -224,8 +237,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   }
 
   suspend fun setOnboardingComplete(complete: Boolean) = updateActiveProfile {
-    it.copy(onboardingComplete = complete)
+    it.copy(onboardingComplete = complete, setupDeferred = it.setupDeferred && !complete)
   }
+
+  suspend fun deferSetup() = updateActiveProfile { it.copy(setupDeferred = true) }
 
   suspend fun setBuilderSupport(
     builderAddress: String?,

@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.venue.decibel
 
+import kotlinx.coroutines.test.runTest
+import kotlin.test.assertFalse
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -78,6 +80,13 @@ class DecibelVenueTest {
     assertSame(koin.get<SessionRepository>(), koin.get<AptosSessionRepository>())
     assertIs<WorkerSessionRepository>(koin.get<SessionRepository>())
     assertSame(DecibelCredentialParser, koin.get<CredentialParser>())
+  }
+
+  @Test
+  fun setupNeverWaitsForAFirstDepositOnDecibel() = runTest {
+    // Decibel opens and delegates an unfunded account with sponsored fees, so setup never stops at
+    // funding and never offers to leave setup for later.
+    assertFalse(koinWith(DecibelVenue()).get<AccountRepository>().awaitsFirstDeposit())
   }
 
   @Test

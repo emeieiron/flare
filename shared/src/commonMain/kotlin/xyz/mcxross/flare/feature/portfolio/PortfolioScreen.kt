@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import xyz.mcxross.flare.design.LocalFinishSetup
+import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -315,7 +317,10 @@ private fun PortfolioOverview(
     PortfolioMetric("Unrealized P&L", overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—", Modifier.weight(1f))
   }
   Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-    if (state.profile.ownerAddress != null && state.capabilities.unavailableReason(ActionKind.FUNDS) == null) FlareButton("Transfer",
+    val setupNeed = state.setupNeed
+    val finishSetup = LocalFinishSetup.current
+    if (setupNeed != null) FlareButton(setupNeed.actionLabel, { finishSetup(setupNeed) }, Modifier.weight(1f))
+    else if (state.profile.ownerAddress != null && state.capabilities.unavailableReason(ActionKind.FUNDS) == null) FlareButton("Transfer",
       { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
     FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
   }
@@ -431,10 +436,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
     Text("Your latest deposit is locked until ${formatCalendarDateTime(it)}.", Modifier.padding(top = 12.dp),
       color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
   }
-  actionsUnavailable?.let {
-    Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall)
-  }
+  actionsUnavailable?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 12.dp)) }
 }
 
 @Composable

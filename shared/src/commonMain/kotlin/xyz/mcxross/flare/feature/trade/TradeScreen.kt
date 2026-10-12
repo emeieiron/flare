@@ -62,6 +62,7 @@ import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.IndicatorChip
+import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
@@ -304,8 +305,11 @@ fun TradeScreen(
         val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
         val twapUnavailable = state.capabilities.unavailableReason(ActionKind.TWAP)
           ?.takeIf { state.orderType == OrderType.TWAP && stage == TradeStage.EDIT }
+        // A wallet that left setup for later is shown the way to finish it instead of a ticket.
+        val setupNeed = state.setupNeed?.takeIf { stage == TradeStage.MARKET && actionsUnavailable == it.reason }
+        val finishSetup = LocalFinishSetup.current
         val enabled = when (stage) {
-          TradeStage.MARKET -> !state.orderBusy && actionsUnavailable == null
+          TradeStage.MARKET -> !state.orderBusy && (actionsUnavailable == null || setupNeed != null)
           TradeStage.RESULT -> !state.orderBusy
           else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() && twapUnavailable == null &&
             !state.orderBusy && (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
@@ -319,7 +323,7 @@ fun TradeScreen(
           }
           FlareButton(
             when (stage) {
-              TradeStage.MARKET -> "Trade ${quote.market.symbol}"
+              TradeStage.MARKET -> setupNeed?.actionLabel ?: "Trade ${quote.market.symbol}"
               TradeStage.EDIT -> "Review order"
               TradeStage.REVIEW -> when {
                 state.orderBusy -> "Placing your order…"
@@ -332,7 +336,11 @@ fun TradeScreen(
             {
               clearFocus()
               when (stage) {
-                TradeStage.MARKET -> if (state.tradingKeyAddress == null) onOpenSetup() else trading = true
+                TradeStage.MARKET -> when {
+                  setupNeed != null -> finishSetup(setupNeed)
+                  state.tradingKeyAddress == null -> onOpenSetup()
+                  else -> trading = true
+                }
                 TradeStage.EDIT -> reviewing = true
                 TradeStage.REVIEW ->
                   onIntent(if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side))

@@ -573,11 +573,11 @@ private fun WordQuestion(
         ) {
           if (option == answer) {
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            onChoose(option)
           } else {
             haptics.performHapticFeedback(HapticFeedbackType.Reject)
             missed = option
           }
+          onChoose(option)
         }
       }
     }
@@ -968,11 +968,19 @@ internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
         "Setup continues on its own when it does.",
     actions = {
       SetupActions(state, onIntent) {
+        state.fundingNotice?.let { ActionNotice(it) }
         FlareButton(
           "Check again",
-          { onIntent(OnboardingIntent.CheckFunding) },
+          { onIntent(OnboardingIntent.CheckFundingNow) },
           Modifier.fillMaxWidth(),
           working = state.busy,
+        )
+        FlareButton(
+          if (state.inApp) "Later" else "Browse markets",
+          { onIntent(OnboardingIntent.DeferSetup) },
+          Modifier.fillMaxWidth(),
+          enabled = !state.busy,
+          style = FlareButtonStyle.OUTLINE,
         )
       }
     },

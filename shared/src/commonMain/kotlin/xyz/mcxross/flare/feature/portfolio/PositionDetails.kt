@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -136,7 +137,7 @@ private fun PositionDetails(
   position.takeProfitTriggerPrice?.let { DetailRow("Take profit", formatPrice(it)) }
   position.stopLossTriggerPrice?.let { DetailRow("Stop loss", formatPrice(it)) }
   state.capabilities.unavailableReason(ActionKind.TRADING)?.let {
-    ActionNotice(it, Modifier.padding(top = 24.dp), NoticeTone.INFO)
+    UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 24.dp))
     return
   }
   Text("Set an exit", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.titleMedium)
