@@ -2,7 +2,9 @@ package xyz.mcxross.flare.venue
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.model.ActionKind
@@ -63,5 +65,25 @@ class VenueCapabilitiesTest {
     assertEquals(ActionKind.TWAP, TradeAction.CancelTwapOrder("0xa", "BTC", "7").actionKind)
     assertEquals(ActionKind.TRADING, TradeAction.CancelOrders("0xa", listOf(OpenOrderRef("BTC", "1"))).actionKind)
     assertEquals(false, BareCapabilities.batchCancel)
+  }
+
+  @Test
+  fun finerFlagsFollowTheirFeatureUnlessAVenueSetsThem() {
+    assertTrue(VenueCapabilities.All.createSubaccounts && VenueCapabilities.All.referralCodes)
+    assertTrue(VenueCapabilities.All.twapInterval)
+    assertFalse(BareCapabilities.createSubaccounts || BareCapabilities.referralCodes)
+    val listsOnly = BareCapabilities.copy(subaccounts = true, rewards = true, createSubaccounts = false, referralCodes = false)
+    assertFalse(listsOnly.createSubaccounts || listsOnly.referralCodes)
+  }
+
+  @Test
+  fun anExplorerLinksOnlyTheReferencesItHasPagesFor() {
+    val any = VenueExplorer("Any", "https://x.test/tx/${VenueExplorer.REFERENCE}")
+    val hashes = any.copy(transactionReference = Regex("0x[0-9a-f]{64}"))
+    val hash = "0x" + "ab".repeat(32)
+
+    assertEquals("https://x.test/tx/123", any.transactionUrl("123"))
+    assertEquals("https://x.test/tx/$hash", hashes.transactionUrl(hash))
+    assertNull(hashes.transactionUrl("123"))
   }
 }

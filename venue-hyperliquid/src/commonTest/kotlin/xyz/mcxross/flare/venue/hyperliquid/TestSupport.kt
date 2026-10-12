@@ -224,6 +224,8 @@ internal class FakeSigningWallet(
 /** Records what would be signed and sent, and answers with [outcome]. */
 internal class FakeSubmitter : HyperliquidSubmitter {
   val sent = mutableListOf<Pair<ExchangeAction, Long>>()
+  /** The `vaultAddress` each L1 action was signed with. */
+  val vaults = mutableListOf<String?>()
   var outcome: (ExchangeAction) -> ExchangeOutcome = { ExchangeOutcome.Accepted(ExchangeResponse.Default) }
   /** Runs before the request would be signed: what the journal holds by then. */
   var beforeSigning: suspend (nonce: Long) -> Unit = {}
@@ -254,6 +256,7 @@ internal class FakeSubmitter : HyperliquidSubmitter {
     beforeSend()
     afterSigning(nonce)
     sent += action to nonce
+    vaults += vaultAddress
     return outcome(action)
   }
 }

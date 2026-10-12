@@ -7,6 +7,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,6 +38,7 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.testVenue
+import xyz.mcxross.flare.venue.WithdrawalTerms
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
@@ -158,6 +160,13 @@ class SettingsViewModelTest {
       lastWithdrawDestination = destination
       return flowOf(ActionState.Committed("0xwithdraw_hash_123"))
     }
+
+    val transfers = mutableListOf<Pair<String, String>>()
+
+    override fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> {
+      transfers += amount to destination
+      return flowOf(ActionState.Committed("0xsend"))
+    }
     override suspend fun approveBuilderFee(
       builderAddress: String,
       feeBps: UInt,
@@ -251,6 +260,34 @@ class SettingsViewModelTest {
     assertEquals("", vm.uiState.value.withdrawAmount)
     assertNull(vm.uiState.value.withdrawTransaction)
     assertNull(vm.uiState.value.withdrawError)
+  }
+
+  @Test
+  fun aSendOnTheVenueIsATransferAndAWithdrawalNamesItsNetwork() = runTest {
+    val fakeAccounts = FakeAccountRepository()
+    val venue = testVenue().copy(withdrawal = WithdrawalTerms("Arbitrum", "1", internalTransfers = true))
+    val vm =
+      SettingsViewModel(
+        AppPreferences(MemoryPreferences()), FakeWalletRepository(), fakeAccounts, FakeSessionRepository(), venue,
+        AddressCredentials,
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("5"))
+    vm.onIntent(SettingsIntent.SubmitWithdraw)
+    assertEquals("Enter a valid Arbitrum address.", vm.uiState.value.withdrawError)
+    vm.onIntent(SettingsIntent.SetWithdrawOnVenue(true))
+    vm.onIntent(SettingsIntent.SubmitWithdraw)
+    assertEquals("Enter a valid Aptos address.", vm.uiState.value.withdrawError)
+
+    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0xa11ce"))
+    vm.onIntent(SettingsIntent.SubmitWithdraw)
+
+    assertEquals(listOf("5" to "0xa11ce"), fakeAccounts.transfers)
+    assertEquals(0, fakeAccounts.withdrawCallCount)
+    assertEquals(ActionState.Committed("0xsend"), vm.uiState.value.withdrawTransaction)
+    vm.onIntent(SettingsIntent.DismissWithdraw)
+    assertFalse(vm.uiState.value.withdrawOnVenue)
   }
 
   @Test

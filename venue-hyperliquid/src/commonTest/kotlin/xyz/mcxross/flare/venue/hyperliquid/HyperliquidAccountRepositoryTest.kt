@@ -20,6 +20,7 @@ import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 
 class HyperliquidAccountRepositoryTest {
@@ -218,5 +219,38 @@ class HyperliquidAccountRepositoryTest {
       StreamData.TwapStates(Fixtures.USER.lowercase(), listOf(14656L to running.state)),
     )
     assertEquals(listOf("14656"), accounts.activeTwaps().map { it.id })
+  }
+
+  @Test
+  fun readsTheFeeTierReferralAndSubAccounts() = runTest {
+    val (accounts, _) =
+      repository(standardResponses + mapOf("referral" to Fixtures.REFERRAL, "subAccounts" to Fixtures.SUB_ACCOUNTS))
+
+    val rewards = assertNotNull(accounts.rewards())
+    assertEquals("Tier 0", rewards.feeTier?.name)
+    assertEquals("FLARE", rewards.referral?.code)
+    assertTrue(rewards.unavailable.isEmpty())
+
+    val subaccounts = accounts.subaccounts(Fixtures.USER)
+    assertEquals(
+      listOf(
+        TradingAccount(Fixtures.USER, Fixtures.USER, primary = true),
+        TradingAccount("0x100000000000000000000000000000000000000d", Fixtures.USER, label = "Grid"),
+        TradingAccount("0x100000000000000000000000000000000000000e", Fixtures.USER, label = "Hedge"),
+      ),
+      subaccounts,
+    )
+  }
+
+  @Test
+  fun aSelectedSubAccountIsReadAndItsKeysAreTheOwners() = runTest {
+    val sub = "0x100000000000000000000000000000000000000d"
+    val (accounts, preferences) = repository(standardResponses + ("extraAgents" to "[]"))
+
+    preferences.setSelectedSubaccount(sub)
+    accounts.refresh()
+
+    assertEquals(sub, accounts.snapshot.value.account)
+    assertTrue(accounts.delegations().isEmpty())
   }
 }
