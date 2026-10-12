@@ -27,6 +27,7 @@ kotlin {
   sourceSets {
     commonMain.dependencies {
       api(project(":shared"))
+      implementation(project(":strategies"))
       implementation(project(":decibel"))
       implementation(libs.kaptos)
       implementation(libs.koin.core)

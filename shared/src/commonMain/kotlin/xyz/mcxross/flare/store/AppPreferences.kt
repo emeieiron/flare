@@ -84,6 +84,9 @@ data class FlarePreferences(
   val slippageBps: Int = 50,
   /** Ask for a fingerprint, face, or passcode before signing each trading action. */
   val confirmTransactions: Boolean = true,
+  val selectedStrategy: String = "MACD_CROSSOVER",
+  val jevKeyConfigured: Boolean = false,
+  val useJevConfluence: Boolean = false,
   val onboardingComplete: Boolean = false,
   val selectedMarket: String? = null,
   val favoriteMarkets: Set<String> = emptySet(),
@@ -123,6 +126,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         showMacd = preferences[ShowMacdKey] ?: false,
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),
         confirmTransactions = preferences[ConfirmTransactionsKey] ?: true,
+        selectedStrategy = preferences[SelectedStrategyKey] ?: "MACD_CROSSOVER",
+        jevKeyConfigured = preferences[JevKeyConfiguredKey] ?: false,
+        useJevConfluence = (preferences[UseJevConfluenceKey] ?: false) && (preferences[JevKeyConfiguredKey] ?: false),
         selectedMarket = preferences[SelectedMarketKey],
         favoriteMarkets = preferences[FavoriteMarketsKey].orEmpty(),
         spotWatchlistSeeded = preferences[SpotWatchlistSeededKey] ?: false,
@@ -140,6 +146,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
       )
     }
 
+  val selectedStrategy: Flow<String> = values.map { it.selectedStrategy }
   val favoriteMarkets: Flow<Set<String>> = values.map { it.favoriteMarkets }
   val spotWatchlistSeeded: Flow<Boolean> = values.map { it.spotWatchlistSeeded }
 
@@ -166,6 +173,21 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   suspend fun setSlippageBps(slippageBps: Int) {
     require(slippageBps in 1..1_000) { "Slippage must be between 1 and 1,000 basis points" }
     dataStore.edit { it[SlippageBpsKey] = slippageBps }
+  }
+
+  suspend fun setSelectedStrategy(strategy: String) {
+    dataStore.edit { it[SelectedStrategyKey] = strategy }
+  }
+
+  suspend fun setJevKeyConfigured(configured: Boolean) {
+    dataStore.edit {
+      it[JevKeyConfiguredKey] = configured
+      if (!configured) it[UseJevConfluenceKey] = false
+    }
+  }
+
+  suspend fun setUseJevConfluence(enabled: Boolean) {
+    dataStore.edit { it[UseJevConfluenceKey] = enabled && (it[JevKeyConfiguredKey] ?: false) }
   }
 
   suspend fun setConfirmTransactions(confirm: Boolean) {
@@ -391,6 +413,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val ChartRangeKey = stringPreferencesKey("chart_range")
     val ChartStyleKey = stringPreferencesKey("chart_style")
     val ShowRsiKey = booleanPreferencesKey("show_rsi")
+    val SelectedStrategyKey = stringPreferencesKey("selected_strategy")
+    val JevKeyConfiguredKey = booleanPreferencesKey("jev_key_configured")
+    val UseJevConfluenceKey = booleanPreferencesKey("use_jev_confluence")
     val ConfirmTransactionsKey = booleanPreferencesKey("confirm_transactions")
     val ShowMacdKey = booleanPreferencesKey("show_macd")
     val SlippageBpsKey = intPreferencesKey("slippage_bps")

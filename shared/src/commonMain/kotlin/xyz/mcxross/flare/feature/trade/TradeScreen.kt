@@ -55,6 +55,8 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.feature.strategies.StrategiesRoute
+import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
@@ -85,6 +87,7 @@ fun TradeRoute(
   viewModel: TradeViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  var showStrategies by rememberSaveable { mutableStateOf(false) }
   val assetCatalog: AssetCatalogRepository = koinInject()
   val assets by assetCatalog.assets.collectAsStateWithLifecycle()
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
@@ -92,7 +95,13 @@ fun TradeRoute(
   LaunchedEffect(lifecycleOwner, viewModel) {
     lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followLiveChart() }
   }
-  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity)
+  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity,
+    onOpenStrategies = { showStrategies = true })
+  val market = state.quote?.market
+  if (showStrategies && market != null) {
+    StrategiesRoute(market.id, market.symbol, state.timeframe.durationMs,
+      state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showStrategies = false })
+  }
 }
 
 internal enum class TradeStage { MARKET, EDIT, REVIEW, RESULT, FAILURE }
@@ -106,6 +115,7 @@ fun TradeScreen(
   onBack: () -> Unit = {},
   onOpenSetup: () -> Unit = {},
   onOpenActivity: (() -> Unit)? = null,
+  onOpenStrategies: (() -> Unit)? = null,
 ) {
   val quote = state.quote
   var showBook by rememberSaveable(quote?.market?.id) { mutableStateOf(false) }
@@ -272,6 +282,9 @@ fun TradeScreen(
                       state.showMacd,
                     )
                     if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                    onOpenStrategies?.let { open ->
+                      ActionRow("Strategies", "Independent signals · optional Jev confluence", onClick = open)
+                    }
                     MarketInformation(state, showBook, { showBook = !showBook })
                   }
                   TradeStage.EDIT -> OrderEditor(

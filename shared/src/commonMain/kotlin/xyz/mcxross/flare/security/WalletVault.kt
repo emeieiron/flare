@@ -8,6 +8,7 @@ data class WalletSecretSlot(val storageKey: String) {
     if (id == LEGACY_PROFILE_ID) this else WalletSecretSlot("${id}_$storageKey")
 
   companion object {
+    val JEV_API_KEY = WalletSecretSlot("jev_api_key")
     val OWNER_MNEMONIC = WalletSecretSlot("owner_mnemonic")
     val API_PRIVATE_KEY = WalletSecretSlot("api_private_key")
   }

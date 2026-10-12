@@ -41,12 +41,19 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 
 - **Markets**: Crypto, equities and commodities, in perps and spot, with live prices, a watchlist and search.
 - **Charts**: Live candles or a clean line, RSI and MACD, and panning through history.
+- **Strategies**: Independent MACD crossover, RSI reversal and momentum pullback signals, with optional Jev confluence.
 - **Orders**: Market, limit and TWAP, with leverage and attached take profit and stop loss.
 - **Portfolio**: Account value, P&L, positions, holdings, DLP vaults, Amps rewards, transfers, deposits and withdrawals.
 - **Self-custody**: Create a BIP-39 wallet or import a phrase, an Ed25519 or Secp256k1 key, or an AIP-80 key. Keys stay on the device behind biometrics or passcode. Trades sign with a delegated key that can't withdraw.
 - **One-confirmation setup**: Flare opens your trading account and enables trading in a single step. An interrupted setup resumes where it left off.
 - **Sponsored fees**: Flare's gas station pays network fees. If it can't, Flare asks before your wallet pays.
 - **Offline resilience**: Transactions are simulated before approval, journaled before sending and reconciled on restart.
+
+### Strategy signals
+
+Open a market, choose its chart timeframe, then tap **Strategies** and **Evaluate signals**. The sheet shows closed-candle signals and indicator evidence; refresh when a result expires. Signals use independent market reads and do not place orders. To trade, return to the market's **Trade** button, enter an amount and review the order.
+
+Strategies work without an API key. To add optional confluence, open **Settings → Jev confluence**, save your Jev API key and explicitly enable it. The key stays in the device's secure vault; indicator requests go directly to Jev. If Jev is unavailable, independent signals remain visible without model approval. Model confidence and choice probabilities describe the model's answer, not a trade's likelihood of success. Calendar-month timeframes are unavailable because these strategies require fixed candle intervals.
 
 ## Get Flare
 

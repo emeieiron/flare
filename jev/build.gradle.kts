@@ -41,6 +41,7 @@ kotlin {
     }
     jvmTest.dependencies {
       implementation(libs.kotlin.testJunit5)
+      implementation(libs.ktor.client.cio)
     }
   }
 }
