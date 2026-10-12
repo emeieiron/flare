@@ -136,13 +136,17 @@ class DefaultTradingRepository(
         cancel = { exit ->
           // Part of the change already confirmed, so it doesn't ask again.
           withContext(ConfirmedAction()) {
-            val cancel =
-              if (exit.isPositionTpSl) {
-                DecibelCommand.CancelPositionTpSl(command.subaccount, command.market, exit.orderId)
-              } else {
-                DecibelCommand.CancelOrder(command.subaccount, command.market, exit.orderId)
-              }
-            executeCommand(cancel, prompt, feePayment).last()
+            val asExit = DecibelCommand.CancelPositionTpSl(command.subaccount, command.market, exit.orderId)
+            val asOrder = DecibelCommand.CancelOrder(command.subaccount, command.market, exit.orderId)
+            // Exits Decibel keeps for the position cancel as exits, ones on the book as orders. One
+            // refused before it was ever sent, as in simulation, costs nothing, so the other is tried.
+            val (first, second) = if (exit.isPositionTpSl) asExit to asOrder else asOrder to asExit
+            val result = executeCommand(first, prompt, feePayment).last()
+            if (result is ActionState.Failed && result.reference == null && !result.committed) {
+              executeCommand(second, prompt, feePayment).last()
+            } else {
+              result
+            }
           }
         },
       )
