@@ -209,6 +209,33 @@ class DecibelOrderRulesTest {
   }
 
   @Test
+  fun aTwapOnSpotChecksTheScheduleAndPlacesAtTheBooksPrice() {
+    val spotRules = rules.copy(kind = AssetType.SPOT)
+    val spot = market.copy(kind = MarketKind.SPOT, rules = spotRules)
+    val twap =
+      OrderRequest(
+        marketId = MARKET,
+        side = OrderSide.BUY,
+        type = OrderType.TWAP,
+        size = "0.001",
+        twap = TwapSchedule(frequencySeconds = 60, durationSeconds = 3600),
+      )
+
+    val checked = assertIs<OrderCheck.Valid>(spotRules.check(twap, book)).order
+    assertEquals("70010", checked.price)
+    val placed =
+      assertIs<DecibelCommand.PlaceSpotOrder>(
+        TradeAction.PlaceOrder(ACCOUNT, spot, checked).toDecibelCommand(USDC)
+      )
+    assertEquals(7_001_000uL, placed.order.price)
+    assertEquals(100_000uL, placed.order.size)
+    assertEquals(
+      listOf("Minimum size is 0.00002 BTC"),
+      assertIs<OrderCheck.Invalid>(spotRules.check(twap.copy(size = "0.00001"), book)).errors,
+    )
+  }
+
+  @Test
   fun positionExitsAreCheckedAgainstTheTick() {
     assertNull(rules.checkExitPrices("72000", null))
     assertEquals("TP/SL prices must align to tick size 100", rules.checkExitPrices("72000.5", null))
