@@ -185,6 +185,36 @@ class DecibelAccountMappersTest {
   }
 
   @Test
+  fun aCancelledOrderSaysWhyDecibelCancelledIt() {
+    // An unfunded market buy on testnet: its transaction confirmed, then matching cancelled it.
+    val unfunded =
+      json.decodeFromString<Order>(
+        """{"asset_type":"perp","parent":"0xce9f","market":"0x59fa","client_order_id":"",""" +
+          """"order_id":"170145168953956349893258071946580459520","status":"Cancelled",""" +
+          """"order_type":"Market","trigger_condition":"","order_direction":"Open Long",""" +
+          """"is_buy":true,"is_reduce_only":false,"details":"Insufficient margin to update position",""" +
+          """"is_tpsl":false,"cancellation_reason":"ClearinghouseSettleViolation",""" +
+          """"transaction_version":38487864,"unix_ms":1760281080000,"price":2536.0,""" +
+          """"orig_size":0.01,"remaining_size":0.0}"""
+      )
+
+    assertEquals("Cancelled: insufficient margin", unfunded.toOrderHistoryEntry().status)
+    assertEquals(
+      "Cancelled",
+      unfunded.copy(details = "", cancellationReason = "OrderCancelledByUser").toOrderHistoryEntry().status,
+    )
+    assertEquals(
+      "Cancelled: couldn’t fill immediately",
+      unfunded.copy(details = "", cancellationReason = "IOCViolation").toOrderHistoryEntry().status,
+    )
+    assertEquals(
+      "Cancelled: max fill limit violation",
+      unfunded.copy(details = "", cancellationReason = "MaxFillLimitViolation").toOrderHistoryEntry().status,
+    )
+    assertEquals("Filled", unfunded.copy(status = "Filled").toOrderHistoryEntry().status)
+  }
+
+  @Test
   fun aPerpOrderWithoutExitsHasNone() {
     val order =
       json
