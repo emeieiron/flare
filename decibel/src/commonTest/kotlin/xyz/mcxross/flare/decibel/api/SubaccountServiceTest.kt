@@ -49,6 +49,31 @@ class SubaccountServiceTest {
     assertIs<AptosResult.Failure>(result)
   }
 
+  @Test
+  fun delegationsListEachPermissionOfEachKey() = runTest {
+    // view_delegated_permissions for a Flare trading account on testnet after delegate_all_trading.
+    val body =
+      """[{"__variant__":"SortedVectorMap","entries":[{"key":"0x40d8b4894f4632d0304b8f894e94e0d447dcdb596dfd08b0bcc0d26845e6477e","value":{"__variant__":"V1","perms":{"__variant__":"SortedVectorMap","entries":[""" +
+        """{"key":{"__variant__":"TradePerpsAllMarkets"},"value":{"__variant__":"UnlimitedVia","authorized_by":"0x234cf440eae9ec89cc8ccb826e03f2f66c1bf1eaaa0f2c39f53afaac967c9e9b"}},""" +
+        """{"key":{"__variant__":"TradeVaultTokens"},"value":{"__variant__":"UnlimitedVia","authorized_by":"0x234cf440eae9ec89cc8ccb826e03f2f66c1bf1eaaa0f2c39f53afaac967c9e9b"}},""" +
+        """{"key":{"__variant__":"TradeSpotAllMarkets"},"value":{"__variant__":"UnlimitedVia","authorized_by":"0x234cf440eae9ec89cc8ccb826e03f2f66c1bf1eaaa0f2c39f53afaac967c9e9b"}}]}}},""" +
+        """{"key":"0x77","value":{"__variant__":"V1","perms":{"__variant__":"SortedVectorMap","entries":[""" +
+        """{"key":{"__variant__":"TradePerpsOnMarket","market":{"inner":"0x5d"}},"value":{"__variant__":"UnlimitedUntil","_0":"1736326800"}}]}}}]}]"""
+    val delegations =
+      assertIs<AptosResult.Success<List<xyz.mcxross.flare.decibel.model.Delegation>>>(
+        service(body, HttpStatusCode.OK).delegations(address)
+      ).value
+
+    assertEquals(
+      listOf("TradePerpsAllMarkets", "TradeVaultTokens", "TradeSpotAllMarkets", "TradePerpsOnMarket"),
+      delegations.map { it.permissionType },
+    )
+    assertEquals("0x40d8b4894f4632d0304b8f894e94e0d447dcdb596dfd08b0bcc0d26845e6477e", delegations.first().delegate)
+    assertEquals(null, delegations.first().expirationTimeSeconds)
+    assertEquals("0x5d", delegations.last().permissionMarket)
+    assertEquals(1_736_326_800L, delegations.last().expirationTimeSeconds)
+  }
+
   private suspend fun status(body: String, code: HttpStatusCode = HttpStatusCode.OK) =
     assertIs<AptosResult.Success<SubaccountStatus>>(service(body, code).status(address)).value
 

@@ -247,6 +247,27 @@ internal fun Delegation.toTradingKey(): TradingKey =
     expiresAtMs = expirationTimeSeconds?.let { it * 1_000L },
   )
 
+/**
+ * Decibel lists each permission a key holds on its own, so one key that trades everything shows
+ * up as a perps grant and a spot grant. Each key becomes one entry with what it can trade in all.
+ */
+internal fun List<Delegation>.toTradingKeys(): List<TradingKey> =
+  groupBy { it.delegate.lowercase() }.values.mapNotNull { grants ->
+    val perps = grants.firstOrNull { it.canTradeAllPerpMarkets }
+    val spot = grants.firstOrNull { it.canTradeAllSpotMarkets }
+    val oneMarket = grants.firstOrNull { it.permissionType == "TradePerpsOnMarket" }
+    val expiries = listOfNotNull(perps, spot).ifEmpty { listOfNotNull(oneMarket) }
+    val first = expiries.firstOrNull() ?: return@mapNotNull null
+    val expiresAtMs =
+      if (expiries.any { it.expirationTimeSeconds == null }) null
+      else expiries.mapNotNull { it.expirationTimeSeconds }.minOrNull()?.times(1_000L)
+    when {
+      perps != null && spot != null ->
+        TradingKey(first.delegate, TradingKeyScope.ALL_MARKETS, null, expiresAtMs)
+      else -> first.toTradingKey().copy(expiresAtMs = expiresAtMs)
+    }
+  }
+
 internal fun Subaccount.toTradingAccount(): TradingAccount =
   TradingAccount(
     address = address,

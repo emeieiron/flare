@@ -352,6 +352,29 @@ class DecibelAccountMappersTest {
   }
 
   @Test
+  fun aKeyGrantedPerpsAndSpotTradesAllMarkets() {
+    val perps = Delegation("0x33", null, "TradePerpsAllMarkets", null)
+    val keys =
+      listOf(
+        perps,
+        perps.copy(permissionType = "TradeVaultTokens"),
+        perps.copy(delegate = "0X33", permissionType = "TradeSpotAllMarkets"),
+        Delegation("0x44", 1736326800, "TradeSpotAllMarkets", null),
+        Delegation("0x55", null, "TradePerpsOnMarket", "0x1"),
+        Delegation("0x66", null, "SubDelegate", null),
+      ).toTradingKeys()
+
+    assertEquals(
+      listOf(
+        TradingKey("0x33", TradingKeyScope.ALL_MARKETS, null, null),
+        TradingKey("0x44", TradingKeyScope.SPOT_MARKETS, null, 1736326800000),
+        TradingKey("0x55", TradingKeyScope.ONE_MARKET, "0x1", null),
+      ),
+      keys,
+    )
+  }
+
+  @Test
   fun vaultsKeepTheirLockupAndStakesTheirValue() {
     val vault =
       json.decodeFromString<VaultInfo>(
