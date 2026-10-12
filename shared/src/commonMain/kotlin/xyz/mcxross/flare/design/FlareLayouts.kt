@@ -22,7 +22,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.VenueExplorer
 
 /** A single label/value rhythm for account, market, and transaction details. */
 @Composable
@@ -162,14 +163,18 @@ fun shortAddress(address: String): String =
  * Where a settled action can be inspected. Receipts link out instead of printing a hash, so the
  * record stays available without turning the screen into a log.
  */
-class TransactionExplorer(private val network: Network) {
-  fun url(hash: String): String =
-    "https://explorer.aptoslabs.com/txn/$hash?network=${network.name.lowercase()}"
+class TransactionExplorer(private val explorer: VenueExplorer) {
+  val label: String
+    get() = "View on ${explorer.name}"
+
+  fun url(hash: String): String = explorer.transactionUrl(hash)
 }
 
-val LocalTransactionExplorer = staticCompositionLocalOf {
-  TransactionExplorer(Network.TESTNET)
-}
+val LocalTransactionExplorer =
+  staticCompositionLocalOf<TransactionExplorer> { error("No TransactionExplorer provided") }
+
+/** The exchange this build trades on, for the words and limits screens show about it. */
+val LocalVenue = staticCompositionLocalOf<VenueDescriptor> { error("No venue provided") }
 
 /** Shared completion state: a settled receipt has one unambiguous exit. */
 @Composable
@@ -185,7 +190,7 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
     )
     Text(message, style = MaterialTheme.typography.bodyLarge)
     ActionRow(
-      "View on Aptos Explorer",
+      explorer.label,
       icon = FlareIcons.External,
       onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
     )

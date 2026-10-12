@@ -69,5 +69,5 @@ fun flareModule(
   viewModelOf(::OrdersViewModel)
   viewModelOf(::TradeViewModel)
   // Only venues with a backend session (Decibel's Worker) bind a SessionRepository.
-  viewModel { SettingsViewModel(get(), get(), get(), getOrNull(), get()) }
+  viewModel { SettingsViewModel(get(), get(), get(), getOrNull(), get(), get()) }
 }

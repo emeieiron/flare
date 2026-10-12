@@ -24,6 +24,8 @@ import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
+import xyz.mcxross.flare.data.CredentialFormat
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.SessionRepository
@@ -210,6 +212,7 @@ class SettingsViewModelTest {
         accounts = fakeAccounts,
         sessions = FakeSessionRepository(),
         venue = testVenue(),
+        credentials = AddressCredentials,
       )
 
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
@@ -281,7 +284,14 @@ class SettingsViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
     val vm =
-      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, testVenue())
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     assertEquals("https://proxy.test", vm.uiState.value.proxyUrl)
@@ -303,6 +313,7 @@ class SettingsViewModelTest {
         accounts,
         null,
         testVenue(BareCapabilities),
+        AddressCredentials,
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
@@ -321,5 +332,19 @@ class SettingsViewModelTest {
       accounts = FakeAccountRepository(),
       sessions = sessions,
       venue = testVenue(),
+      credentials = AddressCredentials,
     )
+
+  /** Accepts `0x` addresses; nothing here parses keys. */
+  private object AddressCredentials : CredentialParser {
+    override fun detect(input: String) = CredentialFormat.UNKNOWN
+
+    override fun normalize(input: String) = input
+
+    override fun keyAddress(input: String): String? = null
+
+    override fun sameAddress(first: String, second: String) = first == second
+
+    override fun isAddress(input: String) = input.trim().matches(Regex("0x[0-9a-fA-F]+"))
+  }
 }

@@ -95,11 +95,13 @@ class DecibelVenueTest {
   }
 
   @Test
-  fun explorerLinksMatchTheAppsTransactionExplorer() {
+  fun explorerLinksOpenTheAptosExplorerOnTheVenuesNetwork() {
     Network.entries.forEach { network ->
+      val explorer = TransactionExplorer(DecibelVenue(network = network).descriptor.explorer)
+      assertEquals("View on Aptos Explorer", explorer.label)
       assertEquals(
-        TransactionExplorer(network).url("0xabc"),
-        DecibelVenue(network = network).descriptor.explorer.transactionUrl("0xabc"),
+        "https://explorer.aptoslabs.com/txn/0xabc?network=${network.name.lowercase()}",
+        explorer.url("0xabc"),
       )
     }
   }

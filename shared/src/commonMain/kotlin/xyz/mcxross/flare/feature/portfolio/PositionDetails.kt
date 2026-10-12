@@ -28,7 +28,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.abs
-import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
@@ -41,6 +40,7 @@ import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.Position
@@ -217,7 +217,7 @@ fun ClosePositionSheet(
 
 /**
  * What to do when Flare can't cover a position transaction's network fee: pay it from the wallet,
- * or send this device enough APT to pay it. The close sheet offers self-pay on its own button.
+ * or send this device enough of the fee token to pay it. The close sheet offers self-pay on its own button.
  */
 @Composable
 private fun PositionFeeRecovery(
@@ -226,9 +226,10 @@ private fun PositionFeeRecovery(
   offerSelfPay: Boolean = true,
 ) {
   val estimate = state.selfPayEstimate(state.positionTransaction) ?: return
+  val chain = LocalVenue.current.chain
   ActionNotice(
     "Flare can’t cover the network fee right now. Your wallet would pay about " +
-      "${estimate.toDecimalString(8)} APT.",
+      "${chain.feeAmount(estimate)}.",
     Modifier.padding(top = 12.dp),
   )
   if (offerSelfPay) {
@@ -241,13 +242,13 @@ private fun PositionFeeRecovery(
     )
   }
   if (state.apiWalletNeedsTopUp)
-    state.suggestedTopUpOctas?.let { amount ->
+    state.suggestedTopUp?.let { amount ->
       ActionNotice(
-        "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
+        "This device needs ${chain.feeAmount(amount)} to pay the fee itself.",
         Modifier.padding(top = 12.dp),
       )
       FlareButton(
-        "Send APT from your wallet",
+        "Send ${chain.feeToken} from your wallet",
         { onIntent(PortfolioIntent.TopUpApiWallet) },
         Modifier.fillMaxWidth().padding(top = 8.dp),
         enabled = !state.busy,

@@ -62,6 +62,7 @@ import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareMark
 import xyz.mcxross.flare.design.FlarePageTransition
 import xyz.mcxross.flare.design.IGNITION_REST
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.pagePopEnter
 import xyz.mcxross.flare.design.pagePopExit
@@ -70,6 +71,7 @@ import xyz.mcxross.flare.design.pagePushExit
 import xyz.mcxross.flare.design.rememberFlareIgnition
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.VenueChain
 
 @Composable
 fun OnboardingRoute(
@@ -305,6 +307,7 @@ internal fun ColumnScope.SetupActions(
   onIntent: (OnboardingIntent) -> Unit,
   primary: @Composable ColumnScope.() -> Unit,
 ) {
+  val chain = LocalVenue.current.chain
   when (val fee = state.setupFee) {
     null -> {
       state.error?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
@@ -313,10 +316,10 @@ internal fun ColumnScope.SetupActions(
     is SetupFee.WalletCanPay -> {
       ActionNotice(
         "Flare couldn’t cover this step’s network fee. Your wallet can pay it: about " +
-          "${aptFee(fee.estimateOctas)}, from its ${aptBalance(fee.balanceOctas)}."
+          "${chain.roundedFee(fee.estimate)}, from its ${chain.roundedBalance(fee.balance)}."
       )
       FlareButton(
-        "Pay ${aptFee(fee.estimateOctas)} and continue",
+        "Pay ${chain.roundedFee(fee.estimate)} and continue",
         { onIntent(OnboardingIntent.ConfirmSetupSelfPay) },
         Modifier.fillMaxWidth(),
         working = state.busy,
@@ -332,8 +335,8 @@ internal fun ColumnScope.SetupActions(
     is SetupFee.WalletNeedsFunds -> {
       ActionNotice(
         "Flare couldn’t cover this step’s network fee, and your wallet can’t pay it yet: the network " +
-          "sets aside ${aptFee(fee.reserveOctas)} before it runs, and your wallet has " +
-          "${aptBalance(fee.balanceOctas)}. Add APT to it, or try again later.",
+          "sets aside ${chain.roundedFee(fee.reserve)} before it runs, and your wallet has " +
+          "${chain.roundedBalance(fee.balance)}. Add ${chain.feeToken} to it, or try again later.",
         tone = NoticeTone.ALERT,
       )
       FundingAddress(fee.address)
@@ -346,8 +349,8 @@ internal fun ColumnScope.SetupActions(
     }
     is SetupFee.AwaitingSponsor -> {
       ActionNotice(
-        "Flare couldn’t cover the network fee just now. A new wallet has no APT, so nothing was " +
-          "charged, and everything that went through is saved. Try again in a moment."
+        "Flare couldn’t cover the network fee just now. A new wallet has no ${chain.feeToken}, " +
+          "so nothing was charged, and everything that went through is saved. Try again in a moment."
       )
       FlareButton(
         "Try again",
@@ -371,7 +374,7 @@ internal fun ColumnScope.SetupActions(
   }
 }
 
-/** Where to send APT so the wallet can pay the fee, one tap from the clipboard. */
+/** Where to send the fee token so the wallet can pay the fee, one tap from the clipboard. */
 @Composable
 private fun FundingAddress(address: String) {
   val clipboard = LocalClipboardManager.current
@@ -398,8 +401,20 @@ private fun FundingAddress(address: String) {
   }
 }
 
-/** A fee in APT to four decimals, rounded up so it's never understated. */
-private fun aptFee(octas: ULong): String = "${((octas + 9_999uL) / 10_000uL).toDecimalString(4)} APT"
+/** A fee to four decimals, rounded up so it's never understated. */
+private fun VenueChain.roundedFee(units: ULong): String {
+  val step = shownStep()
+  return "${((units + step - 1uL) / step).toDecimalString(SHOWN_DECIMALS)} $feeToken"
+}
 
-/** A balance in APT to four decimals, rounded down so it's never overstated. */
-private fun aptBalance(octas: ULong): String = "${(octas / 10_000uL).toDecimalString(4)} APT"
+/** A balance to four decimals, rounded down so it's never overstated. */
+private fun VenueChain.roundedBalance(units: ULong): String =
+  "${(units / shownStep()).toDecimalString(SHOWN_DECIMALS)} $feeToken"
+
+private fun VenueChain.shownStep(): ULong {
+  var step = 1uL
+  repeat((feeTokenDecimals - SHOWN_DECIMALS).coerceAtLeast(0)) { step *= 10uL }
+  return step
+}
+
+private const val SHOWN_DECIMALS = 4

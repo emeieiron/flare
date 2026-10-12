@@ -102,7 +102,7 @@ data class PortfolioUiState(
   /** Set once a close lands, until the screen that asked for it has reacted. */
   val closedMarket: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUpOctas: ULong? = null,
+  val suggestedTopUp: ULong? = null,
   val topUpTransaction: ActionState? = null,
   val chartPoints: List<PortfolioPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
@@ -226,6 +226,8 @@ class PortfolioViewModel(
   private val assetCatalog: AssetCatalogRepository? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
+  private val chain = venue.chain
+  private val vaultMinimums = venue.vaultMinimums
   private val local =
     MutableStateFlow(
       PortfolioUiState(capabilities = capabilities, rewardPointsName = venue.rewardPointsName)
@@ -348,7 +350,7 @@ class PortfolioViewModel(
             val quantity = (position?.amount ?: 0.0) + reservedQuantity
             if (quantity > 0) {
               val value = (position?.valueUsd ?: 0.0) + reserved.sumOf { it.valueUsd }
-              holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
+              holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == chain.feeToken) chain.name else symbol,
                 marketAddress = quote?.market?.id, quantity = quantity,
                 markPrice = if (quantity > 0) value / quantity else 0.0, valueUsd = value,
                 badge = "SPOT", reservedQuantity = reservedQuantity))
@@ -360,7 +362,7 @@ class PortfolioViewModel(
               it.market.kind == MarketKind.SPOT && it.market.symbol.substringBefore("/").equals(symbol, true)
             }
             val price = if (symbol == "USDC") 1.0 else quote?.markPrice ?: 0.0
-            holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == "APT") "Aptos" else symbol,
+            holdings.add(SpotHolding(symbol, assetCatalog?.assetFor(symbol)?.name ?: if (symbol == chain.feeToken) chain.name else symbol,
               marketAddress = quote?.market?.id, quantity = quantity,
               markPrice = price, valueUsd = quantity * price, badge = "SPOT"))
           }
@@ -600,7 +602,7 @@ class PortfolioViewModel(
   ) {
     accounts.refresh()
     lastPositionAction = action
-    local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
+    local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
     trading
       .execute(
         action = action,
@@ -621,8 +623,8 @@ class PortfolioViewModel(
         if (terminal.selfPay == null) error(terminal.message)
         // Venues without a fee token to send never offer a top-up.
         if (capabilities.networkFeeTopUp) {
-          trading.tradingKeyTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
-            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+          trading.tradingKeyTopUpFor(terminal, wallets.profile.first(), chain.minimumFeeTopUp)?.let { topUp ->
+            local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
           }
         }
       }
@@ -632,7 +634,7 @@ class PortfolioViewModel(
 
   private fun topUpApiWallet() =
     launchAction("The network fee wasn’t covered.") {
-      val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+      val amount = local.value.suggestedTopUp ?: error("No network-fee top-up is required")
       trading
         .topUpTradingKey(
           amount,
@@ -645,7 +647,7 @@ class PortfolioViewModel(
         .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
       when (val terminal = local.value.topUpTransaction) {
         is ActionState.Committed ->
-          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
+          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
         is ActionState.Failed -> error(terminal.message)
         else -> Unit
       }
@@ -835,15 +837,27 @@ class PortfolioViewModel(
       local.update { it.copy(actionError = "Enter a valid positive amount") }
       return
     }
-    if (mode == VaultActionMode.DEPOSIT && parsedAmount < 10.0) {
-      local.update { it.copy(actionError = "The minimum deposit for DLP vaults is 10 USDC.") }
+    val minimums = vaultMinimums
+    if (mode == VaultActionMode.DEPOSIT && minimums != null && parsedAmount < minimums.deposit) {
+      local.update {
+        it.copy(
+          actionError =
+            "The minimum deposit for ${minimums.vaults} is ${formatQuantity(minimums.deposit, 2)} USDC."
+        )
+      }
       return
     }
     if (mode == VaultActionMode.REDEEM) {
       val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
       val maxShares = position?.shares ?: 0.0
-      if (parsedAmount < 5.0) {
-        local.update { it.copy(actionError = "The minimum redemption for DLP vaults is 5 shares.") }
+      if (minimums != null && parsedAmount < minimums.redemptionShares) {
+        local.update {
+          it.copy(
+            actionError =
+              "The minimum redemption for ${minimums.vaults} is " +
+                "${formatQuantity(minimums.redemptionShares, 4)} shares."
+          )
+        }
         return
       }
       if (maxShares > 0.0 && parsedAmount > maxShares) {

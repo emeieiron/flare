@@ -13,8 +13,6 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import kotlin.math.sin
 import xyz.mcxross.flare.data.*
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.MarketPrecision
 import xyz.mcxross.flare.design.*
 import xyz.mcxross.flare.feature.markets.*
 import xyz.mcxross.flare.feature.onboarding.*
@@ -25,7 +23,7 @@ import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
-import xyz.mcxross.flare.venue.decibel.DecibelOrderRules
+import xyz.mcxross.flare.venue.decibel.DecibelVenue
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Balances
@@ -34,6 +32,9 @@ import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderCheck
+import xyz.mcxross.flare.venue.model.OrderRequest
+import xyz.mcxross.flare.venue.model.OrderRules
 import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPoints
@@ -60,6 +61,8 @@ class DesignPreviewActivity : FragmentActivity() {
         CompositionLocalProvider(
           LocalProtectSecrets provides false,
           LocalCredentialParser provides DecibelCredentialParser,
+          LocalTransactionExplorer provides TransactionExplorer(PreviewVenue.explorer),
+          LocalVenue provides PreviewVenue,
         ) {
           PreviewScreens(initialScreen, showLabel)
         }
@@ -187,7 +190,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                         selfPay = SelfPayOffer(2_400uL),
                       ),
                       apiWalletNeedsTopUp = true,
-                      suggestedTopUpOctas = 50_000uL,
+                      suggestedTopUp = 50_000uL,
                     )
                     else -> trade.copy(orderError = "Preview only. No order was placed.")
                   }
@@ -360,13 +363,7 @@ private fun previewQuotes(): List<MarketQuote> =
           sizeDecimals = 4,
           maxLeverage = 20,
           isolatedOnly = false,
-          rules =
-            DecibelOrderRules(
-              marketId = "0x${index + 100}",
-              name = "$symbol/USD",
-              kind = AssetType.PERP,
-              precision = MarketPrecision(2, 4, tickSize = 1u, lotSize = 1u, minimumSize = 1u, minimumPrice = 1u, maximumPrice = 100000000u),
-            ),
+          rules = PreviewOrderRules,
         ),
         price,
         change,
@@ -375,6 +372,17 @@ private fun previewQuotes(): List<MarketQuote> =
         index < 2,
       )
     }
+
+private val PreviewVenue = DecibelVenue().descriptor
+
+/** Accepts every order; the sample markets trade in steps of 0.0001. */
+private object PreviewOrderRules : OrderRules {
+  override val minimumSize = "0.0001"
+
+  override fun check(order: OrderRequest, orderBook: OrderBook?) = OrderCheck.Valid(order)
+
+  override fun checkExitPrices(takeProfit: String?, stopLoss: String?): String? = null
+}
 
 private fun previewCandles(): List<Candle> =
   List(180) { index ->
@@ -574,9 +582,9 @@ private fun previewOnboardingState(screen: String): OnboardingUiState {
         setupOperation = SetupOperation.ENABLE_TRADING,
         setupFee =
           when (screen) {
-            "fee-can-pay" -> SetupFee.WalletCanPay(estimateOctas = 104_300uL, balanceOctas = 48_210_000uL)
+            "fee-can-pay" -> SetupFee.WalletCanPay(estimate = 104_300uL, balance = 48_210_000uL)
             "fee-needs-funds" ->
-              SetupFee.WalletNeedsFunds(104_300uL, reserveOctas = 5_000_000uL, balanceOctas = 0uL, address = owner.ownerAddress!!)
+              SetupFee.WalletNeedsFunds(104_300uL, reserve = 5_000_000uL, balance = 0uL, address = owner.ownerAddress!!)
             else -> SetupFee.Unchecked(104_300uL)
           },
       )

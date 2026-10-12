@@ -44,7 +44,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
@@ -59,6 +58,7 @@ import xyz.mcxross.flare.design.FlareQrCode
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.LocalTransactionExplorer
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
@@ -66,7 +66,6 @@ import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
 import xyz.mcxross.flare.design.fullBleed
-import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
@@ -236,9 +235,10 @@ private fun DepositSheet(
   onCopy: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val chain = LocalVenue.current.chain
   FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
-      "Send USDC or APT on the Aptos network to $accountLabel.",
+      "Send ${chain.depositAssets.joinToString(" or ")} on the ${chain.name} network to $accountLabel.",
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
     )
@@ -246,12 +246,13 @@ private fun DepositSheet(
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
       val codeSize = minOf(maxWidth * 0.84f, maxHeight - 112.dp, 320.dp).coerceAtLeast(168.dp)
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FlareQrCode(address, "QR code for your Aptos address", Modifier.size(codeSize))
+        FlareQrCode(address, "QR code for your ${chain.name} address", Modifier.size(codeSize))
         ReceiveAddress(address, onCopy, Modifier.padding(top = 20.dp))
       }
     }
     ActionNotice(
-      "Only send Aptos-native USDC and APT. Assets sent from other networks can be lost for good.",
+      "Only send ${chain.name}-native ${chain.depositAssets.joinToString(" and ")}. Assets sent " +
+        "from other networks can be lost for good.",
       tone = NoticeTone.INFO,
     )
     FlareButton(
@@ -280,7 +281,7 @@ private fun ReceiveAddress(address: String, onCopy: () -> Unit, modifier: Modifi
 private enum class WithdrawStage { FORM, REVIEW, SENT, FAILED }
 
 /**
- * Withdrawing USDC from the trading account to any Aptos address. Every stage keeps its action at the
+ * Withdrawing USDC from the trading account to any address on the venue's chain. Every stage keeps its action at the
  * bottom. An interrupted withdrawal reopens at its review, and a failure says where the funds are.
  */
 @Composable
@@ -339,15 +340,17 @@ private fun WithdrawForm(
   onIntent: (SettingsIntent) -> Unit,
   onReview: () -> Unit,
 ) {
+  val chainName = LocalVenue.current.chain.name
+  val credentials = LocalCredentialParser.current
   val destination = state.withdrawDestination.trim()
-  val addressInvalid = destination.isNotEmpty() && !destination.isAptosAddress()
+  val addressInvalid = destination.isNotEmpty() && !credentials.isAddress(destination)
   val amount = state.withdrawAmount.toDoubleOrNull()
   val available = state.withdrawable
   // Guard at the field: an amount above the balance is flagged before anything is signed.
   val exceeds = amount != null && available != null && amount > available + BALANCE_EPSILON
-  val canReview = destination.isAptosAddress() && amount != null && amount > 0.0 && !exceeds
+  val canReview = credentials.isAddress(destination) && amount != null && amount > 0.0 && !exceeds
   Text(
-    "Send USDC from your trading account to any Aptos address.",
+    "Send USDC from your trading account to any $chainName address.",
     color = FlareColors.TextSecondary,
     style = MaterialTheme.typography.bodyMedium,
   )
@@ -356,9 +359,9 @@ private fun WithdrawForm(
     { onIntent(SettingsIntent.ChangeWithdrawDestination(it)) },
     Modifier.fillMaxWidth().padding(top = 20.dp),
     label = "Recipient",
-    placeholder = "Aptos address",
+    placeholder = "$chainName address",
     isError = addressInvalid,
-    supportingText = if (addressInvalid) "Enter a valid Aptos address." else null,
+    supportingText = if (addressInvalid) "Enter a valid $chainName address." else null,
   )
   FlareAmountField(
     value = state.withdrawAmount,
@@ -420,8 +423,9 @@ private fun WithdrawReview(
     style = MaterialTheme.typography.bodyLarge,
   )
   HorizontalDivider(Modifier.padding(top = 16.dp), color = FlareColors.BorderSubtle)
-  DetailRow("Network", "Aptos")
-  if (feeEstimate != null) DetailRow("Network fee", "About ${feeEstimate.toDecimalString(8)} APT")
+  val chain = LocalVenue.current.chain
+  DetailRow("Network", chain.name)
+  if (feeEstimate != null) DetailRow("Network fee", "About ${chain.feeAmount(feeEstimate)}")
   else if (state.capabilities.sponsoredFees) DetailRow("Network fee", "Sponsored by Flare")
   Text(
     "Withdrawals can’t be reversed. Check the address before you confirm.",
@@ -478,7 +482,7 @@ private fun WithdrawSent(state: SettingsUiState, hash: String, onDone: () -> Uni
     DetailRow("Amount", "$amount USDC")
     DetailRow("To", recipient)
     ActionRow(
-      "View on Aptos Explorer",
+      explorer.label,
       icon = FlareIcons.External,
       onClick = { runCatching { browser.openUri(explorer.url(hash)) } },
     )

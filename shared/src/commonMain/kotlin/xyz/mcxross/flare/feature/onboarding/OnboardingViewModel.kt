@@ -25,7 +25,6 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.actionFailure
-import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
@@ -51,31 +50,31 @@ enum class OnboardingStep {
  * wallet unless the person agrees to it here.
  */
 sealed interface SetupFee {
-  /** About what the fee itself comes to. */
-  val estimateOctas: ULong
+  /** About what the fee itself comes to, in the fee token's smallest unit, as are the others. */
+  val estimate: ULong
 
-  /** The wallet can pay the fee, from its balance of [balanceOctas]. */
-  data class WalletCanPay(override val estimateOctas: ULong, val balanceOctas: ULong) : SetupFee
+  /** The wallet can pay the fee, from its [balance]. */
+  data class WalletCanPay(override val estimate: ULong, val balance: ULong) : SetupFee
 
   /**
-   * The wallet can't pay yet: the network sets aside [reserveOctas] before running the transaction,
-   * and [address] holds only [balanceOctas].
+   * The wallet can't pay yet: the network sets aside [reserve] before running the transaction, and
+   * [address] holds only [balance].
    */
   data class WalletNeedsFunds(
-    override val estimateOctas: ULong,
-    val reserveOctas: ULong,
-    val balanceOctas: ULong,
+    override val estimate: ULong,
+    val reserve: ULong,
+    val balance: ULong,
     val address: String,
   ) : SetupFee
 
   /** The wallet's balance couldn't be checked, so the step can only be tried again. */
-  data class Unchecked(override val estimateOctas: ULong) : SetupFee
+  data class Unchecked(override val estimate: ULong) : SetupFee
 
   /**
-   * A wallet Flare just created has no APT, so only Flare can pay; the step waits, saved, until Flare
-   * can cover it.
+   * A wallet Flare just created holds no fee token, so only Flare can pay; the step waits, saved,
+   * until Flare can cover it.
    */
-  data class AwaitingSponsor(override val estimateOctas: ULong) : SetupFee
+  data class AwaitingSponsor(override val estimate: ULong) : SetupFee
 }
 
 /** What the chain says about the trading account entered with a trading key. */
@@ -192,6 +191,7 @@ class OnboardingViewModel(
   private val setup = venue.setup
   private val builderAddress = venue.builderAddress.orEmpty()
   private val builderFeeBps = venue.builderFeeBps
+  private val maxBuilderFeeBps = venue.maxBuilderFeeBps
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
@@ -555,7 +555,7 @@ class OnboardingViewModel(
     tradingAccountCheckJob?.cancel()
     val state = local.value
     val address = state.tradingAccountInput.trim()
-    if (!state.apiImport || !address.isAptosAddress()) return
+    if (!state.apiImport || !credentials.isAddress(address)) return
     tradingAccountCheckJob =
       viewModelScope.launch {
         delay(TRADING_ACCOUNT_CHECK_DELAY_MS)
@@ -602,7 +602,7 @@ class OnboardingViewModel(
         // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
         accounts.approveBuilderFee(
           builderAddress = builderAddress,
-          feeBps = 10u,
+          feeBps = maxBuilderFeeBps.toUInt(),
           prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
           feePayment = FeePayment.SPONSORED,
         )
@@ -707,7 +707,7 @@ class OnboardingViewModel(
   private suspend fun assessFee(failed: ActionState.Failed): SetupFee {
     val offer = checkNotNull(failed.selfPay)
     val estimate = offer.estimate
-    // A wallet made here has no APT to pay with, so there's no balance to check or charge.
+    // A wallet made here has no fee token to pay with, so there's no balance to check or charge.
     if (activeProfile()?.createdInApp == true) return SetupFee.AwaitingSponsor(estimate)
     val reserve = maxOf(offer.reserve ?: estimate, estimate)
     val owner = wallets.profile.first().ownerAddress

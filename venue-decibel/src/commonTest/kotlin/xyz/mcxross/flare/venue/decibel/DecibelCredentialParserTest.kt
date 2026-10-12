@@ -3,6 +3,8 @@ package xyz.mcxross.flare.venue.decibel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import xyz.mcxross.flare.data.CredentialFormat
 
 class DecibelCredentialParserTest {
@@ -45,5 +47,14 @@ class DecibelCredentialParserTest {
   fun onlyKeysHaveAnAddress() {
     assertEquals(null, DecibelCredentialParser.keyAddress("abandon ".repeat(11) + "about"))
     assertEquals(null, DecibelCredentialParser.keyAddress("0x1234"))
+  }
+
+  @Test
+  fun addressesAreZeroXAndUpTo64HexDigits() {
+    assertTrue(DecibelCredentialParser.isAddress(" 0xa11ce "))
+    assertTrue(DecibelCredentialParser.isAddress("0x$hex"))
+    assertFalse(DecibelCredentialParser.isAddress("0x${hex}0"))
+    assertFalse(DecibelCredentialParser.isAddress("a11ce"))
+    assertFalse(DecibelCredentialParser.isAddress(""))
   }
 }

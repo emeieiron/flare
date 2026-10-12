@@ -15,12 +15,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.actionFailure
-import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
@@ -128,8 +128,11 @@ class SettingsViewModel(
   /** The venue's backend session, signed out when a key is removed; null when it has none. */
   private val sessions: SessionRepository?,
   venue: VenueDescriptor,
+  private val credentials: CredentialParser,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
+  private val chainName = venue.chain.name
+  private val maxBuilderFeeBps = venue.maxBuilderFeeBps
   private val local =
     MutableStateFlow(
       SettingsUiState(
@@ -377,12 +380,12 @@ class SettingsViewModel(
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
-  /** Approves Flare's builder up to the protocol cap, so later rate changes need no new approval. */
+  /** Approves Flare's builder up to the venue's cap, so later rate changes need no new approval. */
   private suspend fun approveBuilder(product: MarketKind) = withBuilderPending(product) {
     val result =
       accounts.approveBuilderFee(
         builderAddress = local.value.defaultBuilderAddress,
-        feeBps = 10u,
+        feeBps = maxBuilderFeeBps.toUInt(),
         prompt = VaultPrompt("Approve builder support", "Confirm your identity"),
         product = product,
       )
@@ -405,8 +408,8 @@ class SettingsViewModel(
     if (current.withdrawing || current.withdrawTransaction is ActionState.Committed) return
     val dest = current.withdrawDestination.trim()
     val amt = current.withdrawAmount.trim()
-    if (!dest.isAptosAddress()) {
-      local.update { it.copy(withdrawError = "Enter a valid Aptos address.") }
+    if (!credentials.isAddress(dest)) {
+      local.update { it.copy(withdrawError = "Enter a valid $chainName address.") }
       return
     }
     if (amt.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true) {

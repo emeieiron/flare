@@ -59,7 +59,7 @@ data class OrdersUiState(
   val lastCancelTwapMarket: String? = null,
   val lastCancelTwapId: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUpOctas: ULong? = null,
+  val suggestedTopUp: ULong? = null,
   val topUpTransaction: ActionState? = null,
 ) {
   /**
@@ -100,6 +100,7 @@ class OrdersViewModel(
   venue: VenueDescriptor,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
+  private val minimumFeeTopUp = venue.chain.minimumFeeTopUp
   private val local = MutableStateFlow(OrdersUiState(capabilities = capabilities))
 
   init {
@@ -194,7 +195,7 @@ class OrdersViewModel(
           lastCancelOrderId = orderId,
           lastCancelIsTpSl = isTpSl,
           apiWalletNeedsTopUp = false,
-          suggestedTopUpOctas = null,
+          suggestedTopUp = null,
         )
       }
       val isSpot =
@@ -226,8 +227,8 @@ class OrdersViewModel(
         is ActionState.Failed -> {
           if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile)?.let { topUp ->
-              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp ->
+              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
             }
           }
         }
@@ -237,7 +238,7 @@ class OrdersViewModel(
 
   private fun topUpApiWallet() =
     launchAction("The network fee wasn’t covered.") {
-      val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
+      val amount = local.value.suggestedTopUp ?: error("No network-fee top-up is required")
       trading
         .topUpTradingKey(
           amount,
@@ -250,7 +251,7 @@ class OrdersViewModel(
         .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
       when (val terminal = local.value.topUpTransaction) {
         is ActionState.Committed ->
-          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
+          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
         is ActionState.Failed -> error(terminal.message)
         else -> Unit
       }
@@ -264,7 +265,7 @@ class OrdersViewModel(
           lastCancelTwapMarket = market,
           lastCancelTwapId = twapId,
           apiWalletNeedsTopUp = false,
-          suggestedTopUpOctas = null,
+          suggestedTopUp = null,
         )
       }
       trading
@@ -281,8 +282,8 @@ class OrdersViewModel(
         is ActionState.Failed -> {
           if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile)?.let { topUp ->
-              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
+            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp ->
+              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
             }
           }
         }

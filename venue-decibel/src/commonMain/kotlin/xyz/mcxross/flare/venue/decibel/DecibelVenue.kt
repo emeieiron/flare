@@ -20,7 +20,9 @@ import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.Venue
+import xyz.mcxross.flare.venue.VaultMinimums
 import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.VenueExplorer
 import xyz.mcxross.kaptos.Aptos
@@ -43,6 +45,14 @@ class DecibelVenue(
       id = "decibel",
       displayName = "Decibel",
       network = network,
+      chain =
+        VenueChain(
+          name = "Aptos",
+          feeToken = "APT",
+          feeTokenDecimals = 8,
+          minimumFeeTopUp = 1_000_000uL,
+          depositAssets = listOf("USDC", "APT"),
+        ),
       capabilities = Capabilities,
       explorer =
         VenueExplorer(
@@ -54,7 +64,9 @@ class DecibelVenue(
       proxyUrl = config.workerBaseUrl,
       builderAddress = config.defaultBuilderAddress,
       builderFeeBps = config.defaultBuilderFeeBps.toInt(),
+      maxBuilderFeeBps = 10,
       rewardPointsName = "Amps",
+      vaultMinimums = VaultMinimums(deposit = 10.0, redemptionShares = 5.0, vaults = "DLP vaults"),
     )
 
   override fun module(): Module = decibelModule(config)

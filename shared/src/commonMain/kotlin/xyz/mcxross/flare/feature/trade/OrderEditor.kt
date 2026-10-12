@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
-import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
@@ -50,6 +49,7 @@ import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.venue.model.ActionState
@@ -269,8 +269,9 @@ internal fun OrderReviewStatus(
 ) {
   val inputError = state.orderInputError(side)
   val selfPayEstimate = state.selfPayEstimate
+  val chain = LocalVenue.current.chain
   val topUp =
-    state.suggestedTopUpOctas?.takeIf {
+    state.suggestedTopUp?.takeIf {
       state.capabilities.networkFeeTopUp && state.apiWalletNeedsTopUp && selfPayEstimate != null
     }
   SpacedGroups(minHeight) {
@@ -281,13 +282,13 @@ internal fun OrderReviewStatus(
         selfPayEstimate?.let { estimate ->
           ActionNotice(
             "Flare can’t cover the network fee right now. Confirming pays about " +
-              "${estimate.toDecimalString(8)} APT from your wallet.",
+              "${chain.feeAmount(estimate)} from your wallet.",
           )
         }
         topUp?.let { amount ->
           ActionRow(
-            "Send APT from your wallet",
-            subtitle = "This device needs ${amount.toDecimalString(8)} APT to pay the fee itself.",
+            "Send ${chain.feeToken} from your wallet",
+            subtitle = "This device needs ${chain.feeAmount(amount)} to pay the fee itself.",
             enabled = !state.orderBusy,
             onClick = { onIntent(TradeIntent.TopUpApiWallet) },
           )

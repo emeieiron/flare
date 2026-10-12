@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.venue
 
 import org.koin.core.module.Module
+import xyz.mcxross.flare.core.toDecimalString
 
 /**
  * The exchange a Flare build trades on. Each build links exactly one venue module
@@ -24,6 +25,7 @@ data class VenueDescriptor(
   val id: String,
   val displayName: String,
   val network: Network,
+  val chain: VenueChain,
   val capabilities: VenueCapabilities,
   val explorer: VenueExplorer,
   /** The backend the app reaches the venue through, shown in settings; null when it has none. */
@@ -32,10 +34,38 @@ data class VenueDescriptor(
   val builderAddress: String? = null,
   /** The builder fee setup turns on when the person opts in, in basis points. */
   val builderFeeBps: Int = 0,
+  /** The most a builder fee approval allows, in basis points; later rate changes stay under it. */
+  val maxBuilderFeeBps: Int = 0,
+  /** The least a vault deposit or redemption may be; null when the venue sets none. */
+  val vaultMinimums: VaultMinimums? = null,
   /** What the venue calls its reward points, such as Decibel's Amps; null when it has none. */
   val rewardPointsName: String? = null,
   /** The steps account setup takes once the wallet exists. */
   val setup: VenueSetup = VenueSetup(),
+)
+
+/** The chain a venue settles on, as the app names it and counts its network fees. */
+data class VenueChain(
+  /** As in "an Aptos address" or "the Aptos network". */
+  val name: String,
+  /** The token network fees are paid in, such as APT. Fee amounts count its smallest unit. */
+  val feeToken: String,
+  val feeTokenDecimals: Int,
+  /** The least the wallet sends when topping up the device trading key, in the smallest unit. */
+  val minimumFeeTopUp: ULong = 0uL,
+  /** The assets the receive screen asks for. */
+  val depositAssets: List<String> = listOf("USDC"),
+) {
+  /** [units] of the fee token at full precision, as in "0.00012 APT". */
+  fun feeAmount(units: ULong): String = "${units.toDecimalString(feeTokenDecimals)} $feeToken"
+}
+
+data class VaultMinimums(
+  /** In USDC. */
+  val deposit: Double,
+  val redemptionShares: Double,
+  /** The vaults they apply to, as in "The minimum deposit for DLP vaults". */
+  val vaults: String,
 )
 
 /**

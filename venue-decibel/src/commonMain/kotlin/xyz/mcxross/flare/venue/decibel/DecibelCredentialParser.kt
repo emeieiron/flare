@@ -46,4 +46,9 @@ object DecibelCredentialParser : CredentialParser {
 
   override fun sameAddress(first: String, second: String): Boolean =
     runCatching { first.sameAptosAddress(second) }.getOrDefault(false)
+
+  /** An Aptos account address: `0x` and up to 64 hex digits. */
+  override fun isAddress(input: String): Boolean = AptosAddress.matches(input.trim())
 }
+
+private val AptosAddress = Regex("^0x[0-9a-fA-F]{1,64}$")
