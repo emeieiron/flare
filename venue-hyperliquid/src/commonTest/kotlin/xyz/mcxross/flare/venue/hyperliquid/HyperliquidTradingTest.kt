@@ -392,6 +392,90 @@ class HyperliquidTradingTest {
   }
 
   @Test
+  fun newExitsReplaceTheOnesAttachedToTheOpeningOrderToo() = runTest {
+    val harness = harness()
+    harness.answer = { type, _ ->
+      when (type) {
+        "clearinghouseState" -> SHORT_BTC
+        "frontendOpenOrders" -> MIXED_BTC_EXITS
+        else -> assets(type)
+      }
+    }
+    harness.submitter.outcome = { action ->
+      if (action.type == "order")
+        ExchangeOutcome.Accepted(
+          ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger, OrderStatus.WaitingForTrigger))
+        )
+      else ExchangeOutcome.Accepted(ExchangeResponse.Cancels(List(3) { CancelStatus.Success }))
+    }
+
+    val result =
+      harness.trading
+        .execute(
+          TradeAction.SetPositionTpSl(
+            owner, BTC, takeProfitTrigger = "60000", takeProfitLimit = "60000",
+            stopLossTrigger = "70000", stopLossLimit = "70000",
+          ),
+          prompt,
+        )
+        .toList()
+        .last()
+
+    // Placed first, then every earlier exit canceled: the attached ones and the position's own.
+    assertEquals(
+      listOf(
+        """{"type":"order","orders":[{"a":0,"b":true,"p":"66000","s":"0","r":true,"t":{"trigger":{"isMarket":true,"triggerPx":"60000","tpsl":"tp"}},"c":"0x0123456789abcdef0123456789abcdef"},{"a":0,"b":true,"p":"77000","s":"0","r":true,"t":{"trigger":{"isMarket":true,"triggerPx":"70000","tpsl":"sl"}}}],"grouping":"positionTpsl"}""",
+        """{"type":"cancel","cancels":[{"a":0,"o":11},{"a":0,"o":12},{"a":0,"o":571747466629}]}""",
+      ),
+      harness.wires(),
+    )
+    assertEquals(ActionState.Committed(CLOID.hex), result)
+  }
+
+  @Test
+  fun settingOnlyAStopLossKeepsTheAttachedTakeProfit() = runTest {
+    val harness = harness()
+    harness.answer = { type, _ ->
+      when (type) {
+        "clearinghouseState" -> SHORT_BTC
+        "frontendOpenOrders" -> MIXED_BTC_EXITS
+        else -> assets(type)
+      }
+    }
+    harness.submitter.outcome = { action ->
+      if (action.type == "order") ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger)))
+      else ExchangeOutcome.Accepted(ExchangeResponse.Cancels(List(2) { CancelStatus.Success }))
+    }
+
+    harness.trading
+      .execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "70000"), prompt)
+      .toList()
+
+    assertEquals("""{"type":"cancel","cancels":[{"a":0,"o":12},{"a":0,"o":571747466629}]}""", harness.wires().last())
+  }
+
+  @Test
+  fun aFailedPlacementLeavesTheAttachedExitsInPlace() = runTest {
+    val harness = harness()
+    harness.answer = { type, _ ->
+      when (type) {
+        "clearinghouseState" -> SHORT_BTC
+        "frontendOpenOrders" -> MIXED_BTC_EXITS
+        else -> assets(type)
+      }
+    }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Error("Insufficient margin"))))
+    }
+
+    val result =
+      harness.trading.execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "70000"), prompt).toList().last()
+
+    assertIs<ActionState.Failed>(result)
+    assertEquals(1, harness.wires().size, "nothing canceled")
+  }
+
+  @Test
   fun positionExitsNeedAnOpenPosition() = runTest {
     val harness = harness()
     harness.answer = { type, _ -> if (type == "clearinghouseState") Fixtures.CLEARINGHOUSE_STATE_EMPTY else assets(type) }
@@ -536,6 +620,17 @@ class HyperliquidTradingTest {
     val SHORT_BTC = Fixtures.CLEARINGHOUSE_STATE.replace("\"szi\":\"0.76666\"", "\"szi\":\"-0.76666\"")
     val OLD_BTC_STOP =
       """[{"coin":"BTC","side":"B","limitPx":"77000","sz":"0.0","oid":571747466629,"timestamp":1791784718318,"triggerCondition":"Price above 70000","isTrigger":true,"triggerPx":"70000.0","children":[],"isPositionTpsl":true,"reduceOnly":true,"orderType":"Stop Market","origSz":"0.0","tif":null,"cloid":null}]"""
+
+    /**
+     * A short BTC's exits: a take-profit and stop-loss attached to the order that opened it
+     * (`normalTpsl`), the position's own stop, and exits that aren't the position's to replace.
+     */
+    val MIXED_BTC_EXITS =
+      """[{"coin":"BTC","side":"B","limitPx":"66000","sz":"0.76666","oid":11,"timestamp":1,"triggerCondition":"Price below 60000","isTrigger":true,"triggerPx":"60000.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Take Profit Market","origSz":"0.76666","tif":null,"cloid":null},""" +
+        """{"coin":"BTC","side":"B","limitPx":"77000","sz":"0.76666","oid":12,"timestamp":1,"triggerCondition":"Price above 70000","isTrigger":true,"triggerPx":"70000.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Stop Market","origSz":"0.76666","tif":null,"cloid":null},""" +
+        OLD_BTC_STOP.removePrefix("[").removeSuffix("]") + "," +
+        """{"coin":"ETH","side":"B","limitPx":"3000","sz":"1","oid":13,"timestamp":1,"triggerCondition":"Price above 2900","isTrigger":true,"triggerPx":"2900.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Stop Market","origSz":"1","tif":null,"cloid":null},""" +
+        """{"coin":"BTC","side":"B","limitPx":"60000","sz":"0.1","oid":14,"timestamp":1,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"0.1","tif":"Gtc","cloid":null}]"""
 
     val BTC = market("BTC", "BTC", MarketKind.PERP, 5)
     val ETH = market("ETH", "ETH", MarketKind.PERP, 4)

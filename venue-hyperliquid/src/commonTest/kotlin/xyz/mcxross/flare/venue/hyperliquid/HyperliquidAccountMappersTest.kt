@@ -175,6 +175,77 @@ class HyperliquidAccountMappersTest {
   }
 
   @Test
+  fun showsExitsAttachedToTheOpeningOrder() {
+    val state = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
+    // normalTpsl children of a filled order: plain reduce-only triggers, not position-level.
+    val orders =
+      decode<List<FrontendOrder>>(
+        "[" + exitJson(1, "Take Profit Market", "120000.0", position = false) + "," +
+          exitJson(2, "Stop Market", "40000.0", position = false) + "]"
+      )
+
+    val btc = state.toPositions(orders).first()
+
+    assertEquals(120000.0, btc.takeProfitTriggerPrice)
+    assertEquals(40000.0, btc.stopLossTriggerPrice)
+  }
+
+  @Test
+  fun prefersThePositionsOwnExitsOverAttachedOnes() {
+    val state = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
+    val orders =
+      decode<List<FrontendOrder>>(
+        "[" +
+          listOf(
+            exitJson(1, "Stop Market", "40000.0", position = false, time = 3),
+            exitJson(2, "Stop Market", "50000.0", position = true, time = 1),
+            exitJson(3, "Take Profit Market", "110000.0", position = false, time = 1),
+            exitJson(4, "Take Profit Market", "120000.0", position = false, time = 2),
+          ).joinToString(",") + "]"
+      )
+
+    val btc = state.toPositions(orders).first()
+
+    assertEquals(50000.0, btc.stopLossTriggerPrice)
+    assertEquals(120000.0, btc.takeProfitTriggerPrice, "without a position-level one, the latest")
+  }
+
+  @Test
+  fun ignoresExitsThatDontGuardThePosition() {
+    val state = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
+    val waiting = exitJson(5, "Take Profit Market", "120000.0", position = false)
+    val orders =
+      decode<List<FrontendOrder>>(
+        "[" +
+          listOf(
+            // Waiting on an entry that hasn't filled.
+            waiting,
+            """{"coin":"BTC","side":"B","limitPx":"80000.0","sz":"0.1","oid":6,"timestamp":1,"origSz":"0.1","children":[$waiting],"reduceOnly":false,"orderType":"Limit","tif":"Gtc"}""",
+            // A buy can't close a long.
+            exitJson(7, "Stop Market", "90000.0", position = false, side = "B"),
+            // Not reduce-only.
+            exitJson(8, "Stop Market", "41000.0", position = false, reduceOnly = false),
+          ).joinToString(",") + "]"
+      )
+
+    val btc = state.toPositions(orders).first()
+
+    assertNull(btc.takeProfitTriggerPrice)
+    assertNull(btc.stopLossTriggerPrice)
+  }
+
+  private fun exitJson(
+    oid: Long,
+    type: String,
+    trigger: String,
+    position: Boolean,
+    time: Long = 1,
+    side: String = "A",
+    reduceOnly: Boolean = true,
+  ): String =
+    """{"coin":"BTC","side":"$side","limitPx":"$trigger","sz":"${if (position) "0.0" else "0.76666"}","oid":$oid,"timestamp":$time,"triggerCondition":"N/A","isTrigger":true,"triggerPx":"$trigger","children":[],"isPositionTpsl":$position,"reduceOnly":$reduceOnly,"orderType":"$type","origSz":"0.76666","tif":null,"cloid":null}"""
+
+  @Test
   fun mapsOpenOrdersWithTriggersAndAttachedExits() {
     val orders = decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS).map { it.toOpenOrder() }
 
