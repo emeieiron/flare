@@ -178,6 +178,24 @@ class ExchangeActionsTest {
   }
 
   @Test
+  fun revokesAnAgentByApprovingTheZeroAddressUnderItsName() {
+    val named = ApproveAgent.revoke("flare").toWire(testnet, 1_700_000_000_000L).toString()
+    val unnamed = ApproveAgent.revoke(null).toWire(testnet, 1_700_000_000_000L).toString()
+
+    assertEquals(
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+        """"agentAddress":"0x0000000000000000000000000000000000000000","agentName":"flare",""" +
+        """"nonce":1700000000000}""",
+      named,
+    )
+    assertEquals(
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+        """"agentAddress":"0x0000000000000000000000000000000000000000","nonce":1700000000000}""",
+      unnamed,
+    )
+  }
+
+  @Test
   fun formatsBuilderFeeRates() {
     fun rate(tenths: Int) = ApproveBuilderFee.ofTenthsOfBasisPoint(VectorCases.BUILDER, tenths)
 

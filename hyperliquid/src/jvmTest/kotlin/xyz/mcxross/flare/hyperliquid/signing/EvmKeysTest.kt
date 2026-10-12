@@ -56,6 +56,16 @@ class EvmKeysTest {
   }
 
   @Test
+  fun generatesDistinctUsableKeys() {
+    val first = EvmKeys.generatePrivateKey()
+    val second = EvmKeys.generatePrivateKey()
+
+    assertEquals(first, EvmKeys.normalizePrivateKey(first))
+    assertNotEquals(first, second)
+    assertNotEquals(EvmKeys.address(first), EvmKeys.address(second))
+  }
+
+  @Test
   fun importsAHexKeyWithOrWithoutItsPrefix() {
     val bare = HARDHAT_KEY.removePrefix("0x").uppercase()
 

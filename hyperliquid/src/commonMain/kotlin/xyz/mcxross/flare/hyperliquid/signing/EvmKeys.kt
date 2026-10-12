@@ -4,6 +4,7 @@ import xyz.mcxross.fastkrypto.SignatureScheme
 import xyz.mcxross.fastkrypto.mnemonicDerivePrivateKey
 import xyz.mcxross.fastkrypto.mnemonicGenerate
 import xyz.mcxross.fastkrypto.mnemonicValidate
+import xyz.mcxross.fastkrypto.secp256k1GenerateKeypair
 
 /**
  * EVM wallet keys as Ethereum wallets make them: an English BIP-39 recovery phrase derived at
@@ -22,6 +23,17 @@ object EvmKeys {
   fun generateMnemonic(words: Int = 12): String {
     require(words in WordCounts) { "A recovery phrase has 12, 15, 18, 21 or 24 words" }
     return mnemonicGenerate(words.toUInt())
+  }
+
+  /** A new secp256k1 key from FastKrypto's secure randomness, as `0x` and 64 lower-case hex digits. */
+  fun generatePrivateKey(): String {
+    val key = secp256k1GenerateKeypair().privateKey
+    return try {
+      check(key.size == FastKryptoSigner.PRIVATE_KEY_SIZE) { "Key generation failed" }
+      key.toHex0x()
+    } finally {
+      key.fill(0)
+    }
   }
 
   /** Lower-case words separated by single spaces. */
