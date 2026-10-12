@@ -228,4 +228,3 @@ internal fun List<HyperliquidTrade>.toRecentTrades(
 
 internal const val RECENT_TRADES = 40
 
-private fun String.toDoubleOrZero(): Double = toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0

@@ -6,6 +6,7 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradeAction
@@ -14,7 +15,7 @@ import xyz.mcxross.flare.venue.model.TradeAction
  * Hyperliquid actions aren't sent yet: each one fails before signing, so nothing is ever journaled
  * or pending.
  */
-class HyperliquidTradingRepository : TradingRepository {
+class HyperliquidTradingRepository(private val client: HyperliquidClient) : TradingRepository {
   override val pendingTransactions: Flow<List<PendingTransaction>> = flowOf(emptyList())
 
   override fun execute(
@@ -31,8 +32,14 @@ class HyperliquidTradingRepository : TradingRepository {
 
   override suspend fun ownerFeeBalance(): ULong = 0uL
 
-  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
-    throw UnsupportedOperationException(ACCOUNT_UNAVAILABLE)
+  /** The spot balance free to trade: what [accountAddress] holds of [symbol], less what orders hold. */
+  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double {
+    val balance =
+      client.info.spotClearinghouseState(accountAddress).balances.firstOrNull {
+        it.coin.trim().equals(symbol, ignoreCase = true)
+      } ?: return 0.0
+    return (balance.total.toDoubleOrZero() - balance.hold.toDoubleOrZero()).coerceAtLeast(0.0)
+  }
 
   override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> =
     flowOf(unavailable())
