@@ -118,7 +118,7 @@ cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 ./gradlew :androidApp:installDecibelDebug
 ```
 
-Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it shows live markets and sets up a wallet, and its trading is still in progress. It uses testnet unless built with `-PflareHyperliquidNetwork=mainnet`.
+Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet and shows live markets and the account, and its trading is still in progress. It uses testnet unless built with `-PflareHyperliquidNetwork=mainnet`.
 
 For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` or `Flare Hyperliquid` scheme.
 
