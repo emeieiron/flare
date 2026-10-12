@@ -22,6 +22,8 @@ import xyz.mcxross.flare.LaunchStage
 import xyz.mcxross.flare.launchStage
 import xyz.mcxross.flare.resumedSetup
 import xyz.mcxross.flare.shownWallet
+import xyz.mcxross.flare.data.SetupTransactionException
+import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.testing.SetupBackupWords
@@ -304,6 +306,77 @@ class OnboardingViewModelTest {
     assertEquals(stayed, left)
     assertTrue(stayedPreferences.values.first().profiles.isEmpty())
     assertTrue(leftPreferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun backAtOpenAccountMatchesWhetherOrNotTheAppWasLeft() = runTest {
+    suspend fun backFromOpenAccount(relock: Boolean, failedOpen: Boolean): Pair<OnboardingUiState, AppPreferences> {
+      val preferences = AppPreferences(MemoryPreferences())
+      val accounts =
+        object : SetupAccounts(preferences) {
+          override suspend fun openTradingAccount(prompt: VaultPrompt): String =
+            if (failedOpen) throw SetupTransactionException(ActionState.Failed("Sponsorship unavailable"))
+            else super.openTradingAccount(prompt)
+        }
+      val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+      createAndConfirmBackup(vm)
+      assertEquals(OnboardingStep.OPEN_ACCOUNT, vm.uiState.value.step)
+      if (failedOpen) {
+        vm.onIntent(OnboardingIntent.OpenAccount)
+        assertNotNull(vm.uiState.value.error)
+        assertFalse(vm.uiState.value.accountOpened)
+      }
+      if (relock) {
+        val id = assertNotNull(resumedSetup(preferences.values.first()))
+        vm.onIntent(OnboardingIntent.ClearSensitiveState)
+        vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+        vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+        assertEquals(OnboardingStep.OPEN_ACCOUNT, vm.uiState.value.step)
+        assertFalse(vm.uiState.value.busy)
+      }
+      vm.onIntent(OnboardingIntent.Back)
+      return vm.uiState.value to preferences
+    }
+
+    for (failedOpen in listOf(false, true)) {
+      val (stayed, stayedPreferences) = backFromOpenAccount(relock = false, failedOpen = failedOpen)
+      val (left, leftPreferences) = backFromOpenAccount(relock = true, failedOpen = failedOpen)
+
+      assertTrue(stayed.showsWelcome(initialMode = null))
+      assertTrue(left.showsWelcome(initialMode = RESUME))
+      assertEquals(stayed, left)
+      assertTrue(stayedPreferences.values.first().profiles.isEmpty())
+      assertTrue(leftPreferences.values.first().profiles.isEmpty())
+    }
+  }
+
+  @Test
+  fun backAtTheBackupAfterTheAppUnlocksAgainReturnsToTheStart() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val vm = viewModel(SetupAccounts(preferences), VenueSetup(), preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.CreateOwner)
+    vm.onIntent(OnboardingIntent.ReviewBackup)
+    val id = assertNotNull(resumedSetup(preferences.values.first()))
+
+    vm.onIntent(OnboardingIntent.ClearSensitiveState)
+    vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
+    assertEquals(OnboardingStep.SHOW_BACKUP, vm.uiState.value.step)
+    vm.onIntent(OnboardingIntent.Back)
+
+    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertTrue(vm.uiState.value.showsWelcome(RESUME))
+    assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  private fun createAndConfirmBackup(vm: OnboardingViewModel) {
+    vm.onIntent(OnboardingIntent.CreateOwner)
+    vm.onIntent(OnboardingIntent.ReviewBackup)
+    vm.uiState.value.confirmationIndices.forEach {
+      vm.onIntent(OnboardingIntent.ChangeConfirmation(it, SetupBackupWords[it]))
+    }
+    vm.onIntent(OnboardingIntent.ConfirmBackup)
   }
 
   @Test
