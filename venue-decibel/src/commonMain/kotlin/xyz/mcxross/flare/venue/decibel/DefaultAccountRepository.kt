@@ -103,8 +103,10 @@ class DefaultAccountRepository(
 
   override suspend fun delegations(): List<TradingKey> {
     val account = preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val onChain = runSuspendCatching { client.subaccounts.delegations(account) }.getOrNull()
+    if (onChain is AptosResult.Success) return onChain.value.toTradingKeys()
     ensureReadSession(account)
-    return client.accounts.delegations(account).map { it.toTradingKey() }
+    return client.accounts.delegations(account).toTradingKeys()
   }
 
   override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState {
