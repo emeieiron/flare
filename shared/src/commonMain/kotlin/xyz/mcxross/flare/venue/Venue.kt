@@ -78,20 +78,7 @@ data class ReceiveInstructions(
   val summary: String,
   /** What can lose the funds for good. */
   val warning: String,
-  /** Where test funds come from, on a test network. */
-  val faucet: Faucet? = null,
 )
-
-data class Faucet(
-  val label: String,
-  val url: String,
-  /** What the faucet requires, shown next to it. */
-  val note: String? = null,
-) {
-  init {
-    require(url.startsWith("https://")) { "Faucet links must use HTTPS" }
-  }
-}
 
 /** The chain a venue settles on, as the app names it and counts its network fees. */
 data class VenueChain(

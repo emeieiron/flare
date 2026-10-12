@@ -15,7 +15,6 @@ import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
 import xyz.mcxross.flare.store.FlareDatabase
-import xyz.mcxross.flare.venue.Faucet
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.ReceiveInstructions
 import xyz.mcxross.flare.venue.VaultTerms
@@ -63,7 +62,7 @@ class HyperliquidVenue(
           separateSpotBuilderApproval = false,
           enableTrading = true,
         ),
-      receive = receiveInstructions(network),
+      receive = Receive,
       withdrawal =
         WithdrawalTerms(
           network = "Arbitrum",
@@ -105,7 +104,7 @@ class HyperliquidVenue(
       )
 
     /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
-    fun receiveInstructions(network: Network): ReceiveInstructions =
+    val Receive =
       ReceiveInstructions(
         summary =
           "Deposit USDC to this address on Hyperliquid: send it from another Hyperliquid account, " +
@@ -113,18 +112,6 @@ class HyperliquidVenue(
         warning =
           "Never send from an exchange or network that doesn’t support Hyperliquid deposits. " +
             "Funds sent that way can be lost for good.",
-        faucet =
-          when (network) {
-            Network.TESTNET ->
-              Faucet(
-                label = "Get test USDC",
-                url = "https://app.hyperliquid-testnet.xyz/drip",
-                note =
-                  "The test USDC faucet only pays an address that has already deposited on " +
-                    "Hyperliquid mainnet.",
-              )
-            Network.MAINNET -> null
-          },
       )
 
     fun explorer(network: Network): VenueExplorer =

@@ -263,7 +263,6 @@ private fun DepositSheet(
 ) {
   val chain = LocalVenue.current.chain
   val receive = LocalVenue.current.receive
-  val browser = LocalUriHandler.current
   FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
       receive?.summary
@@ -285,18 +284,6 @@ private fun DepositSheet(
           "from other networks can be lost for good."),
       tone = NoticeTone.INFO,
     )
-    receive?.faucet?.let { faucet ->
-      faucet.note?.let {
-        Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-          style = MaterialTheme.typography.bodySmall)
-      }
-      FlareButton(
-        text = faucet.label,
-        onClick = { runCatching { browser.openUri(faucet.url) } },
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        style = FlareButtonStyle.OUTLINE,
-      )
-    }
     FlareButton(
       text = if (copied) "Copied" else "Copy address",
       onClick = onCopy,

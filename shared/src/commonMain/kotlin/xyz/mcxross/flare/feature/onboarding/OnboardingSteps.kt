@@ -89,7 +89,6 @@ import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.FlareQrCode
-import androidx.compose.ui.platform.LocalUriHandler
 
 private val Whitespace = Regex("\\s+")
 
@@ -953,7 +952,6 @@ private fun SetupTask(
 @Composable
 internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val venue = LocalVenue.current
-  val browser = LocalUriHandler.current
   val address = state.selectedSubaccount ?: state.profile.ownerAddress.orEmpty()
   LaunchedEffect(Unit) {
     while (true) {
@@ -987,19 +985,6 @@ internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
   ) {
     venue.receive?.summary?.let {
       Text(it, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-    }
-    // Above the address, so a notice among the actions never pushes it out of view.
-    venue.receive?.faucet?.let { faucet ->
-      faucet.note?.let {
-        Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-          style = MaterialTheme.typography.bodySmall)
-      }
-      FlareButton(
-        faucet.label,
-        { runCatching { browser.openUri(faucet.url) } },
-        Modifier.fillMaxWidth().padding(top = 12.dp),
-        style = FlareButtonStyle.OUTLINE,
-      )
     }
     if (address.isNotBlank()) {
       FlareQrCode(
