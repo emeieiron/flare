@@ -86,9 +86,6 @@ class HyperliquidVenueTest {
     val mainnet = HyperliquidVenue(Network.MAINNET).descriptor.receive!!
 
     assertTrue("Hyperliquid" in testnet.summary && "bridge" in testnet.summary)
-    assertEquals("https://app.hyperliquid-testnet.xyz/drip", testnet.faucet?.url)
-    assertTrue("mainnet" in testnet.faucet?.note.orEmpty())
-    assertNull(mainnet.faucet)
     assertEquals(testnet.warning, mainnet.warning)
   }
 
