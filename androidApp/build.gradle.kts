@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 // The decibel flavor's settings: the Flare Worker it talks to and the builder that receives
 // Flare's fee.
@@ -26,9 +27,20 @@ val flareHyperliquidBuilderAddress =
 val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
 val releaseSigned = releaseKeystore.isPresent
 
-// Release versions come from the tag: v1.2.3 builds versionName 1.2.3 and versionCode 10203.
-val flareVersionName = providers.gradleProperty("flareVersionName").orElse("1.0")
-val flareVersionCode = providers.gradleProperty("flareVersionCode").map { it.toInt() }.orElse(1)
+// The app version lives in version.properties at the repository root, which iOS reads too.
+// 1.2.3 builds versionCode 10203.
+val flareVersionName: String =
+  providers
+    .fileContents(rootProject.layout.projectDirectory.file("version.properties"))
+    .asText
+    .map { Properties().apply { load(it.reader()) }.getProperty("FLARE_VERSION").orEmpty().trim() }
+    .get()
+val flareVersionCode: Int =
+  Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""")
+    .matchEntire(flareVersionName)
+    ?.destructured
+    ?.let { (major, minor, patch) -> major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt() }
+    ?: error("FLARE_VERSION in version.properties must look like 1.2.3 with minor and patch below 100, got '$flareVersionName'")
 
 plugins {
   alias(libs.plugins.androidApplication)
@@ -74,8 +86,8 @@ android {
     targetSdk {
       version = release(libs.versions.android.targetSdk.get().toInt())
     }
-    versionCode = flareVersionCode.get()
-    versionName = flareVersionName.get()
+    versionCode = flareVersionCode
+    versionName = flareVersionName
   }
   // One app per exchange: each flavor links its :venue-* module, provides VenueEntry from
   // src/<flavor>, and installs under its own application ID.
