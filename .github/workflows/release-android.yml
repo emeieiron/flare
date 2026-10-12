@@ -1,6 +1,6 @@
 name: Release Android
 
-# Push a tag like v1.2.3 from main to build, sign and publish the Android APKs for direct download.
+# Push the tag v<FLARE_VERSION> (see version.properties) from main to build, sign and publish the Android APKs for direct download.
 # Each exchange is its own app (product flavor); this builds and ships both, decibel and hyperliquid.
 # Signing secrets live in the android-release environment, which only v* tags can use and which
 # waits for approval before each run.
@@ -43,24 +43,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read the version from the tag
+      - name: Check the tag against version.properties
         id: version
         run: |
           tag="${GITHUB_REF_NAME}"
-          if [[ ! "$tag" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "::error::Tags must look like v1.2.3, got $tag"; exit 1
+          version=$(sed -n 's/^FLARE_VERSION *= *//p' version.properties | tr -d '[:space:]')
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
+            echo "::error::FLARE_VERSION in version.properties must look like 1.2.3 (minor and patch below 100), got '$version'"; exit 1
           fi
-          major=${BASH_REMATCH[1]} minor=${BASH_REMATCH[2]} patch=${BASH_REMATCH[3]}
-          if (( minor > 99 || patch > 99 )); then
-            echo "::error::Minor and patch must stay below 100 to keep versionCode increasing"; exit 1
+          if [[ "$tag" != "v$version" ]]; then
+            echo "::error::Tag $tag does not match version.properties ($version); push v$version or change the file"; exit 1
           fi
           # Only release what is already on main.
           git fetch origin main --quiet
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::$tag is not on main"; exit 1
           fi
-          echo "name=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
-          echo "code=$(( major * 10000 + minor * 100 + patch ))" >> "$GITHUB_OUTPUT"
+          echo "name=$version" >> "$GITHUB_OUTPUT"
 
       - name: Check the release configuration
         run: |
@@ -109,9 +108,7 @@ jobs:
             -PflareWorkerUrl="$FLARE_WORKER_URL" \
             -PflareBuilderAddress="$FLARE_BUILDER_ADDRESS" \
             -PflareHyperliquidNetwork="$FLARE_HYPERLIQUID_NETWORK" \
-            -PflareHyperliquidBuilderAddress="$FLARE_HYPERLIQUID_BUILDER_ADDRESS" \
-            -PflareVersionName="${{ steps.version.outputs.name }}" \
-            -PflareVersionCode="${{ steps.version.outputs.code }}"
+            -PflareHyperliquidBuilderAddress="$FLARE_HYPERLIQUID_BUILDER_ADDRESS"
           rm -f "$keystore"
 
       - name: Check the APKs before they ship
