@@ -56,7 +56,8 @@ class HyperliquidVenueTest {
   @Test
   fun theWalletsOwnAddressIsItsAccountAndNothingIsSent() = runTest {
     val preferences = memoryPreferences()
-    val accounts = HyperliquidAccountRepository(preferences)
+    val client = testClient(MarketResponses)
+    val accounts = HyperliquidAccountRepository(client, preferences)
     val owner = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
     preferences.registerProfile(AccountProfile("owner_$owner", ownerAddress = owner))
 
@@ -64,9 +65,8 @@ class HyperliquidVenueTest {
 
     assertEquals(owner, preferences.values.first().selectedSubaccount)
     assertEquals(owner, accounts.snapshot.value.account)
-    assertEquals(ACCOUNT_UNAVAILABLE, accounts.snapshot.value.error)
     assertEquals(listOf(owner), accounts.subaccounts(owner).map { it.address })
-    val trading = HyperliquidTradingRepository()
+    val trading = HyperliquidTradingRepository(client)
     val result =
       trading.execute(TradeAction.Withdraw(owner, "1"), VaultPrompt("Test", "Test")).first()
     assertTrue(assertIs<ActionState.Failed>(result).definitelyNotSubmitted)

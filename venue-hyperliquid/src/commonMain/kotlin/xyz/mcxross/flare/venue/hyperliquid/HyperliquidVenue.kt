@@ -24,8 +24,8 @@ import xyz.mcxross.flare.venue.VenueSetup
 
 /**
  * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session.
- * The wallet's own address is its account. Markets, charts and books are live; account reads and
- * trading come later, so setup ends once the wallet exists.
+ * The wallet's own address is its account. Markets, charts, books and the account are live; trading
+ * comes later, so setup ends once the wallet exists.
  */
 class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
   private val deployment = HyperliquidDeployment.forNetwork(network.toHyperliquidNetwork())
