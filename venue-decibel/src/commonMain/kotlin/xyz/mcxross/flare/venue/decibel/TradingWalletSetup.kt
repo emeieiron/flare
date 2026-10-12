@@ -1,17 +1,14 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.data.SetupTransactionException
+import xyz.mcxross.flare.venue.model.ActionState
 
-/**
- * Repository-owned setup: retries only indexed reads, never key generation or transactions. Public
- * while Decibel's account repository in `:venue-decibel` uses it from here; it moves there with the
- * trading repository.
- */
-class TradingWalletSetup {
+/** Repository-owned setup: retries only indexed reads, never key generation or transactions. */
+internal class TradingWalletSetup {
   private val mutex = Mutex()
 
   suspend fun prepare(actions: TradingWalletSetupActions) = mutex.withLock {
@@ -19,7 +16,7 @@ class TradingWalletSetup {
     if (!actions.isDelegated(address)) {
       actions.requireNoPendingTransactions()
       val result = actions.delegate()
-      if (result !is TransactionState.Committed) throw SetupTransactionException(result)
+      if (result !is ActionState.Committed) throw SetupTransactionException(result)
     }
     var lastError: Exception? = null
     repeat(VERIFICATION_ATTEMPTS) { attempt ->
@@ -44,7 +41,7 @@ class TradingWalletSetup {
   }
 }
 
-interface TradingWalletSetupActions {
+internal interface TradingWalletSetupActions {
   suspend fun existingWallet(): String?
 
   suspend fun createWallet(): String
@@ -53,14 +50,7 @@ interface TradingWalletSetupActions {
 
   suspend fun requireNoPendingTransactions()
 
-  suspend fun delegate(): TransactionState
+  suspend fun delegate(): ActionState
 
   suspend fun verifyTradingKey()
 }
-
-class SetupTransactionException(val transaction: TransactionState) :
-  IllegalStateException(
-    (transaction as? TransactionState.Failed)?.let { failure ->
-      "Enabling trading failed" + (failure.hash?.let { ". Transaction: $it" } ?: "")
-    } ?: "Enabling trading is still pending"
-  )

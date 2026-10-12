@@ -53,7 +53,7 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.decibel.model.toDecimalString
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle

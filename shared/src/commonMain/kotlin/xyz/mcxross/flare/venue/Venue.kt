@@ -30,8 +30,25 @@ data class VenueDescriptor(
   val proxyUrl: String? = null,
   /** Flare's builder address on the venue, which receives the optional builder fee. */
   val builderAddress: String? = null,
+  /** The builder fee setup turns on when the person opts in, in basis points. */
+  val builderFeeBps: Int = 0,
   /** What the venue calls its reward points, such as Decibel's Amps; null when it has none. */
   val rewardPointsName: String? = null,
+  /** The steps account setup takes once the wallet exists. */
+  val setup: VenueSetup = VenueSetup(),
+)
+
+/**
+ * The venue's account setup after the wallet exists. Enabling trading on the device is always a
+ * step; the others depend on how the exchange organizes accounts.
+ */
+data class VenueSetup(
+  /** An owner trades from one of several trading accounts, picked or created during setup. */
+  val tradingAccounts: Boolean = true,
+  /** A wallet made in the app opens its trading account on chain before it can trade. */
+  val openTradingAccount: Boolean = true,
+  /** Setup offers to approve Flare's builder fee. */
+  val builderFee: Boolean = true,
 )
 
 /** The features an exchange supports. The app hides what a venue can't do. */
@@ -48,6 +65,8 @@ data class VenueCapabilities(
   val networkFeeTopUp: Boolean,
   /** Deposits made from inside the app, rather than sent to an address shown in it. */
   val inAppDeposit: Boolean,
+  /** Moving USDC between perpetuals and spot margin, where the exchange keeps them apart. */
+  val perpSpotTransfer: Boolean = false,
 ) {
   companion object {
     /** Every feature on: the starting state of screens before a venue's flags arrive. */
@@ -61,6 +80,7 @@ data class VenueCapabilities(
         sponsoredFees = true,
         networkFeeTopUp = true,
         inAppDeposit = true,
+        perpSpotTransfer = true,
       )
   }
 }

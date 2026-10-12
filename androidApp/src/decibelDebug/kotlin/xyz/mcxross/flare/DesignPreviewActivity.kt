@@ -13,8 +13,8 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import kotlin.math.sin
 import xyz.mcxross.flare.data.*
-import xyz.mcxross.flare.decibel.model.*
-import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.MarketPrecision
 import xyz.mcxross.flare.design.*
 import xyz.mcxross.flare.feature.markets.*
 import xyz.mcxross.flare.feature.onboarding.*
@@ -25,7 +25,9 @@ import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
+import xyz.mcxross.flare.venue.decibel.DecibelOrderRules
 import xyz.mcxross.flare.venue.model.AccountOverview
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
@@ -38,7 +40,9 @@ import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardPointsSource
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.SpotBalances
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -172,15 +176,15 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                   is TradeIntent.SetOrderType -> trade.copy(orderType = intent.type)
                   is TradeIntent.SetTwapDurationMinutes -> trade.copy(twapDurationMinutesInput = intent.value)
                   is TradeIntent.SetTwapFrequencyMinutes -> trade.copy(twapFrequencyMinutesInput = intent.value)
-                  TradeIntent.ConfirmSelfPay -> trade.copy(transaction = TransactionState.Committed("preview-only"))
+                  TradeIntent.ConfirmSelfPay -> trade.copy(transaction = ActionState.Committed("preview-only"))
                   TradeIntent.DismissOrderReceipt -> trade.copy(transaction = null, sizeInput = "", orderError = null)
                   is TradeIntent.Submit -> when (initialScreen) {
-                    "trade-success" -> trade.copy(transaction = TransactionState.Committed("preview-only"))
+                    "trade-success" -> trade.copy(transaction = ActionState.Committed("preview-only"))
                     "trade-busy" -> trade.copy(orderBusy = true)
                     "trade-selfpay" -> trade.copy(
-                      transaction = TransactionState.Failed(
+                      transaction = ActionState.Failed(
                         "Sponsorship unavailable",
-                        selfPayEstimateOctas = 2_400uL,
+                        selfPay = SelfPayOffer(2_400uL),
                       ),
                       apiWalletNeedsTopUp = true,
                       suggestedTopUpOctas = 50_000uL,
@@ -250,7 +254,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                   is SettingsIntent.SetBuilderFeeBps ->
                     settings.copy(
                       preferences =
-                        if (intent.product == AssetType.PERP)
+                        if (intent.product == MarketKind.PERP)
                           prefs.copy(
                             builderFeeBps = intent.basisPoints,
                             builderApproved = prefs.builderApproved || intent.basisPoints > 0,
@@ -264,7 +268,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                   is SettingsIntent.RevokeBuilderFee ->
                     settings.copy(
                       preferences =
-                        if (intent.product == AssetType.PERP) prefs.copy(builderApproved = false)
+                        if (intent.product == MarketKind.PERP) prefs.copy(builderApproved = false)
                         else prefs.copy(spotBuilderApproved = false)
                     )
                   else -> settings
@@ -295,26 +299,26 @@ private fun previewWithdrawState(screen: String): SettingsUiState {
     "withdraw-form" -> SettingsUiState(withdrawable = 998.51)
     "withdraw-invalid" -> filled.copy(withdrawDestination = "0xe05e75a9-not-an-address")
     "withdraw-over" -> filled.copy(withdrawAmount = "1200")
-    "withdraw-working" -> filled.copy(withdrawing = true, withdrawTransaction = TransactionState.Submitting)
+    "withdraw-working" -> filled.copy(withdrawing = true, withdrawTransaction = ActionState.Submitting)
     "withdraw-sending" ->
       filled.copy(
         withdrawing = true,
-        withdrawTransaction = TransactionState.Submitting,
+        withdrawTransaction = ActionState.Submitting,
         pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true),
       )
     "withdraw-selfpay" ->
-      filled.copy(withdrawTransaction = TransactionState.Failed("Sponsor unavailable", selfPayEstimateOctas = 12_400uL))
+      filled.copy(withdrawTransaction = ActionState.Failed("Sponsor unavailable", selfPay = SelfPayOffer(12_400uL)))
     "withdraw-resume" ->
       filled.copy(pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true))
-    "withdraw-sent" -> filled.copy(withdrawTransaction = TransactionState.Committed("0xfeed"))
+    "withdraw-sent" -> filled.copy(withdrawTransaction = ActionState.Committed("0xfeed"))
     "withdraw-failed" ->
       filled.copy(
-        withdrawTransaction = TransactionState.Failed("Move abort: INSUFFICIENT_BALANCE"),
+        withdrawTransaction = ActionState.Failed("Move abort: INSUFFICIENT_BALANCE"),
         withdrawError = "Move abort: INSUFFICIENT_BALANCE",
       )
     "withdraw-uncertain" ->
       filled.copy(
-        withdrawTransaction = TransactionState.Failed("timed out"),
+        withdrawTransaction = ActionState.Failed("timed out"),
         withdrawError = "timed out",
         pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc"),
       )
@@ -356,11 +360,13 @@ private fun previewQuotes(): List<MarketQuote> =
           sizeDecimals = 4,
           maxLeverage = 20,
           isolatedOnly = false,
-          tickSize = 1u,
-          lotSize = 1u,
-          minSize = 1u,
-          minPrice = 1u,
-          maxPrice = 100000000u,
+          rules =
+            DecibelOrderRules(
+              marketId = "0x${index + 100}",
+              name = "$symbol/USD",
+              kind = AssetType.PERP,
+              precision = MarketPrecision(2, 4, tickSize = 1u, lotSize = 1u, minimumSize = 1u, minimumPrice = 1u, maximumPrice = 100000000u),
+            ),
         ),
         price,
         change,
@@ -530,8 +536,8 @@ private val PreviewWords =
 
 private val PreviewSubaccounts =
   listOf(
-    Subaccount(address = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48", owner = "0x1", customLabel = "Main", isPrimary = true),
-    Subaccount(address = "0x2e91b47c0d8a35f6e1c94b27a0d6f3e85c1b49a7d2e06f3c8b5a1d94e7f20c36", owner = "0x1", isPrimary = false),
+    TradingAccount(address = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48", owner = "0x1", label = "Main", primary = true),
+    TradingAccount(address = "0x2e91b47c0d8a35f6e1c94b27a0d6f3e85c1b49a7d2e06f3c8b5a1d94e7f20c36", owner = "0x1", primary = false),
   )
 
 private fun previewOnboardingState(screen: String): OnboardingUiState {

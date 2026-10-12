@@ -1,13 +1,9 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 
-/**
- * Pays an Aptos transaction's gas through Flare's Gas Station (Decibel only, behind
- * `VenueCapabilities.sponsoredFees`). The Worker implementation lives in `:venue-decibel`; this
- * interface moves there with DefaultTradingRepository, its only user (PR 8).
- */
+/** Pays an Aptos transaction's gas through Flare's Gas Station, behind `sponsoredFees`. */
 interface GasSponsorshipRepository {
   suspend fun submit(
     request: ExternalFeePayerRequest,

@@ -1,4 +1,4 @@
-package xyz.mcxross.flare
+package xyz.mcxross.flare.venue.decibel
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -6,7 +6,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlinx.coroutines.test.runTest
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.AptosConfig
 import xyz.mcxross.kaptos.model.AccountAddress

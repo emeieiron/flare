@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
@@ -26,26 +25,25 @@ import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.data.caughtUpWith
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.mergeCandles
+import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.data.withLiveCandle
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
-import xyz.mcxross.flare.decibel.model.OrderValidationError
-import xyz.mcxross.flare.decibel.model.toDecimalString
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.venue.VenueCapabilities
+import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
-import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingFees
 
 enum class ChartStyle {
@@ -57,6 +55,8 @@ internal fun ChartStyle.flipped(): ChartStyle =
   if (this == ChartStyle.LINE) ChartStyle.CANDLESTICK else ChartStyle.LINE
 
 data class TradeUiState(
+  /** What the venue supports; the ticket hides the rest. */
+  val capabilities: VenueCapabilities = VenueCapabilities.All,
   val quote: MarketQuote? = null,
   val timeframe: ChartTimeframe = ChartTimeframe.Default,
   val chartStyle: ChartStyle = ChartStyle.LINE,
@@ -76,17 +76,17 @@ data class TradeUiState(
   val leverage: Int = 1,
   val positionLeverage: Int? = null,
   val positionIsolated: Boolean? = null,
-  val leverageTransaction: TransactionState? = null,
+  val leverageTransaction: ActionState? = null,
   val slippageBps: Int = 50,
   val orderBusy: Boolean = false,
   val orderError: String? = null,
-  val transaction: TransactionState? = null,
+  val transaction: ActionState? = null,
   val tradingKeyAddress: String? = null,
   val tradingAccountAddress: String? = null,
   val lastSide: OrderSide? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
-  val topUpTransaction: TransactionState? = null,
+  val topUpTransaction: ActionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
   val fees: TradingFees? = null,
@@ -98,6 +98,15 @@ data class TradeUiState(
   val twapDurationMinutesInput: String = "60",
   val twapFrequencyMinutesInput: String = "1",
 ) {
+  /**
+   * What the wallet would pay for the order's network fee once the venue's sponsor declined it;
+   * null when it wasn't declined, or the venue has no sponsored fees.
+   */
+  val selfPayEstimate: ULong?
+    get() =
+      if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
+      else null
+
   fun availableDisplay(side: OrderSide): String? {
     val isSpot = quote?.market?.kind == MarketKind.SPOT
     return if (isSpot) {
@@ -160,9 +169,11 @@ class TradeViewModel(
   private val accounts: AccountRepository,
   private val wallets: WalletRepository,
   private val preferences: AppPreferences,
-  private val decibelConfig: DecibelRuntimeConfig,
+  venue: VenueDescriptor,
 ) : ViewModel() {
-  private val mutableUiState = MutableStateFlow(TradeUiState())
+  private val capabilities = venue.capabilities
+  private val defaultBuilderAddress = venue.builderAddress
+  private val mutableUiState = MutableStateFlow(TradeUiState(capabilities = capabilities))
   val uiState: StateFlow<TradeUiState> = mutableUiState.asStateFlow()
 
   private var requestedMarket: String? = null
@@ -228,7 +239,7 @@ class TradeViewModel(
             showMacd = values.showMacd,
             slippageBps = values.slippageBps,
             tradingAccountAddress = values.selectedSubaccount,
-            builderAddress = values.builderAddress ?: decibelConfig.defaultBuilderAddress,
+            builderAddress = values.builderAddress ?: defaultBuilderAddress,
             builderFeeBps = values.builderFeeBps,
             builderApproved = values.builderApproved,
             spotBuilderFeeBps = values.spotBuilderFeeBps,
@@ -411,7 +422,7 @@ class TradeViewModel(
       TradeIntent.TopUpApiWallet -> topUpApiWallet()
       TradeIntent.DismissOrderReceipt ->
         mutableUiState.update {
-          if (it.orderBusy || it.transaction !is TransactionState.Committed) it
+          if (it.orderBusy || it.transaction !is ActionState.Committed) it
           else
             it.copy(
               sizeInput = "",
@@ -459,36 +470,8 @@ class TradeViewModel(
           if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
             error("A live order book is required for a market order")
           }
-          val draft = state.orderDraft(side)
           val isSpot = market.kind == MarketKind.SPOT
-          val entryCommand =
-            if (isSpot) {
-              val validation = draft.validate(market, state.marketDetails.orderBook)
-              val validated =
-                validation.value
-                  ?: error(
-                    validation.errors.joinToString("\n") { it.message(market) }
-                  )
-              DecibelCommand.PlaceSpotOrder(subaccount, validated)
-            } else if (state.orderType == OrderType.TWAP) {
-              val duration = state.twapDurationMinutesInput.toULongOrNull()?.times(60uL) ?: 3600uL
-              val frequency = state.twapFrequencyMinutesInput.toULongOrNull()?.times(60uL) ?: 60uL
-              val twapValidation = draft.validateTwap(market, frequency, duration)
-              val twapValidated =
-                twapValidation.value
-                  ?: error(
-                    twapValidation.errors.joinToString("\n") { it.message(market) }
-                  )
-              DecibelCommand.PlaceTwapOrder(subaccount, twapValidated)
-            } else {
-              val validation = draft.validate(market, state.marketDetails.orderBook)
-              val validated =
-                validation.value
-                  ?: error(
-                    validation.errors.joinToString("\n") { it.message(market) }
-                  )
-              DecibelCommand.PlaceOrder(subaccount, validated)
-            }
+          val entryAction = TradeAction.PlaceOrder(subaccount, market, state.checkedOrder(side))
           val reconciliation = trading.reconcilePending()
           require(reconciliation.unresolved == 0) {
             "Flare is still confirming an earlier action. Try again in a moment."
@@ -508,20 +491,20 @@ class TradeViewModel(
             ) {
               placeConfiguredOrder(
                 configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
-                entry = entryCommand,
-                execute = { command ->
+                entry = entryAction,
+                execute = { action ->
                   trading.execute(
-                    command,
+                    action,
                     VaultPrompt(
                       title =
-                        if (command is DecibelCommand.ConfigureMarket)
+                        if (action is TradeAction.ConfigureMarket)
                           "Apply ${state.leverage}× leverage"
                         else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
                       subtitle = "Confirm your identity",
                     ),
                     if (
                       feePayment == FeePayment.SELF_PAY &&
-                        (command is DecibelCommand.ConfigureMarket) == selfPayLeverage
+                        (action is TradeAction.ConfigureMarket) == selfPayLeverage
                     )
                       FeePayment.SELF_PAY
                     else FeePayment.SPONSORED,
@@ -536,12 +519,17 @@ class TradeViewModel(
               )
             }
           when (val transaction = terminal) {
-            is TransactionState.Committed -> accounts.refresh()
-            is TransactionState.Failed -> {
-              if (transaction.selfPayEstimateOctas == null) error(transaction.message)
-              trading.apiWalletTopUpFor(transaction, wallets.profile.first())?.let { topUp ->
-                mutableUiState.update {
-                  it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp)
+            is ActionState.Committed -> accounts.refresh()
+            is ActionState.Failed -> {
+              if (transaction.selfPay == null || !capabilities.sponsoredFees) {
+                error(transaction.message)
+              }
+              // Venues without a fee token to send never offer a top-up.
+              if (capabilities.networkFeeTopUp) {
+                trading.tradingKeyTopUpFor(transaction, wallets.profile.first())?.let { topUp ->
+                  mutableUiState.update {
+                    it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp)
+                  }
                 }
               }
             }
@@ -573,7 +561,7 @@ class TradeViewModel(
           val amount =
             mutableUiState.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
           trading
-            .topUpApiWallet(
+            .topUpTradingKey(
               amount,
               VaultPrompt(
                 "Cover network fees",
@@ -585,11 +573,11 @@ class TradeViewModel(
               mutableUiState.update { it.copy(topUpTransaction = transaction) }
             }
           when (val terminal = mutableUiState.value.topUpTransaction) {
-            is TransactionState.Committed ->
+            is ActionState.Committed ->
               mutableUiState.update {
                 it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null)
               }
-            is TransactionState.Failed -> error(terminal.message)
+            is ActionState.Failed -> error(terminal.message)
             else -> Unit
           }
         }
@@ -735,45 +723,3 @@ private const val OLDER_CANDLES_ATTEMPTS = 3
 
 /** Enough history to pan through without slowing the chart down as it keeps growing. */
 private const val MAX_CHART_CANDLES = 10_000
-
-/**
- * Validation speaks in the market's own units: sizes in the asset, prices in dollars, never the
- * raw on-chain integers the checks compare.
- */
-internal fun OrderValidationError.message(market: Market): String {
-  val asset = market.symbol.substringBefore('/')
-  fun label(field: String) =
-    when (field) {
-      "size" -> "Size"
-      "price" -> "Price"
-      "take-profit trigger", "take-profit limit" -> "Take profit"
-      "stop-loss trigger", "stop-loss limit" -> "Stop loss"
-      else -> field.replaceFirstChar(Char::uppercase)
-    }
-  fun amount(field: String, units: ULong): String =
-    if (field == "size") "${units.plainDecimal(market.sizeDecimals)} $asset"
-    else "$${units.plainDecimal(market.priceDecimals)}"
-  return when (this) {
-    is OrderValidationError.InvalidDecimal -> "${label(field)}: $reason"
-    is OrderValidationError.InvalidMarketAddress -> "${label(field)}: $reason"
-    is OrderValidationError.InvalidBuilderAddress -> "${label(field)}: $reason"
-    is OrderValidationError.InvalidBuilderFee -> "${label(field)}: $reason"
-    is OrderValidationError.MarketMismatch -> "${label(field)} doesn’t match the selected market"
-    is OrderValidationError.Overflow -> "${label(field)} is too large"
-    is OrderValidationError.TooPrecise ->
-      "${label(field)} can have at most $allowedDecimals decimal${if (allowedDecimals == 1) "" else "s"}"
-    is OrderValidationError.NotAligned ->
-      "${label(field)} must be in steps of ${amount(field, increment)}"
-    is OrderValidationError.BelowMinimum ->
-      if (field == "size") "Minimum size is ${amount(field, minimum)}"
-      else "${label(field)} must be at least ${amount(field, minimum)}"
-    is OrderValidationError.AboveMaximum ->
-      "${label(field)} can be at most ${amount(field, maximum)}"
-    OrderValidationError.MissingLimitPrice -> "Enter a limit price"
-    OrderValidationError.MissingMarketPrice -> "A reliable best bid and ask are required"
-  }
-}
-
-/** On-chain units as a readable decimal: 1000000000 at 8 decimals reads "10". */
-private fun ULong.plainDecimal(decimals: Int): String =
-  toDecimalString(decimals).let { if ('.' in it) it.trimEnd('0').trimEnd('.') else it }

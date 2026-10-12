@@ -1,32 +1,30 @@
 package xyz.mcxross.flare.feature.trade
 
-import xyz.mcxross.flare.decibel.model.DecimalInput
-import xyz.mcxross.flare.decibel.model.OrderDraft
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
-import xyz.mcxross.flare.decibel.model.SlippageBps
-import xyz.mcxross.flare.decibel.model.toChainUnits
+import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderCheck
+import xyz.mcxross.flare.venue.model.OrderRequest
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.TwapSchedule
 
 internal fun TradeUiState.entryPrice(side: OrderSide): String? =
   if (orderType == OrderType.LIMIT) limitPriceInput.takeIf(String::isNotBlank)
   else if (side == OrderSide.BUY) marketDetails.orderBook?.bestAsk
   else marketDetails.orderBook?.bestBid
 
-/** Entry and attached exit prices remain decimal strings until exact chain-unit validation. */
-internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
+/** Entry and attached exit prices remain decimal strings until the market's rules check them. */
+internal fun TradeUiState.orderRequest(side: OrderSide): OrderRequest {
   val market = quote?.market ?: error("Select a market first")
   val isSpot = market.kind == MarketKind.SPOT
-  val takeProfit =
-    if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
-  val stopLoss = if (isSpot) null else stopLossInput.takeIf(String::isNotBlank)?.let(::DecimalInput)
+  val takeProfit = if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)
+  val stopLoss = if (isSpot) null else stopLossInput.takeIf(String::isNotBlank)
   if (takeProfit != null || stopLoss != null) {
     val entry = entryPrice(side) ?: error("An entry price is needed to check your exits")
-    val entryUnits =
-      DecimalInput(entry).toChainUnits("Entry price", market.priceDecimals).getOrThrow()
-    fun checkExit(input: DecimalInput?, label: String, above: Boolean) {
+    val entryUnits = decimalUnits(entry, "Entry price", market.priceDecimals).getOrThrow()
+    fun checkExit(input: String?, label: String, above: Boolean) {
       if (input == null) return
-      val units = input.toChainUnits(label, market.priceDecimals).getOrThrow()
+      val units = decimalUnits(input, label, market.priceDecimals).getOrThrow()
       require(units > 0uL) { "$label must be greater than zero" }
       require(if (above) units > entryUnits else units < entryUnits) {
         "$label must be ${if (above) "above" else "below"} the entry price"
@@ -35,22 +33,39 @@ internal fun TradeUiState.orderDraft(side: OrderSide): OrderDraft {
     checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
     checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
   }
-  val activeBuilderFeeBps = builderFeeFor(market.kind == MarketKind.SPOT)?.toUInt()
+  val activeBuilderFeeBps = builderFeeFor(market.kind == MarketKind.SPOT)
   val activeBuilderAddress = if (activeBuilderFeeBps != null) builderAddress else null
-  return OrderDraft(
-    marketAddress = market.id,
+  return OrderRequest(
+    marketId = market.id,
     side = side,
     type = orderType,
-    size = DecimalInput(sizeInput),
-    limitPrice = limitPriceInput.takeIf(String::isNotBlank)?.let(::DecimalInput),
-    slippage = SlippageBps(slippageBps.toUInt()),
-    takeProfitTriggerPrice = takeProfit,
-    takeProfitLimitPrice = takeProfit,
-    stopLossTriggerPrice = stopLoss,
-    stopLossLimitPrice = stopLoss,
+    size = sizeInput,
+    price = limitPriceInput.takeIf(String::isNotBlank),
+    slippageBps = slippageBps,
+    takeProfitTrigger = takeProfit,
+    takeProfitLimit = takeProfit,
+    stopLossTrigger = stopLoss,
+    stopLossLimit = stopLoss,
     builderAddress = activeBuilderAddress,
     builderFeeBps = activeBuilderFeeBps,
+    twap = if (orderType == OrderType.TWAP) twapSchedule() else null,
   )
+}
+
+/** The TWAP schedule as entered, falling back to one slice a minute for an hour. */
+internal fun TradeUiState.twapSchedule(): TwapSchedule =
+  TwapSchedule(
+    frequencySeconds = (twapFrequencyMinutesInput.toULongOrNull()?.times(60uL) ?: 60uL).toLong(),
+    durationSeconds = (twapDurationMinutesInput.toULongOrNull()?.times(60uL) ?: 3600uL).toLong(),
+  )
+
+/** The order the market's rules accept for [side], or the reasons they don't, one per line. */
+internal fun TradeUiState.checkedOrder(side: OrderSide): OrderRequest {
+  val market = quote?.market ?: error("Select a market first")
+  return when (val check = market.rules.check(orderRequest(side), marketDetails.orderBook)) {
+    is OrderCheck.Valid -> check.order
+    is OrderCheck.Invalid -> error(check.errors.joinToString("\n"))
+  }
 }
 
 internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatching {
@@ -67,12 +82,8 @@ internal fun TradeUiState.orderInputError(side: OrderSide): String? = runCatchin
     require(duration in 120uL..86400uL) { "Duration must be between 2 minutes and 24 hours" }
     require(frequency >= 60uL) { "Frequency must be at least 1 minute" }
     require(frequency <= duration) { "Frequency cannot exceed duration" }
-    val result = orderDraft(side).validateTwap(market, frequency, duration)
-    require(result.isValid) { result.errors.joinToString("\n") { it.message(market) } }
-  } else {
-    val result = orderDraft(side).validate(market, marketDetails.orderBook)
-    require(result.isValid) { result.errors.joinToString("\n") { it.message(market) } }
   }
+  checkedOrder(side)
 }
   .exceptionOrNull()
   ?.message

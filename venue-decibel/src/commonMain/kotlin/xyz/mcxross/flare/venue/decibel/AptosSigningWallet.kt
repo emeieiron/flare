@@ -1,11 +1,9 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
+import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.model.AccountAddress
-
-// Decibel-only signing seams that DefaultTradingRepository still uses from :shared. Their
-// implementations live in :venue-decibel; this file moves there with that repository (PR 8).
 
 /**
  * Decibel's view of the device's keys: Kaptos accounts to sign Aptos transactions and Worker

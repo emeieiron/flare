@@ -11,6 +11,7 @@ import xyz.mcxross.flare.decibel.DecibelNetwork
 import xyz.mcxross.flare.decibel.api.MarketDepthUpdate
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.CandleInterval
+import xyz.mcxross.flare.decibel.model.MarketPrecision
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
@@ -56,11 +57,22 @@ class DecibelMarketMappersTest {
         sizeDecimals = 9,
         maxLeverage = 50,
         isolatedOnly = false,
-        tickSize = 1_000_000uL,
-        lotSize = 100_000_000uL,
-        minSize = 100_000_000uL,
-        minPrice = 1uL,
-        maxPrice = 90_000_000_000_000uL,
+        rules =
+          DecibelOrderRules(
+            marketId = "0x1",
+            name = "BTC/USD",
+            kind = AssetType.PERP,
+            precision =
+              MarketPrecision(
+                priceDecimals = 9,
+                sizeDecimals = 9,
+                tickSize = 1_000_000uL,
+                lotSize = 100_000_000uL,
+                minimumSize = 100_000_000uL,
+                minimumPrice = 1uL,
+                maximumPrice = 90_000_000_000_000uL,
+              ),
+          ),
       ),
       market,
     )

@@ -19,15 +19,15 @@ import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.data.apiWalletTopUpFor
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TwapOrder
 
 enum class OrdersSection(val label: String) {
@@ -50,7 +50,7 @@ data class OrdersUiState(
   val activeTwaps: List<TwapOrder> = emptyList(),
   val twapHistory: List<TwapOrder> = emptyList(),
   val section: OrdersSection = OrdersSection.OPEN,
-  val transaction: TransactionState? = null,
+  val transaction: ActionState? = null,
   val busy: Boolean = false,
   val error: String? = null,
   val lastCancelMarket: String? = null,
@@ -60,7 +60,7 @@ data class OrdersUiState(
   val lastCancelTwapId: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
-  val topUpTransaction: TransactionState? = null,
+  val topUpTransaction: ActionState? = null,
 ) {
   /**
    * What the wallet would pay for the last action's network fee once the venue's sponsor declined
@@ -68,7 +68,7 @@ data class OrdersUiState(
    */
   val selfPayEstimate: ULong?
     get() =
-      if (capabilities.sponsoredFees) (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+      if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
       else null
 }
 
@@ -205,25 +205,28 @@ class OrdersViewModel(
       trading
         .execute(
           if (isTpSl) {
-            DecibelCommand.CancelPositionTpSl(subaccount, market, orderId)
-          } else if (isSpot) {
-            DecibelCommand.CancelSpotOrder(subaccount, market, orderId)
+            TradeAction.CancelPositionTpSl(subaccount, market, orderId)
           } else {
-            DecibelCommand.CancelOrder(subaccount, market, orderId)
+            TradeAction.CancelOrder(
+              subaccount,
+              market,
+              orderId,
+              if (isSpot) MarketKind.SPOT else MarketKind.PERP,
+            )
           },
           VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity"),
           feePayment,
         )
         .collect { state -> local.update { it.copy(transaction = state) } }
       when (val state = local.value.transaction) {
-        is TransactionState.Committed -> {
+        is ActionState.Committed -> {
           accounts.refresh()
           accounts.refreshHistory()
         }
-        is TransactionState.Failed -> {
-          if (state.selfPayEstimateOctas == null) error(state.message)
+        is ActionState.Failed -> {
+          if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+            trading.tradingKeyTopUpFor(state, uiState.value.profile)?.let { topUp ->
               local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
             }
           }
@@ -236,7 +239,7 @@ class OrdersViewModel(
     launchAction("The network fee wasn’t covered.") {
       val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
       trading
-        .topUpApiWallet(
+        .topUpTradingKey(
           amount,
           VaultPrompt(
             "Cover network fees",
@@ -246,9 +249,9 @@ class OrdersViewModel(
         )
         .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
       when (val terminal = local.value.topUpTransaction) {
-        is TransactionState.Committed ->
+        is ActionState.Committed ->
           local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
-        is TransactionState.Failed -> error(terminal.message)
+        is ActionState.Failed -> error(terminal.message)
         else -> Unit
       }
     }
@@ -266,19 +269,19 @@ class OrdersViewModel(
       }
       trading
         .execute(
-          DecibelCommand.CancelTwapOrder(subaccount, market, twapId),
+          TradeAction.CancelTwapOrder(subaccount, market, twapId),
           VaultPrompt("Cancel TWAP order", "Confirm your identity"),
           feePayment,
         )
         .collect { state -> local.update { it.copy(transaction = state) } }
       when (val state = local.value.transaction) {
-        is TransactionState.Committed -> {
+        is ActionState.Committed -> {
           refreshTwaps()
         }
-        is TransactionState.Failed -> {
-          if (state.selfPayEstimateOctas == null) error(state.message)
+        is ActionState.Failed -> {
+          if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.apiWalletTopUpFor(state, uiState.value.profile)?.let { topUp ->
+            trading.tradingKeyTopUpFor(state, uiState.value.profile)?.let { topUp ->
               local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
             }
           }
@@ -300,17 +303,20 @@ class OrdersViewModel(
               .firstOrNull { it.market.id == order.marketId }
               ?.market
               ?.kind == MarketKind.SPOT || order.kind == MarketKind.SPOT
-          val command =
+          val action =
             if (order.isPositionTpSl) {
-              DecibelCommand.CancelPositionTpSl(subaccount, order.marketId, order.orderId)
-            } else if (isSpot) {
-              DecibelCommand.CancelSpotOrder(subaccount, order.marketId, order.orderId)
+              TradeAction.CancelPositionTpSl(subaccount, order.marketId, order.orderId)
             } else {
-              DecibelCommand.CancelOrder(subaccount, order.marketId, order.orderId)
+              TradeAction.CancelOrder(
+                subaccount,
+                order.marketId,
+                order.orderId,
+                if (isSpot) MarketKind.SPOT else MarketKind.PERP,
+              )
             }
           trading
             .execute(
-              command,
+              action,
               VaultPrompt("Cancel order", "Confirm your identity"),
               FeePayment.SPONSORED,
             )

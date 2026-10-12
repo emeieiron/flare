@@ -55,9 +55,6 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
@@ -69,9 +66,12 @@ import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TradeScreenSkeleton
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.MarketTrade
 import xyz.mcxross.flare.venue.model.OrderBookLevel
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
 
 @Composable
 fun TradeRoute(
@@ -120,7 +120,7 @@ fun TradeScreen(
     state.stopLossInput, state.orderType, state.leverage,
     state.twapDurationMinutesInput, state.twapFrequencyMinutesInput, side,
   ) { mutableStateOf(false) }
-  val committed = state.transaction as? TransactionState.Committed
+  val committed = state.transaction as? ActionState.Committed
   val stage = when {
     committed != null -> TradeStage.RESULT
     state.orderBusy -> TradeStage.REVIEW
@@ -287,7 +287,7 @@ fun TradeScreen(
                     OrderResult(
                       state, side, editorHeight,
                       onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
-                      onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.hash)) } },
+                      onViewTransaction = { runCatching { browser.openUri(explorer.url(committed.reference)) } },
                     )
                   }
                 }
@@ -299,7 +299,7 @@ fun TradeScreen(
       action = {
         val inputError = state.orderInputError(side)
         // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
-        val selfPayOffered = (state.transaction as? TransactionState.Failed)?.selfPayEstimateOctas != null
+        val selfPayOffered = state.selfPayEstimate != null
         val enabled = when (stage) {
           TradeStage.MARKET, TradeStage.RESULT -> !state.orderBusy
           else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() &&

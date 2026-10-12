@@ -31,7 +31,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
@@ -48,6 +47,7 @@ import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 
@@ -73,7 +73,7 @@ fun SettingsScreen(
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
   var showReferralSheet by remember { mutableStateOf(false) }
-  var revokeProduct by remember { mutableStateOf<AssetType?>(null) }
+  var revokeProduct by remember { mutableStateOf<MarketKind?>(null) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
   var removal by remember { mutableStateOf<SettingsIntent?>(null) }
@@ -300,14 +300,14 @@ fun SettingsScreen(
         style = MaterialTheme.typography.bodyMedium,
       )
       listOf(
-          Triple(AssetType.PERP, preferences.builderApproved, preferences.builderFeeBps),
-          Triple(AssetType.SPOT, preferences.spotBuilderApproved, preferences.spotBuilderFeeBps),
+          Triple(MarketKind.PERP, preferences.builderApproved, preferences.builderFeeBps),
+          Triple(MarketKind.SPOT, preferences.spotBuilderApproved, preferences.spotBuilderFeeBps),
         )
-        .filter { (product) -> product == AssetType.PERP || state.capabilities.spot }
+        .filter { (product) -> product == MarketKind.PERP || state.capabilities.spot }
         .forEachIndexed { index, (product, approved, bps) ->
           if (index > 0) HorizontalDivider(Modifier.padding(top = 24.dp), color = FlareColors.BorderSubtle)
           BuilderProductSection(
-            title = if (product == AssetType.PERP) "Perpetuals" else "Spot",
+            title = if (product == MarketKind.PERP) "Perpetuals" else "Spot",
             approved = approved,
             basisPoints = bps,
             pending = state.builderPending == product,
@@ -362,7 +362,7 @@ fun SettingsScreen(
   }
 
   revokeProduct?.let { product ->
-    val name = if (product == AssetType.PERP) "perpetuals" else "spot"
+    val name = if (product == MarketKind.PERP) "perpetuals" else "spot"
     FlareConfirmSheet(
       title = "Revoke $name approval?",
       message =

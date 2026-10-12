@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.CredentialParser
@@ -25,16 +24,16 @@ import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.decibel.api.SubaccountStatus
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.isAptosAddress
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
-import xyz.mcxross.kaptos.model.AccountAddress
+import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.venue.model.TradingAccountStatus
 
 enum class OnboardingStep {
   WELCOME,
@@ -112,12 +111,12 @@ data class OnboardingUiState(
   /** For each position to confirm, the right word and two others from the phrase, shuffled. */
   val confirmationOptions: Map<Int, List<String>> = emptyMap(),
   val confirmations: Map<Int, String> = emptyMap(),
-  val subaccounts: List<Subaccount> = emptyList(),
+  val subaccounts: List<TradingAccount> = emptyList(),
   val subaccountsLoaded: Boolean = false,
   val selectedSubaccount: String? = null,
   /** A new wallet's trading account is open, whether or not trading is enabled yet. */
   val accountOpened: Boolean = false,
-  val setupTransaction: TransactionState? = null,
+  val setupTransaction: ActionState? = null,
   val setupOperation: SetupOperation? = null,
   /** Set when Flare couldn't cover the current step's network fee. */
   val setupFee: SetupFee? = null,
@@ -187,9 +186,12 @@ class OnboardingViewModel(
   private val credentials: CredentialParser,
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
-  private val decibelConfig: DecibelRuntimeConfig,
+  venue: VenueDescriptor,
   private val trading: TradingRepository,
 ) : ViewModel() {
+  private val setup = venue.setup
+  private val builderAddress = venue.builderAddress.orEmpty()
+  private val builderFeeBps = venue.builderFeeBps
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
@@ -362,8 +364,8 @@ class OnboardingViewModel(
           prompt = VaultPrompt(title = "Import account", subtitle = "Confirm your identity"),
         )
       createdProfileId = "owner_$address"
-      local.value = local.value.copy(input = "", step = OnboardingStep.SUBACCOUNT)
-      discoverSubaccountsInternal()
+      local.value = local.value.copy(input = "")
+      chooseTradingAccount(showListFirst = true)
     }
 
   private fun confirmBackup() =
@@ -383,11 +385,11 @@ class OnboardingViewModel(
           confirmations = emptyMap(),
         )
       // A wallet made here has nothing to look up: it goes straight to opening its trading account.
-      if (activeProfile()?.createdInApp == true) {
+      if (activeProfile()?.createdInApp == true && setup.openTradingAccount) {
         local.value = cleared.copy(step = OnboardingStep.OPEN_ACCOUNT, accountOpened = false)
       } else {
-        local.value = cleared.copy(step = OnboardingStep.SUBACCOUNT)
-        discoverSubaccountsInternal()
+        local.value = cleared
+        chooseTradingAccount(showListFirst = true)
       }
     }
 
@@ -400,7 +402,7 @@ class OnboardingViewModel(
         profile.ownerAddress != null && !profile.ownerBackupConfirmed ->
           local.value = local.value.copy(step = OnboardingStep.SHOW_BACKUP, backupRevealed = false)
         // A wallet made here resumes at opening its account, with whatever already went through kept.
-        activeProfile()?.createdInApp == true -> {
+        activeProfile()?.createdInApp == true && setup.openTradingAccount -> {
           val saved = activeProfile()
           local.value =
             local.value.copy(
@@ -409,9 +411,24 @@ class OnboardingViewModel(
               selectedSubaccount = saved?.selectedSubaccount,
             )
         }
-        else -> discoverSubaccountsInternal()
+        else -> chooseTradingAccount()
       }
     }
+
+  /**
+   * Picks the account to trade from: one of the owner's trading accounts where the venue has them,
+   * otherwise the owner's own address. [showListFirst] shows the account list while it loads.
+   */
+  private suspend fun chooseTradingAccount(showListFirst: Boolean = false) {
+    if (setup.tradingAccounts) {
+      if (showListFirst) local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT)
+      discoverSubaccountsInternal()
+      return
+    }
+    val owner = checkNotNull(wallets.profile.first().ownerAddress) { "No account to set up" }
+    accounts.selectTradingAccount(owner, setupPrompt)
+    local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, selectedSubaccount = owner)
+  }
 
   private fun discoverSubaccounts() =
     launchAction("Flare couldn’t check for your accounts.") { discoverSubaccountsInternal() }
@@ -457,9 +474,9 @@ class OnboardingViewModel(
           feePayment = feePayment,
         )
       local.value = local.value.copy(setupTransaction = result)
-      if (result !is TransactionState.Committed) {
-        val failed = result as? TransactionState.Failed
-        if (failed?.selfPayEstimateOctas == null) error(failed?.message.orEmpty())
+      if (result !is ActionState.Committed) {
+        val failed = result as? ActionState.Failed
+        if (failed?.selfPay == null) error(failed?.message.orEmpty())
         local.value = local.value.copy(setupFee = assessFee(failed))
         return@launchAction
       }
@@ -526,7 +543,7 @@ class OnboardingViewModel(
         VaultPrompt("Import trading account", "Confirm your identity"),
       )
       preferences.setBuilderSupport(
-        builderAddress = decibelConfig.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderAddress = builderAddress.takeIf(String::isNotBlank),
         builderFeeBps = 0,
         builderApproved = false,
       )
@@ -542,15 +559,15 @@ class OnboardingViewModel(
     tradingAccountCheckJob =
       viewModelScope.launch {
         delay(TRADING_ACCOUNT_CHECK_DELAY_MS)
-        val ownAddress = credentials.keyAddress(state.input)?.let(AccountAddress::fromString)
+        val ownAddress = credentials.keyAddress(state.input)
         val check =
-          if (ownAddress == AccountAddress.fromString(address)) {
+          if (ownAddress != null && credentials.sameAddress(ownAddress, address)) {
             TradingAccountCheck.KEY_ADDRESS
           } else {
             when (accounts.tradingAccountStatus(address)) {
-              SubaccountStatus.ACTIVE -> TradingAccountCheck.TRADING_ACCOUNT
-              SubaccountStatus.INACTIVE -> TradingAccountCheck.CLOSED
-              SubaccountStatus.NOT_SUBACCOUNT -> TradingAccountCheck.WALLET
+              TradingAccountStatus.ACTIVE -> TradingAccountCheck.TRADING_ACCOUNT
+              TradingAccountStatus.INACTIVE -> TradingAccountCheck.CLOSED
+              TradingAccountStatus.NOT_A_TRADING_ACCOUNT -> TradingAccountCheck.WALLET
               null -> TradingAccountCheck.UNKNOWN
             }
           }
@@ -580,27 +597,27 @@ class OnboardingViewModel(
     )
     if (activeProfile()?.builderApproved == true) {
       // Approved by an earlier attempt; nothing to send again.
-    } else if (local.value.builderOptIn && decibelConfig.defaultBuilderAddress.isNotBlank()) {
+    } else if (setup.builderFee && local.value.builderOptIn && builderAddress.isNotBlank()) {
       runSuspendCatching {
         // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
         accounts.approveBuilderFee(
-          builderAddress = decibelConfig.defaultBuilderAddress,
+          builderAddress = builderAddress,
           feeBps = 10u,
           prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
           feePayment = FeePayment.SPONSORED,
         )
       }.onSuccess {
-        preferences.setBuilderFeeBps(decibelConfig.defaultBuilderFeeBps.toInt())
+        preferences.setBuilderFeeBps(builderFeeBps)
       }.onFailure {
         preferences.setBuilderSupport(
-          builderAddress = decibelConfig.defaultBuilderAddress,
+          builderAddress = builderAddress,
           builderFeeBps = 0,
           builderApproved = false,
         )
       }
     } else {
       preferences.setBuilderSupport(
-        builderAddress = decibelConfig.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderAddress = builderAddress.takeIf(String::isNotBlank),
         builderFeeBps = 0,
         builderApproved = false,
       )
@@ -687,13 +704,14 @@ class OnboardingViewModel(
    * Whether the wallet can pay a fee Flare couldn't cover. The network sets the whole gas limit aside
    * before running a transaction, so that reserve, not the smaller fee, is what the balance must meet.
    */
-  private suspend fun assessFee(failed: TransactionState.Failed): SetupFee {
-    val estimate = checkNotNull(failed.selfPayEstimateOctas)
+  private suspend fun assessFee(failed: ActionState.Failed): SetupFee {
+    val offer = checkNotNull(failed.selfPay)
+    val estimate = offer.estimate
     // A wallet made here has no APT to pay with, so there's no balance to check or charge.
     if (activeProfile()?.createdInApp == true) return SetupFee.AwaitingSponsor(estimate)
-    val reserve = maxOf(failed.selfPayReserveOctas ?: estimate, estimate)
+    val reserve = maxOf(offer.reserve ?: estimate, estimate)
     val owner = wallets.profile.first().ownerAddress
-    val balance = runSuspendCatching { trading.ownerAptBalance() }.getOrNull()
+    val balance = runSuspendCatching { trading.ownerFeeBalance() }.getOrNull()
     return when {
       owner == null || balance == null -> SetupFee.Unchecked(estimate)
       balance >= reserve -> SetupFee.WalletCanPay(estimate, balance)
@@ -711,9 +729,9 @@ class OnboardingViewModel(
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (error: SetupTransactionException) {
-        val failed = error.transaction as? TransactionState.Failed
+        val failed = error.transaction as? ActionState.Failed
         local.value =
-          if (failed?.selfPayEstimateOctas != null) {
+          if (failed?.selfPay != null) {
             local.value.copy(setupTransaction = failed, setupFee = assessFee(failed))
           } else {
             local.value.copy(

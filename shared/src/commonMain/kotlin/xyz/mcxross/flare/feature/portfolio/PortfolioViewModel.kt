@@ -30,30 +30,27 @@ import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.data.apiWalletTopUpFor
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.DecimalInput
-import xyz.mcxross.flare.decibel.model.OrderDraft
-import xyz.mcxross.flare.decibel.model.OrderSide
-import xyz.mcxross.flare.decibel.model.OrderType
-import xyz.mcxross.flare.decibel.model.SlippageBps
-import xyz.mcxross.flare.decibel.model.toChainUnits
+import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
-import xyz.mcxross.flare.feature.trade.validate
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OrderCheck
+import xyz.mcxross.flare.venue.model.OrderRequest
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -95,18 +92,18 @@ data class PortfolioUiState(
   val primaryUsdcBalance: Double = 0.0,
   val withdrawalDestination: String = "",
   val pendingWithdrawal: WithdrawalContinuation? = null,
-  val fundingTransaction: TransactionState? = null,
+  val fundingTransaction: ActionState? = null,
   val managedPositionMarket: String? = null,
   val takeProfitInput: String = "",
   val stopLossInput: String = "",
-  val positionTransaction: TransactionState? = null,
+  val positionTransaction: ActionState? = null,
   /** The position a close is running for, or waiting on a fee decision for. */
   val closingMarket: String? = null,
   /** Set once a close lands, until the screen that asked for it has reacted. */
   val closedMarket: String? = null,
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUpOctas: ULong? = null,
-  val topUpTransaction: TransactionState? = null,
+  val topUpTransaction: ActionState? = null,
   val chartPoints: List<PortfolioPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
@@ -126,7 +123,7 @@ data class PortfolioUiState(
   val selectedVault: VaultSummary? = null,
   val vaultAction: VaultActionMode? = null,
   val vaultAmountInput: String = "",
-  val vaultTransaction: TransactionState? = null,
+  val vaultTransaction: ActionState? = null,
   val busy: Boolean = false,
   val actionError: String? = null,
 ) {
@@ -158,8 +155,8 @@ data class PortfolioUiState(
    * What the wallet would pay for [transaction]'s network fee once the venue's sponsor declined it;
    * null when it wasn't declined, or the venue has no sponsored fees.
    */
-  fun selfPayEstimate(transaction: TransactionState?): ULong? =
-    if (capabilities.sponsoredFees) (transaction as? TransactionState.Failed)?.selfPayEstimateOctas
+  fun selfPayEstimate(transaction: ActionState?): ULong? =
+    if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
     else null
 }
 
@@ -240,7 +237,7 @@ class PortfolioViewModel(
   private var rewardsJob: Job? = null
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
-  private var lastPositionCommand: DecibelCommand? = null
+  private var lastPositionAction: TradeAction? = null
 
   init {
     viewModelScope.launch {
@@ -505,7 +502,7 @@ class PortfolioViewModel(
         }
       PortfolioIntent.SubmitTpSl -> setTpSl(FeePayment.SPONSORED)
       PortfolioIntent.ConfirmPositionSelfPay ->
-        lastPositionCommand?.let { executePositionCommand(it, FeePayment.SELF_PAY) }
+        lastPositionAction?.let { executePositionAction(it, FeePayment.SELF_PAY) }
       PortfolioIntent.TopUpApiWallet -> topUpApiWallet()
       is PortfolioIntent.OpenVaultAction ->
         local.update {
@@ -552,20 +549,20 @@ class PortfolioViewModel(
         "A live order book is required to close a position"
       }
       val slippage = preferences.values.first().slippageBps
-      val validated =
-        OrderDraft(
-            marketAddress = position.marketId,
-            side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
-            type = OrderType.MARKET,
-            size = DecimalInput(position.absoluteSize),
-            reduceOnly = true,
-            slippage = SlippageBps(slippage.toUInt()),
-          )
-          .validate(quote.market, details.orderBook)
-          .value
+      val order =
+        OrderRequest(
+          marketId = position.marketId,
+          side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
+          type = OrderType.MARKET,
+          size = position.absoluteSize,
+          reduceOnly = true,
+          slippageBps = slippage,
+        )
+      val checked =
+        (quote.market.rules.check(order, details.orderBook) as? OrderCheck.Valid)?.order
           ?: error("The exact position size cannot be aligned to the current market precision")
       val subaccount = checkNotNull(uiState.value.account.account)
-      executePositionCommandInternal(DecibelCommand.PlaceOrder(subaccount, validated), feePayment)
+      executePositionActionInternal(TradeAction.PlaceOrder(subaccount, quote.market, checked), feePayment)
     }
 
   private fun setTpSl(feePayment: FeePayment) =
@@ -574,21 +571,15 @@ class PortfolioViewModel(
       val position = managedPosition()
       val quote = marketQuote(position.marketId)
       val state = local.value
-      val takeProfit = optionalPrice(state.takeProfitInput, quote.market.priceDecimals)
-      val stopLoss = optionalPrice(state.stopLossInput, quote.market.priceDecimals)
+      val takeProfit = state.takeProfitInput.takeIf(String::isNotBlank)
+      val stopLoss = state.stopLossInput.takeIf(String::isNotBlank)
       require(takeProfit != null || stopLoss != null) { "Enter a take-profit or stop-loss price" }
-      listOfNotNull(takeProfit, stopLoss).forEach { units ->
-        require(
-          quote.market.tickSize == 0uL || units % quote.market.tickSize == 0uL
-        ) {
-          "TP/SL prices must align to tick size ${quote.market.tickSize}"
-        }
-      }
+      quote.market.rules.checkExitPrices(takeProfit, stopLoss)?.let { throw IllegalArgumentException(it) }
       val subaccount = checkNotNull(uiState.value.account.account)
-      executePositionCommandInternal(
-        DecibelCommand.SetPositionTpSl(
-          subaccount = subaccount,
-          market = position.marketId,
+      executePositionActionInternal(
+        TradeAction.SetPositionTpSl(
+          account = subaccount,
+          market = quote.market,
           takeProfitTrigger = takeProfit,
           takeProfitLimit = takeProfit,
           stopLossTrigger = stopLoss,
@@ -598,39 +589,39 @@ class PortfolioViewModel(
       )
     }
 
-  private fun executePositionCommand(command: DecibelCommand, feePayment: FeePayment) =
+  private fun executePositionAction(action: TradeAction, feePayment: FeePayment) =
     launchAction("Your position wasn’t updated.") {
-      executePositionCommandInternal(command, feePayment)
+      executePositionActionInternal(action, feePayment)
     }
 
-  private suspend fun executePositionCommandInternal(
-    command: DecibelCommand,
+  private suspend fun executePositionActionInternal(
+    action: TradeAction,
     feePayment: FeePayment,
   ) {
     accounts.refresh()
-    lastPositionCommand = command
+    lastPositionAction = action
     local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
     trading
       .execute(
-        command = command,
+        action = action,
         prompt = VaultPrompt("Manage position", "Confirm your identity"),
         feePayment = feePayment,
       )
       .collect { transaction -> local.update { it.copy(positionTransaction = transaction) } }
     when (val terminal = local.value.positionTransaction) {
-      is TransactionState.Committed -> {
+      is ActionState.Committed -> {
         local.value.closingMarket?.let { market ->
-          if (command is DecibelCommand.PlaceOrder) {
+          if (action is TradeAction.PlaceOrder) {
             local.update { it.copy(closingMarket = null, closedMarket = market) }
           }
         }
         accounts.refresh()
       }
-      is TransactionState.Failed -> {
-        if (terminal.selfPayEstimateOctas == null) error(terminal.message)
+      is ActionState.Failed -> {
+        if (terminal.selfPay == null) error(terminal.message)
         // Venues without a fee token to send never offer a top-up.
         if (capabilities.networkFeeTopUp) {
-          trading.apiWalletTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
+          trading.tradingKeyTopUpFor(terminal, wallets.profile.first())?.let { topUp ->
             local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUpOctas = topUp) }
           }
         }
@@ -643,7 +634,7 @@ class PortfolioViewModel(
     launchAction("The network fee wasn’t covered.") {
       val amount = local.value.suggestedTopUpOctas ?: error("No network-fee top-up is required")
       trading
-        .topUpApiWallet(
+        .topUpTradingKey(
           amount,
           VaultPrompt(
             "Cover network fees",
@@ -653,9 +644,9 @@ class PortfolioViewModel(
         )
         .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
       when (val terminal = local.value.topUpTransaction) {
-        is TransactionState.Committed ->
+        is ActionState.Committed ->
           local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUpOctas = null) }
-        is TransactionState.Failed -> error(terminal.message)
+        is ActionState.Failed -> error(terminal.message)
         else -> Unit
       }
     }
@@ -670,11 +661,6 @@ class PortfolioViewModel(
   private fun managedPosition() =
     uiState.value.account.positions.firstOrNull { it.marketId == local.value.managedPositionMarket }
       ?: error("Select an open position")
-
-  private fun optionalPrice(value: String, decimals: Int): ULong? =
-    value.takeIf(String::isNotBlank)?.let {
-      DecimalInput(it).toChainUnits("TP/SL price", decimals).getOrThrow()
-    }
 
   private fun submitFunding(feePayment: FeePayment) =
     launchAction(
@@ -708,13 +694,13 @@ class PortfolioViewModel(
       }
     flow.collect { transaction -> local.update { it.copy(fundingTransaction = transaction) } }
     when (val terminal = local.value.fundingTransaction) {
-      is TransactionState.Committed -> {
+      is ActionState.Committed -> {
         accounts.refresh()
         uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
         local.update { it.copy(fundingAmount = "") }
       }
-      is TransactionState.Failed -> {
-        if (terminal.selfPayEstimateOctas == null) error(terminal.message)
+      is ActionState.Failed -> {
+        if (terminal.selfPay?.estimate == null) error(terminal.message)
       }
       else -> Unit
     }
@@ -886,12 +872,12 @@ class PortfolioViewModel(
         local.update { it.copy(vaultTransaction = transaction) }
       }
       when (val terminal = local.value.vaultTransaction) {
-        is TransactionState.Committed -> {
+        is ActionState.Committed -> {
           refreshVaults()
           accounts.refresh()
           // Keep the committed action visible until the receipt is dismissed.
         }
-        is TransactionState.Failed -> error(terminal.message)
+        is ActionState.Failed -> error(terminal.message)
         else -> Unit
       }
     }

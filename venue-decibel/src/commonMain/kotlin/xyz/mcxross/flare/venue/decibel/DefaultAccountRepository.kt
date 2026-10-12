@@ -28,15 +28,10 @@ import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
-import xyz.mcxross.flare.data.AptosSigningWallet
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.SetupTransactionException
-import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.TradingWalletSetup
-import xyz.mcxross.flare.data.TradingWalletSetupActions
-import xyz.mcxross.flare.data.sameAptosAddress
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.AccountOpenOrders
 import xyz.mcxross.flare.decibel.api.AccountOverviewTopic
@@ -46,11 +41,8 @@ import xyz.mcxross.flare.decibel.api.DecibelStreamData
 import xyz.mcxross.flare.decibel.api.DecibelStreamTopic
 import xyz.mcxross.flare.decibel.api.OrderUpdates
 import xyz.mcxross.flare.decibel.api.StreamEvent
-import xyz.mcxross.flare.decibel.api.SubaccountStatus
-import xyz.mcxross.flare.decibel.api.TransactionState
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
-import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
@@ -61,11 +53,15 @@ import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Fill
+import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
@@ -80,13 +76,13 @@ import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
 
 /**
  * Decibel's account, read through the Flare Worker: REST snapshots refreshed by the account stream,
- * mapped to the neutral models. Setup and funding actions run through [TradingRepository], signed
+ * mapped to the neutral models. Setup and funding actions run through [DecibelTrading], signed
  * by the owner or the device trading key.
  */
 class DefaultAccountRepository(
   private val client: DecibelClient,
   private val sessions: AptosSessionRepository,
-  private val trading: TradingRepository,
+  private val trading: DecibelTrading,
   private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
 ) : AccountRepository {
@@ -111,11 +107,11 @@ class DefaultAccountRepository(
     return client.accounts.delegations(account).map { it.toTradingKey() }
   }
 
-  override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState {
+  override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState {
     val account = preferences.values.first().selectedSubaccount ?: error("Select a trading account")
-    var result: TransactionState = TransactionState.Failed("Revocation failed")
+    var result: ActionState = ActionState.Failed("Revocation failed")
     trading
-      .execute(
+      .executeCommand(
         DecibelCommand.RevokeDelegation(account, address),
         prompt.copy(requireFreshAuthorization = true),
       )
@@ -164,7 +160,7 @@ class DefaultAccountRepository(
     selectTradingAccount(subaccount, prompt)
   }
 
-  override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> {
+  override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
     val owner =
       wallets.profile.first().ownerAddress
         ?: error("An owner wallet is required to discover subaccounts")
@@ -172,12 +168,13 @@ class DefaultAccountRepository(
     return subaccounts(owner)
   }
 
-  override suspend fun subaccounts(owner: String): List<Subaccount> =
-    client.accounts.subaccounts(owner).filter(Subaccount::isActive)
+  override suspend fun subaccounts(owner: String): List<TradingAccount> =
+    client.accounts.subaccounts(owner).filter(Subaccount::isActive).map { it.toTradingAccount() }
 
-  override suspend fun tradingAccountStatus(address: String): SubaccountStatus? =
+  override suspend fun tradingAccountStatus(address: String): TradingAccountStatus? =
     runSuspendCatching { (client.subaccounts.status(address) as? AptosResult.Success)?.value }
       .getOrNull()
+      ?.toTradingAccountStatus()
 
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }
@@ -197,7 +194,7 @@ class DefaultAccountRepository(
   override suspend fun createSubaccount(
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): TransactionState {
+  ): ActionState {
     val saved = preferences.values.first()
     val owner = saved.ownerAddress ?: error("An owner key is required")
     sessions.authenticateOwner(null, prompt.copy(requireFreshAuthorization = false))
@@ -208,12 +205,12 @@ class DefaultAccountRepository(
       val resolved = trading.transactionStatus(reference)
       val isPending = trading.pendingTransactions.first().any { it.operation == "CREATE_SUBACCOUNT" }
       when {
-        resolved is TransactionState.Committed -> {
+        resolved is ActionState.Committed -> {
           preferences.setTradingAccountOpened(saved.activeProfileId)
           preferences.setCreationReference(saved.activeProfileId, null)
           return resolved
         }
-        resolved is TransactionState.Failed && resolved.committed ->
+        resolved is ActionState.Failed && resolved.committed ->
           preferences.setCreationReference(saved.activeProfileId, null)
         isPending -> return resolved
         else -> preferences.setCreationReference(saved.activeProfileId, null)
@@ -224,9 +221,9 @@ class DefaultAccountRepository(
       "Account creation is pending. Try again after confirmation."
     }
     val approvalStartedAt = Clock.System.now().toEpochMilliseconds()
-    var terminal: TransactionState = TransactionState.Failed("Subaccount transaction did not start")
+    var terminal: ActionState = ActionState.Failed("Subaccount transaction did not start")
     trading
-      .execute(
+      .executeCommand(
         DecibelCommand.CreateSubaccount,
         prompt.copy(requireFreshAuthorization = !insideConfirmedSetup()),
         feePayment = feePayment,
@@ -234,10 +231,10 @@ class DefaultAccountRepository(
       )
       .collect { state ->
         terminal = state
-        if (state is TransactionState.Failed && (state.definitelyNotSubmitted || state.committed)) {
+        if (state is ActionState.Failed && (state.definitelyNotSubmitted || state.committed)) {
           preferences.setCreationReference(saved.activeProfileId, null)
         }
-        if (state is TransactionState.Committed) {
+        if (state is ActionState.Committed) {
           preferences.setTradingAccountOpened(saved.activeProfileId)
           preferences.setCreationReference(saved.activeProfileId, null)
           setupApproval =
@@ -266,7 +263,7 @@ class DefaultAccountRepository(
     }
     if (!profile.tradingAccountOpened) {
       val result = createSubaccount(prompt, FeePayment.SPONSORED)
-      if (result !is TransactionState.Committed) throw SetupTransactionException(result)
+      if (result !is ActionState.Committed) throw SetupTransactionException(result)
     }
     return awaitSubaccount(owner)
   }
@@ -285,7 +282,7 @@ class DefaultAccountRepository(
   override suspend fun delegateApiWallet(
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): TransactionState {
+  ): ActionState {
     val saved = preferences.values.first()
     val subaccount =
       saved.selectedSubaccount ?: error("Select a trading account before enabling trading")
@@ -297,9 +294,9 @@ class DefaultAccountRepository(
         approval.first == saved.activeProfileId &&
         approval.second == wallets.authorizationGeneration &&
         Clock.System.now().toEpochMilliseconds() - approval.third < SETUP_APPROVAL_WINDOW_MS
-    var terminal: TransactionState = TransactionState.Failed("Delegation transaction did not start")
+    var terminal: ActionState = ActionState.Failed("Delegation transaction did not start")
     trading
-      .execute(
+      .executeCommand(
         command = DecibelCommand.DelegateTrading(subaccount, apiAddress),
         prompt = prompt.copy(requireFreshAuthorization = !reviewedSetup && !insideConfirmedSetup()),
         feePayment = feePayment,
@@ -360,8 +357,8 @@ class DefaultAccountRepository(
     feeBps: UInt,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-    product: AssetType,
-  ): TransactionState {
+    product: MarketKind,
+  ): ActionState {
     require(feeBps in 1u..10u) { "Builder fee must be between 1 and 10 bps (up to 0.10%)" }
     val saved = preferences.values.first()
     val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
@@ -369,26 +366,26 @@ class DefaultAccountRepository(
     val units = feeBps.toULong() * 100uL
     val command =
       when (product) {
-        AssetType.PERP -> DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units)
-        AssetType.SPOT -> DecibelCommand.ApproveMaxSpotBuilderFee(subaccount, resolvedBuilder, units)
+        MarketKind.PERP -> DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units)
+        MarketKind.SPOT -> DecibelCommand.ApproveMaxSpotBuilderFee(subaccount, resolvedBuilder, units)
       }
-    var terminal: TransactionState = TransactionState.Failed("Approval transaction did not start")
+    var terminal: ActionState = ActionState.Failed("Approval transaction did not start")
     trading
-      .execute(
+      .executeCommand(
         command = command,
         prompt = prompt.copy(requireFreshAuthorization = !insideConfirmedSetup()),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
-    if (terminal is TransactionState.Committed) {
+    if (terminal is ActionState.Committed) {
       when (product) {
-        AssetType.PERP ->
+        MarketKind.PERP ->
           preferences.setBuilderSupport(
             builderAddress = resolvedBuilder,
             builderFeeBps = feeBps.toInt(),
             builderApproved = true,
           )
-        AssetType.SPOT -> preferences.setSpotBuilderApproved(true, resolvedBuilder)
+        MarketKind.SPOT -> preferences.setSpotBuilderApproved(true, resolvedBuilder)
       }
     }
     return terminal
@@ -398,29 +395,29 @@ class DefaultAccountRepository(
     builderAddress: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-    product: AssetType,
-  ): TransactionState {
+    product: MarketKind,
+  ): ActionState {
     val saved = preferences.values.first()
     val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
     val resolvedBuilder = resolveBuilderAddress(builderAddress)
     val command =
       when (product) {
-        AssetType.PERP -> DecibelCommand.RevokeMaxBuilderFee(subaccount, resolvedBuilder)
-        AssetType.SPOT -> DecibelCommand.RevokeMaxSpotBuilderFee(subaccount, resolvedBuilder)
+        MarketKind.PERP -> DecibelCommand.RevokeMaxBuilderFee(subaccount, resolvedBuilder)
+        MarketKind.SPOT -> DecibelCommand.RevokeMaxSpotBuilderFee(subaccount, resolvedBuilder)
       }
-    var terminal: TransactionState = TransactionState.Failed("Revocation transaction did not start")
+    var terminal: ActionState = ActionState.Failed("Revocation transaction did not start")
     trading
-      .execute(
+      .executeCommand(
         command = command,
         prompt = prompt.copy(requireFreshAuthorization = true),
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
     // The rate stays: it still applies to the other product, and returns if this one is approved again.
-    if (terminal is TransactionState.Committed) {
+    if (terminal is ActionState.Committed) {
       when (product) {
-        AssetType.PERP -> preferences.setBuilderApproved(false)
-        AssetType.SPOT -> preferences.setSpotBuilderApproved(false, resolvedBuilder)
+        MarketKind.PERP -> preferences.setBuilderApproved(false)
+        MarketKind.SPOT -> preferences.setSpotBuilderApproved(false, resolvedBuilder)
       }
     }
     return terminal
@@ -430,14 +427,14 @@ class DefaultAccountRepository(
     amount: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<TransactionState> = flow {
+  ): Flow<ActionState> = flow {
     val subaccount =
       preferences.values.first().selectedSubaccount ?: error("Select a trading account")
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
     require(units > 0uL) { "Enter an amount greater than zero" }
     try {
       emitAll(
-        trading.execute(
+        trading.executeCommand(
           command =
             DecibelCommand.Deposit(
               subaccount = subaccount,
@@ -458,7 +455,7 @@ class DefaultAccountRepository(
     destination: String?,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<TransactionState> = flow {
+  ): Flow<ActionState> = flow {
     withdrawalMutex.withLock {
       val saved = preferences.values.first()
       val owner = saved.ownerAddress ?: error("Use a device that holds the owner key")
@@ -497,12 +494,12 @@ class DefaultAccountRepository(
         if (!progress.withdrawalCommitted && submitted != null) {
           // An interrupted withdrawal is resolved on chain before anything is sent again.
           when (val resolved = ownerTransactionStatus(subaccount, submitted, prompt)) {
-            is TransactionState.Committed -> {
+            is ActionState.Committed -> {
               progress =
-                progress.copy(withdrawalCommitted = true, withdrawalReference = resolved.hash)
+                progress.copy(withdrawalCommitted = true, withdrawalReference = resolved.reference)
               save()
             }
-            is TransactionState.Failed -> {
+            is ActionState.Failed -> {
               if (resolved.committed) preferences.setWithdrawal(saved.activeProfileId, null)
               emit(resolved)
               return@withLock
@@ -520,9 +517,9 @@ class DefaultAccountRepository(
           require(balance.isFinite() && balance >= 0 && units <= (balance * 1_000_000).toULong()) {
             "Amount exceeds the withdrawable balance"
           }
-          var terminal: TransactionState? = null
+          var terminal: ActionState? = null
           trading
-            .execute(
+            .executeCommand(
               DecibelCommand.Withdraw(
                 subaccount,
                 client.config.deployment.usdcMetadataAddress,
@@ -537,15 +534,15 @@ class DefaultAccountRepository(
             )
             .collect { state ->
               terminal = state
-              if (state is TransactionState.Committed) {
+              if (state is ActionState.Committed) {
                 progress =
-                  progress.copy(withdrawalCommitted = true, withdrawalReference = state.hash)
+                  progress.copy(withdrawalCommitted = true, withdrawalReference = state.reference)
                 save()
               } else emit(state)
             }
-          if (terminal !is TransactionState.Committed) {
+          if (terminal !is ActionState.Committed) {
             if (
-              (terminal as? TransactionState.Failed)?.let {
+              (terminal as? ActionState.Failed)?.let {
                 it.definitelyNotSubmitted || it.committed || progress.withdrawalReference == null
               } == true
             ) {
@@ -558,15 +555,15 @@ class DefaultAccountRepository(
         val withdrawn = checkNotNull(progress.withdrawalReference)
         if (target.sameAptosAddress(owner)) {
           preferences.setWithdrawal(saved.activeProfileId, null)
-          emit(TransactionState.Committed(withdrawn))
+          emit(ActionState.Committed(withdrawn))
           return@withLock
         }
         val transferred = progress.transferReference
         if (transferred != null) {
           val resolved = ownerTransactionStatus(subaccount, transferred, prompt)
-          if (resolved is TransactionState.Committed)
+          if (resolved is ActionState.Committed)
             preferences.setWithdrawal(saved.activeProfileId, null)
-          if (resolved is TransactionState.Failed && resolved.committed) {
+          if (resolved is ActionState.Failed && resolved.committed) {
             progress = progress.copy(transferReference = null)
             save()
           }
@@ -575,7 +572,7 @@ class DefaultAccountRepository(
         }
         verifySelection()
         trading
-          .execute(
+          .executeCommand(
             DecibelCommand.TransferCollateral(
               subaccount,
               client.config.deployment.usdcMetadataAddress,
@@ -593,10 +590,10 @@ class DefaultAccountRepository(
             },
           )
           .collect { state ->
-            if (state is TransactionState.Committed)
+            if (state is ActionState.Committed)
               preferences.setWithdrawal(saved.activeProfileId, null)
             if (
-              state is TransactionState.Failed && (state.definitelyNotSubmitted || state.committed)
+              state is ActionState.Failed && (state.definitelyNotSubmitted || state.committed)
             ) {
               progress = progress.copy(transferReference = null)
               save()
@@ -618,7 +615,7 @@ class DefaultAccountRepository(
     subaccount: String,
     reference: String,
     prompt: VaultPrompt,
-  ): TransactionState {
+  ): ActionState {
     val current = sessions.status.value
     val owner = wallets.profile.first().ownerAddress
     val status =
@@ -1025,14 +1022,14 @@ class DefaultAccountRepository(
     amount: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<TransactionState> = flow {
+  ): Flow<ActionState> = flow {
     val subaccount =
       preferences.values.first().selectedSubaccount ?: error("Select a trading account")
     val units = DecimalInput(amount).toChainUnits("Contribution amount", USDC_DECIMALS).getOrThrow()
     require(units > 0uL) { "Enter an amount greater than zero" }
     try {
       emitAll(
-        trading.execute(
+        trading.executeCommand(
           command =
             DecibelCommand.ContributeToVault(
               subaccount = subaccount,
@@ -1054,14 +1051,14 @@ class DefaultAccountRepository(
     shares: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<TransactionState> = flow {
+  ): Flow<ActionState> = flow {
     val subaccount =
       preferences.values.first().selectedSubaccount ?: error("Select a trading account")
     val units = DecimalInput(shares).toChainUnits("Redemption shares", USDC_DECIMALS).getOrThrow()
     require(units > 0uL) { "Enter a share count greater than zero" }
     try {
       emitAll(
-        trading.execute(
+        trading.executeCommand(
           command =
             DecibelCommand.RedeemFromVault(
               subaccount = subaccount,

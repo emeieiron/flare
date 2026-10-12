@@ -1,6 +1,6 @@
 package xyz.mcxross.flare.design
 
-import xyz.mcxross.flare.decibel.api.TransactionState
+import xyz.mcxross.flare.venue.model.ActionState
 
 /**
  * How Flare talks about an action it is carrying out.
@@ -12,15 +12,15 @@ import xyz.mcxross.flare.decibel.api.TransactionState
  */
 
 /** True until an action has either settled or failed. */
-val TransactionState.settling: Boolean
+val ActionState.settling: Boolean
   get() =
     when (this) {
-      TransactionState.Simulating,
-      TransactionState.AwaitingAuthorization,
-      TransactionState.Submitting,
-      is TransactionState.Pending -> true
-      is TransactionState.Committed,
-      is TransactionState.Failed -> false
+      ActionState.Simulating,
+      ActionState.AwaitingAuthorization,
+      ActionState.Submitting,
+      is ActionState.Pending -> true
+      is ActionState.Committed,
+      is ActionState.Failed -> false
     }
 
 /**

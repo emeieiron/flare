@@ -1,10 +1,10 @@
 package xyz.mcxross.flare
 
 import androidx.compose.ui.window.ComposeUIViewController
-import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.security.IosWalletVault
 import xyz.mcxross.flare.store.iosDatabaseBuilder
 import xyz.mcxross.flare.store.iosPreferencesDataStore
+import xyz.mcxross.flare.venue.decibel.DecibelRuntimeConfig
 import xyz.mcxross.flare.venue.decibel.DecibelVenue
 
 /**

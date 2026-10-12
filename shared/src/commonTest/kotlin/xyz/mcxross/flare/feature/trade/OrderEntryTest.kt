@@ -3,11 +3,13 @@ package xyz.mcxross.flare.feature.trade
 import kotlin.test.*
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketQuote
-import xyz.mcxross.flare.decibel.model.*
+import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderBookLevel
+import xyz.mcxross.flare.venue.model.OrderSide
+import xyz.mcxross.flare.venue.model.OrderType
 
 class OrderEntryTest {
   private val market =
@@ -21,11 +23,7 @@ class OrderEntryTest {
       sizeDecimals = 8,
       maxLeverage = 40,
       isolatedOnly = false,
-      tickSize = 100uL,
-      lotSize = 1000uL,
-      minSize = 2000uL,
-      minPrice = 1uL,
-      maxPrice = 100_000_000uL,
+      rules = AcceptingOrderRules,
     )
 
   private fun state() =
@@ -45,11 +43,11 @@ class OrderEntryTest {
     assertEquals(70.0, estimate.value)
     assertEquals(2.0, estimate.profit)
     assertEquals(-1.0, estimate.loss)
-    val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market).value)
-    assertEquals(7_200_000uL, order.takeProfitTriggerPrice)
-    assertEquals(order.takeProfitTriggerPrice, order.takeProfitLimitPrice)
-    assertEquals(6_900_000uL, order.stopLossTriggerPrice)
-    assertEquals(order.stopLossTriggerPrice, order.stopLossLimitPrice)
+    val order = state.checkedOrder(OrderSide.BUY)
+    assertEquals("72000", order.takeProfitTrigger)
+    assertEquals(order.takeProfitTrigger, order.takeProfitLimit)
+    assertEquals("69000", order.stopLossTrigger)
+    assertEquals(order.stopLossTrigger, order.stopLossLimit)
   }
 
   @Test
@@ -64,12 +62,20 @@ class OrderEntryTest {
 
   @Test
   fun wrongSideEqualEntryAndInvalidPrecisionAreRejectedBeforeReview() {
-    assertNotNull(state().copy(takeProfitInput = "70000").orderInputError(OrderSide.BUY))
+    assertEquals(
+      "Take profit must be above the entry price",
+      state().copy(takeProfitInput = "70000").orderInputError(OrderSide.BUY),
+    )
     assertNotNull(state().copy(stopLossInput = "71000").orderInputError(OrderSide.BUY))
-    assertNotNull(state().copy(stopLossInput = "0").orderInputError(OrderSide.BUY))
-    assertNotNull(state().copy(takeProfitInput = "72000.001").orderInputError(OrderSide.BUY))
-    assertNotNull(state().copy(takeProfitInput = "72000.50").orderInputError(OrderSide.BUY))
-    assertNotNull(state().copy(sizeInput = "0.00001").orderInputError(OrderSide.BUY))
+    assertEquals(
+      "Stop loss must be greater than zero",
+      state().copy(stopLossInput = "0").orderInputError(OrderSide.BUY),
+    )
+    assertEquals(
+      "Take profit supports at most 2 decimal places",
+      state().copy(takeProfitInput = "72000.001").orderInputError(OrderSide.BUY),
+    )
+    assertEquals("Enter an order size", state().copy(sizeInput = "").orderInputError(OrderSide.BUY))
   }
 
   @Test
@@ -87,9 +93,10 @@ class OrderEntryTest {
     assertEquals(69990.0, state.orderEstimate(OrderSide.SELL)?.entryPrice)
     assertNull(state.orderEstimate(OrderSide.BUY)?.profit)
     assertNull(state.orderEstimate(OrderSide.BUY)?.loss)
-    val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market, book).value)
-    assertNull(order.takeProfitTriggerPrice)
-    assertNull(order.stopLossTriggerPrice)
+    val order = state.checkedOrder(OrderSide.BUY)
+    assertEquals("70010", order.price)
+    assertNull(order.takeProfitTrigger)
+    assertNull(order.stopLossTrigger)
     assertNull(state.orderInputError(OrderSide.BUY))
   }
 
@@ -98,9 +105,9 @@ class OrderEntryTest {
     val book = OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
     val state =
       state().copy(orderType = OrderType.MARKET, marketDetails = MarketDetails(orderBook = book))
-    val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market, book).value)
-    assertEquals(7_200_000uL, order.takeProfitTriggerPrice)
-    assertEquals(6_900_000uL, order.stopLossTriggerPrice)
+    val order = state.orderRequest(OrderSide.BUY)
+    assertEquals("72000", order.takeProfitTrigger)
+    assertEquals("69000", order.stopLossTrigger)
     assertNull(state.copy(sizeInput = "").orderEstimate(OrderSide.BUY))
     assertNull(state.copy(marketDetails = MarketDetails()).orderEstimate(OrderSide.BUY))
   }
@@ -118,9 +125,9 @@ class OrderEntryTest {
     assertEquals(5, estimate.builderFeeBps)
     assertEquals(0.035, estimate.builderFeeAmount)
 
-    val order = assertNotNull(state.orderDraft(OrderSide.BUY).validate(market).value)
-    assertEquals(xyz.mcxross.kaptos.model.AccountAddress.fromString("0x987").toStringLong(), order.builderAddress)
-    assertEquals(500uL, order.builderFeeUnits)
+    val order = state.orderRequest(OrderSide.BUY)
+    assertEquals("0x987", order.builderAddress)
+    assertEquals(5, order.builderFeeBps)
   }
 
   @Test
@@ -135,9 +142,9 @@ class OrderEntryTest {
     val unapprovedEstimate = assertNotNull(unapproved.orderEstimate(OrderSide.BUY))
     assertNull(unapprovedEstimate.builderFeeBps)
     assertNull(unapprovedEstimate.builderFeeAmount)
-    val unapprovedOrder = assertNotNull(unapproved.orderDraft(OrderSide.BUY).validate(market).value)
+    val unapprovedOrder = unapproved.orderRequest(OrderSide.BUY)
     assertNull(unapprovedOrder.builderAddress)
-    assertNull(unapprovedOrder.builderFeeUnits)
+    assertNull(unapprovedOrder.builderFeeBps)
 
     val zeroFee =
       state()
@@ -149,8 +156,8 @@ class OrderEntryTest {
     val zeroEstimate = assertNotNull(zeroFee.orderEstimate(OrderSide.BUY))
     assertNull(zeroEstimate.builderFeeBps)
     assertNull(zeroEstimate.builderFeeAmount)
-    val zeroOrder = assertNotNull(zeroFee.orderDraft(OrderSide.BUY).validate(market).value)
+    val zeroOrder = zeroFee.orderRequest(OrderSide.BUY)
     assertNull(zeroOrder.builderAddress)
-    assertNull(zeroOrder.builderFeeUnits)
+    assertNull(zeroOrder.builderFeeBps)
   }
 }

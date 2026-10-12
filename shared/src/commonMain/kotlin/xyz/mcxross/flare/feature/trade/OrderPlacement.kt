@@ -1,10 +1,10 @@
 package xyz.mcxross.flare.feature.trade
 
 import kotlinx.coroutines.flow.Flow
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.MarginMode
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.MarginMode
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.TradeAction
 
 internal enum class OrderStage {
   LEVERAGE,
@@ -14,7 +14,7 @@ internal enum class OrderStage {
 internal fun TradeUiState.leverageCommand(
   subaccount: String,
   position: Position?,
-): DecibelCommand.ConfigureMarket? {
+): TradeAction.ConfigureMarket? {
   val market = checkNotNull(quote).market
   require(leverage in 1..market.maxLeverage.coerceAtMost(100)) {
     "Choose leverage within this market’s limit"
@@ -25,30 +25,30 @@ internal fun TradeUiState.leverageCommand(
     }
     return null
   }
-  return DecibelCommand.ConfigureMarket(
+  return TradeAction.ConfigureMarket(
     subaccount,
     market.id,
     if (market.isolatedOnly) MarginMode.ISOLATED else MarginMode.CROSS,
-    leverage.toUByte(),
+    leverage,
   )
 }
 
 /** A failed or unresolved settings update must never continue into placing an order. */
 internal suspend fun placeConfiguredOrder(
-  configuration: DecibelCommand.ConfigureMarket?,
-  entry: DecibelCommand,
-  execute: (DecibelCommand) -> Flow<TransactionState>,
-  onState: (OrderStage, TransactionState) -> Unit,
-): TransactionState {
+  configuration: TradeAction.ConfigureMarket?,
+  entry: TradeAction,
+  execute: (TradeAction) -> Flow<ActionState>,
+  onState: (OrderStage, ActionState) -> Unit,
+): ActionState {
   if (configuration != null) {
-    var last: TransactionState = TransactionState.Failed("Leverage was not confirmed")
+    var last: ActionState = ActionState.Failed("Leverage was not confirmed")
     execute(configuration).collect {
       last = it
       onState(OrderStage.LEVERAGE, it)
     }
-    if (last !is TransactionState.Committed) return last
+    if (last !is ActionState.Committed) return last
   }
-  var last: TransactionState = TransactionState.Failed("The order was not confirmed")
+  var last: ActionState = ActionState.Failed("The order was not confirmed")
   execute(entry).collect {
     last = it
     onState(OrderStage.ENTRY, it)

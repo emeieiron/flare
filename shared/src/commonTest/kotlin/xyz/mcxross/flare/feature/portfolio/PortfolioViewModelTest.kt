@@ -22,11 +22,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
@@ -45,16 +46,13 @@ import xyz.mcxross.flare.data.ReconciliationResult
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.decibel.api.DecibelCommand
-import xyz.mcxross.flare.decibel.api.TransactionState
-import xyz.mcxross.flare.decibel.model.AssetType
-import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
-import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.testVenue
+import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.model.AccountOverview
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
@@ -66,6 +64,9 @@ import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SelfPayOffer
+import xyz.mcxross.flare.venue.model.TradeAction
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.venue.model.VaultPosition
@@ -102,11 +103,7 @@ class PortfolioViewModelTest {
       sizeDecimals = 2,
       maxLeverage = 20,
       isolatedOnly = false,
-      tickSize = 1uL,
-      lotSize = 1000uL,
-      minSize = 1uL,
-      minPrice = 1uL,
-      maxPrice = 100_000_000uL,
+      rules = AcceptingOrderRules,
     )
 
   private val btcPerp = createMarket("BTC/USD", "0xbtc_perp", MarketKind.PERP, "crypto")
@@ -139,31 +136,31 @@ class PortfolioViewModelTest {
 
     override suspend fun delegations(): List<TradingKey> = emptyList()
 
-    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): TransactionState =
-      TransactionState.Committed("0x")
+    override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
+      ActionState.Committed("0x")
 
     override suspend fun restoreTrading() {}
 
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
 
-    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<Subaccount> =
+    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> =
       emptyList()
 
-    override suspend fun subaccounts(owner: String): List<Subaccount> = emptyList()
+    override suspend fun subaccounts(owner: String): List<TradingAccount> = emptyList()
 
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
 
     override suspend fun createSubaccount(
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): TransactionState = TransactionState.Committed("0x")
+    ): ActionState = ActionState.Committed("0x")
 
     override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0x"
 
     override suspend fun delegateApiWallet(
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): TransactionState = TransactionState.Committed("0x")
+    ): ActionState = ActionState.Committed("0x")
 
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}
 
@@ -171,29 +168,29 @@ class PortfolioViewModelTest {
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = emptyFlow()
+    ): Flow<ActionState> = emptyFlow()
 
     override fun withdrawUsdc(
       amount: String,
       destination: String?,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = emptyFlow()
+    ): Flow<ActionState> = emptyFlow()
 
     override suspend fun approveBuilderFee(
       builderAddress: String,
       feeBps: UInt,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-      product: AssetType,
-    ): TransactionState = TransactionState.Committed("0x")
+      product: MarketKind,
+    ): ActionState = ActionState.Committed("0x")
 
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-      product: AssetType,
-    ): TransactionState = TransactionState.Committed("0x")
+      product: MarketKind,
+    ): ActionState = ActionState.Committed("0x")
 
     override suspend fun refresh() {}
 
@@ -232,14 +229,14 @@ class PortfolioViewModelTest {
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = emptyFlow()
+    ): Flow<ActionState> = emptyFlow()
 
     override fun redeemFromVault(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
-    ): Flow<TransactionState> = emptyFlow()
+    ): Flow<ActionState> = emptyFlow()
 
     override fun startLive() {}
   }
@@ -279,28 +276,28 @@ class PortfolioViewModelTest {
 
   private class FakeTradingRepository(
     private val spotBalances: Map<String, Double> = emptyMap(),
-    private val outcome: TransactionState? = null,
+    private val outcome: ActionState? = null,
   ) : TradingRepository {
     override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
 
     override suspend fun reconcilePending() = ReconciliationResult(0, 0)
 
-    override suspend fun transactionStatus(hash: String): TransactionState =
-      TransactionState.Committed(hash)
+    override suspend fun transactionStatus(hash: String): ActionState =
+      ActionState.Committed(hash)
 
     override fun execute(
-      command: DecibelCommand,
+      action: TradeAction,
       prompt: VaultPrompt,
       feePayment: FeePayment,
       onPrepared: suspend (String) -> Unit,
-    ): Flow<TransactionState> = outcome?.let { flowOf(it) } ?: emptyFlow()
+    ): Flow<ActionState> = outcome?.let { flowOf(it) } ?: emptyFlow()
 
-    override suspend fun apiWalletAptBalance(): ULong = 100_000_000uL
+    override suspend fun tradingKeyFeeBalance(): ULong = 100_000_000uL
 
     override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
       spotBalances[symbol] ?: 0.0
 
-    override fun topUpApiWallet(amountOctas: ULong, prompt: VaultPrompt): Flow<TransactionState> =
+    override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> =
       emptyFlow()
   }
 
@@ -606,7 +603,7 @@ class PortfolioViewModelTest {
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
     assertNull(
-      state.selfPayEstimate(TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 5_000uL))
+      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL)))
     )
 
     // Without in-app deposits, a transfer can only go out to the wallet.
@@ -628,7 +625,7 @@ class PortfolioViewModelTest {
     assertEquals("Amps", state.rewardPointsName)
     assertEquals(
       5_000uL,
-      state.selfPayEstimate(TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 5_000uL)),
+      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),
     )
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     assertEquals(FundingMode.DEPOSIT, vm.uiState.value.fundingMode)
@@ -643,14 +640,14 @@ class PortfolioViewModelTest {
           AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false)
         )
       // Flare couldn't sponsor the fee, and the device holds less than the wallet would pay.
-      val failure = TransactionState.Failed("Not sponsored", selfPayEstimateOctas = 200_000_000uL)
+      val failure = ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(200_000_000uL))
       val vm = portfolio(accounts, capabilities, FakeTradingRepository(outcome = failure))
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
       vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
       vm.onIntent(PortfolioIntent.ChangeTakeProfit("80000"))
       vm.onIntent(PortfolioIntent.SubmitTpSl)
       val state = vm.uiState.value
-      assertIs<TransactionState.Failed>(state.positionTransaction)
+      assertIs<ActionState.Failed>(state.positionTransaction)
       return state.apiWalletNeedsTopUp
     }
 

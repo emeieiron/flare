@@ -1,4 +1,4 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -7,6 +7,9 @@ import xyz.mcxross.flare.decibel.model.MarginMode
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.TimeInForce
 import xyz.mcxross.flare.decibel.model.ValidatedOrder
+import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.TradeAction
+import xyz.mcxross.flare.venue.model.MarginMode as NeutralMarginMode
 
 /**
  * The action decides the key. If a new command appears, the `when` in [requiredSigner] stops
@@ -43,6 +46,37 @@ class TradingCapabilityTest {
 
     tradingActions.forEach { command ->
       assertEquals(TradingSigner.API, command.requiredSigner(), command.toString())
+    }
+  }
+
+  @Test
+  fun neutralActionsKeepTheSameKeyBoundary() {
+    val owner =
+      listOf(
+        TradeAction.CreateTradingAccount,
+        TradeAction.Deposit(SUBACCOUNT, "1"),
+        TradeAction.Withdraw(SUBACCOUNT, "1"),
+        TradeAction.Transfer(SUBACCOUNT, "0x2", "1"),
+        TradeAction.EnableTrading(SUBACCOUNT, "0x3"),
+        TradeAction.RevokeTrading(SUBACCOUNT, "0x3"),
+        TradeAction.ApproveBuilderFee(SUBACCOUNT, "0x4", 10),
+        TradeAction.RevokeBuilderFee(SUBACCOUNT, "0x4", MarketKind.SPOT),
+        TradeAction.VaultDeposit(SUBACCOUNT, "0x5", "10"),
+        TradeAction.VaultWithdraw(SUBACCOUNT, "0x5", "5"),
+      )
+    val trading =
+      listOf(
+        TradeAction.ConfigureMarket(SUBACCOUNT, MARKET, NeutralMarginMode.CROSS, 5),
+        TradeAction.CancelOrder(SUBACCOUNT, MARKET, "1", MarketKind.SPOT),
+        TradeAction.CancelPositionTpSl(SUBACCOUNT, MARKET, "1"),
+        TradeAction.CancelTwapOrder(SUBACCOUNT, MARKET, "1"),
+      )
+
+    owner.forEach { action ->
+      assertEquals(TradingSigner.OWNER, action.toDecibelCommand(USDC).requiredSigner(), "$action")
+    }
+    trading.forEach { action ->
+      assertEquals(TradingSigner.API, action.toDecibelCommand(USDC).requiredSigner(), "$action")
     }
   }
 

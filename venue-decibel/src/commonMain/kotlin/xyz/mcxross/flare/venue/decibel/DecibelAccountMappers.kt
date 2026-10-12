@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.venue.decibel
 
+import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.model.AccountFees
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
@@ -8,6 +9,7 @@ import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.ProductFees
 import xyz.mcxross.flare.decibel.model.SpotOverview
+import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.venue.model.AccountOverview
@@ -33,6 +35,8 @@ import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.SpotReservation
+import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
@@ -234,6 +238,22 @@ internal fun Delegation.toTradingKey(): TradingKey =
     marketId = permissionMarket,
     expiresAtMs = expirationTimeSeconds?.let { it * 1_000L },
   )
+
+internal fun Subaccount.toTradingAccount(): TradingAccount =
+  TradingAccount(
+    address = address,
+    owner = owner,
+    label = customLabel,
+    primary = isPrimary,
+    active = isActive,
+  )
+
+internal fun SubaccountStatus.toTradingAccountStatus(): TradingAccountStatus =
+  when (this) {
+    SubaccountStatus.ACTIVE -> TradingAccountStatus.ACTIVE
+    SubaccountStatus.INACTIVE -> TradingAccountStatus.INACTIVE
+    SubaccountStatus.NOT_SUBACCOUNT -> TradingAccountStatus.NOT_A_TRADING_ACCOUNT
+  }
 
 /**
  * Decibel's rewards: Amps, the trading streak and the tier, each read on its own. A part that
