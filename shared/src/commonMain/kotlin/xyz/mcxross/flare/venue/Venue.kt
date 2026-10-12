@@ -128,6 +128,8 @@ data class VenueCapabilities(
   val inAppDeposit: Boolean,
   /** Moving USDC between perpetuals and spot margin, where the exchange keeps them apart. */
   val perpSpotTransfer: Boolean = false,
+  /** Cancelling several orders in one request. */
+  val batchCancel: Boolean = false,
   /**
    * The kinds of action the app can't send on the venue yet, each with the reason shown in its
    * place. The screens still show the account, and disable just those actions.

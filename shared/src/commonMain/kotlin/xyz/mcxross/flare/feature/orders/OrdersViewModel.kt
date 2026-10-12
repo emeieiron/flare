@@ -27,6 +27,7 @@ import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.OpenOrderRef
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TwapOrder
 
@@ -297,6 +298,19 @@ class OrdersViewModel(
       val openOrders = uiState.value.account.openOrders
       if (openOrders.isEmpty()) return@launchAction
       val subaccount = checkNotNull(uiState.value.account.account)
+      if (capabilities.batchCancel) {
+        trading
+          .execute(
+            TradeAction.CancelOrders(subaccount, openOrders.map { OpenOrderRef(it.marketId, it.orderId) }),
+            VaultPrompt("Cancel all orders", "Confirm your identity"),
+            FeePayment.SPONSORED,
+          )
+          .collect { state -> local.update { it.copy(transaction = state) } }
+        accounts.refresh()
+        accounts.refreshHistory()
+        (local.value.transaction as? ActionState.Failed)?.let { error(it.message) }
+        return@launchAction
+      }
       trading.confirmedAction(VaultPrompt("Cancel all orders", "Confirm your identity")) {
         for (order in openOrders) {
           val isSpot =

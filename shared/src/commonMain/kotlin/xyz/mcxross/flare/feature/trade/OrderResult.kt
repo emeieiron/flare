@@ -16,6 +16,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
 import xyz.mcxross.flare.design.rememberOutcomeReveal
+import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.OrderSide
 
 
@@ -30,7 +31,8 @@ internal fun OrderResult(
   OrderOutcome(
     state, side, minHeight, Outcome.SUCCESS,
     title = "Order submitted",
-    message = "Your order is confirmed on-chain. Follow its status and fills in Activity.",
+    message = (state.transaction as? ActionState.Committed)?.detail?.let { "$it Follow it in Activity." }
+      ?: "Your order is confirmed on-chain. Follow its status and fills in Activity.",
   ) {
     onOpenActivity?.let { ActionRow("View Activity", onClick = it) }
     ActionRow("View transaction", onClick = onViewTransaction)
