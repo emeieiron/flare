@@ -11,6 +11,7 @@ import xyz.mcxross.flare.decibel.model.Market
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
+import xyz.mcxross.flare.decibel.model.TwapOrder
 
 class DecibelJsonTest {
   @Test
@@ -80,5 +81,26 @@ class DecibelJsonTest {
     assertEquals("0x33", delegation.delegate)
     assertEquals(1_736_326_800L, delegation.expirationTimeSeconds)
     assertEquals(true, delegation.canTradeAllPerpMarkets)
+  }
+
+  @Test
+  fun decodesTwapShapeWithSideScheduleAndProgress() {
+    val twaps =
+      DecibelClient.DefaultJson.decodeFromString<Page<TwapOrder>>(
+        """{"items":[{"market":"0x5d","is_buy":false,"order_id":"340282366920938463463374607431768211455",""" +
+          """"is_reduce_only":true,"start_unix_ms":1760335200000,"frequency_s":60,"duration_s":600,""" +
+          """"orig_size":0.02,"remaining_size":0.014,"status":"Activated","client_order_id":"",""" +
+          """"transaction_unix_ms":1760335200123,"transaction_version":6912345678}]}"""
+      )
+
+    val twap = twaps.items.single()
+    assertEquals("340282366920938463463374607431768211455", twap.twapId)
+    assertEquals(false, twap.isBuy)
+    assertEquals(true, twap.isReduceOnly)
+    assertEquals(60L, twap.frequencySeconds)
+    assertEquals(600L, twap.durationSeconds)
+    assertEquals(0.02, twap.originalSize)
+    assertEquals(0.006, twap.executedSize, 1e-12)
+    assertEquals("Activated", twap.status)
   }
 }
