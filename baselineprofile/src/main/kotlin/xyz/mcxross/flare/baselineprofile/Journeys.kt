@@ -6,7 +6,8 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.Until
 import java.util.regex.Pattern
 
-internal const val TARGET_PACKAGE = "xyz.mcxross.flare"
+/** The application ID of the flavor under test. */
+internal const val TARGET_PACKAGE = BuildConfig.TARGET_PACKAGE
 
 private val Price = Pattern.compile("\\$[0-9][0-9,]*\\.[0-9]+")
 

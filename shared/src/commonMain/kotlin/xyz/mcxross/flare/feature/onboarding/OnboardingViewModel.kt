@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.FeePayment
@@ -186,7 +186,7 @@ class OnboardingViewModel(
   private val wallets: WalletRepository,
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
-  private val runtime: FlareRuntimeConfig,
+  private val decibelConfig: DecibelRuntimeConfig,
   private val trading: TradingRepository,
 ) : ViewModel() {
   private val local = MutableStateFlow(OnboardingUiState())
@@ -525,7 +525,7 @@ class OnboardingViewModel(
         VaultPrompt("Import trading account", "Confirm your identity"),
       )
       preferences.setBuilderSupport(
-        builderAddress = runtime.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderAddress = decibelConfig.defaultBuilderAddress.takeIf(String::isNotBlank),
         builderFeeBps = 0,
         builderApproved = false,
       )
@@ -579,27 +579,27 @@ class OnboardingViewModel(
     )
     if (activeProfile()?.builderApproved == true) {
       // Approved by an earlier attempt; nothing to send again.
-    } else if (local.value.builderOptIn && runtime.defaultBuilderAddress.isNotBlank()) {
+    } else if (local.value.builderOptIn && decibelConfig.defaultBuilderAddress.isNotBlank()) {
       runSuspendCatching {
         // Always sponsored: agreeing to pay for enabling trading isn't agreeing to pay for this too.
         accounts.approveBuilderFee(
-          builderAddress = runtime.defaultBuilderAddress,
+          builderAddress = decibelConfig.defaultBuilderAddress,
           feeBps = 10u,
           prompt = VaultPrompt(title = "Approve builder support", subtitle = "Confirm your identity"),
           feePayment = FeePayment.SPONSORED,
         )
       }.onSuccess {
-        preferences.setBuilderFeeBps(runtime.defaultBuilderFeeBps.toInt())
+        preferences.setBuilderFeeBps(decibelConfig.defaultBuilderFeeBps.toInt())
       }.onFailure {
         preferences.setBuilderSupport(
-          builderAddress = runtime.defaultBuilderAddress,
+          builderAddress = decibelConfig.defaultBuilderAddress,
           builderFeeBps = 0,
           builderApproved = false,
         )
       }
     } else {
       preferences.setBuilderSupport(
-        builderAddress = runtime.defaultBuilderAddress.takeIf(String::isNotBlank),
+        builderAddress = decibelConfig.defaultBuilderAddress.takeIf(String::isNotBlank),
         builderFeeBps = 0,
         builderApproved = false,
       )

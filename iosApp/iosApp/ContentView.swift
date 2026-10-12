@@ -4,9 +4,14 @@ import Shared
 
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Self.Context) -> UIViewController {
-        let workerBaseUrl = Bundle.main.object(forInfoDictionaryKey: "FlareWorkerURL") as? String
-            ?? "http://127.0.0.1:8787"
-        return MainViewControllerKt.MainViewController(workerBaseUrl: workerBaseUrl)
+        // Every Flare* Info.plist key, filled in by the scheme's xcconfig. The venue's
+        // MainViewController reads the ones it needs and applies its own defaults.
+        let infoPlist = (Bundle.main.infoDictionary ?? [:]).reduce(into: [String: String]()) { keys, entry in
+            if entry.key.hasPrefix("Flare"), let value = entry.value as? String {
+                keys[entry.key] = value
+            }
+        }
+        return MainViewControllerKt.MainViewController(infoPlist: infoPlist)
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Self.Context) {}

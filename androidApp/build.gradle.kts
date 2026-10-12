@@ -1,5 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// The decibel flavor's settings: the Flare Worker it talks to and the builder that receives
+// Flare's fee.
 val flareWorkerUrl =
   providers
     .gradleProperty("flareWorkerUrl")
@@ -47,7 +49,6 @@ dependencies {
 
   implementation(libs.compose.uiToolingPreview)
   debugImplementation(libs.compose.uiTooling)
-  debugImplementation(project(":decibel"))
   debugImplementation(libs.compose.material3)
   debugImplementation(libs.compose.foundation)
 }
@@ -62,15 +63,29 @@ android {
   }
 
   defaultConfig {
-    applicationId = "xyz.mcxross.flare"
     minSdk = libs.versions.android.minSdk.get().toInt()
     targetSdk {
       version = release(libs.versions.android.targetSdk.get().toInt())
     }
     versionCode = flareVersionCode.get()
     versionName = flareVersionName.get()
-    resValue("string", "flare_worker_url", flareWorkerUrl.get())
-    resValue("string", "flare_builder_address", flareBuilderAddress.get())
+  }
+  // One app per exchange: each flavor links its :venue-* module, provides VenueEntry from
+  // src/<flavor>, and installs under its own application ID.
+  flavorDimensions += "venue"
+  productFlavors {
+    create("decibel") {
+      dimension = "venue"
+      applicationId = "xyz.mcxross.flare.decibel"
+      resValue("string", "flare_worker_url", flareWorkerUrl.get())
+      resValue("string", "flare_builder_address", flareBuilderAddress.get())
+      if (releaseSigned) {
+        // A signed build is one people install: it must reach a real, encrypted Worker.
+        check(flareWorkerUrl.get().startsWith("https://")) {
+          "A signed release needs an HTTPS flareWorkerUrl, not ${flareWorkerUrl.get()}"
+        }
+      }
+    }
   }
   packaging {
     resources {
@@ -91,10 +106,6 @@ android {
     release {
       if (releaseSigned) {
         signingConfig = signingConfigs.getByName("release")
-        // A signed build is one people install: it must reach a real, encrypted Worker.
-        check(flareWorkerUrl.get().startsWith("https://")) {
-          "A signed release needs an HTTPS flareWorkerUrl, not ${flareWorkerUrl.get()}"
-        }
       }
       // Phones only: 64- and 32-bit ARM. The x86 and obsolete ABIs some libraries carry add ~14 MB.
       ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
@@ -117,11 +128,27 @@ android {
   }
 }
 
+// After android {}: a flavor's configurations exist once the flavor is declared. Those of a flavor
+// and build type pair are created on demand, so that one is declared here first.
+val decibelDebugImplementation by configurations.creating
+
+dependencies {
+  // Each flavor links the exchange it trades on.
+  "decibelImplementation"(project(":venue-decibel"))
+  // The design preview (src/decibelDebug) builds its sample screens from Decibel's models.
+  decibelDebugImplementation(project(":decibel"))
+}
+
 // The baseline profile plugin's build types don't read their own src/<buildType> folders, so the
-// overlay that lets them reach the local worker is added to those variants here.
+// overlay that lets them reach the local worker is added to those variants here. Only the decibel
+// flavor has a local worker. With flavors, the plugin generates and reads each flavor's profiles in
+// src/<flavor>Release/generated/baselineProfiles (generateDecibelReleaseBaselineProfile).
 androidComponents {
   onVariants { variant ->
-    if (variant.buildType in setOf("nonMinifiedRelease", "benchmarkRelease")) {
+    if (
+      variant.flavorName == "decibel" &&
+        variant.buildType in setOf("nonMinifiedRelease", "benchmarkRelease")
+    ) {
       variant.sources.manifests.addStaticManifestFile(file("src/benchmark/AndroidManifest.xml").path)
     }
   }

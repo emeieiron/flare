@@ -50,7 +50,7 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 
 ## Get Flare
 
-**Android:** download `flare-android.apk` from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
+**Android:** download `flare-decibel-android.apk` from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
 
@@ -96,10 +96,10 @@ git clone https://github.com/emeieiron/decibel-worker
 cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 
 # 2. Run Android (debug builds connect to http://10.0.2.2:8787)
-./gradlew :androidApp:installDebug
+./gradlew :androidApp:installDecibelDebug
 ```
 
-For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run it.
+For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` scheme.
 
 ## Security
 

@@ -28,8 +28,9 @@ jobs:
           ./gradlew
           :decibel:jvmTest
           :shared:testAndroidHostTest
-          :androidApp:lintDebug
-          :androidApp:assembleDebug
+          :venue-decibel:testAndroidHostTest
+          :androidApp:lintDecibelDebug
+          :androidApp:assembleDecibelDebug
 
   ios:
     runs-on: macos-15
@@ -46,14 +47,14 @@ jobs:
           ./gradlew
           :decibel:iosSimulatorArm64Test
           :shared:iosSimulatorArm64Test
-          :shared:compileKotlinIosSimulatorArm64
+          :ios-decibel:compileKotlinIosSimulatorArm64
       - name: Build the iOS simulator application
         run: >-
           xcodebuild
           -project iosApp/iosApp.xcodeproj
-          -scheme iosApp
+          -scheme "Flare Decibel"
           -sdk iphonesimulator
-          -configuration Debug
+          -configuration Debug-Decibel
           CODE_SIGNING_ALLOWED=NO
           build
 

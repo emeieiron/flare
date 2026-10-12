@@ -6,7 +6,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlinx.coroutines.test.runTest
-import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.AptosConfig
 import xyz.mcxross.kaptos.model.AccountAddress
@@ -24,7 +24,7 @@ class PhoneTransactionConfigIosTest {
       Aptos(
         AptosConfig(
           network = Network.TESTNET,
-          transactionDefaults = FlareRuntimeConfig().transactionDefaults,
+          transactionDefaults = DecibelRuntimeConfig().transactionDefaults,
         )
       )
     try {

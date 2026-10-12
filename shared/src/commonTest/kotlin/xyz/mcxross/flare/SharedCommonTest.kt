@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.ChartTimeframe
@@ -27,21 +28,27 @@ class SharedCommonTest {
 
   @Test
   fun runtimeConfigDerivesOnlyAllowlistedWorkerEndpoints() {
-    val runtime = FlareRuntimeConfig(workerBaseUrl = "https://worker.example/")
+    val runtime = DecibelRuntimeConfig(workerBaseUrl = "https://worker.example/")
 
     assertEquals("https://worker.example/decibel", runtime.decibelRestUrl)
     assertEquals("wss://worker.example/decibel/ws", runtime.decibelWebSocketUrl)
     assertEquals("https://worker.example/aptos/v1", runtime.aptosFullnodeUrl)
     assertEquals(
       "http://10.0.2.2:8787/aptos/v1",
-      FlareRuntimeConfig(workerBaseUrl = "http://10.0.2.2:8787").aptosFullnodeUrl,
+      DecibelRuntimeConfig(workerBaseUrl = "http://10.0.2.2:8787").aptosFullnodeUrl,
     )
     assertFailsWith<IllegalArgumentException> {
-      FlareRuntimeConfig(workerBaseUrl = "http://worker.example")
+      DecibelRuntimeConfig(workerBaseUrl = "http://worker.example")
     }
     assertFailsWith<IllegalArgumentException> {
-      FlareRuntimeConfig(workerBaseUrl = "http://10.0.2.2.example:8787")
+      DecibelRuntimeConfig(workerBaseUrl = "http://10.0.2.2.example:8787")
     }
+  }
+
+  @Test
+  fun runtimeConfigKeepsTheWorkerAuthenticationOrigin() {
+    assertEquals("flare://mobile", FlareRuntimeConfig().appOrigin)
+    assertFailsWith<IllegalArgumentException> { FlareRuntimeConfig(appOrigin = "https://app") }
   }
 
   @Test

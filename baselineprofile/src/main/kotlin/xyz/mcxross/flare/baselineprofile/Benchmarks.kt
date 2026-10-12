@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 /**
  * Measures what the baseline profile buys, each case with and without it:
  *
- *   ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
+ *   ./gradlew :baselineprofile:connectedDecibelBenchmarkReleaseAndroidTest
  *
  * Startup runs unattended: it times the first frame, which comes before the unlock prompt.
  * Browsing needs one unlock per case.

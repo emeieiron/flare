@@ -19,7 +19,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
@@ -198,7 +198,7 @@ class SettingsViewModelTest {
         wallets = FakeWalletRepository(),
         accounts = fakeAccounts,
         sessions = FakeSessionRepository(),
-        runtime = FlareRuntimeConfig(),
+        decibelConfig = DecibelRuntimeConfig(),
       )
 
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }

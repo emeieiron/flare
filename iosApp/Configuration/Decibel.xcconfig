@@ -1,0 +1,14 @@
+// The Decibel build: configurations Debug-Decibel and Release-Decibel, scheme "Flare Decibel".
+#include "Config.xcconfig"
+
+PRODUCT_NAME=flare
+PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.decibel$(TEAM_ID)
+
+// The Kotlin framework comes from :ios-$(FLARE_VENUE) (see the "Compile Kotlin Framework" phase).
+FLARE_VENUE=decibel
+// Gradle can't tell the build type from these configuration names, so each one names it.
+KOTLIN_FRAMEWORK_BUILD_TYPE[config=Debug-Decibel]=debug
+KOTLIN_FRAMEWORK_BUILD_TYPE[config=Release-Decibel]=release
+
+// Override this build setting with the deployed HTTPS Worker URL for release builds.
+FLARE_WORKER_URL=http:/$()/127.0.0.1:8787
