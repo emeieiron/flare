@@ -65,7 +65,7 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
     }
     if (state.orderType == OrderType.TWAP) {
       DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
-      DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
+      if (state.capabilities.twapInterval) DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
     }
     val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
     if (productFees != null && estimate != null) {

@@ -1,13 +1,18 @@
 package xyz.mcxross.flare.venue.hyperliquid
 
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import xyz.mcxross.flare.hyperliquid.api.StreamFunding
 import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
+import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.FundingUpdate
 import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
 import xyz.mcxross.flare.hyperliquid.model.OrderWithStatus
 import xyz.mcxross.flare.hyperliquid.model.Portfolio
+import xyz.mcxross.flare.hyperliquid.model.PortfolioPoint as HyperliquidPortfolioPoint
+import xyz.mcxross.flare.hyperliquid.model.Referral
 import xyz.mcxross.flare.hyperliquid.model.Side
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
 import xyz.mcxross.flare.hyperliquid.model.SpotMetaAndContexts
@@ -19,6 +24,7 @@ import xyz.mcxross.flare.hyperliquid.model.VaultEquity
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.FeeRates
+import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovement
@@ -32,14 +38,15 @@ import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.venue.model.RewardPart
+import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
-import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
-import xyz.mcxross.flare.hyperliquid.model.PortfolioPoint as HyperliquidPortfolioPoint
 
 // Hyperliquid's account data as the app's exchange-neutral models. Market ids are coins.
 
@@ -106,6 +113,8 @@ internal fun accountOverview(
     availableToTrade = withdrawable,
     withdrawable = withdrawable,
     vaultEquity = vaultEquity,
+    // Only once the mode is known: moving USDC on a unified account would be meaningless.
+    perpSpotSeparate = abstraction?.sharesSpotCollateral == false,
     balances =
       Balances(
         collateral = equity - unrealizedPnl,
@@ -327,6 +336,53 @@ internal fun UserFees.toTradingFees(): TradingFees =
       } else null,
   )
 
+/**
+ * The account's place on the fee schedule. Its volume is the 14 complete days `dailyUserVlm` lists
+ * before today, taker plus maker, as Hyperliquid's app sums it; the tier is the highest volume
+ * tier that volume reaches, Tier 0 below the first.
+ */
+internal fun UserFees.toFeeTier(): FeeTier {
+  val volume =
+    dailyUserVlm.dropLast(1).takeLast(FEE_VOLUME_DAYS).sumOf {
+      it.userCross.toDoubleOrZero() + it.userAdd.toDoubleOrZero()
+    }
+  val tier = feeSchedule?.tiers?.vip.orEmpty().count { volume >= it.ntlCutoff.toDoubleOrZero() }
+  val rates = toTradingFees()
+  return FeeTier(
+    name = "Tier $tier",
+    volumeUsd = volume,
+    perp = checkNotNull(rates.perp),
+    spot = rates.spot,
+    stakingDiscount = activeStakingDiscount?.discount.toDoubleOrZero().takeIf { it > 0.0 },
+    referralDiscount = activeReferralDiscount.toDoubleOrZero().takeIf { it > 0.0 },
+  )
+}
+
+/** Rewards from what loaded; a part that didn't is listed as unavailable, both failing throws. */
+internal fun hyperliquidRewards(feeTier: Result<FeeTier>, referral: Result<ReferralSummary>): Rewards {
+  feeTier.exceptionOrNull()?.let { error -> if (referral.isFailure) throw error }
+  return Rewards(
+    feeTier = feeTier.getOrNull(),
+    referral = referral.getOrNull(),
+    unavailable =
+      setOfNotNull(
+        RewardPart.FEE_TIER.takeIf { feeTier.isFailure },
+        RewardPart.REFERRAL.takeIf { referral.isFailure },
+      ),
+  )
+}
+
+/** The account's own code once it has made one, who referred it, and what referring earned. */
+internal fun Referral.toReferralSummary(): ReferralSummary =
+  ReferralSummary(
+    code =
+      referrerState?.takeIf { it.stage == "ready" }?.data?.get("code")
+        ?.let { (it as? JsonPrimitive)?.contentOrNull }
+        ?.takeIf(String::isNotBlank),
+    referredBy = referredBy?.code,
+    earnedUsd = claimedRewards.toDoubleOrZero() + unclaimedRewards.toDoubleOrZero(),
+  )
+
 /** A running TWAP, as the `twapStates` stream reports it. */
 internal fun TwapState.toTwapOrder(id: Long, status: String = "activated"): TwapOrder =
   TwapOrder(
@@ -392,6 +448,8 @@ internal fun String?.toDoubleOrZero(): Double = this?.toDoubleOrNull()?.takeIf {
 internal const val USDC = "USDC"
 internal const val USDC_TOKEN = 0
 private const val COMPLETED = "completed"
+
+private const val FEE_VOLUME_DAYS = 14
 
 /** Hyperliquid places a TWAP slice every 30 seconds. */
 private const val TWAP_SLICE_SECONDS = 30L

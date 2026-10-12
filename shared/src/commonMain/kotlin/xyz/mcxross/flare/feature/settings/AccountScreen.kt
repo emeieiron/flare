@@ -184,7 +184,7 @@ fun AccountScreen(
         }
         HorizontalDivider(color = FlareColors.BorderSubtle)
       }
-      if (active.ownerAddress != null && state.capabilities.subaccounts) {
+      if (active.ownerAddress != null && state.capabilities.createSubaccounts) {
         ActionRow(if (state.creatingSubaccount) "Creating trading account…" else "Add trading account",
           icon = FlareIcons.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })

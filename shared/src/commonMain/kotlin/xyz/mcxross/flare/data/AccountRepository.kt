@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.AccountOverview
@@ -138,6 +139,13 @@ interface AccountRepository {
     prompt: VaultPrompt,
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<ActionState>
+
+  /**
+   * Sends [amount] USDC to another account on the venue itself. Only venues whose
+   * [xyz.mcxross.flare.venue.WithdrawalTerms.internalTransfers] says so offer it.
+   */
+  fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> =
+    flowOf(ActionState.Failed("Transfers to other accounts aren’t available here", definitelyNotSubmitted = true))
 
   /** Perpetuals and spot keep separate on-chain approvals; [product] picks which one. */
   suspend fun approveBuilderFee(

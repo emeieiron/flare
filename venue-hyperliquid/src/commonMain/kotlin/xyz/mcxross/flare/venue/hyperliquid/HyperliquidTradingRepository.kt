@@ -13,7 +13,9 @@ import xyz.mcxross.flare.hyperliquid.model.CancelByCloidRequest
 import xyz.mcxross.flare.hyperliquid.model.CancelOrders
 import xyz.mcxross.flare.hyperliquid.model.CancelOrdersByCloid
 import xyz.mcxross.flare.hyperliquid.model.CancelRequest
+import xyz.mcxross.flare.hyperliquid.model.CancelTwap
 import xyz.mcxross.flare.hyperliquid.model.Cloid
+import xyz.mcxross.flare.hyperliquid.model.HyperliquidAsset
 import xyz.mcxross.flare.hyperliquid.model.L1Action
 import xyz.mcxross.flare.hyperliquid.model.UpdateLeverage
 import xyz.mcxross.flare.security.VaultPrompt
@@ -21,18 +23,21 @@ import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarginMode
 import xyz.mcxross.flare.venue.model.OpenOrderRef
+import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.actionKind
 
 /**
- * Hyperliquid's actions, journaled by [actions] before they're sent. Orders, cancels, exits and
- * leverage are signed by the device's agent key; setup actions (trading keys and builder fees) by
- * the owner. Kinds of action [capabilities] holds back fail before signing, with its reason.
+ * Hyperliquid's actions, journaled by [actions] before they're sent. Orders, TWAPs, cancels, exits,
+ * leverage and vault moves are signed by the device's agent key, for a sub-account through its
+ * `vaultAddress`; setup actions (trading keys and builder fees) and the other fund moves by the
+ * owner. Kinds of action [capabilities] holds back fail before signing, with its reason.
  */
 class HyperliquidTradingRepository(
   private val client: HyperliquidClient,
   private val actions: HyperliquidActions,
   private val setup: HyperliquidSetup,
+  private val funds: HyperliquidFunds,
   private val assets: HyperliquidAssets = HyperliquidAssets(client),
   private val capabilities: VenueCapabilities = HyperliquidVenue.Capabilities,
   private val newCloid: () -> Cloid = { Cloid.random() },
@@ -64,7 +69,17 @@ class HyperliquidTradingRepository(
         is TradeAction.CancelOrders -> beforeSending { cancel(action.account, action.orders, prompt) }
         is TradeAction.ConfigureMarket -> beforeSending { configureMarket(action, prompt) }
         is TradeAction.SetPositionTpSl -> beforeSending { setPositionTpSl(action, prompt) }
-        else -> unavailable("Hyperliquid can’t do this from here. Use setup to enable trading.")
+        is TradeAction.CancelTwapOrder -> beforeSending { cancelTwap(action, prompt) }
+        is TradeAction.Withdraw -> funds.withdraw(action.account, null, action.amount, prompt)
+        is TradeAction.Transfer -> funds.send(action.account, action.destination, action.amount, prompt)
+        is TradeAction.MovePerpSpot ->
+          funds.movePerpSpot(action.account, action.amount, toPerp = !action.toSpot, prompt)
+        is TradeAction.VaultDeposit -> funds.vault(action.account, action.vault, true, action.amount, prompt)
+        is TradeAction.VaultWithdraw -> funds.vault(action.account, action.vault, false, action.shares, prompt)
+        is TradeAction.Deposit -> unavailable(DEPOSIT_BY_ADDRESS)
+        is TradeAction.EnableTrading,
+        TradeAction.CreateTradingAccount ->
+          unavailable("Hyperliquid can’t do this from here. Use setup to enable trading.")
       }
     emit(result)
   }
@@ -82,6 +97,7 @@ class HyperliquidTradingRepository(
   private suspend fun placeOrder(action: TradeAction.PlaceOrder, prompt: VaultPrompt): ActionState {
     val asset = assets.asset(action.market.id)
     HyperliquidOrders.requireKind(asset, action.market.kind)
+    if (action.order.type == OrderType.TWAP) return placeTwap(action, asset, prompt)
     val cloid = newCloid()
     val orders = HyperliquidOrders.place(asset, action.order, cloid)
     val labels =
@@ -94,9 +110,41 @@ class HyperliquidTradingRepository(
       orders,
       prompt,
       cloid,
+      actions.vaultFor(action.account),
       record = { lapses -> JournaledAction.PlaceOrder(action.account, lapses) },
     ) { response, reference ->
       HyperliquidResults.orders(response, reference, labels)
+    }
+  }
+
+  private suspend fun placeTwap(
+    action: TradeAction.PlaceOrder,
+    asset: HyperliquidAsset,
+    prompt: VaultPrompt,
+  ): ActionState {
+    val twap = HyperliquidOrders.twap(asset, action.order)
+    return actions.sendAsAgent(
+      twap,
+      prompt,
+      vaultAddress = actions.vaultFor(action.account),
+      record = { lapses ->
+        JournaledAction.PlaceTwap(action.account, asset.coin, twap.isBuy, twap.size.toWire(), twap.minutes, lapses)
+      },
+    ) { response, reference ->
+      HyperliquidResults.twapPlaced(response, reference)
+    }
+  }
+
+  private suspend fun cancelTwap(action: TradeAction.CancelTwapOrder, prompt: VaultPrompt): ActionState {
+    val asset = assets.asset(action.marketId)
+    val twapId = action.twapId.toLongOrNull() ?: throw IllegalArgumentException("This TWAP can’t be canceled")
+    return actions.sendAsAgent(
+      CancelTwap(asset.id, twapId),
+      prompt,
+      vaultAddress = actions.vaultFor(action.account),
+      record = { lapses -> JournaledAction.CancelTwap(action.account, twapId, lapses) },
+    ) { response, reference ->
+      HyperliquidResults.twapCanceled(response, reference)
     }
   }
 
@@ -130,21 +178,31 @@ class HyperliquidTradingRepository(
     actions.sendAsAgent(
       action,
       prompt,
+      vaultAddress = actions.vaultFor(account),
       record = { lapses -> JournaledAction.CancelOrders(account, orders, lapses) },
     ) { response, reference ->
       HyperliquidResults.cancels(response, reference)
     }
 
+  /**
+   * Sets leverage, sent only when it changes something. The screens offer no margin mode, so a
+   * request for cross keeps the mode the market already has; isolated-only markets stay isolated.
+   */
   private suspend fun configureMarket(action: TradeAction.ConfigureMarket, prompt: VaultPrompt): ActionState {
     val asset = assets.asset(action.marketId)
     require(asset.kind == AssetKind.PERP) { "Spot has no leverage" }
     val maxLeverage = asset.maxLeverage ?: 1
     require(action.leverage in 1..maxLeverage) { "Choose leverage from 1× to $maxLeverage×" }
-    val isCross = action.marginMode == MarginMode.CROSS
-    require(!isCross || !asset.isIsolatedOnly) { "${asset.displayName} trades on isolated margin only" }
+    val current = client.info.activeAssetData(action.account, asset.coin).leverage
+    val isCross =
+      !asset.isIsolatedOnly && action.marginMode == MarginMode.CROSS && current.isCross
+    if (current.value == action.leverage && current.isCross == isCross) {
+      return ActionState.Committed(NOTHING_SENT, "Leverage is already ${action.leverage}×.")
+    }
     return actions.sendAsAgent(
       UpdateLeverage(asset.id, isCross, action.leverage),
       prompt,
+      vaultAddress = actions.vaultFor(action.account),
       record = { lapses ->
         JournaledAction.UpdateLeverage(action.account, asset.coin, isCross, action.leverage, lapses)
       },
@@ -193,6 +251,7 @@ class HyperliquidTradingRepository(
         orders,
         prompt,
         cloid,
+        actions.vaultFor(action.account),
         record = { lapses -> JournaledAction.PlaceOrder(action.account, lapses) },
       ) { response, reference ->
         HyperliquidResults.orders(response, reference, labels)
@@ -230,4 +289,9 @@ class HyperliquidTradingRepository(
   }
 
   override suspend fun reconcilePending(): ReconciliationResult = actions.reconcile()
+
+  private companion object {
+    /** The reference of an action that needed nothing sent. */
+    const val NOTHING_SENT = ""
+  }
 }

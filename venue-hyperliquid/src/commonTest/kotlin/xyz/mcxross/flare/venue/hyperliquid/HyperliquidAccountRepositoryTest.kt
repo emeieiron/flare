@@ -52,7 +52,7 @@ class HyperliquidAccountRepositoryTest {
     val preferences = memoryPreferences()
     preferences.registerProfile(AccountProfile("owner_$user", ownerAddress = user))
     val client = testClient(responses)
-    return HyperliquidAccountRepository(client, preferences, unusedSetup(client, preferences)) to preferences
+    return testAccounts(client, preferences) to preferences
   }
 
   @Test
@@ -201,7 +201,6 @@ class HyperliquidAccountRepositoryTest {
       accounts.portfolioChart(PortfolioChartRange.DAY_1, PortfolioMetric.EQUITY).first().value,
     )
     assertEquals(0.00035, accounts.fees()!!.perp!!.takerRate)
-    assertNull(accounts.rewards())
 
     val vaults = accounts.vaults()
     assertEquals(listOf(Fixtures.HLP_VAULT), vaults.map { it.address })

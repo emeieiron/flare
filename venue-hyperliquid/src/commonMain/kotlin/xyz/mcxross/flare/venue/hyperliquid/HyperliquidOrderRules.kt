@@ -46,8 +46,17 @@ data class HyperliquidOrderRules(
     if (order.type == OrderType.TWAP) {
       val schedule = order.twap
       val minutes = schedule?.durationSeconds?.takeIf { it % 60 == 0L }?.div(60)
-      if (minutes == null || minutes !in TWAP_MINUTES) {
-        errors += "A TWAP runs for 5 minutes to 24 hours, in whole minutes"
+      if (minutes == null || minutes !in TWAP_MINUTES) errors += TWAP_DURATION
+      if (size != null && !order.reduceOnly) {
+        val price = midPrice(orderBook)
+        if (price == null) {
+          errors += "A reliable best bid and ask are required"
+        } else {
+          val value = runCatching { size * price }.getOrNull()
+          if (value == null || value < TWAP_MIN_VALUE_USDC) {
+            errors += "Minimum TWAP value is $$TWAP_MIN_VALUE_USDC"
+          }
+        }
       }
       return if (errors.isEmpty() && size != null) OrderCheck.Valid(order.copy(size = size.toString()))
       else OrderCheck.Invalid(errors)
@@ -120,6 +129,13 @@ data class HyperliquidOrderRules(
     return null
   }
 
+  private fun midPrice(orderBook: OrderBook?): HlDecimal? {
+    if (orderBook == null || orderBook.marketId != coin) return null
+    val bid = orderBook.bestBid?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
+    val ask = orderBook.bestAsk?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
+    return runCatching { (bid + ask) * HlDecimal.of(5, 1) }.getOrNull()
+  }
+
   /** The best opposite price moved by the slippage allowance, never better than the best price. */
   private fun marketPrice(
     order: OrderRequest,
@@ -139,9 +155,15 @@ data class HyperliquidOrderRules(
     return if (buy) maxOf(bounded, bestValid) else minOf(bounded, bestValid)
   }
 
-  private companion object {
-    const val BPS = 10_000
-    const val MAX_SLIPPAGE_BPS = 5_000
+  internal companion object {
+    private const val BPS = 10_000
+    private const val MAX_SLIPPAGE_BPS = 5_000
+
+    /** How long a TWAP may run, in minutes, as far as Flare's order entry goes (a day). */
     val TWAP_MINUTES = 5L..1_440L
+    const val TWAP_DURATION = "A TWAP runs for 5 minutes to 24 hours, in whole minutes"
+
+    /** Hyperliquid's smallest TWAP, by its whole value in USDC. */
+    val TWAP_MIN_VALUE_USDC: HlDecimal = HlDecimal.of(100)
   }
 }

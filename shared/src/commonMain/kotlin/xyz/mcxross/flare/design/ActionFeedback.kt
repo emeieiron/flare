@@ -90,6 +90,8 @@ fun settlingActionName(operation: String): String =
     "DEPOSIT" -> "deposit"
     "WITHDRAW",
     "TRANSFER_COLLATERAL" -> "withdrawal"
+    "TRANSFER",
+    "MOVE_PERP_SPOT" -> "transfer"
     "PLACE_ORDER",
     "PLACE_SPOT_ORDER",
     "PLACE_TWAP_ORDER" -> "order"

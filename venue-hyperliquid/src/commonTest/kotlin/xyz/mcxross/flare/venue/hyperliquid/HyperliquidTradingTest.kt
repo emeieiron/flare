@@ -283,26 +283,54 @@ class HyperliquidTradingTest {
   }
 
   @Test
-  fun leverageAndMarginModeRespectTheMarketsLimits() = runTest {
+  fun leverageRespectsTheMarketsLimits() = runTest {
     val harness = harness()
     harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.Default) }
 
     val cross = harness.configure("BTC", MarginMode.CROSS, 10)
     val isolated = harness.configure("ISO", MarginMode.ISOLATED, 3)
-    val crossOnIsolatedOnly = harness.configure("ISO", MarginMode.CROSS, 3)
+    // The screens ask for cross by default; an isolated-only market stays isolated.
+    val crossOnIsolatedOnly = harness.configure("ISO", MarginMode.CROSS, 2)
     val tooHigh = harness.configure("BTC", MarginMode.CROSS, 41)
 
     assertEquals(
       listOf(
         """{"type":"updateLeverage","asset":0,"isCross":true,"leverage":10}""",
         """{"type":"updateLeverage","asset":5,"isCross":false,"leverage":3}""",
+        """{"type":"updateLeverage","asset":5,"isCross":false,"leverage":2}""",
       ),
       harness.wires(),
     )
     assertIs<ActionState.Committed>(cross)
     assertIs<ActionState.Committed>(isolated)
-    assertTrue(assertIs<ActionState.Failed>(crossOnIsolatedOnly).definitelyNotSubmitted)
+    assertIs<ActionState.Committed>(crossOnIsolatedOnly)
     assertTrue(assertIs<ActionState.Failed>(tooHigh).definitelyNotSubmitted)
+  }
+
+  @Test
+  fun leverageIsSentOnlyWhenItChangesAndKeepsAnIsolatedMarket() = runTest {
+    val harness = harness()
+    harness.leverage = """{"type":"isolated","value":10,"rawUsd":"0"}"""
+    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.Default) }
+
+    val unchanged = harness.configure("BTC", MarginMode.CROSS, 10)
+    val changed = harness.configure("BTC", MarginMode.CROSS, 5)
+
+    assertEquals(ActionState.Committed("", "Leverage is already 10×."), unchanged)
+    assertEquals(listOf("""{"type":"updateLeverage","asset":0,"isCross":false,"leverage":5}"""), harness.wires())
+    assertIs<ActionState.Committed>(changed)
+    assertTrue(harness.journal.entries.value.isEmpty())
+  }
+
+  @Test
+  fun anUnreadableSettingSendsNothing() = runTest {
+    val harness = harness()
+    harness.leverage = null
+
+    val failed = harness.configure("BTC", MarginMode.CROSS, 10)
+
+    assertTrue(assertIs<ActionState.Failed>(failed).definitelyNotSubmitted)
+    assertTrue(harness.submitter.sent.isEmpty())
   }
 
   @Test
@@ -410,18 +438,6 @@ class HyperliquidTradingTest {
   }
 
   @Test
-  fun twapsStayDisabledWithTheirOwnReason() = runTest {
-    val harness = harness()
-    val twap =
-      OrderRequest("BTC", OrderSide.BUY, OrderType.TWAP, "0.01", twap = TwapSchedule(60, 3600))
-
-    val failed = harness.trading.execute(TradeAction.PlaceOrder(owner, BTC, twap), prompt).first()
-
-    assertEquals(TWAP_UNAVAILABLE, assertIs<ActionState.Failed>(failed).message)
-    assertTrue(harness.submitter.sent.isEmpty())
-  }
-
-  @Test
   fun newJournaledActionsSurviveARestart() {
     val cancel = JournaledAction.CancelOrders(owner, listOf("123", CLOID.hex), 5L)
     val leverage = JournaledAction.UpdateLeverage(owner, "xyz:ABC/USD", isCross = false, leverage = 3, lapsesAtMs = 6L)
@@ -431,6 +447,8 @@ class HyperliquidTradingTest {
   }
 
   private class Harness(val setup: SetupHarness) {
+    /** The market's leverage setting as `activeAssetData` reports it; null fails the read. */
+    var leverage: String? = """{"type":"cross","value":20}"""
     val submitter get() = setup.submitter
     val journal get() = setup.journal
     val actions get() = setup.actions
@@ -450,6 +468,7 @@ class HyperliquidTradingTest {
         setup.client,
         setup.actions,
         setup.setup,
+        HyperliquidFunds(setup.client, setup.actions, setup.preferences) { setup.now },
         HyperliquidAssets(setup.client),
         newCloid = { CLOID },
       )
@@ -471,9 +490,16 @@ class HyperliquidTradingTest {
   private suspend fun harness(): Harness {
     val setup = SetupHarness().withOwner()
     setup.preferences.setApiWallet(AGENT)
-    setup.answer = { type, _ -> assets(type) }
-    return Harness(setup)
+    val harness = Harness(setup)
+    setup.answer = { type, body ->
+      if (type == "activeAssetData") harness.leverage?.let { activeAssetData(body["coin"]!!.jsonPrimitive.content, it) }
+      else assets(type)
+    }
+    return harness
   }
+
+  private fun activeAssetData(coin: String, leverage: String) =
+    """{"user":"${owner.lowercase()}","coin":"$coin","leverage":$leverage,"maxTradeSzs":["0","0"],"availableToTrade":["0","0"],"markPx":"65000"}"""
 
   private fun check(market: Market, order: OrderRequest, book: OrderBook? = null): OrderRequest =
     assertIs<OrderCheck.Valid>(market.rules.check(order, book)).order

@@ -30,3 +30,10 @@ fun formatCalendarDate(unixMs: Long): String {
   val month = local.month.name.take(3).lowercase().replaceFirstChar(Char::uppercase)
   return "$month ${local.day}"
 }
+
+/** A local date and time, such as "Oct 16, 14:05", for a moment something becomes possible. */
+fun formatCalendarDateTime(unixMs: Long): String {
+  val local = Instant.fromEpochMilliseconds(unixMs).toLocalDateTime(TimeZone.currentSystemDefault())
+  val time = "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
+  return "${formatCalendarDate(unixMs)}, $time"
+}

@@ -337,20 +337,16 @@ class HyperliquidSetupTest {
   }
 
   @Test
-  fun setupActionsAreSentWhileTwapsAndFundMovesStayDisabled() = runTest {
+  fun setupActionsAreSentThroughTheTradingRepository() = runTest {
     val harness = SetupHarness().withOwner()
     harness.funded({ emptyList() })
-    val trading = HyperliquidTradingRepository(harness.client, harness.actions, harness.setup)
+    val funds = HyperliquidFunds(harness.client, harness.actions, harness.preferences) { harness.now }
+    val trading = HyperliquidTradingRepository(harness.client, harness.actions, harness.setup, funds)
     val builder = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d"
-    val twap = TradeAction.CancelTwapOrder(SetupHarness.OWNER, "BTC", "1")
 
-    val cancel = trading.execute(twap, prompt).first()
-    val withdraw = trading.execute(TradeAction.Withdraw(SetupHarness.OWNER, "1"), prompt).first()
     val revoke =
       trading.execute(TradeAction.RevokeBuilderFee(SetupHarness.OWNER, builder), prompt)
 
-    assertEquals(TWAP_UNAVAILABLE, assertIs<ActionState.Failed>(cancel).message)
-    assertEquals(FUNDS_UNAVAILABLE, assertIs<ActionState.Failed>(withdraw).message)
     assertIs<ActionState.Committed>(revoke.toList().last())
     assertEquals(ApproveBuilderFee.revoke(builder), harness.submitter.sent.single().first)
   }

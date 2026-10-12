@@ -8,10 +8,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.VaultTerms
+import xyz.mcxross.flare.venue.WithdrawalTerms
 import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradeAction
@@ -60,13 +63,21 @@ class HyperliquidVenueTest {
     val capabilities = HyperliquidVenue.Capabilities
 
     assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
-    assertFalse(capabilities.rewards || capabilities.sponsoredFees || capabilities.networkFeeTopUp)
-    assertFalse(capabilities.inAppDeposit || capabilities.subaccounts || capabilities.perpSpotTransfer)
-    assertTrue(capabilities.batchCancel)
-    assertNull(capabilities.unavailableReason(ActionKind.TRADING))
-    assertEquals(TWAP_UNAVAILABLE, capabilities.unavailableReason(ActionKind.TWAP))
-    assertEquals(FUNDS_UNAVAILABLE, capabilities.unavailableReason(ActionKind.FUNDS))
-    assertNull(capabilities.unavailableReason(ActionKind.SETUP))
+    assertTrue(capabilities.subaccounts && capabilities.perpSpotTransfer && capabilities.batchCancel)
+    // Rewards are the fee tier and referral standing: no points, streak or code entry.
+    assertTrue(capabilities.rewards)
+    assertFalse(capabilities.referralCodes || capabilities.createSubaccounts || capabilities.twapInterval)
+    assertFalse(capabilities.sponsoredFees || capabilities.networkFeeTopUp || capabilities.inAppDeposit)
+    ActionKind.entries.forEach { assertNull(capabilities.unavailableReason(it), it.name) }
+  }
+
+  @Test
+  fun withdrawalsGoToArbitrumForHyperliquidsFee() {
+    val descriptor = HyperliquidVenue().descriptor
+
+    assertEquals(WithdrawalTerms("Arbitrum", "1", internalTransfers = true), descriptor.withdrawal)
+    assertEquals(VaultTerms(stakeInUsdc = true, lockupPerDeposit = true), descriptor.vaultTerms)
+    assertNull(descriptor.rewardPointsName)
   }
 
   @Test
@@ -82,10 +93,10 @@ class HyperliquidVenueTest {
   }
 
   @Test
-  fun theWalletsOwnAddressIsItsAccountAndNothingIsSent() = runTest {
+  fun theWalletsOwnAddressIsItsAccountAndNothingIsSentWithoutTheOwnerKey() = runTest {
     val preferences = memoryPreferences()
-    val client = testClient(MarketResponses)
-    val accounts = HyperliquidAccountRepository(client, preferences, unusedSetup(client, preferences))
+    val client = testClient(MarketResponses + ("subAccounts" to "null"))
+    val accounts = testAccounts(client, preferences)
     val owner = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
     preferences.registerProfile(AccountProfile("owner_$owner", ownerAddress = owner))
 
@@ -95,9 +106,10 @@ class HyperliquidVenueTest {
     assertEquals(owner, accounts.snapshot.value.account)
     assertEquals(listOf(owner), accounts.subaccounts(owner).map { it.address })
     val harness = SetupHarness()
-    val trading = HyperliquidTradingRepository(client, harness.actions, harness.setup)
+    val funds = HyperliquidFunds(client, harness.actions, harness.preferences)
+    val trading = HyperliquidTradingRepository(client, harness.actions, harness.setup, funds)
     val result =
-      trading.execute(TradeAction.Withdraw(owner, "1"), VaultPrompt("Test", "Test")).first()
+      trading.execute(TradeAction.Withdraw(owner, "5"), VaultPrompt("Test", "Test")).toList().last()
     assertTrue(assertIs<ActionState.Failed>(result).definitelyNotSubmitted)
     assertTrue(trading.pendingTransactions.first().isEmpty())
   }

@@ -45,6 +45,27 @@ data class VenueDescriptor(
   val setup: VenueSetup = VenueSetup(),
   /** What the receive screen tells someone funding the account; null for the chain's defaults. */
   val receive: ReceiveInstructions? = null,
+  /** Where withdrawals arrive when that's not the venue's own chain; null when it is. */
+  val withdrawal: WithdrawalTerms? = null,
+  val vaultTerms: VaultTerms = VaultTerms(),
+)
+
+/** Withdrawals that leave the venue for another network. */
+data class WithdrawalTerms(
+  /** The network a withdrawal arrives on, as in "an Arbitrum address". */
+  val network: String,
+  /** What the venue keeps from each withdrawal, in USDC as decimal text; null when nothing. */
+  val feeUsdc: String? = null,
+  /** USDC can also go to another account on the venue itself, without leaving it. */
+  val internalTransfers: Boolean = false,
+)
+
+/** How a venue's vaults hold a stake. */
+data class VaultTerms(
+  /** A stake is a USDC amount, redeemed in USDC, rather than shares. */
+  val stakeInUsdc: Boolean = false,
+  /** Every deposit locks the whole stake again for the vault's lockup, which deposits state. */
+  val lockupPerDeposit: Boolean = false,
 )
 
 /** How to fund an account on the venue, in the venue's words. */
@@ -130,6 +151,12 @@ data class VenueCapabilities(
   val perpSpotTransfer: Boolean = false,
   /** Cancelling several orders in one request. */
   val batchCancel: Boolean = false,
+  /** A TWAP's slice interval is the person's to choose, rather than fixed by the exchange. */
+  val twapInterval: Boolean = true,
+  /** Creating trading accounts (subaccounts) from the app, beyond selecting existing ones. */
+  val createSubaccounts: Boolean = subaccounts,
+  /** Redeeming a referral code from the app. */
+  val referralCodes: Boolean = rewards,
   /**
    * The kinds of action the app can't send on the venue yet, each with the reason shown in its
    * place. The screens still show the account, and disable just those actions.

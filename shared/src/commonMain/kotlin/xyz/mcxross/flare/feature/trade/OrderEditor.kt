@@ -167,7 +167,7 @@ internal fun OrderEditor(
             Modifier.weight(1f),
             enabled = !state.orderBusy,
           )
-          OrderAmountField(
+          if (state.capabilities.twapInterval) OrderAmountField(
             "Interval",
             "min",
             state.twapFrequencyMinutesInput,
