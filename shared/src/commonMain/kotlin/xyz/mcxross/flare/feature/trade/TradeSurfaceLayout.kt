@@ -44,6 +44,7 @@ import xyz.mcxross.flare.design.AssetIcon
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.PriceChartSkeleton
+import xyz.mcxross.flare.design.DeltaLabel
 import xyz.mcxross.flare.design.resolveMarketIdentity
 import xyz.mcxross.flare.venue.model.MarketKind
 
@@ -165,8 +166,7 @@ internal fun MarketContext(
         horizontalArrangement = Arrangement.SpaceBetween) {
         Text(formatPrice(quote.markPrice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge,
           fontSize = (24 + 16 * expansion).sp, maxLines = 1)
-        Text(formatPercent(quote.changePercent24h), style = MaterialTheme.typography.labelMedium,
-          color = if (quote.changePercent24h >= 0) FlareColors.Positive else FlareColors.Negative)
+        DeltaLabel(formatPercent(quote.changePercent24h), positive = quote.changePercent24h >= 0)
       }
       Box(
         Modifier.fillMaxWidth().weight(1f).clipToBounds().then(
