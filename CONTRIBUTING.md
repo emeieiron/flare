@@ -50,8 +50,8 @@ every test in it is skipped unless enabled, so a normal `jvmTest` run never touc
 
 | Environment variable | What runs |
 |---|---|
-| `FLARE_HYPERLIQUID_LIVE=1` | Read-only REST and WebSocket checks (markets, book, candles, streams, the 60 s ping), plus signing proofs with a fresh unfunded key: Hyperliquid rejects the actions and names the address it recovered from each signature. |
-| `FLARE_HYPERLIQUID_TEST_KEY_FILE=<path>` | The funded lifecycle, signed by the 0x hex private key in that file: leverage, a far-from-market order placed and canceled by the owner and by an approved agent named `flare-test` (then deregistered), and a builder fee approved and revoked. The key is never printed; keep the file outside the repository. |
+| `FLARE_HYPERLIQUID_LIVE=1` | Read-only REST and WebSocket checks (markets, book, candles, streams, the 60 s ping), plus signing proofs with a fresh unfunded key (approving and revoking an agent, revoking a builder fee, a transfer, a cancel): Hyperliquid rejects the actions and names the address it recovered from each signature. |
+| `FLARE_HYPERLIQUID_TEST_KEY_FILE=<path>` | The funded lifecycle, signed by the 0x hex private key in that file: leverage, a far-from-market order placed and canceled by the owner and by an approved agent named `flare-test` (then revoked with the zero address under its name, as Hyperliquid's app does), and a builder fee approved and revoked. The key is never printed; keep the file outside the repository. |
 | `FLARE_HYPERLIQUID_TEST_VAULT=1` | With the key file: also deposits 5 USDC into HLP. HLP locks a deposit for 4 days, and the test does not withdraw it. |
 
 ```sh

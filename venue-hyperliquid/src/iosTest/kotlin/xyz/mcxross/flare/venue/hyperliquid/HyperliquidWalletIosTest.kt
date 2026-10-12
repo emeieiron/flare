@@ -1,21 +1,37 @@
 package xyz.mcxross.flare.venue.hyperliquid
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import platform.Foundation.NSTemporaryDirectory
 import xyz.mcxross.flare.data.CredentialFormat
+import xyz.mcxross.flare.hyperliquid.HyperliquidClient
+import xyz.mcxross.flare.hyperliquid.signing.EvmKeys
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.createPreferencesDataStore
+import xyz.mcxross.flare.venue.Network
 
 /** Runs FastKrypto natively, which Android host tests can't load. */
 class HyperliquidWalletIosTest {
@@ -72,14 +88,104 @@ class HyperliquidWalletIosTest {
   }
 
   @Test
-  fun offersNoTradingKeyYetAndRejectsBadCredentials() = runTest {
+  fun rejectsBadCredentials() = runTest {
     val vault = MemoryVault()
     val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), testPreferences())
 
-    assertFailsWith<UnsupportedOperationException> { wallets.createApiWallet(prompt) }
     assertFailsWith<IllegalArgumentException> { wallets.importOwner("test ".repeat(12), prompt) }
     assertFailsWith<IllegalArgumentException> { wallets.importOwner("0".repeat(64), prompt) }
     assertTrue(vault.entries.isEmpty())
+  }
+
+  @Test
+  fun theDeviceKeyIsANewAgentKeyInTheTradingKeySlot() = runTest {
+    val vault = MemoryVault()
+    val preferences = testPreferences()
+    val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), preferences)
+    wallets.importOwner(HARDHAT_PHRASE, prompt)
+
+    val agent = wallets.createApiWallet(prompt)
+
+    assertEquals(agent, wallets.createApiWallet(prompt))
+    val key = wallets.exportApiWallet(prompt)
+    assertEquals(agent, EvmKeys.address(key))
+    assertEquals(
+      key,
+      vault.entries.getValue(WalletSecretSlot.API_PRIVATE_KEY.forProfile("owner_$HARDHAT_ADDRESS")).decodeToString(),
+    )
+    wallets.withAgentSigner(prompt) { assertEquals(agent.lowercase(), it.address) }
+    wallets.withOwnerSigner(prompt) { assertEquals(HARDHAT_ADDRESS.lowercase(), it.address) }
+    val replaced = wallets.newApiWallet(prompt)
+    assertNotEquals(agent, replaced)
+    assertEquals(replaced, preferences.values.first().apiWalletAddress)
+    wallets.discardApiWallet(prompt)
+    assertNull(preferences.values.first().apiWalletAddress)
+    assertEquals(1, vault.entries.size)
+  }
+
+  @Test
+  fun importsAnAgentKeyOnlyOnceItIsVerified() = runTest {
+    val vault = MemoryVault()
+    val preferences = testPreferences()
+    val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), preferences)
+
+    assertFailsWith<IllegalStateException> {
+      wallets.importApiWallet(HARDHAT_KEY, prompt) { error("Not an agent") }
+    }
+    assertTrue(vault.entries.isEmpty())
+
+    assertEquals(HARDHAT_ADDRESS, wallets.importApiWallet(HARDHAT_KEY, prompt) {})
+    assertEquals(HARDHAT_ADDRESS, preferences.values.first().apiWalletAddress)
+    assertEquals("api_$HARDHAT_ADDRESS", preferences.values.first().activeProfileId)
+  }
+
+  /** The whole setup with real keys and signatures, against a mock Hyperliquid. */
+  @Test
+  fun enablingTradingPostsAnOwnerSignedApproveAgent() = runTest {
+    val vault = MemoryVault()
+    val preferences = testPreferences()
+    val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), preferences)
+    wallets.importOwner(HARDHAT_PHRASE, prompt)
+    val agents = mutableListOf<String>()
+    var posted: JsonObject? = null
+    val client =
+      HyperliquidClient(
+        HttpClient(
+          MockEngine { request ->
+            val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
+            val reply =
+              if (request.url.encodedPath.endsWith("/exchange")) {
+                posted = body
+                agents += body["action"]!!.jsonObject["agentAddress"]!!.jsonPrimitive.content
+                """{"status":"ok","response":{"type":"default"}}"""
+              } else
+                when (body["type"]!!.jsonPrimitive.content) {
+                  "userRole" -> """{"role":"user"}"""
+                  "extraAgents" ->
+                    agents.joinToString(",", "[", "]") {
+                      """{"name":"flare","address":"$it","validUntil":4102444800000}"""
+                    }
+                  else -> error("Unexpected request")
+                }
+            respond(reply, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+          }
+        )
+      )
+    val nonces = HyperliquidNonces(preferences)
+    val actions =
+      HyperliquidActions(MemoryJournal(), preferences, wallets, client, ClientSubmitter(client), nonces, Network.TESTNET)
+    val setup = HyperliquidSetup(client, preferences, wallets, actions, nonces, verificationDelayMs = 0)
+
+    setup.enableTrading(prompt)
+
+    val agent = preferences.values.first().apiWalletAddress!!
+    val sent = posted!!
+    val action = sent["action"]!!.jsonObject
+    assertEquals("approveAgent", action["type"]!!.jsonPrimitive.content)
+    assertEquals(agent.lowercase(), action["agentAddress"]!!.jsonPrimitive.content)
+    assertEquals("flare", action["agentName"]!!.jsonPrimitive.content)
+    assertEquals(action["nonce"], sent["nonce"])
+    assertTrue("signature" in sent)
   }
 
   @Test

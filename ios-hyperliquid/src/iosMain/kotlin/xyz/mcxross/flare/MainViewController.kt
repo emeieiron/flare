@@ -18,7 +18,7 @@ fun MainViewController(infoPlist: Map<String, String>) = run {
   val network =
     if (infoPlist["FlareHyperliquidNetwork"].equals("mainnet", ignoreCase = true)) Network.MAINNET
     else Network.TESTNET
-  val venue = HyperliquidVenue(network)
+  val venue = HyperliquidVenue(network, infoPlist["FlareHyperliquidBuilderAddress"].orEmpty())
   ComposeUIViewController {
     App(
       venue = venue,

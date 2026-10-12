@@ -55,12 +55,14 @@ import xyz.mcxross.flare.venue.model.VaultSummary
 
 /**
  * The wallet's own address is its Hyperliquid account, read over `/info` and kept live by the
- * account streams, which send a snapshot on every connection. Actions fail before anything is sent
- * until trading is enabled.
+ * account streams, which send a snapshot on every connection. Enabling trading and builder fees go
+ * through [setup]; moving funds isn't offered yet.
  */
 class HyperliquidAccountRepository(
   private val client: HyperliquidClient,
   private val preferences: AppPreferences,
+  private val setup: HyperliquidSetup,
+  private val builderAddress: String? = null,
 ) : AccountRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
@@ -432,6 +434,7 @@ class HyperliquidAccountRepository(
     refresh()
     refreshHistory()
     startLive()
+    setup.syncBuilderApproval(builderAddress)
   }
 
   override suspend fun portfolioChart(
@@ -514,24 +517,40 @@ class HyperliquidAccountRepository(
 
   private fun ownAccount(owner: String) = TradingAccount(owner, owner, primary = true)
 
-  override suspend fun delegations(): List<TradingKey> = emptyList()
+  override suspend fun delegations(): List<TradingKey> =
+    setup.delegations(currentAccount() ?: error("Select a trading account"))
 
-  override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState = unavailable()
+  override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
+    setup.revoke(address, prompt)
 
-  override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) =
-    throw UnsupportedOperationException(TRADING_KEYS_UNAVAILABLE)
+  /** [subaccount] is the account the key is an API wallet of. */
+  override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {
+    setup.importTradingKey(key, subaccount, prompt)
+    selectTradingAccount(subaccount, prompt)
+  }
 
   override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
-    unavailable()
+    unavailable("Hyperliquid trades from the wallet’s own account.")
 
   override suspend fun openTradingAccount(prompt: VaultPrompt): String =
     throw UnsupportedOperationException("Hyperliquid accounts need no opening.")
 
-  override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
-    unavailable()
+  override suspend fun awaitsFirstDeposit(): Boolean {
+    val account = currentAccount() ?: return false
+    return setup.awaitsFirstDeposit(account)
+  }
 
-  override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) =
-    throw UnsupportedOperationException(TRADING_KEYS_UNAVAILABLE)
+  override suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T =
+    setup.confirmed(prompt, block)
+
+  /** Hyperliquid approves agents in [prepareTradingWallet], which checks before it sends. */
+  override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
+    ActionState.Failed("Enable trading from setup", definitelyNotSubmitted = true)
+
+  override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {
+    setup.enableTrading(prompt)
+    restoreTrading()
+  }
 
   override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> =
     flowOf(unavailable())
@@ -543,20 +562,21 @@ class HyperliquidAccountRepository(
     feePayment: FeePayment,
   ): Flow<ActionState> = flowOf(unavailable())
 
+  /** One approval covers perpetuals and spot, whichever [product] asks. */
   override suspend fun approveBuilderFee(
     builderAddress: String,
     feeBps: UInt,
     prompt: VaultPrompt,
     feePayment: FeePayment,
     product: MarketKind,
-  ): ActionState = unavailable()
+  ): ActionState = setup.approveBuilderFee(builderAddress, feeBps, prompt)
 
   override suspend fun revokeBuilderFee(
     builderAddress: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
     product: MarketKind,
-  ): ActionState = unavailable()
+  ): ActionState = setup.revokeBuilderFee(builderAddress, prompt)
 
   override fun contributeToVault(
     vaultAddress: String,
@@ -618,7 +638,9 @@ class HyperliquidAccountRepository(
 internal fun String?.sameAs(other: String?): Boolean =
   this != null && other != null && equals(other, ignoreCase = true)
 
-internal const val ACTIONS_UNAVAILABLE = "Trading on Hyperliquid isn’t available in Flare yet."
+internal const val ORDERS_UNAVAILABLE = "Trading on Hyperliquid isn’t available in Flare yet."
 
-internal fun unavailable(): ActionState.Failed =
-  ActionState.Failed(ACTIONS_UNAVAILABLE, definitelyNotSubmitted = true)
+internal const val FUNDS_UNAVAILABLE = "Moving funds on Hyperliquid isn’t available in Flare yet."
+
+internal fun unavailable(reason: String = FUNDS_UNAVAILABLE): ActionState.Failed =
+  ActionState.Failed(reason, definitelyNotSubmitted = true)

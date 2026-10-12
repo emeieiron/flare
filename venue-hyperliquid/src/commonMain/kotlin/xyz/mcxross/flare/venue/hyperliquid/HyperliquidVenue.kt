@@ -14,6 +14,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
+import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.venue.Faucet
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.ReceiveInstructions
@@ -27,11 +28,19 @@ import xyz.mcxross.flare.venue.model.ActionKind
 
 /**
  * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session.
- * The wallet's own address is its account. Markets, charts, books and the account are live; trading
- * comes later, so setup ends once the wallet exists.
+ * The wallet's own address is its account. Setup enables trading with an agent key on this device,
+ * approved by the owner, plus Flare's builder fee at [builderAddress] if the person opts in (none
+ * when it's blank).
  */
-class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
+class HyperliquidVenue(
+  private val network: Network = Network.TESTNET,
+  builderAddress: String = "",
+) : Venue {
   private val deployment = HyperliquidDeployment.forNetwork(network.toHyperliquidNetwork())
+  private val builder: String? =
+    builderAddress.trim().takeIf(String::isNotEmpty)?.also {
+      require(HyperliquidCredentialParser.isAddress(it)) { "The builder address must be an EVM address" }
+    }
 
   override val descriptor: VenueDescriptor =
     VenueDescriptor(
@@ -42,25 +51,31 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
       chain = VenueChain(name = "Hyperliquid", feeToken = "HYPE", feeTokenDecimals = 8),
       capabilities = Capabilities,
       explorer = explorer(network),
+      builderAddress = builder,
+      builderFeeBps = if (builder != null) BUILDER_FEE_BPS else 0,
       maxBuilderFeeBps = 10,
       setup =
         VenueSetup(
           tradingAccounts = false,
           openTradingAccount = false,
-          builderFee = false,
-          enableTrading = false,
+          builderFee = builder != null,
+          separateSpotBuilderApproval = false,
+          enableTrading = true,
         ),
       receive = receiveInstructions(network),
     )
 
-  override fun module(): Module = hyperliquidModule(deployment)
+  override fun module(): Module = hyperliquidModule(deployment, network, builder)
 
   companion object {
+    /** The builder fee setup turns on when the person opts in: 0.05%, under the 0.1% approved. */
+    const val BUILDER_FEE_BPS = 5
+
     /**
      * What the Hyperliquid build shows. Spot, TWAP and vaults are Hyperliquid features the screens
      * keep room for; the rest are Decibel's (rewards, gas sponsorship and top-ups, in-app deposits,
-     * creating subaccounts), or not offered yet (moving USDC between perps and spot). The account
-     * reads live, but its actions stay disabled until trading is enabled.
+     * creating subaccounts), or not offered yet (moving USDC between perps and spot). Setup actions
+     * are sent; orders and fund moves aren't yet.
      */
     val Capabilities =
       VenueCapabilities(
@@ -73,7 +88,8 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
         networkFeeTopUp = false,
         inAppDeposit = false,
         perpSpotTransfer = false,
-        unavailableActions = ActionKind.entries.associateWith { ACTIONS_UNAVAILABLE },
+        unavailableActions =
+          mapOf(ActionKind.TRADING to ORDERS_UNAVAILABLE, ActionKind.FUNDS to FUNDS_UNAVAILABLE),
       )
 
     /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
@@ -112,13 +128,31 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
 }
 
 /** Hyperliquid's repositories, on the common bindings from `flareModule`. */
-private fun hyperliquidModule(deployment: HyperliquidDeployment) = module {
-  single { HyperliquidClient(httpClient = get(), config = HyperliquidConfig(deployment)) }
-  single<CredentialParser> { HyperliquidCredentialParser }
-  singleOf(::HyperliquidWalletRepository) { bind<WalletRepository>() }
-  singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
-  singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
-  singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
-  singleOf(::HyperliquidAccountRepository) { bind<AccountRepository>() }
-  singleOf(::HyperliquidTradingRepository) { bind<TradingRepository>() }
-}
+private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Network, builder: String?) =
+  module {
+    single { HyperliquidClient(httpClient = get(), config = HyperliquidConfig(deployment)) }
+    single<CredentialParser> { HyperliquidCredentialParser }
+    singleOf(::HyperliquidWalletRepository) {
+      bind<WalletRepository>()
+      bind<HyperliquidSigningWallet>()
+    }
+    single<HyperliquidSubmitter> { ClientSubmitter(get()) }
+    single { HyperliquidNonces(get()) }
+    single {
+      HyperliquidActions(
+        journal = get<FlareDatabase>().transactionJournalDao(),
+        preferences = get(),
+        wallets = get(),
+        client = get(),
+        submitter = get(),
+        nonces = get(),
+        network = network,
+      )
+    }
+    single { HyperliquidSetup(get(), get(), get(), get(), get()) }
+    singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
+    singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
+    singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
+    single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), builder) }
+    single<TradingRepository> { HyperliquidTradingRepository(get(), get(), get()) }
+  }

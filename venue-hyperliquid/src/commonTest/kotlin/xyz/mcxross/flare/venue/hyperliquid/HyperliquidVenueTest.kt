@@ -2,6 +2,7 @@ package xyz.mcxross.flare.venue.hyperliquid
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -36,13 +37,18 @@ class HyperliquidVenueTest {
   }
 
   @Test
-  fun setupEndsOnceTheWalletExists() {
-    val setup = HyperliquidVenue().descriptor.setup
+  fun setupEnablesTradingAndOffersTheBuilderFeeOnlyWithABuilder() {
+    val bare = HyperliquidVenue().descriptor
+    val withBuilder = HyperliquidVenue(builderAddress = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d").descriptor
 
-    assertFalse(setup.tradingAccounts)
-    assertFalse(setup.openTradingAccount)
-    assertFalse(setup.builderFee)
-    assertFalse(setup.enableTrading)
+    assertFalse(bare.setup.tradingAccounts || bare.setup.openTradingAccount)
+    assertTrue(bare.setup.enableTrading)
+    assertFalse(bare.setup.builderFee)
+    assertNull(bare.builderAddress)
+    assertTrue(withBuilder.setup.builderFee)
+    assertFalse(withBuilder.setup.separateSpotBuilderApproval)
+    assertEquals(5, withBuilder.builderFeeBps)
+    assertFailsWith<IllegalArgumentException> { HyperliquidVenue(builderAddress = "0x1234") }
   }
 
   @Test
@@ -52,7 +58,9 @@ class HyperliquidVenueTest {
     assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
     assertFalse(capabilities.rewards || capabilities.sponsoredFees || capabilities.networkFeeTopUp)
     assertFalse(capabilities.inAppDeposit || capabilities.subaccounts || capabilities.perpSpotTransfer)
-    ActionKind.entries.forEach { assertEquals(ACTIONS_UNAVAILABLE, capabilities.unavailableReason(it)) }
+    assertEquals(ORDERS_UNAVAILABLE, capabilities.unavailableReason(ActionKind.TRADING))
+    assertEquals(FUNDS_UNAVAILABLE, capabilities.unavailableReason(ActionKind.FUNDS))
+    assertNull(capabilities.unavailableReason(ActionKind.SETUP))
   }
 
   @Test
@@ -71,7 +79,7 @@ class HyperliquidVenueTest {
   fun theWalletsOwnAddressIsItsAccountAndNothingIsSent() = runTest {
     val preferences = memoryPreferences()
     val client = testClient(MarketResponses)
-    val accounts = HyperliquidAccountRepository(client, preferences)
+    val accounts = HyperliquidAccountRepository(client, preferences, unusedSetup(client, preferences))
     val owner = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
     preferences.registerProfile(AccountProfile("owner_$owner", ownerAddress = owner))
 
@@ -80,7 +88,8 @@ class HyperliquidVenueTest {
     assertEquals(owner, preferences.values.first().selectedSubaccount)
     assertEquals(owner, accounts.snapshot.value.account)
     assertEquals(listOf(owner), accounts.subaccounts(owner).map { it.address })
-    val trading = HyperliquidTradingRepository(client)
+    val harness = SetupHarness()
+    val trading = HyperliquidTradingRepository(client, harness.actions, harness.setup)
     val result =
       trading.execute(TradeAction.Withdraw(owner, "1"), VaultPrompt("Test", "Test")).first()
     assertTrue(assertIs<ActionState.Failed>(result).definitelyNotSubmitted)

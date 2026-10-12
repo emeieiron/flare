@@ -17,6 +17,10 @@ val flareBuilderAddress =
 // The hyperliquid flavor's network: testnet unless -PflareHyperliquidNetwork=mainnet.
 val flareHyperliquidNetwork = providers.gradleProperty("flareHyperliquidNetwork").orElse("testnet")
 
+// Flare's builder on Hyperliquid, which receives the optional builder fee; none unless set.
+val flareHyperliquidBuilderAddress =
+  providers.gradleProperty("flareHyperliquidBuilderAddress").orElse("")
+
 // A distributable release build is signed with the key CI passes in; without it, release builds
 // stay unsigned for local use. See .github/workflows/release-android.yml.
 val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
@@ -96,6 +100,7 @@ android {
         "flareHyperliquidNetwork must be testnet or mainnet"
       }
       resValue("string", "flare_hyperliquid_network", flareHyperliquidNetwork.get())
+      resValue("string", "flare_hyperliquid_builder_address", flareHyperliquidBuilderAddress.get())
     }
   }
   packaging {
