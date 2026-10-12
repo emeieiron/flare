@@ -417,6 +417,19 @@ class InfoServiceTest {
   }
 
   @Test
+  fun readsTheLeverageSettingOfAPerp() = runTest {
+    val harness = Harness(mapOf("activeAssetData" to Fixtures.ACTIVE_ASSET_DATA))
+
+    val data = harness.info.activeAssetData(Fixtures.HLP_VAULT.uppercase().replace("0X", "0x"), "ETH")
+
+    assertEquals("""{"type":"activeAssetData","user":"${Fixtures.HLP_VAULT}","coin":"ETH"}""", harness.requests.single().body)
+    assertEquals("ETH", data.coin)
+    assertTrue(data.leverage.isCross)
+    assertEquals(20, data.leverage.value)
+    assertEquals("2559.3", data.markPx)
+  }
+
+  @Test
   fun decodesSetupAndVaultFixtures() = runTest {
     var vault = Fixtures.VAULT_DETAILS
     var role = Fixtures.USER_ROLE_MISSING

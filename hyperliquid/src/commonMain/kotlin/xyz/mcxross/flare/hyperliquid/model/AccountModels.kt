@@ -118,6 +118,20 @@ data class FrontendOrder(
   val cloid: String? = null,
 )
 
+/**
+ * `activeAssetData`: [user]'s leverage setting on a perp, which it has with or without a position,
+ * and what it could trade now.
+ */
+@Serializable
+data class ActiveAssetData(
+  val user: String,
+  val coin: String,
+  val leverage: Leverage,
+  val maxTradeSzs: List<String> = emptyList(),
+  val availableToTrade: List<String> = emptyList(),
+  val markPx: String? = null,
+)
+
 /** An order and where it stands; [status] is `open`, `filled`, `canceled`, `triggered`, … */
 @Serializable
 data class OrderWithStatus(
