@@ -1,13 +1,15 @@
 package xyz.mcxross.flare.hyperliquid.model
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 enum class HlRounding {
   /** Toward zero. */
@@ -81,6 +83,7 @@ class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Compar
   fun roundToDecimals(decimals: Int, rounding: HlRounding): HlDecimal {
     if (decimals >= scale) return this
     val drop = scale - decimals
+    // Past 10^18 the divisor no longer fits a Long; every magnitude is then below it.
     val divisor = if (drop <= MAX_SCALE) POWERS_OF_TEN[drop] else null
     val quotient = if (divisor == null) 0L else unscaled / divisor
     val remainder = if (divisor == null) unscaled else unscaled % divisor
@@ -97,10 +100,7 @@ class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Compar
             HlRounding.CEILING -> sign > 0L
             HlRounding.HALF_UP,
             HlRounding.HALF_EVEN -> {
-              // A divisor past 10^18 dwarfs any remainder, so it is always below half.
-              val half =
-                if (divisor == null) -1
-                else (absolute(remainder) * 2uL).compareTo(divisor.toULong())
+              val half = absolute(remainder).compareTo(halfOfPowerOfTen(drop))
               when {
                 half > 0 -> true
                 half < 0 -> false
@@ -111,19 +111,26 @@ class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Compar
           }
         if (awayFromZero) addExact(quotient, sign) else quotient
       }
-    return if (decimals >= 0) {
-      of(roundedQuotient, decimals)
-    } else {
-      of(multiplyExact(roundedQuotient, powerOfTen(-decimals)), 0)
+    return when {
+      roundedQuotient == 0L -> ZERO
+      decimals >= 0 -> of(roundedQuotient, decimals)
+      else -> of(multiplyExact(roundedQuotient, powerOfTen(-decimals)), 0)
     }
   }
 
   /** Rounds to at most [figures] significant figures. */
   fun roundToSignificantFigures(figures: Int, rounding: HlRounding): HlDecimal {
-    require(figures > 0) { "At least one significant figure is required" }
     if (unscaled == 0L) return this
-    val digits = digitCount(absoluteUnscaled())
-    return roundToDecimals(figures - digits + scale, rounding)
+    return roundToDecimals(decimalsForSignificantFigures(figures), rounding)
+  }
+
+  /**
+   * The decimal places (negative for tens, hundreds, …) that keep [figures] significant figures of
+   * this non-zero value.
+   */
+  internal fun decimalsForSignificantFigures(figures: Int): Int {
+    require(figures > 0) { "At least one significant figure is required" }
+    return figures - digitCount(absoluteUnscaled()) + scale
   }
 
   override fun compareTo(other: HlDecimal): Int {
@@ -250,6 +257,16 @@ fun String.toHlDecimalOrNull(): HlDecimal? = HlDecimal.parseOrNull(this)
 private fun absolute(value: Long): ULong =
   if (value < 0L) (value.inv().toULong() + 1uL) else value.toULong()
 
+/** `10^exponent / 2` for `exponent ≥ 1`; past `ULong` range, a value above every magnitude. */
+private fun halfOfPowerOfTen(exponent: Int): ULong {
+  var half = 5uL
+  repeat(exponent - 1) {
+    if (half > ULong.MAX_VALUE / 10uL) return ULong.MAX_VALUE
+    half *= 10uL
+  }
+  return half
+}
+
 private fun digitCount(value: ULong): Int {
   var remaining = value
   var count = 1
@@ -287,15 +304,52 @@ private fun multiplyExact(left: Long, right: Long): Long {
 }
 
 /**
- * Decodes a decimal sent as either a JSON string or a JSON number, keeping its exact text. Vault
- * details send some figures (`apr`, `maxWithdrawable`) as numbers and the rest as strings.
+ * Decodes a decimal sent as either a JSON string or a JSON number, keeping its exact value as text.
+ * Vault details send some figures (`apr`, `leaderFraction`) as numbers, which may use exponent
+ * notation (`6.645107064126772e-7`); those are rewritten in plain notation, digit for digit.
  */
 object DecimalTextSerializer : KSerializer<String> {
   override val descriptor: SerialDescriptor =
     PrimitiveSerialDescriptor("HyperliquidDecimalText", PrimitiveKind.STRING)
 
-  override fun deserialize(decoder: Decoder): String =
-    (decoder as? JsonDecoder)?.decodeJsonElement()?.jsonPrimitive?.content ?: decoder.decodeString()
+  override fun deserialize(decoder: Decoder): String {
+    if (decoder !is JsonDecoder) return decoder.decodeString()
+    val element = decoder.decodeJsonElement()
+    if (element !is JsonPrimitive || element is JsonNull) {
+      throw SerializationException("Expected a decimal, found $element")
+    }
+    return if (element.isString) element.content else plainNumberText(element.content)
+  }
 
   override fun serialize(encoder: Encoder, value: String) = encoder.encodeString(value)
+}
+
+/** Rewrites a JSON number such as `-1.25E-3` as `-0.00125`, without going through `Double`. */
+internal fun plainNumberText(number: String): String {
+  val exponentAt = number.indexOfFirst { it == 'e' || it == 'E' }
+  if (exponentAt < 0) return number
+  val exponent =
+    number.substring(exponentAt + 1).removePrefix("+").toIntOrNull()
+      ?: throw SerializationException("Invalid number $number")
+  val mantissa = number.substring(0, exponentAt)
+  val negative = mantissa.startsWith('-')
+  val unsigned = mantissa.removePrefix("-")
+  val whole = unsigned.substringBefore('.')
+  val fraction = unsigned.substringAfter('.', "")
+  val digits = whole + fraction
+  if (digits.isEmpty() || !digits.all { it in '0'..'9' }) {
+    throw SerializationException("Invalid number $number")
+  }
+  // The decimal point sits after `whole.length + exponent` digits.
+  val point = whole.length + exponent
+  val plain =
+    when {
+      point <= 0 -> "0." + "0".repeat(-point) + digits
+      point >= digits.length -> digits + "0".repeat(point - digits.length)
+      else -> digits.substring(0, point) + "." + digits.substring(point)
+    }
+  val trimmedWhole = plain.substringBefore('.').trimStart('0').ifEmpty { "0" }
+  val trimmedFraction = plain.substringAfter('.', "")
+  val text = if (trimmedFraction.isEmpty()) trimmedWhole else "$trimmedWhole.$trimmedFraction"
+  return if (negative) "-$text" else text
 }

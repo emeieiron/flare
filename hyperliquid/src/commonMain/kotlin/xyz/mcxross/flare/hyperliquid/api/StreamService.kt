@@ -15,9 +15,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 
@@ -87,14 +87,14 @@ internal class DefaultStreamService(
               val payload =
                 runCatching { json.parseToJsonElement(frame.readText()) as? JsonObject }.getOrNull()
                   ?: continue
-              val channel = payload["channel"]?.jsonPrimitive?.contentOrNull ?: continue
+              val channel = (payload["channel"] as? JsonPrimitive)?.contentOrNull ?: continue
               when (channel) {
                 PONG_CHANNEL,
                 SUBSCRIPTION_RESPONSE_CHANNEL -> Unit
                 ERROR_CHANNEL ->
                   this@channelFlow.send(
                     StreamEvent.Rejected(
-                      payload["data"]?.jsonPrimitive?.contentOrNull
+                      (payload["data"] as? JsonPrimitive)?.contentOrNull
                         ?: "Hyperliquid rejected a request"
                     )
                   )
