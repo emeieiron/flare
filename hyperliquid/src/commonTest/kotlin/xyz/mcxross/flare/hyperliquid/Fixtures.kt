@@ -151,6 +151,33 @@ internal object Fixtures {
   const val REFERRAL =
     """{"referredBy":null,"cumVlm":"125674407.5799999982","unclaimedRewards":"0.015443","claimedRewards":"0.0","builderRewards":"0.015443","referrerState":{"stage":"needToCreateCode"},"rewardHistory":[],"tokenToState":[[0,{"cumVlm":"125674407.5799999982","unclaimedRewards":"0.015443","claimedRewards":"0.0","builderRewards":"0.015443"}]]}"""
 
+  /** `userAbstraction` of USER. */
+  const val USER_ABSTRACTION =
+    """"default""""
+
+  /** `userAbstraction` of UNIFIED_USER. */
+  const val USER_ABSTRACTION_UNIFIED =
+    """"unifiedAccount""""
+
+  /** `twapHistory`: a TWAP's activation and termination, and another one terminated. `time` is in seconds. */
+  const val TWAP_HISTORY_ENTRIES =
+    """[{"time":1774612361,"state":{"coin":"osrs:DTEST","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"2256.5","executedSz":"658.6","executedNtl":"37506.2979","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774612247837,"trigger":null,"stopPx":null},"status":{"status":"terminated"},"twapId":14656},{"time":1774612247,"state":{"coin":"osrs:DTEST","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"2256.5","executedSz":"0.0","executedNtl":"0.0","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774612247837,"trigger":null,"stopPx":null},"status":{"status":"activated"},"twapId":14656},{"time":1774612022,"state":{"coin":"@1035","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"199.99","executedSz":"0.0","executedNtl":"0.0","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774611979263,"trigger":null,"stopPx":null},"status":{"status":"terminated"},"twapId":14654}]"""
+
+  /**
+   * `userNonFundingLedgerUpdates`: a bridge `deposit` and `withdraw` (mainnet), then a
+   * `spotTransfer`, `accountClassTransfer`, `vaultDeposit` and `vaultWithdraw` (testnet).
+   */
+  const val LEDGER_UPDATES_KINDS =
+    """[{"time":1738922327016,"hash":"0xb9fd6a8ae79d8a3683794a3db068f2c8b1fc6a1d5365b7776dc5033c88484bab","delta":{"type":"deposit","usdc":"73995.28"}},{"time":1739952354093,"hash":"0xe396e7db9c647f3ff05fa7f850e00d8d58a401ba2a7fa8eabdea7cd3a82e0b55","delta":{"type":"withdraw","usdc":"47921.944152","nonce":1739952117376000,"fee":"1.0"}},{"time":1741727128719,"hash":"0xede0a5c175cc7a6c73430414765340010d00631a2ec8641e742e182f2cbe29ae","delta":{"type":"spotTransfer","token":"USDC","amount":"100.0","usdcValue":"100.0","user":"0x1000000000000000000000000000000000000007","destination":"0x1000000000000000000000000000000000000001","fee":"0.0","nativeTokenFee":"0.0","nonce":null,"feeToken":""}},{"time":1766592074286,"hash":"0x15d0f5c35450ad41174a041cc622810120000da8ef53cc13b999a1161354872b","delta":{"type":"accountClassTransfer","usdc":"0.0","toPerp":true}},{"time":1777921140600,"hash":"0x6b77c9378604b0466cf1042157fba4010400e11d2107cf180f40748a45088a31","delta":{"type":"vaultDeposit","vault":"0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0","usdc":"5.0"}},{"time":1784818568302,"hash":"0xefbf90d720729a87f13904254167e4010300a8bcbb75b95993883c29df767472","delta":{"type":"vaultWithdraw","vault":"0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0","user":"0x1000000000000000000000000000000000000001","requestedUsd":"5.0","commission":"0.0","closingCost":"0.0","basis":"4.983316","netWithdrawnUsd":"5.0"}}]"""
+
+  /**
+   * `frontendOpenOrders` with triggers: a take-profit market, a stop limit, a position stop-loss
+   * (mainnet, size 0 closes the whole position), and a limit order whose `children` are its TP/SL
+   * (composed from captured trigger orders).
+   */
+  const val FRONTEND_OPEN_ORDERS_TRIGGERS =
+    """[{"coin":"ZRO","side":"A","limitPx":"2.3246","sz":"8.5","oid":62483867152,"timestamp":1791784830462,"triggerCondition":"Price above 2.447","isTrigger":true,"triggerPx":"2.447","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Take Profit Market","origSz":"8.5","tif":null,"cloid":"0x83d931840eaa067b6bca540927e8aabd"},{"coin":"BTC","side":"A","limitPx":"82190.0","sz":"0.06917","oid":62483896784,"timestamp":1791784861146,"triggerCondition":"Price below 83011","isTrigger":true,"triggerPx":"83011.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Stop Limit","origSz":"0.06917","tif":null,"cloid":"0x1e9cf21e885f431100000000000000b5"},{"coin":"SOL","side":"A","limitPx":"101.07","sz":"0.0","oid":571747466629,"timestamp":1791784718318,"triggerCondition":"Price below 112.31","isTrigger":true,"triggerPx":"112.31","children":[],"isPositionTpsl":true,"reduceOnly":true,"orderType":"Stop Market","origSz":"0.0","tif":null,"cloid":null},{"coin":"ZRO","side":"B","limitPx":"2.25","sz":"8.5","oid":62483865000,"timestamp":1791784829000,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[{"coin":"ZRO","side":"A","limitPx":"2.3246","sz":"8.5","oid":62483867152,"timestamp":1791784830462,"triggerCondition":"Price above 2.447","isTrigger":true,"triggerPx":"2.447","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Take Profit Market","origSz":"8.5","tif":null,"cloid":"0x83d931840eaa067b6bca540927e8aabd"},{"coin":"ZRO","side":"A","limitPx":"2.0836","sz":"8.5","oid":62483865656,"timestamp":1791784829231,"triggerCondition":"Price below 2.1933","isTrigger":true,"triggerPx":"2.1933","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Stop Market","origSz":"8.5","tif":null,"cloid":"0x2c6f5feec0fdcbee303db556f0d63827"}],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"8.5","tif":"Gtc","cloid":null}]"""
+
   /** The acknowledgement of an `l2Book` subscription. */
   const val WS_SUBSCRIPTION_RESPONSE =
     """{"channel":"subscriptionResponse","data":{"method":"subscribe","subscription":{"type":"l2Book","coin":"BTC","nSigFigs":null,"mantissa":null,"fast":false}}}"""

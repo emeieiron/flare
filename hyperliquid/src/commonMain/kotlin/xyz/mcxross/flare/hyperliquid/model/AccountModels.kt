@@ -337,6 +337,24 @@ data class UserRoleData(
   val master: String? = null,
 )
 
+/**
+ * `userAbstraction`: how the account keeps its balances. In [UNIFIED] and [PORTFOLIO_MARGIN] one
+ * balance per asset backs spot and perps alike, so spot USDC includes the perp account's value;
+ * [DISABLED] and [DEFAULT] keep perps and spot apart.
+ */
+data class AccountAbstraction(val mode: String) {
+  val sharesSpotCollateral: Boolean
+    get() = mode == UNIFIED || mode == PORTFOLIO_MARGIN
+
+  companion object {
+    const val DEFAULT = "default"
+    const val DISABLED = "disabled"
+    const val UNIFIED = "unifiedAccount"
+    const val PORTFOLIO_MARGIN = "portfolioMargin"
+    const val DEX_ABSTRACTION = "dexAbstraction"
+  }
+}
+
 /** An approved agent (API wallet) other than the unnamed one. */
 @Serializable
 data class ExtraAgent(
@@ -420,6 +438,7 @@ data class TwapStatus(
 
 @Serializable
 data class TwapHistoryEntry(
+  /** In seconds, unlike the other times here. */
   val time: Long,
   val state: TwapState,
   val status: TwapStatus,

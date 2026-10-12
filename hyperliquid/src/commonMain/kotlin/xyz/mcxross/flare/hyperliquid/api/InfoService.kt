@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
 import xyz.mcxross.flare.hyperliquid.model.Candle
 import xyz.mcxross.flare.hyperliquid.model.CandleInterval
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
@@ -105,6 +106,8 @@ interface InfoService {
   suspend fun userFees(user: String): UserFees
 
   suspend fun userRole(user: String): UserRole
+
+  suspend fun userAbstraction(user: String): AccountAbstraction
 
   /** Named agents the user approved, with their expiry. */
   suspend fun extraAgents(user: String): List<ExtraAgent>
@@ -244,6 +247,9 @@ internal class DefaultInfoService(private val api: HyperliquidApi) : InfoService
 
   override suspend fun userRole(user: String): UserRole =
     read("userRole", "account role") { putUser(user) }
+
+  override suspend fun userAbstraction(user: String): AccountAbstraction =
+    AccountAbstraction(read<String>("userAbstraction", "account mode") { putUser(user) })
 
   override suspend fun extraAgents(user: String): List<ExtraAgent> =
     read("extraAgents", "agents") { putUser(user) }
