@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SessionRepository
@@ -37,6 +40,8 @@ import xyz.mcxross.flare.venue.model.TradingKey
 data class SettingsUiState(
   /** What the venue supports; screens hide the rest. */
   val capabilities: VenueCapabilities = VenueCapabilities.All,
+  /** What the wallet still needs when its setup was left for later; its actions wait meanwhile. */
+  val setupNeed: SetupNeed? = null,
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
   val proxyUrl: String = "",
@@ -142,6 +147,7 @@ class SettingsViewModel(
   private val sessions: SessionRepository?,
   venue: VenueDescriptor,
   private val credentials: CredentialParser,
+  private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chainName = venue.chain.name
@@ -158,6 +164,13 @@ class SettingsViewModel(
   private var secretClearJob: Job? = null
 
   init {
+    setupGate?.let { gate ->
+      viewModelScope.launch {
+        gate.need.collect { need ->
+          local.update { it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need)) }
+        }
+      }
+    }
     viewModelScope.launch {
       if (capabilities.rewards) {
         // Parts that fail to load are simply left out here.

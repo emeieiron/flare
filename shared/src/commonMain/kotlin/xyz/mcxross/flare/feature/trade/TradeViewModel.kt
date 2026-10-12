@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.AccountSetupGate
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.LiveCandles
@@ -58,6 +61,8 @@ internal fun ChartStyle.flipped(): ChartStyle =
 data class TradeUiState(
   /** What the venue supports; the ticket hides the rest. */
   val capabilities: VenueCapabilities = VenueCapabilities.All,
+  /** What the wallet still needs when its setup was left for later; its actions wait meanwhile. */
+  val setupNeed: SetupNeed? = null,
   val quote: MarketQuote? = null,
   val timeframe: ChartTimeframe = ChartTimeframe.Default,
   val chartStyle: ChartStyle = ChartStyle.LINE,
@@ -171,6 +176,7 @@ class TradeViewModel(
   private val wallets: WalletRepository,
   private val preferences: AppPreferences,
   venue: VenueDescriptor,
+  private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val defaultBuilderAddress = venue.builderAddress
@@ -191,6 +197,13 @@ class TradeViewModel(
   private var feeAccount: String? = null
 
   init {
+    setupGate?.let { gate ->
+      viewModelScope.launch {
+        gate.need.collect { need ->
+          mutableUiState.update { it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need)) }
+        }
+      }
+    }
     viewModelScope.launch {
       markets.catalog.collect { catalog ->
         val quote =

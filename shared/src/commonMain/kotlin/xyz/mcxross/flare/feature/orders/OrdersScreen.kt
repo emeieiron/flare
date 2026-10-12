@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.feature.orders
 
+import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -106,7 +107,7 @@ fun OrdersScreen(
       state.section == OrdersSection.OPEN && state.account.openOrders.isNotEmpty() -> actionsUnavailable
       else -> null
     }
-    unavailableNotice?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.INFO) }
+    unavailableNotice?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(bottom = 12.dp)) }
     state.selfPayEstimate?.let { estimate ->
       val chain = LocalVenue.current.chain
       ActionNotice(

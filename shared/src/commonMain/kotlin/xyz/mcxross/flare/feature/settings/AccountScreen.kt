@@ -64,12 +64,15 @@ import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
 import xyz.mcxross.flare.design.SectionLabel
+import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
 import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
+import xyz.mcxross.flare.store.opensApp
+import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.ActionKind
@@ -83,6 +86,8 @@ fun AccountRoute(
   onImportAccount: () -> Unit,
   onContinueSetup: (String) -> Unit,
   modifier: Modifier = Modifier,
+  openReceive: Boolean = false,
+  onReceiveOpened: () -> Unit = {},
   viewModel: SettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -97,6 +102,8 @@ fun AccountRoute(
     onImportAccount = onImportAccount,
     onContinueSetup = onContinueSetup,
     modifier = modifier,
+    openReceive = openReceive,
+    onReceiveOpened = onReceiveOpened,
   )
 }
 
@@ -109,10 +116,18 @@ fun AccountScreen(
   onImportAccount: () -> Unit,
   onContinueSetup: (String) -> Unit,
   modifier: Modifier = Modifier,
+  openReceive: Boolean = false,
+  onReceiveOpened: () -> Unit = {},
 ) {
   var showWallets by remember { mutableStateOf(false) }
   var showAddWallet by remember { mutableStateOf(false) }
   var showDeposit by remember { mutableStateOf(false) }
+  LaunchedEffect(openReceive) {
+    if (openReceive) {
+      showDeposit = true
+      onReceiveOpened()
+    }
+  }
   var showWithdraw by remember { mutableStateOf(false) }
   var copied by remember { mutableStateOf(false) }
   var detailTitle by remember { mutableStateOf("Trading account address") }
@@ -148,7 +163,10 @@ fun AccountScreen(
           else shortAddress(walletAddress),
         icon = FlareIcons.Wallet,
         onClick = { showWallets = true }, enabled = !state.busy)
-      if (!active.onboardingComplete) {
+      val need = state.setupNeed
+      if (active.setupPending && need != null) {
+        UnavailableNotice(need.reason, need)
+      } else if (!active.onboardingComplete) {
         FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
       }
       if (active.ownerAddress != null) {
@@ -159,7 +177,7 @@ fun AccountScreen(
             enabled = active.selectedSubaccount != null && !state.busy &&
               state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
         }
-        state.capabilities.unavailableReason(ActionKind.FUNDS)?.let {
+        state.capabilities.unavailableReason(ActionKind.FUNDS)?.takeIf { it != state.setupNeed?.reason }?.let {
           Text(it, Modifier.padding(bottom = 16.dp), color = FlareColors.TextSecondary,
             style = MaterialTheme.typography.bodySmall)
         }
@@ -202,7 +220,7 @@ fun AccountScreen(
           enabled = !state.busy,
           onClick = {
             showWallets = false
-            if (profile.onboardingComplete) onIntent(SettingsIntent.SelectProfile(profile.id))
+            if (profile.opensApp) onIntent(SettingsIntent.SelectProfile(profile.id))
             else onContinueSetup(profile.id)
           })
       }

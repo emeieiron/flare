@@ -1,5 +1,9 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import xyz.mcxross.flare.venue.model.ActionKind
+import xyz.mcxross.flare.store.AccountProfile
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.AccountSetupGate
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -384,6 +388,30 @@ class PortfolioViewModelTest {
     val unified = PortfolioUiState(capabilities = BareCapabilities.copy(perpSpotTransfer = true),
       account = AccountSnapshot(overview = overview.copy(perpSpotSeparate = false)))
     assertFalse(unified.canMovePerpSpot)
+  }
+
+  @Test
+  fun actionsWaitWhileSetupIsLeftForLaterAndTheVenuesOwnReasonsStay() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner_0x1", ownerAddress = "0x1", selectedSubaccount = "0x1"))
+    preferences.deferSetup()
+    val accounts = FakeAccountRepository(AccountSnapshot(account = "0x1"))
+    val venue = testVenue(VenueCapabilities.All.copy(unavailableActions = mapOf(ActionKind.TWAP to "Not here")))
+    val vm =
+      PortfolioViewModel(accounts, FakeWalletRepository(), preferences, FakeTradingRepository(),
+        FakeMarketsRepository(emptyList()), FakeMarketDetailsRepository(), venue,
+        setupGate = AccountSetupGate(preferences, accounts))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    assertEquals(SetupNeed.TRADING, vm.uiState.value.setupNeed)
+    assertEquals(SetupNeed.TRADING.reason, vm.uiState.value.capabilities.unavailableReason(ActionKind.TRADING))
+    assertEquals(SetupNeed.TRADING.reason, vm.uiState.value.capabilities.unavailableReason(ActionKind.FUNDS))
+    assertEquals("Not here", vm.uiState.value.capabilities.unavailableReason(ActionKind.TWAP))
+
+    preferences.setOnboardingComplete(true)
+    assertNull(vm.uiState.value.setupNeed)
+    assertNull(vm.uiState.value.capabilities.unavailableReason(ActionKind.TRADING))
+    assertEquals("Not here", vm.uiState.value.capabilities.unavailableReason(ActionKind.TWAP))
   }
 
   @Test
