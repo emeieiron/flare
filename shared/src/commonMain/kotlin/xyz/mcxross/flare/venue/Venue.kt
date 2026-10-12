@@ -48,7 +48,11 @@ data class VenueDescriptor(
   /** Where withdrawals arrive when that's not the venue's own chain; null when it is. */
   val withdrawal: WithdrawalTerms? = null,
   val vaultTerms: VaultTerms = VaultTerms(),
+  /** The asset classes its perpetuals are filed under, each a filter on the markets screen. */
+  val perpCategories: List<String> = DefaultPerpCategories,
 )
+
+val DefaultPerpCategories = listOf("commodity", "crypto", "equity")
 
 /** Withdrawals that leave the venue for another network. */
 data class WithdrawalTerms(

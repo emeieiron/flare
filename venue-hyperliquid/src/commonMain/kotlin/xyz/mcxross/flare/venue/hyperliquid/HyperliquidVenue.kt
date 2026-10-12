@@ -71,6 +71,8 @@ class HyperliquidVenue(
           internalTransfers = true,
         ),
       vaultTerms = VaultTerms(stakeInUsdc = true, lockupPerDeposit = true),
+      // Hyperliquid files its markets under no asset class, so they're all crypto.
+      perpCategories = listOf("crypto"),
     )
 
   override fun module(): Module = hyperliquidModule(deployment, network, builder)
