@@ -153,7 +153,13 @@ fun AccountScreen(
         Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
           FlareButton("Receive", { showDeposit = true }, Modifier.weight(1f))
           FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
-            style = FlareButtonStyle.OUTLINE, enabled = active.selectedSubaccount != null && !state.busy)
+            style = FlareButtonStyle.OUTLINE,
+            enabled = active.selectedSubaccount != null && !state.busy &&
+              state.capabilities.actionsUnavailableReason == null)
+        }
+        state.capabilities.actionsUnavailableReason?.let {
+          Text(it, Modifier.padding(bottom = 16.dp), color = FlareColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall)
         }
       }
       SectionLabel("Trading accounts")
@@ -236,9 +242,12 @@ private fun DepositSheet(
   onDismiss: () -> Unit,
 ) {
   val chain = LocalVenue.current.chain
+  val receive = LocalVenue.current.receive
+  val browser = LocalUriHandler.current
   FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
-      "Send ${chain.depositAssets.joinToString(" or ")} on the ${chain.name} network to $accountLabel.",
+      receive?.summary
+        ?: "Send ${chain.depositAssets.joinToString(" or ")} on the ${chain.name} network to $accountLabel.",
       color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodyMedium,
     )
@@ -251,10 +260,23 @@ private fun DepositSheet(
       }
     }
     ActionNotice(
-      "Only send ${chain.name}-native ${chain.depositAssets.joinToString(" and ")}. Assets sent " +
-        "from other networks can be lost for good.",
+      receive?.warning
+        ?: ("Only send ${chain.name}-native ${chain.depositAssets.joinToString(" and ")}. Assets sent " +
+          "from other networks can be lost for good."),
       tone = NoticeTone.INFO,
     )
+    receive?.faucet?.let { faucet ->
+      faucet.note?.let {
+        Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodySmall)
+      }
+      FlareButton(
+        text = faucet.label,
+        onClick = { runCatching { browser.openUri(faucet.url) } },
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        style = FlareButtonStyle.OUTLINE,
+      )
+    }
     FlareButton(
       text = if (copied) "Copied" else "Copy address",
       onClick = onCopy,

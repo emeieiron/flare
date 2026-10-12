@@ -14,7 +14,9 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
+import xyz.mcxross.flare.venue.Faucet
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.ReceiveInstructions
 import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueChain
@@ -47,6 +49,7 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
           builderFee = false,
           enableTrading = false,
         ),
+      receive = receiveInstructions(network),
     )
 
   override fun module(): Module = hyperliquidModule(deployment)
@@ -55,7 +58,8 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
     /**
      * What the Hyperliquid build shows. Spot, TWAP and vaults are Hyperliquid features the screens
      * keep room for; the rest are Decibel's (rewards, gas sponsorship and top-ups, in-app deposits,
-     * creating subaccounts), or not offered yet (moving USDC between perps and spot).
+     * creating subaccounts), or not offered yet (moving USDC between perps and spot). The account
+     * reads live, but its actions stay disabled until trading is enabled.
      */
     val Capabilities =
       VenueCapabilities(
@@ -68,6 +72,30 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
         networkFeeTopUp = false,
         inAppDeposit = false,
         perpSpotTransfer = false,
+        actionsUnavailableReason = ACTIONS_UNAVAILABLE,
+      )
+
+    /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
+    fun receiveInstructions(network: Network): ReceiveInstructions =
+      ReceiveInstructions(
+        summary =
+          "Deposit USDC to this address on Hyperliquid: send it from another Hyperliquid account, " +
+            "or bridge it in through Hyperliquid’s official app.",
+        warning =
+          "Never send from an exchange or network that doesn’t support Hyperliquid deposits. " +
+            "Funds sent that way can be lost for good.",
+        faucet =
+          when (network) {
+            Network.TESTNET ->
+              Faucet(
+                label = "Get test USDC",
+                url = "https://app.hyperliquid-testnet.xyz/drip",
+                note =
+                  "The test USDC faucet only pays an address that has already deposited on " +
+                    "Hyperliquid mainnet.",
+              )
+            Network.MAINNET -> null
+          },
       )
 
     fun explorer(network: Network): VenueExplorer =

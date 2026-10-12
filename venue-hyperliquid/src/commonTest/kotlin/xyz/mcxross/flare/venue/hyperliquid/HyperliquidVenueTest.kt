@@ -51,6 +51,19 @@ class HyperliquidVenueTest {
     assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
     assertFalse(capabilities.rewards || capabilities.sponsoredFees || capabilities.networkFeeTopUp)
     assertFalse(capabilities.inAppDeposit || capabilities.subaccounts || capabilities.perpSpotTransfer)
+    assertEquals(ACTIONS_UNAVAILABLE, capabilities.actionsUnavailableReason)
+  }
+
+  @Test
+  fun explainsHowToFundTheAccount() {
+    val testnet = HyperliquidVenue().descriptor.receive!!
+    val mainnet = HyperliquidVenue(Network.MAINNET).descriptor.receive!!
+
+    assertTrue("Hyperliquid" in testnet.summary && "bridge" in testnet.summary)
+    assertEquals("https://app.hyperliquid-testnet.xyz/drip", testnet.faucet?.url)
+    assertTrue("mainnet" in testnet.faucet?.note.orEmpty())
+    assertNull(mainnet.faucet)
+    assertEquals(testnet.warning, mainnet.warning)
   }
 
   @Test

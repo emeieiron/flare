@@ -86,7 +86,7 @@ fun PositionScreen(
         "Close position",
         { confirmClose = true },
         Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-        enabled = !state.busy,
+        enabled = !state.busy && state.capabilities.actionsUnavailableReason == null,
         style = FlareButtonStyle.SELL,
       )
     }
@@ -134,6 +134,10 @@ private fun PositionDetails(
   DetailRow("Liquidation price", position.liquidationPrice?.let(::formatPrice) ?: "—")
   position.takeProfitTriggerPrice?.let { DetailRow("Take profit", formatPrice(it)) }
   position.stopLossTriggerPrice?.let { DetailRow("Stop loss", formatPrice(it)) }
+  state.capabilities.actionsUnavailableReason?.let {
+    ActionNotice(it, Modifier.padding(top = 24.dp), NoticeTone.INFO)
+    return
+  }
   Text("Set an exit", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.titleMedium)
   ExitPriceFields(
     state.takeProfitInput, state.stopLossInput,

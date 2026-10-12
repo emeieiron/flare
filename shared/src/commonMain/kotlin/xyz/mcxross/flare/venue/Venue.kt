@@ -42,7 +42,30 @@ data class VenueDescriptor(
   val rewardPointsName: String? = null,
   /** The steps account setup takes once the wallet exists. */
   val setup: VenueSetup = VenueSetup(),
+  /** What the receive screen tells someone funding the account; null for the chain's defaults. */
+  val receive: ReceiveInstructions? = null,
 )
+
+/** How to fund an account on the venue, in the venue's words. */
+data class ReceiveInstructions(
+  /** Where the funds come from, shown above the address. */
+  val summary: String,
+  /** What can lose the funds for good. */
+  val warning: String,
+  /** Where test funds come from, on a test network. */
+  val faucet: Faucet? = null,
+)
+
+data class Faucet(
+  val label: String,
+  val url: String,
+  /** What the faucet requires, shown next to it. */
+  val note: String? = null,
+) {
+  init {
+    require(url.startsWith("https://")) { "Faucet links must use HTTPS" }
+  }
+}
 
 /** The chain a venue settles on, as the app names it and counts its network fees. */
 data class VenueChain(
@@ -102,6 +125,11 @@ data class VenueCapabilities(
   val inAppDeposit: Boolean,
   /** Moving USDC between perpetuals and spot margin, where the exchange keeps them apart. */
   val perpSpotTransfer: Boolean = false,
+  /**
+   * Why the app can't send the venue's actions yet (orders, cancels, transfers, vault moves); null
+   * when it can. The screens still show the account, and disable its actions with this reason.
+   */
+  val actionsUnavailableReason: String? = null,
 ) {
   companion object {
     /** Every feature on: the starting state of screens before a venue's flags arrive. */
