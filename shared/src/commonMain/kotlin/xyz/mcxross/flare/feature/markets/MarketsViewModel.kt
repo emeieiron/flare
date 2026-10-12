@@ -13,6 +13,8 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.assetKey
+import xyz.mcxross.flare.venue.DefaultPerpCategories
+import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.MarketKind
 
 enum class MarketInstrumentFilter {
@@ -78,7 +80,7 @@ data class MarketsUiState(
   val favoritesOnly: Boolean = true,
   val selectedInstrument: MarketInstrumentFilter = MarketInstrumentFilter.PERPETUALS,
   val selectedCategory: String? = null,
-  val categories: List<String> = marketCategoryTabs,
+  val categories: List<String> = DefaultPerpCategories,
   val quotes: List<MarketQuote> = emptyList(),
   val stale: Boolean = true,
   val error: String? = null,
@@ -125,8 +127,13 @@ sealed interface MarketsIntent {
 class MarketsViewModel(
   private val repository: MarketsRepository,
   private val assetCatalog: AssetCatalogRepository,
+  venue: VenueDescriptor,
 ) : ViewModel() {
   private val filter = MutableStateFlow(MarketFilter())
+  private val perpCategories = venue.perpCategories
+  /** Fixed for the venue, so every state shares this one list. */
+  private val pageSequence =
+    if (perpCategories == DefaultPerpCategories) MarketPageSequence else marketPageSequence(perpCategories)
 
   val uiState: StateFlow<MarketsUiState> =
     combine(
@@ -140,7 +147,7 @@ class MarketsViewModel(
             MarketPage(
               favoritesOnly = page.favoritesOnly,
               category = page.category,
-              categories = marketCategories(instrument),
+              categories = marketCategories(instrument, perpCategories),
               quotes =
                 catalog.quotes.filter {
                   it.matches(MarketPageKey(instrument, page.favoritesOnly, page.category), assets)
@@ -163,13 +170,18 @@ class MarketsViewModel(
           searchResults =
             if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
           pages = pages,
-          pageQuotes = marketPageQuotes(catalog.quotes, assets),
+          pageSequence = pageSequence,
+          pageQuotes = marketPageQuotes(catalog.quotes, assets, pageSequence),
         )
       }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = MarketsUiState(),
+        initialValue =
+          MarketsUiState(
+            categories = marketCategories(MarketInstrumentFilter.PERPETUALS, perpCategories),
+            pageSequence = pageSequence,
+          ),
       )
 
   init {
@@ -224,9 +236,12 @@ private fun MarketQuote.matches(
         ?: market.category.normalizedCategory()) == key.category)
 }
 
-internal fun marketCategories(instrument: MarketInstrumentFilter): List<String> =
+internal fun marketCategories(
+  instrument: MarketInstrumentFilter,
+  perpCategories: List<String> = DefaultPerpCategories,
+): List<String> =
   when (instrument) {
-    MarketInstrumentFilter.PERPETUALS -> marketCategoryTabs
+    MarketInstrumentFilter.PERPETUALS -> perpCategories
     MarketInstrumentFilter.SPOT -> spotCategoryTabs
   }
 
@@ -234,17 +249,17 @@ internal fun marketCategories(instrument: MarketInstrumentFilter): List<String> 
 fun marketPageQuotes(
   quotes: List<MarketQuote>,
   assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
+  sequence: List<MarketPageKey> = MarketPageSequence,
 ): Map<MarketPageKey, List<MarketQuote>> =
-  MarketPageSequence.associateWith { key -> quotes.filter { it.matches(key, assets) } }
+  sequence.associateWith { key -> quotes.filter { it.matches(key, assets) } }
 
 /** Every stop a swipe passes through, in chip order: perpetuals first, then spot. */
-fun marketPageSequence(): List<MarketPageKey> =
+fun marketPageSequence(perpCategories: List<String> = DefaultPerpCategories): List<MarketPageKey> =
   MarketInstrumentFilter.entries.flatMap { instrument ->
     listOf(MarketPageKey(instrument), MarketPageKey(instrument, favoritesOnly = true)) +
-      marketCategories(instrument).map { MarketPageKey(instrument, category = it) }
+      marketCategories(instrument, perpCategories).map { MarketPageKey(instrument, category = it) }
   }
 
-private val marketCategoryTabs = listOf("commodity", "crypto", "equity")
 private val spotCategoryTabs = listOf("crypto")
 
 /**
