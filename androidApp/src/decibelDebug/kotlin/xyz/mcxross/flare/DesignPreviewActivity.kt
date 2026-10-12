@@ -20,6 +20,9 @@ import xyz.mcxross.flare.feature.orders.*
 import xyz.mcxross.flare.feature.portfolio.*
 import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
+import xyz.mcxross.flare.feature.strategies.*
+import xyz.mcxross.flare.strategies.*
+import xyz.mcxross.flare.security.JevCredentialMetadata
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
@@ -95,6 +98,8 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
       )
     )
   }
+  var strategies by remember { mutableStateOf(previewStrategies()) }
+  var jevKey by remember { mutableStateOf(JevSettingsUiState(sheetOpen = true, keyInput = "sample-preview-key")) }
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
   var settings by remember { mutableStateOf(previewSettingsState(initialScreen)) }
   var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
@@ -110,6 +115,20 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
     }
     Box(Modifier.weight(1f)) {
       when (screen) {
+        "strategies" -> StrategiesSheet("BTC", strategies, { action ->
+          strategies = when (action) {
+            is StrategiesIntent.Select -> strategies.copy(selected = action.strategy)
+            is StrategiesIntent.UseJev -> strategies.copy(useJev = action.enabled)
+            else -> strategies
+          }
+        }, { screen = "chart" })
+        "jev-key" -> JevKeySheet(jevKey) { action ->
+          jevKey = when (action) {
+            is JevSettingsIntent.ChangeKey -> jevKey.copy(keyInput = action.value)
+            JevSettingsIntent.Dismiss -> { screen = "settings"; jevKey }
+            else -> jevKey
+          }
+        }
         "splash" -> FlareSplashScreen()
         "welcome", "import", "import-phrase", "import-key", "backup", "backup-revealed", "confirm",
         "accounts", "create-account", "finding", "enable", "enable-working", "setup-error",
@@ -635,3 +654,19 @@ private fun previewOnboardingIntent(state: OnboardingUiState, intent: Onboarding
     else -> state
   }
 
+
+private fun previewStrategies(): StrategiesUiState {
+  val key = StrategyMarketKey("decibel", "testnet", "0xbtc", 60_000)
+  val time = 1_790_518_620_000L
+  return StrategiesUiState(
+    key = key, active = true, keyConfigured = true, useJev = true,
+    baseline = StrategyEvaluation(key, time, time - 1, listOf(
+      StrategySignal(StrategyKind.MACD_CROSSOVER, StrategyDirection.BUY, "Closed-candle MACD histogram zero crossing"),
+      StrategySignal(StrategyKind.RSI_REVERSAL, StrategyDirection.WAIT, "Closed-candle RSI exit from 30/70 zone"),
+      StrategySignal(StrategyKind.MOMENTUM_PULLBACK, StrategyDirection.BUY, "Closed-candle recovery through SMA20 in trend direction"),
+    ), mapOf("rsi" to 56.4, "macd" to 32.1, "macdSignal" to 28.7, "macdHistogram" to 3.4, "sma20" to 83_100.0,
+      "return1" to 0.0014, "volume" to 24.5, "bookFresh" to 1.0)),
+    confluence = ConfluenceEvaluation(StrategyDirection.BUY,
+      mapOf(StrategyDirection.BUY to 0.7, StrategyDirection.SELL to 0.1, StrategyDirection.WAIT to 0.2), 0.7),
+  )
+}

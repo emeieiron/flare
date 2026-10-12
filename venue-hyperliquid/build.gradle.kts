@@ -28,6 +28,7 @@ kotlin {
   sourceSets {
     commonMain.dependencies {
       api(project(":shared"))
+      implementation(project(":strategies"))
       implementation(project(":hyperliquid"))
       implementation(libs.koin.core)
       implementation(libs.ktor.client.core)

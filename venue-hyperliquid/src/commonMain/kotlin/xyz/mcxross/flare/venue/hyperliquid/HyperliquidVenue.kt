@@ -4,6 +4,7 @@ import org.koin.core.module.Module
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
+import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
@@ -154,6 +155,7 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     }
     single { HyperliquidSetup(get(), get(), get(), get(), get()) }
     singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
+    single<StrategyMarketFeed> { HyperliquidStrategyMarketFeed(get(), get()) }
     singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
     single { HyperliquidFunds(get(), get(), get()) }

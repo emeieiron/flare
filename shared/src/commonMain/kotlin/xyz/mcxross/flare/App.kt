@@ -103,6 +103,7 @@ import xyz.mcxross.flare.feature.portfolio.PositionRoute
 import xyz.mcxross.flare.feature.settings.AccountRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
+import xyz.mcxross.flare.security.JevCredentials
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
@@ -166,6 +167,7 @@ fun App(
 private fun FlareAppFlow() {
   val appPreferences: AppPreferences = koinInject()
   val vault: ForegroundWalletVault = koinInject()
+  val jevCredentials: JevCredentials = koinInject()
   val accounts: AccountRepository = koinInject()
   val unlocked by vault.unlocked.collectAsStateWithLifecycle()
   var foreground by remember { mutableStateOf(true) }
@@ -203,6 +205,9 @@ private fun FlareAppFlow() {
         unlockError = "Authentication required"
       }
     }
+  }
+  LaunchedEffect(unlocked) {
+    if (unlocked) jevCredentials.preload()
   }
   // Staying current is the app's job: a failed restore retries on its own until the account is
   // live again, so nobody has to notice staleness or press refresh.

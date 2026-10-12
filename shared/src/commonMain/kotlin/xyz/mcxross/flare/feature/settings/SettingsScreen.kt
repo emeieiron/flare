@@ -61,11 +61,15 @@ fun SettingsRoute(
   onBack: () -> Unit,
   modifier: Modifier = Modifier,
   viewModel: SettingsViewModel = koinViewModel(),
+  jevViewModel: JevSettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
-  SettingsScreen(state, viewModel::onIntent, onBack, modifier)
+  val jevState by jevViewModel.uiState.collectAsStateWithLifecycle()
+  LifecycleEventEffect(Lifecycle.Event.ON_STOP) { jevViewModel.onIntent(JevSettingsIntent.Dismiss) }
+  DisposableEffect(jevViewModel) { onDispose { jevViewModel.onIntent(JevSettingsIntent.Dismiss) } }
+  SettingsScreen(state, viewModel::onIntent, onBack, modifier, jevState, jevViewModel::onIntent)
 }
 
 @Composable
@@ -74,6 +78,8 @@ fun SettingsScreen(
   onIntent: (SettingsIntent) -> Unit,
   onBack: () -> Unit,
   modifier: Modifier = Modifier,
+  jevState: JevSettingsUiState = JevSettingsUiState(),
+  onJevIntent: (JevSettingsIntent) -> Unit = {},
 ) {
   val venue = LocalVenue.current
   var showAccess by remember { mutableStateOf(false) }
@@ -139,6 +145,13 @@ fun SettingsScreen(
       },
     )
 
+    ActionRow(
+      "Jev confluence",
+      if (jevState.metadata.enabled) "Enabled" else if (jevState.metadata.configured) "API key saved · Off" else "Optional strategy second opinion",
+      FlareIcons.Key,
+      onClick = { onJevIntent(JevSettingsIntent.Open) },
+    )
+
     val offersBuilder = state.defaultBuilderAddress.isNotBlank()
     if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.referralCodes)) {
       SectionLabel("Protocol & Rewards")
@@ -175,6 +188,8 @@ fun SettingsScreen(
     state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT) }
     Spacer(Modifier.height(24.dp))
   }
+
+  if (jevState.sheetOpen) JevKeySheet(jevState, onJevIntent)
 
   // A confirmation takes the place of the sheet that asked for it, rather than stacking on it.
   if (showAccess && revokeAddress == null) {

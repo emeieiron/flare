@@ -7,6 +7,7 @@ import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
@@ -142,6 +143,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     )
   }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
+  single<StrategyMarketFeed> { DecibelStrategyMarketFeed(get(), get()) }
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }
   singleOf(::WorkerGasSponsorshipRepository) { bind<GasSponsorshipRepository>() }

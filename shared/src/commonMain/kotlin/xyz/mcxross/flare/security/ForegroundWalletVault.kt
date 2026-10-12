@@ -64,6 +64,18 @@ class ForegroundWalletVault(private val platform: WalletVault) : WalletVault {
     }
   }
 
+  /** Loads an optional secret after wallet unlock, without making it a required wallet slot. */
+  suspend fun preload(slot: WalletSecretSlot, prompt: VaultPrompt) = mutex.withLock {
+    val start = visit.value
+    requireVisit(start.generation)
+    if (slot in start.secrets) return@withLock
+    val bytes = platform.read(slot, prompt.copy(requireFreshAuthorization = false))
+    if (!visit.compareAndSet(start, start.copy(secrets = start.secrets + (slot to bytes)))) {
+      bytes.fill(0)
+      throw WalletVaultException.Cancelled()
+    }
+  }
+
   override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) =
     mutex.withLock {
       val start = visit.value
