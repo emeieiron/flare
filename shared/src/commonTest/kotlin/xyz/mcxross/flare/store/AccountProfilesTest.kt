@@ -13,6 +13,22 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 
 class AccountProfilesTest {
   @Test
+  fun sequencesNeverRepeatAndSurviveARestart() = runTest {
+    val store = MemoryPreferences(emptyPreferences())
+    val first = AppPreferences(store)
+
+    assertEquals(1_000L, first.nextSequence("signer", floor = 1_000L))
+    // The clock stood still or stepped back: still above every earlier value.
+    assertEquals(1_001L, first.nextSequence("signer", floor = 1_000L))
+    assertEquals(1_002L, first.nextSequence("signer", floor = 900L))
+    assertEquals(5_000L, first.nextSequence("signer", floor = 5_000L))
+    assertEquals(10L, first.nextSequence("other", floor = 10L))
+
+    val restarted = AppPreferences(store)
+    assertEquals(5_001L, restarted.nextSequence("signer", floor = 4_000L))
+  }
+
+  @Test
   fun legacyAccountRemainsInItsOriginalSecretNamespace() = runTest {
     val store =
       MemoryPreferences(

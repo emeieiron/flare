@@ -2,6 +2,7 @@ package xyz.mcxross.flare.venue
 
 import org.koin.core.module.Module
 import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.venue.model.ActionKind
 
 /**
  * The exchange a Flare build trades on. Each build links exactly one venue module
@@ -102,6 +103,8 @@ data class VenueSetup(
   val openTradingAccount: Boolean = true,
   /** Setup offers to approve Flare's builder fee. */
   val builderFee: Boolean = true,
+  /** Spot orders need their own builder fee approval, apart from perpetuals'. */
+  val separateSpotBuilderApproval: Boolean = true,
   /**
    * Setup ends by enabling trading with a device trading key. Without it, setup ends once the wallet
    * exists and its own address is the account.
@@ -126,11 +129,14 @@ data class VenueCapabilities(
   /** Moving USDC between perpetuals and spot margin, where the exchange keeps them apart. */
   val perpSpotTransfer: Boolean = false,
   /**
-   * Why the app can't send the venue's actions yet (orders, cancels, transfers, vault moves); null
-   * when it can. The screens still show the account, and disable its actions with this reason.
+   * The kinds of action the app can't send on the venue yet, each with the reason shown in its
+   * place. The screens still show the account, and disable just those actions.
    */
-  val actionsUnavailableReason: String? = null,
+  val unavailableActions: Map<ActionKind, String> = emptyMap(),
 ) {
+  /** Why actions of [kind] can't be sent; null when they can. */
+  fun unavailableReason(kind: ActionKind): String? = unavailableActions[kind]
+
   companion object {
     /** Every feature on: the starting state of screens before a venue's flags arrive. */
     val All =

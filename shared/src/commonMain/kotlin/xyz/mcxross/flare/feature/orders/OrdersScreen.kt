@@ -42,6 +42,7 @@ import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
+import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun OrdersRoute(
@@ -97,7 +98,7 @@ fun OrdersScreen(
       androidx.compose.material3.TextButton({ onIntent(OrdersIntent.RetryAccount) }) { Text("Retry") }
     }
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
-    val actionsUnavailable = state.capabilities.actionsUnavailableReason
+    val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
     if (actionsUnavailable != null && !historySelected &&
       (state.account.openOrders.isNotEmpty() || state.activeTwaps.isNotEmpty())) {
       ActionNotice(actionsUnavailable, Modifier.padding(bottom = 12.dp), NoticeTone.INFO)

@@ -23,6 +23,7 @@ import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.VenueExplorer
 import xyz.mcxross.flare.venue.VenueSetup
+import xyz.mcxross.flare.venue.model.ActionKind
 
 /**
  * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session.
@@ -72,7 +73,7 @@ class HyperliquidVenue(network: Network = Network.TESTNET) : Venue {
         networkFeeTopUp = false,
         inAppDeposit = false,
         perpSpotTransfer = false,
-        actionsUnavailableReason = ACTIONS_UNAVAILABLE,
+        unavailableActions = ActionKind.entries.associateWith { ACTIONS_UNAVAILABLE },
       )
 
     /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */

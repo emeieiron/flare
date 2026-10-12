@@ -7,6 +7,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -95,6 +96,35 @@ class OnboardingViewModelTest {
     vm.onIntent(OnboardingIntent.EnableTrading)
     assertEquals(listOf("select $OWNER", "prepare"), accounts.events)
     assertTrue(vm.uiState.value.error == null)
+  }
+
+  @Test
+  fun anUnfundedAccountWaitsForItsFirstDepositBeforeEnablingTrading() = runTest {
+    val accounts = SetupAccounts().apply { awaitingDeposit = true }
+    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertEquals(OWNER, vm.uiState.value.selectedSubaccount)
+
+    vm.onIntent(OnboardingIntent.CheckFunding)
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+
+    accounts.depositCheckFails = true
+    vm.onIntent(OnboardingIntent.CheckFunding)
+    assertEquals(OnboardingStep.FUND_ACCOUNT, vm.uiState.value.step)
+    assertNull(vm.uiState.value.error)
+
+    accounts.depositCheckFails = false
+    accounts.awaitingDeposit = false
+    vm.onIntent(OnboardingIntent.CheckFunding)
+    assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
+
+    vm.onIntent(OnboardingIntent.EnableTrading)
+    assertEquals(listOf("select $OWNER", "prepare"), accounts.events)
   }
 
   @Test
@@ -228,6 +258,14 @@ class OnboardingViewModelTest {
 
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {
       events += "prepare"
+    }
+
+    var awaitingDeposit = false
+    var depositCheckFails = false
+
+    override suspend fun awaitsFirstDeposit(): Boolean {
+      check(!depositCheckFails) { "Offline" }
+      return awaitingDeposit
     }
 
     override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment) =

@@ -52,6 +52,7 @@ import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
+import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun SettingsRoute(
@@ -136,15 +137,17 @@ fun SettingsScreen(
       },
     )
 
-    if (state.profile.ownerAddress != null) {
-      val builderStatus = builderStatus(state.preferences)
+    val offersBuilder = state.defaultBuilderAddress.isNotBlank()
+    if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.rewards)) {
       SectionLabel("Protocol & Rewards")
-      ActionRow(
-        "Builder support",
-        builderStatus,
-        FlareIcons.Heart,
-        onClick = { showBuilderSheet = true },
-      )
+      if (offersBuilder) {
+        ActionRow(
+          "Builder support",
+          builderStatus(state.preferences),
+          FlareIcons.Heart,
+          onClick = { showBuilderSheet = true },
+        )
+      }
       if (state.capabilities.rewards) {
         ActionRow(
           "Referral code",
@@ -182,7 +185,7 @@ fun SettingsScreen(
       )
       Spacer(Modifier.height(12.dp))
       state.delegations.forEach { key ->
-        val thisDevice = key.address == state.profile.apiWalletAddress
+        val thisDevice = key.address.equals(state.profile.apiWalletAddress, ignoreCase = true)
         ActionRow(
           if (thisDevice) "This device" else shortAddress(key.address),
           tradingKeySummary(key),
@@ -205,7 +208,7 @@ fun SettingsScreen(
   }
 
   revokeAddress?.let { address ->
-    val thisDevice = address == state.profile.apiWalletAddress
+    val thisDevice = address.equals(state.profile.apiWalletAddress, ignoreCase = true)
     FlareConfirmSheet(
       title = if (thisDevice) "Turn off trading here?" else "Revoke trading access?",
       message =
@@ -298,8 +301,9 @@ fun SettingsScreen(
     FlareSheet("Builder support", { showBuilderSheet = false }) {
       Text(
         "Support Flare with a small share of each order. Perpetuals and spot each have their own " +
-          "rate and on-chain approval, capped at ${builderRateLabel(venue.maxBuilderFeeBps)} by " +
-          "${venue.displayName}.",
+          (if (venue.setup.separateSpotBuilderApproval) "rate and on-chain approval"
+          else "rate, under one on-chain approval") +
+          ", capped at ${builderRateLabel(venue.maxBuilderFeeBps)} by ${venue.displayName}.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
@@ -316,12 +320,12 @@ fun SettingsScreen(
             basisPoints = bps,
             pending = state.builderPending == product,
             enabled = !state.busy && state.profile.ownerAddress != null &&
-              state.capabilities.actionsUnavailableReason == null,
+              state.capabilities.unavailableReason(ActionKind.SETUP) == null,
             onRate = { onIntent(SettingsIntent.SetBuilderFeeBps(product, it)) },
             onRevoke = { revokeProduct = product },
           )
         }
-      state.capabilities.actionsUnavailableReason?.let {
+      state.capabilities.unavailableReason(ActionKind.SETUP)?.let {
         ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO)
       }
       Spacer(Modifier.height(24.dp))

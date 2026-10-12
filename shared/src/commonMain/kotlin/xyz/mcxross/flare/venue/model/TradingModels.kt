@@ -189,6 +189,38 @@ sealed interface TradeAction {
   ) : TradeAction
 }
 
+/** What an action does, so a venue can say which of its actions the app can send. */
+enum class ActionKind {
+  /** Orders, cancels, exits, leverage and TWAPs. */
+  TRADING,
+  /** Deposits, withdrawals, transfers and vault moves. */
+  FUNDS,
+  /** Enabling and revoking trading, builder fees and opening trading accounts. */
+  SETUP,
+}
+
+val TradeAction.actionKind: ActionKind
+  get() =
+    when (this) {
+      is TradeAction.PlaceOrder,
+      is TradeAction.CancelOrder,
+      is TradeAction.SetPositionTpSl,
+      is TradeAction.CancelPositionTpSl,
+      is TradeAction.ConfigureMarket,
+      is TradeAction.CancelTwapOrder -> ActionKind.TRADING
+      is TradeAction.Deposit,
+      is TradeAction.Withdraw,
+      is TradeAction.Transfer,
+      is TradeAction.VaultDeposit,
+      is TradeAction.VaultWithdraw,
+      is TradeAction.MovePerpSpot -> ActionKind.FUNDS
+      is TradeAction.EnableTrading,
+      is TradeAction.RevokeTrading,
+      is TradeAction.ApproveBuilderFee,
+      is TradeAction.RevokeBuilderFee,
+      TradeAction.CreateTradingAccount -> ActionKind.SETUP
+    }
+
 /**
  * What the network fee would cost the wallet when the venue's sponsor declined it, in the smallest
  * unit of the chain's fee token (octas on Aptos). Only venues with sponsored fees offer it.

@@ -44,6 +44,7 @@ import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ActionKind
 
 /** One open position, reached from the portfolio. It shares the portfolio's state and actions. */
 @Composable
@@ -86,7 +87,7 @@ fun PositionScreen(
         "Close position",
         { confirmClose = true },
         Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-        enabled = !state.busy && state.capabilities.actionsUnavailableReason == null,
+        enabled = !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
         style = FlareButtonStyle.SELL,
       )
     }
@@ -134,7 +135,7 @@ private fun PositionDetails(
   DetailRow("Liquidation price", position.liquidationPrice?.let(::formatPrice) ?: "—")
   position.takeProfitTriggerPrice?.let { DetailRow("Take profit", formatPrice(it)) }
   position.stopLossTriggerPrice?.let { DetailRow("Stop loss", formatPrice(it)) }
-  state.capabilities.actionsUnavailableReason?.let {
+  state.capabilities.unavailableReason(ActionKind.TRADING)?.let {
     ActionNotice(it, Modifier.padding(top = 24.dp), NoticeTone.INFO)
     return
   }

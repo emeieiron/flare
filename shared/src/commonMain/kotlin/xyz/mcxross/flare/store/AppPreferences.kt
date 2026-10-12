@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlin.random.Random
@@ -184,6 +185,20 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
       preferences[InstallationIdKey] = resolved
     }
     return resolved
+  }
+
+  /**
+   * The next value of the counter [name]: above every value it returned before, and at least
+   * [floor]. Saved before it's returned, so a value is never handed out twice, even across restarts.
+   */
+  suspend fun nextSequence(name: String, floor: Long): Long {
+    var next = floor
+    dataStore.edit { preferences ->
+      val key = longPreferencesKey("sequence_$name")
+      next = maxOf(floor, (preferences[key] ?: Long.MIN_VALUE) + 1)
+      preferences[key] = next
+    }
+    return next
   }
 
   suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) = updateActiveProfile {

@@ -42,6 +42,8 @@ enum class OnboardingStep {
   SUBACCOUNT,
   /** A wallet Flare created opens its trading account and enables trading in one go. */
   OPEN_ACCOUNT,
+  /** The account needs its first deposit before the venue lets it enable trading. */
+  FUND_ACCOUNT,
   ENABLE_TRADING,
 }
 
@@ -164,6 +166,9 @@ sealed interface OnboardingIntent {
 
   data object ContinueSetup : OnboardingIntent
 
+  /** Checks whether the first deposit arrived, moving on to enabling trading once it has. */
+  data object CheckFunding : OnboardingIntent
+
   data class InitializeMode(val mode: String, val profileId: String? = null) : OnboardingIntent
 
   data object ClearSensitiveState : OnboardingIntent
@@ -196,6 +201,7 @@ class OnboardingViewModel(
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
   private var tradingAccountCheckJob: Job? = null
+  private var fundingCheckJob: Job? = null
   private var subflowMode: String? = null
   private var previousProfileId: String? = null
   private var createdProfileId: String? = null
@@ -288,6 +294,7 @@ class OnboardingViewModel(
       OnboardingIntent.OpenAccount -> openAccount()
       OnboardingIntent.EnableTrading -> enableTrading()
       OnboardingIntent.ContinueSetup -> prepareOwnerAccount()
+      OnboardingIntent.CheckFunding -> checkFunding()
       OnboardingIntent.ClearSensitiveState -> {
         actionJob?.cancel()
         actionJob = null
@@ -428,7 +435,21 @@ class OnboardingViewModel(
     val owner = checkNotNull(wallets.profile.first().ownerAddress) { "No account to set up" }
     accounts.selectTradingAccount(owner, setupPrompt)
     if (!setup.enableTrading) return finishSetupInternal()
-    local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, selectedSubaccount = owner)
+    val step =
+      if (accounts.awaitsFirstDeposit()) OnboardingStep.FUND_ACCOUNT else OnboardingStep.ENABLE_TRADING
+    local.value = local.value.copy(step = step, selectedSubaccount = owner)
+  }
+
+  /** Quiet: a failed check leaves the step as it is, and the next one tries again. */
+  private fun checkFunding() {
+    if (local.value.step != OnboardingStep.FUND_ACCOUNT || fundingCheckJob?.isActive == true) return
+    fundingCheckJob =
+      viewModelScope.launch {
+        val waiting = runSuspendCatching { accounts.awaitsFirstDeposit() }.getOrNull() ?: return@launch
+        if (!waiting && local.value.step == OnboardingStep.FUND_ACCOUNT) {
+          local.value = local.value.copy(step = OnboardingStep.ENABLE_TRADING, error = null)
+        }
+      }
   }
 
   private fun discoverSubaccounts() =

@@ -86,6 +86,10 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.FlareQrCode
+import androidx.compose.ui.platform.LocalUriHandler
 
 private val Whitespace = Regex("\\s+")
 
@@ -942,6 +946,66 @@ private fun SetupTask(
   }
 }
 
+/**
+ * Where to send the first deposit, for a venue that enables trading only once the account holds
+ * funds. Checks quietly while it's on screen, and moves on once the deposit arrives.
+ */
+@Composable
+internal fun FundAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
+  val venue = LocalVenue.current
+  val browser = LocalUriHandler.current
+  val address = state.selectedSubaccount ?: state.profile.ownerAddress.orEmpty()
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(FUNDING_CHECK_INTERVAL_MS)
+      onIntent(OnboardingIntent.CheckFunding)
+    }
+  }
+  StepLayout(
+    title = "Add funds",
+    subtitle =
+      "${venue.displayName} lets an account enable trading once its first deposit arrives. " +
+        "Setup continues on its own when it does.",
+    actions = {
+      SetupActions(state, onIntent) {
+        FlareButton(
+          "Check again",
+          { onIntent(OnboardingIntent.CheckFunding) },
+          Modifier.fillMaxWidth(),
+          working = state.busy,
+        )
+      }
+    },
+  ) {
+    venue.receive?.summary?.let {
+      Text(it, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+    }
+    if (address.isNotBlank()) {
+      FlareQrCode(
+        address,
+        "QR code for your ${venue.chain.name} address",
+        Modifier.padding(top = 20.dp).size(200.dp).align(Alignment.CenterHorizontally),
+      )
+      FundingAddress(address, Modifier.padding(top = 20.dp))
+    }
+    venue.receive?.warning?.let { ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.INFO) }
+    venue.receive?.faucet?.let { faucet ->
+      faucet.note?.let {
+        Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodySmall)
+      }
+      FlareButton(
+        faucet.label,
+        { runCatching { browser.openUri(faucet.url) } },
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        style = FlareButtonStyle.OUTLINE,
+      )
+    }
+  }
+}
+
+private const val FUNDING_CHECK_INTERVAL_MS = 5_000L
+
 @Composable
 internal fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val account = state.selectedSubaccount?.let(::shortAddress)
@@ -962,21 +1026,27 @@ internal fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIn
       }
     },
   ) {
-    Box(
-      Modifier.fillMaxWidth()
-        .clip(RoundedCornerShape(18.dp))
-        .background(FlareColors.Surface)
-        .padding(horizontal = 16.dp)
-    ) {
-      // Held as chosen while trading is being enabled, rather than greyed out to look switched off.
-      SwitchRow(
-        "Support Flare",
-        "Adds 0.05% to your trades to fund Flare’s development. Change it anytime in Settings.",
-        state.builderOptIn,
-        { if (!state.busy) onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
-      )
+    val venue = LocalVenue.current
+    if (venue.setup.builderFee && !venue.builderAddress.isNullOrBlank()) {
+      Box(
+        Modifier.fillMaxWidth()
+          .clip(RoundedCornerShape(18.dp))
+          .background(FlareColors.Surface)
+          .padding(horizontal = 16.dp)
+      ) {
+        // Held as chosen while trading is being enabled, rather than greyed out to look switched off.
+        SwitchRow(
+          "Support Flare",
+          "Adds ${percentOfBps(venue.builderFeeBps)} to your trades to fund Flare’s development. " +
+            "Change it anytime in Settings.",
+          state.builderOptIn,
+          { if (!state.busy) onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
+        )
+      }
     }
-    NetworkFeeLine("Network fee", covered = state.setupFee == null, Modifier.padding(top = 16.dp))
+    if (venue.capabilities.sponsoredFees) {
+      NetworkFeeLine("Network fee", covered = state.setupFee == null, Modifier.padding(top = 16.dp))
+    }
   }
 }
 
@@ -996,3 +1066,7 @@ private fun NetworkFeeLine(label: String, covered: Boolean, modifier: Modifier =
     }
   }
 }
+
+/** Basis points as a percentage with two decimals, as in 0.05%. */
+private fun percentOfBps(bps: Int): String =
+  "${bps / 100}.${(bps % 100).toString().padStart(2, '0')}%"
