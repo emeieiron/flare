@@ -49,6 +49,8 @@ kotlin {
       implementation(libs.ktor.client.okhttp)
     }
     commonMain.dependencies {
+      api(project(":strategies"))
+      implementation(project(":jev"))
       implementation(libs.compose.runtime)
       implementation(libs.compose.foundation)
       implementation(libs.compose.material3)

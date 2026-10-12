@@ -51,3 +51,6 @@ include(":shared")
 include(":venue-decibel")
 
 include(":venue-hyperliquid")
+
+include(":strategies")
+include(":jev")
