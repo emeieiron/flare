@@ -25,6 +25,11 @@ android {
       dimension = "venue"
       buildConfigField("String", "TARGET_PACKAGE", "\"xyz.mcxross.flare.decibel\"")
     }
+    // No profile is generated for it yet.
+    create("hyperliquid") {
+      dimension = "venue"
+      buildConfigField("String", "TARGET_PACKAGE", "\"xyz.mcxross.flare.hyperliquid\"")
+    }
   }
 
   buildFeatures {

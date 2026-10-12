@@ -1,0 +1,15 @@
+// The Hyperliquid build: configurations Debug-Hyperliquid and Release-Hyperliquid, scheme "Flare Hyperliquid".
+#include "Config.xcconfig"
+
+PRODUCT_NAME=flare-hyperliquid
+INFOPLIST_KEY_CFBundleDisplayName=flare hl
+PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.hyperliquid$(TEAM_ID)
+
+// The Kotlin framework comes from :ios-$(FLARE_VENUE) (see the "Compile Kotlin Framework" phase).
+FLARE_VENUE=hyperliquid
+// Gradle can't tell the build type from these configuration names, so each one names it.
+KOTLIN_FRAMEWORK_BUILD_TYPE[config=Debug-Hyperliquid]=debug
+KOTLIN_FRAMEWORK_BUILD_TYPE[config=Release-Hyperliquid]=release
+
+// testnet or mainnet.
+FLARE_HYPERLIQUID_NETWORK=testnet

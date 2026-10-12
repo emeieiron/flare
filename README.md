@@ -69,15 +69,17 @@ Flare is a complete app with thoughtful defaults, and a personal app waiting to 
 
 ```
 flare/
-├── androidApp/       # Android app: one product flavor per exchange
-├── iosApp/           # SwiftUI shell: one scheme per exchange
-├── ios-decibel/      # The iOS framework for the Decibel build
-├── venue-decibel/    # Decibel behind Flare's venue seam
-├── shared/           # Screens, ViewModels, storage and the neutral venue interfaces
-├── decibel/          # Headless Decibel protocol SDK
-├── hyperliquid/      # Headless Hyperliquid protocol SDK
-├── baselineprofile/  # Startup and journey baseline profiles
-└── skills/           # Agent skills distilled from Flare
+├── androidApp/        # Android app: one product flavor per exchange
+├── iosApp/            # SwiftUI shell: one scheme per exchange
+├── ios-decibel/       # The iOS framework for the Decibel build
+├── ios-hyperliquid/   # The iOS framework for the Hyperliquid build
+├── venue-decibel/     # Decibel behind Flare's venue seam
+├── venue-hyperliquid/ # Hyperliquid behind Flare's venue seam
+├── shared/            # Screens, ViewModels, storage and the neutral venue interfaces
+├── decibel/           # Headless Decibel protocol SDK
+├── hyperliquid/       # Headless Hyperliquid protocol SDK
+├── baselineprofile/   # Startup and journey baseline profiles
+└── skills/            # Agent skills distilled from Flare
 ```
 
 ```
@@ -87,7 +89,11 @@ androidApp (decibel flavor)    iosApp ("Flare Decibel" scheme, via :ios-decibel)
                               │
                           :decibel  ───►  Kaptos (Aptos)
 
-:hyperliquid  ───►  FastKrypto (signing)
+androidApp (hyperliquid flavor)    iosApp ("Flare Hyperliquid" scheme, via :ios-hyperliquid)
+              └─────────────────┬─────────────────┘
+                        :venue-hyperliquid  ───►  :shared
+                              │
+                        :hyperliquid  ───►  FastKrypto (keys, signing)
 ```
 
 Each build links one exchange. A `:venue-*` module implements `:shared`'s neutral interfaces with its exchange's SDK; `:shared` never depends on an exchange SDK.
@@ -112,9 +118,9 @@ cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 ./gradlew :androidApp:installDecibelDebug
 ```
 
-Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build.
+Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it shows live markets and sets up a wallet, and its trading is still in progress. It uses testnet unless built with `-PflareHyperliquidNetwork=mainnet`.
 
-For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` scheme.
+For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` or `Flare Hyperliquid` scheme.
 
 ## Security
 

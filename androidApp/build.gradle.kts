@@ -14,6 +14,9 @@ val flareBuilderAddress =
     .gradleProperty("flareBuilderAddress")
     .orElse("0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b")
 
+// The hyperliquid flavor's network: testnet unless -PflareHyperliquidNetwork=mainnet.
+val flareHyperliquidNetwork = providers.gradleProperty("flareHyperliquidNetwork").orElse("testnet")
+
 // A distributable release build is signed with the key CI passes in; without it, release builds
 // stay unsigned for local use. See .github/workflows/release-android.yml.
 val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
@@ -86,6 +89,14 @@ android {
         }
       }
     }
+    create("hyperliquid") {
+      dimension = "venue"
+      applicationId = "xyz.mcxross.flare.hyperliquid"
+      check(flareHyperliquidNetwork.get() in setOf("testnet", "mainnet")) {
+        "flareHyperliquidNetwork must be testnet or mainnet"
+      }
+      resValue("string", "flare_hyperliquid_network", flareHyperliquidNetwork.get())
+    }
   }
   packaging {
     resources {
@@ -132,6 +143,7 @@ android {
 dependencies {
   // Each flavor links the exchange it trades on.
   "decibelImplementation"(project(":venue-decibel"))
+  "hyperliquidImplementation"(project(":venue-hyperliquid"))
 }
 
 // The baseline profile plugin's build types don't read their own src/<buildType> folders, so the
