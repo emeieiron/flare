@@ -24,6 +24,11 @@ data class Market(
   val isolatedOnly: Boolean,
   /** The exchange's checks for this market's orders. */
   val rules: OrderRules,
+  /**
+   * The quote asset, set only when it isn't the one the venue's markets usually trade against, so
+   * pairs of the same asset can be told apart.
+   */
+  val quoteAsset: String? = null,
 )
 
 /**

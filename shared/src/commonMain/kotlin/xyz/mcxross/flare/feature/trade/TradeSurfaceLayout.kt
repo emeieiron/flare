@@ -44,7 +44,7 @@ import xyz.mcxross.flare.design.AssetIcon
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.PriceChartSkeleton
-import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.design.resolveMarketIdentity
 import xyz.mcxross.flare.venue.model.MarketKind
 
 /** The chart never shrinks below this, so the price and its trend stay readable. */
@@ -146,7 +146,7 @@ internal fun MarketContext(
       if (stage == TradeStage.MARKET && contextHeight >= 280.dp) 1f else 0f,
       tween(240), label = "assetHeaderExpansion",
     )
-    val identity = resolveAssetIdentity(quote.market.symbol, quote.market.displayName, assets[assetKey(quote.market.symbol)])
+    val identity = resolveMarketIdentity(quote.market, assets[assetKey(quote.market.symbol)])
     Column(Modifier.fillMaxSize()) {
       Row(
         Modifier.fillMaxWidth().padding(horizontal = 24.dp).height((72 * expansion).dp).clipToBounds()

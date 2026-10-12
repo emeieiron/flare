@@ -61,7 +61,7 @@ import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.MarketListRow
 import xyz.mcxross.flare.design.MarketListSkeleton
-import xyz.mcxross.flare.design.resolveAssetIdentity
+import xyz.mcxross.flare.design.resolveMarketIdentity
 import xyz.mcxross.flare.venue.model.MarketKind
 
 @Composable
@@ -377,7 +377,7 @@ private fun MarketQuoteRow(
 ) {
   val address = quote.market.id
   MarketListRow(
-    asset = resolveAssetIdentity(quote.market.symbol, quote.market.displayName, asset),
+    asset = resolveMarketIdentity(quote.market, asset),
     price = formatPrice(quote.markPrice),
     delta = formatPercent(quote.changePercent24h),
     positive = quote.changePercent24h >= 0,

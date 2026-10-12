@@ -61,7 +61,8 @@ class HyperliquidMarketsRepository(
         val spots = async {
           runSuspendCatching { client.info.spotMetaAndContexts() }.getOrNull()
         }
-        perps.await().toCachedMarkets() + spots.await()?.toCachedMarkets().orEmpty()
+        val minSpotVolume = minSpotDayVolume(client.config.deployment.network)
+        perps.await().toCachedMarkets() + spots.await()?.toCachedMarkets(minSpotVolume).orEmpty()
       }
     }
       .onSuccess { markets ->
@@ -125,7 +126,7 @@ class HyperliquidMarketsRepository(
       }
     }
     if (!preferences.values.first().spotWatchlistSeeded && spots.isNotEmpty()) {
-      val seeded = spots.filter { it.symbol in DEFAULT_SPOT_WATCHLIST }.map { it.id }
+      val seeded = spots.filter { it.symbol in DEFAULT_SPOT_WATCHLIST && it.quoteAsset == null }.map { it.id }
       if (seeded.isNotEmpty()) {
         favorites += seeded
         changed = true
