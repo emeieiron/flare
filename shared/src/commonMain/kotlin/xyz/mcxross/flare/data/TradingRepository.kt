@@ -106,7 +106,7 @@ class DefaultTradingRepository(
   database: FlareDatabase,
   private val client: DecibelClient,
   private val aptos: Aptos,
-  private val wallets: WalletRepository,
+  private val wallets: AptosSigningWallet,
   private val sessions: SessionRepository,
   private val gasSponsorship: GasSponsorshipRepository,
   private val runtime: FlareRuntimeConfig,

@@ -1,4 +1,4 @@
-package xyz.mcxross.flare
+package xyz.mcxross.flare.venue.decibel
 
 import kotlin.random.Random
 import kotlin.test.Test
@@ -10,7 +10,6 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import platform.Foundation.NSTemporaryDirectory
-import xyz.mcxross.flare.data.DefaultWalletRepository
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
@@ -18,7 +17,7 @@ import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.createPreferencesDataStore
 
-class WalletRepositoryIosTest {
+class DefaultWalletRepositoryIosTest {
   @Test
   fun ownerAndApiWalletsAreIndependentAndSecretsStayInVault() = runTest {
     val vault = IosTestMemoryVault()
@@ -117,11 +116,46 @@ class WalletRepositoryIosTest {
     val api = repository.createApiWallet(prompt)
     val id = preferences.values.first().activeProfileId
     assertFailsWith<IllegalStateException> {
-      repository.importApiWallet("cd".repeat(32), prompt) { error("Not delegated") }
+      repository.importAptosApiWallet("cd".repeat(32), prompt) { error("Not delegated") }
     }
     assertEquals(id, preferences.values.first().activeProfileId)
     assertEquals(api, repository.profile.first().apiWalletAddress)
     assertEquals(2, platform.entries.size)
+  }
+
+  @Test
+  fun neutralApiImportVerifiesTheAddressTheKeySignsAs() = runTest {
+    val prompt = VaultPrompt("Test", "Test")
+    val source =
+      DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), testPreferences())
+    val expected = source.createApiWallet(prompt)
+    val key = source.exportApiWallet(prompt)
+    val platform = IosTestMemoryVault()
+    val target = DefaultWalletRepository(ForegroundWalletVault(platform), testPreferences())
+    val verified = mutableListOf<String>()
+
+    val address = target.importApiWallet(key, prompt) { verified += it }
+
+    assertEquals(expected, address)
+    assertEquals(listOf(expected), verified)
+    assertEquals(key, target.exportApiWallet(prompt))
+    assertEquals(1, platform.entries.size)
+  }
+
+  @Test
+  fun rejectedNeutralApiImportLeavesNothingStored() = runTest {
+    val platform = IosTestMemoryVault()
+    val preferences = testPreferences()
+    val repository = DefaultWalletRepository(ForegroundWalletVault(platform), preferences)
+    val prompt = VaultPrompt("Test", "Test")
+
+    assertFailsWith<IllegalStateException> {
+      repository.importApiWallet("cd".repeat(32), prompt) { error("Not delegated") }
+    }
+
+    assertTrue(platform.entries.isEmpty())
+    assertEquals(null, repository.profile.first().apiWalletAddress)
+    assertTrue(preferences.values.first().profiles.none { it.apiWalletAddress != null })
   }
 
   @Test

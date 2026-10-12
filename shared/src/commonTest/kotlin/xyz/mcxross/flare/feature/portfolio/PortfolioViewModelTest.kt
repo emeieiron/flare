@@ -53,8 +53,6 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
-import xyz.mcxross.kaptos.account.Account
-import xyz.mcxross.kaptos.account.Ed25519Account
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortfolioViewModelTest {
@@ -245,7 +243,7 @@ class PortfolioViewModelTest {
     override suspend fun importApiWallet(
       key: String,
       prompt: VaultPrompt,
-      verify: suspend (Account) -> Unit,
+      verify: suspend (address: String) -> Unit,
     ): String = "0xapi"
 
     override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = ""
@@ -257,16 +255,6 @@ class PortfolioViewModelTest {
     override suspend fun removeApiWallet(prompt: VaultPrompt) {}
 
     override fun lock() {}
-
-    override suspend fun <T> withOwnerAccount(
-      prompt: VaultPrompt,
-      block: suspend (Account) -> T,
-    ): T = error("Not supported")
-
-    override suspend fun <T> withApiAccount(
-      prompt: VaultPrompt,
-      block: suspend (Account) -> T,
-    ): T = error("Not supported")
   }
 
   private class FakeTradingRepository(private val spotBalances: Map<String, Double> = emptyMap()) :

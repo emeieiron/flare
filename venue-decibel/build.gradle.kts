@@ -34,10 +34,17 @@ kotlin {
     }
     commonTest.dependencies {
       implementation(libs.kotlin.test)
+      implementation(libs.kotlinx.coroutines.test)
+      implementation(libs.ktor.client.mock)
+      implementation(libs.ktor.client.content.negotiation)
+      implementation(libs.ktor.serialization.kotlinx.json)
     }
     getByName("androidHostTest").dependencies {
       implementation(libs.androidx.datastore.preferences)
       implementation(libs.androidx.room3.runtime)
+    }
+    iosTest.dependencies {
+      implementation(libs.androidx.datastore.preferences)
     }
   }
 }

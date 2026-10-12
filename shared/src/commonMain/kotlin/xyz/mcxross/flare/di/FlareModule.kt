@@ -10,6 +10,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 import xyz.mcxross.flare.core.FlareRuntimeConfig
@@ -65,5 +66,6 @@ fun flareModule(
   viewModelOf(::PortfolioViewModel)
   viewModelOf(::OrdersViewModel)
   viewModelOf(::TradeViewModel)
-  viewModelOf(::SettingsViewModel)
+  // Only venues with a backend session (Decibel's Worker) bind a SessionRepository.
+  viewModel { SettingsViewModel(get(), get(), get(), getOrNull(), get()) }
 }

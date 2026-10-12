@@ -18,11 +18,11 @@ import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.DecibelRuntimeConfig
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.WalletCredential
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.api.SubaccountStatus
@@ -184,6 +184,7 @@ sealed interface OnboardingEffect {
 
 class OnboardingViewModel(
   private val wallets: WalletRepository,
+  private val credentials: CredentialParser,
   private val accounts: AccountRepository,
   private val preferences: AppPreferences,
   private val decibelConfig: DecibelRuntimeConfig,
@@ -541,7 +542,7 @@ class OnboardingViewModel(
     tradingAccountCheckJob =
       viewModelScope.launch {
         delay(TRADING_ACCOUNT_CHECK_DELAY_MS)
-        val ownAddress = WalletCredential.keyAddress(state.input)?.let(AccountAddress::fromString)
+        val ownAddress = credentials.keyAddress(state.input)?.let(AccountAddress::fromString)
         val check =
           if (ownAddress == AccountAddress.fromString(address)) {
             TradingAccountCheck.KEY_ADDRESS

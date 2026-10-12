@@ -1,4 +1,4 @@
-package xyz.mcxross.flare
+package xyz.mcxross.flare.venue.decibel
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -21,10 +21,7 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
-import xyz.mcxross.flare.data.WorkerGasSponsorshipRepository
 import xyz.mcxross.flare.security.VaultPrompt
-import xyz.mcxross.kaptos.account.Account
-import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.model.AptosResult
 
 class WorkerGasSponsorshipRepositoryTest {
@@ -138,11 +135,6 @@ private object TestSessionRepository : SessionRepository {
     MutableStateFlow(SessionStatus(role = SessionRole.ANONYMOUS, expiresAt = Long.MAX_VALUE))
 
   override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
-
-  override suspend fun verifyApiCredential(
-    account: Account,
-    subaccount: String,
-  ): SessionStatus = error("Not used")
 
   override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus =
     error("Not used")

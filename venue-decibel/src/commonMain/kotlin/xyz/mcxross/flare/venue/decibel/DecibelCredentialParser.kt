@@ -1,17 +1,16 @@
-package xyz.mcxross.flare.data
+package xyz.mcxross.flare.venue.decibel
 
+import xyz.mcxross.flare.data.CredentialFormat
+import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.kaptos.core.crypto.Aip80PrivateKey
 import xyz.mcxross.kaptos.core.crypto.MnemonicPhrase
 
-/** Format detection is local. A key's owner/API permissions cannot be inferred from its bytes. */
-enum class CredentialFormat {
-  RECOVERY_PHRASE,
-  PRIVATE_KEY,
-  UNKNOWN,
-}
-
-object WalletCredential {
-  fun detect(input: String): CredentialFormat {
+/**
+ * Aptos credentials: BIP-39 recovery phrases and AIP-80 private keys (`ed25519-priv-0x…`,
+ * `secp256k1-priv-0x…`). A bare 64-digit hex key is read as Ed25519.
+ */
+object DecibelCredentialParser : CredentialParser {
+  override fun detect(input: String): CredentialFormat {
     val value = input.trim()
     return when {
       value.startsWith("ed25519-priv-") ||
@@ -24,7 +23,7 @@ object WalletCredential {
     }
   }
 
-  fun normalize(input: String): String =
+  override fun normalize(input: String): String =
     when (detect(input)) {
       CredentialFormat.RECOVERY_PHRASE ->
         MnemonicPhrase.parse(input.trim().lowercase().replace(Regex("\\s+"), " ")).reveal()
@@ -41,8 +40,7 @@ object WalletCredential {
         )
     }
 
-  /** The address a private key signs as, or null when [input] isn't a key. */
-  fun keyAddress(input: String): String? =
+  override fun keyAddress(input: String): String? =
     if (detect(input) != CredentialFormat.PRIVATE_KEY) null
     else runCatching { keyAccount(normalize(input)).accountAddress.toString() }.getOrNull()
 }
