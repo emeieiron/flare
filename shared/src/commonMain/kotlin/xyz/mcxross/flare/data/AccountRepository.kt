@@ -112,7 +112,7 @@ interface AccountRepository {
 
   /**
    * True while the exchange won't let the owner enable trading because the account has never been
-   * funded. Setup then shows where to deposit and waits for the first deposit.
+   * funded. The app's actions then offer to add funds, and enable trading once they arrive.
    */
   suspend fun awaitsFirstDeposit(): Boolean = false
 
