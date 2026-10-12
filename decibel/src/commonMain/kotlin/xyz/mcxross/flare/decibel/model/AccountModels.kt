@@ -180,6 +180,7 @@ data class PortfolioChartPoint(
   @SerialName("data_points") val dataPoints: Double? = null,
   @SerialName("account_value") val accountValue: Double? = null,
   @SerialName("realized_pnl") val realizedPnl: Double? = null,
+  @SerialName("spot_value") val spotValue: Double? = null,
 )
 
 @Serializable
