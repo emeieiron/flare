@@ -23,7 +23,9 @@ class MainActivity : FragmentActivity() {
     super.onCreate(savedInstanceState)
     val databaseBuilder = androidDatabaseBuilder(applicationContext)
     val preferences = androidPreferencesDataStore(applicationContext)
-    val walletVault = AndroidWalletVault(this)
+    val walletVault =
+      processVault ?: AndroidWalletVault(applicationContext).also { processVault = it }
+    walletVault.attach(this)
     // Provided by the flavor: src/<flavor>/kotlin/.../VenueEntry.kt.
     val venue = VenueEntry.venue(applicationContext)
 
@@ -37,6 +39,9 @@ class MainActivity : FragmentActivity() {
     }
   }
 }
+
+/** The app's dependencies outlive an activity, so every activity shares this one vault. */
+private var processVault: AndroidWalletVault? = null
 
 @Preview
 @Composable
