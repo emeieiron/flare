@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlin.random.Random
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -84,6 +86,7 @@ data class FlarePreferences(
   val slippageBps: Int = 50,
   /** Ask for a fingerprint, face, or passcode before signing each trading action. */
   val confirmTransactions: Boolean = true,
+  val autoTradingActive: Boolean = false,
   val selectedStrategy: String = "MACD_CROSSOVER",
   val jevKeyConfigured: Boolean = false,
   val useJevConfluence: Boolean = false,
@@ -109,8 +112,9 @@ data class FlarePreferences(
  * must use their dedicated security and repository boundaries instead.
  */
 class AppPreferences(private val dataStore: DataStore<Preferences>) {
+  private val autoOwner = MutableStateFlow<String?>(null)
   val values: Flow<FlarePreferences> =
-    dataStore.data.map { preferences ->
+    combine(dataStore.data, autoOwner) { preferences, owner ->
       val profiles = preferences.profiles()
       val active = preferences.activeProfile(profiles)
       FlarePreferences(
@@ -125,7 +129,11 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         showRsi = preferences[ShowRsiKey] ?: false,
         showMacd = preferences[ShowMacdKey] ?: false,
         slippageBps = (preferences[SlippageBpsKey] ?: 50).coerceIn(1, 1_000),
-        confirmTransactions = preferences[ConfirmTransactionsKey] ?: true,
+        confirmTransactions =
+          if (preferences[AutoRunKey] != null && owner != preferences[AutoRunKey])
+            preferences[AutoPriorConfirmKey] ?: true
+          else preferences[ConfirmTransactionsKey] ?: true,
+        autoTradingActive = owner != null && owner == preferences[AutoRunKey],
         selectedStrategy = preferences[SelectedStrategyKey] ?: "MACD_CROSSOVER",
         jevKeyConfigured = preferences[JevKeyConfiguredKey] ?: false,
         useJevConfluence = (preferences[UseJevConfluenceKey] ?: false) && (preferences[JevKeyConfiguredKey] ?: false),
@@ -191,7 +199,53 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   }
 
   suspend fun setConfirmTransactions(confirm: Boolean) {
-    dataStore.edit { it[ConfirmTransactionsKey] = confirm }
+    dataStore.edit {
+      check(autoOwner.value == null && it[AutoRunKey] == null) { "Pause real auto trading before changing confirmations." }
+      it[ConfirmTransactionsKey] = confirm
+    }
+  }
+
+  suspend fun beginRealAutoTrading(): String {
+    val token = randomInstallationId()
+    check(autoOwner.compareAndSet(null, token)) { "An auto trading run is already active." }
+    try {
+      dataStore.edit {
+        check(it[AutoRunKey] == null) { "Restore the previous auto trading run first." }
+        it[AutoPriorConfirmKey] = it[ConfirmTransactionsKey] ?: true
+        it[AutoRunKey] = token
+        it[ConfirmTransactionsKey] = false
+      }
+      return token
+    } catch (error: Throwable) {
+      autoOwner.compareAndSet(token, null)
+      throw error
+    }
+  }
+
+  fun releaseRealAutoTrading(token: String) {
+    autoOwner.compareAndSet(token, null)
+  }
+
+  suspend fun endRealAutoTrading(token: String) {
+    releaseRealAutoTrading(token)
+    dataStore.edit {
+      if (it[AutoRunKey] == token) {
+        it[ConfirmTransactionsKey] = it[AutoPriorConfirmKey] ?: true
+        it.remove(AutoRunKey)
+        it.remove(AutoPriorConfirmKey)
+      }
+    }
+  }
+
+  suspend fun recoverRealAutoTrading() {
+    if (autoOwner.value != null) return
+    dataStore.edit {
+      if (it[AutoRunKey] != null && autoOwner.value == null) {
+        it[ConfirmTransactionsKey] = it[AutoPriorConfirmKey] ?: true
+        it.remove(AutoRunKey)
+        it.remove(AutoPriorConfirmKey)
+      }
+    }
   }
 
   suspend fun setSelectedMarket(marketAddress: String?) {
@@ -416,6 +470,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val SelectedStrategyKey = stringPreferencesKey("selected_strategy")
     val JevKeyConfiguredKey = booleanPreferencesKey("jev_key_configured")
     val UseJevConfluenceKey = booleanPreferencesKey("use_jev_confluence")
+    val AutoRunKey = stringPreferencesKey("auto_run_confirmation_owner")
+    val AutoPriorConfirmKey = booleanPreferencesKey("auto_run_prior_confirmation")
     val ConfirmTransactionsKey = booleanPreferencesKey("confirm_transactions")
     val ShowMacdKey = booleanPreferencesKey("show_macd")
     val SlippageBpsKey = intPreferencesKey("slippage_bps")

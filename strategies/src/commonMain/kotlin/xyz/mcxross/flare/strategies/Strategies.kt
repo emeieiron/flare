@@ -30,10 +30,18 @@ data class StrategyBook(
 
 data class StrategyMarketSnapshot(
   val key: StrategyMarketKey,
+  /** When the candle request began, never when it finished. */
   val fetchedAtMs: Long,
   val candles: List<StrategyCandle>,
   val book: StrategyBook? = null,
 )
+
+/**
+ * Candles whose whole interval ended by [StrategyMarketSnapshot.fetchedAtMs], the moment the request
+ * began. A candle still open when it was requested stays excluded, however late the answer arrives.
+ */
+fun StrategyMarketSnapshot.closedCandles(): List<StrategyCandle> =
+  candles.filter { it.openTimeMs + key.timeframeMs <= fetchedAtMs }
 
 fun interface StrategyMarketFeed {
   suspend fun snapshot(key: StrategyMarketKey): StrategyMarketSnapshot
@@ -105,7 +113,7 @@ class StrategyEngine(
         nowMs - snapshot.fetchedAtMs > maxFetchAgeMs
     )
       return rejected("Stale or invalid snapshot")
-    val candles = snapshot.candles.filter { it.closeTimeMs <= snapshot.fetchedAtMs }
+    val candles = snapshot.closedCandles()
     if (candles.size < minimumCandles) return rejected("Insufficient closed candles")
     for ((i, c) in candles.withIndex()) {
       if (

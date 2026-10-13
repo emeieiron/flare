@@ -70,6 +70,7 @@ object AutoRisk {
     direction: StrategyDirection,
     price: String,
     allowShort: Boolean = true,
+    size: String = config.orderSize,
   ): AutoRiskDecision {
     validate(config)?.let {
       return AutoRiskDecision(false, it)
@@ -80,7 +81,8 @@ object AutoRisk {
       val position = ExactAmount.parse(signedPosition)
       val consumed = ExactAmount.parse(consumedNotional)
       require(consumed.sign >= 0) { "Invalid consumed notional" }
-      val quantity = ExactAmount.parse(config.orderSize)
+      val quantity = ExactAmount.parse(size)
+      require(quantity.sign > 0) { "Order size must be positive" }
       val limitPrice = ExactAmount.parse(price)
       require(limitPrice.sign > 0) { "Price must be positive" }
       val projected = position + if (direction == StrategyDirection.BUY) quantity else -quantity

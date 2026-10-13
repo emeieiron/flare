@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.data.ExactAssetBalance
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
@@ -431,7 +433,7 @@ class DefaultTradingRepository(
     }
   }
 
-  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double {
+  override suspend fun assetBalanceDecimal(accountAddress: String, symbol: String): ExactAssetBalance {
     val token = symbol.substringBefore('/').trim().uppercase()
     val address = AccountAddress.fromString(accountAddress)
     val asset: AccountAsset
@@ -447,11 +449,15 @@ class DefaultTradingRepository(
       decimals = context.baseDecimals
     }
     require(decimals in 0..18) { "Unsupported asset precision" }
-    return when (val result = aptos.accounts.getBalance(address, asset)) {
-      is AptosResult.Success -> result.value.toDouble() / 10.0.pow(decimals)
+    val amount = when (val result = aptos.accounts.getBalance(address, asset)) {
+      is AptosResult.Success -> result.value.toDecimalString(decimals)
       is AptosResult.Failure -> error("Couldn’t update your $token balance")
     }
+    return ExactAssetBalance(amount, amount)
   }
+
+  override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double =
+    assetBalanceDecimal(accountAddress, symbol).available.toDouble()
 
   override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> =
     flow {
