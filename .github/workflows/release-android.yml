@@ -78,13 +78,15 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: zulu
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Test
         run: >-
           ./gradlew
+          :strategies:jvmTest
+          :jev:jvmTest
           :decibel:jvmTest
           :hyperliquid:jvmTest
           :hyperliquid:testAndroidHostTest
@@ -150,6 +152,14 @@ jobs:
           sha256sum *.apk > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Save the verified APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: flare-android-${{ steps.version.outputs.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Attest where the APKs came from
         uses: actions/attest-build-provenance@v2
         with:
@@ -166,6 +176,8 @@ jobs:
 
           - Decibel: \`flare-decibel-android.apk\`
           - Hyperliquid (${FLARE_HYPERLIQUID_NETWORK}): \`flare-hyperliquid-android.apk\`
+
+          Build: \`${GITHUB_SHA}\` ([CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
 
           ## Verify
 
