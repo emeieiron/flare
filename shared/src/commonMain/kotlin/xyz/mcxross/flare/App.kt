@@ -25,6 +25,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -440,6 +443,23 @@ private fun FlareShell() {
     }
   }
 
+  // A tap on the tab already shown takes it back to its first page.
+  val tabReselections = remember { MutableSharedFlow<Int>(extraBufferCapacity = 1) }
+  fun reselectionsOf(index: Int): Flow<Unit> = tabReselections.filter { it == index }.map {}
+
+  fun onTabSelected(index: Int) {
+    if (index != selectedIndex) return navigateTo(index)
+    val root: Any =
+      when (index) {
+        0 -> MarketsDestination
+        1 -> PortfolioDestination
+        2 -> OrdersDestination
+        else -> AccountDestination
+      }
+    navController.popBackStack(root, inclusive = false)
+    tabReselections.tryEmit(index)
+  }
+
   val onOpenSetup = { navigateTo(3) }
   val preferences: AppPreferences = koinInject()
   val saved by preferences.values.collectAsStateWithLifecycle(initialValue = null)
@@ -463,7 +483,7 @@ private fun FlareShell() {
           FlareBottomNavigation(
             items = navigationItems,
             selectedIndex = selectedIndex,
-            onSelected = ::navigateTo,
+            onSelected = ::onTabSelected,
             modifier = Modifier.navigationBarsPadding(),
           )
       },
@@ -501,6 +521,7 @@ private fun FlareShell() {
         composable<PortfolioDestination> {
           PortfolioRoute(
             onOpenSetup = onOpenSetup,
+            reselections = remember { reselectionsOf(1) },
             onMarketClick = { marketAddress ->
               navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
             },
@@ -521,6 +542,7 @@ private fun FlareShell() {
         }
         composable<MarketsDestination> {
           MarketsRoute(
+            reselections = remember { reselectionsOf(0) },
             onMarketClick = { marketAddress ->
               navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
             }

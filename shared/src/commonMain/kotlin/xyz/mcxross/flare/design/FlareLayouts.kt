@@ -11,6 +11,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -209,10 +211,10 @@ fun BackBar(
     modifier.fillMaxWidth().heightIn(min = 56.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    IconButton(onClick = onBack, enabled = backEnabled) {
+    IconButton(onClick = onBack, Modifier.semantics { contentDescription = "Back" }, enabled = backEnabled) {
       Icon(
         FlareIcons.ArrowBack,
-        "Back",
+        null,
         tint = if (backEnabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
       )
     }
