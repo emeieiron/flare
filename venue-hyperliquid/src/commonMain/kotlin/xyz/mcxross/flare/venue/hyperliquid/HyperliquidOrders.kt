@@ -2,6 +2,7 @@ package xyz.mcxross.flare.venue.hyperliquid
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.model.AssetDirectory
 import xyz.mcxross.flare.hyperliquid.model.AssetKind
@@ -234,7 +235,7 @@ internal object HyperliquidResults {
       when (first) {
         is OrderStatus.Resting -> first.oid.toString() to "Your order is on the book."
         is OrderStatus.Filled ->
-          first.oid.toString() to "Filled ${first.totalSize} at ${first.averagePrice}."
+          first.oid.toString() to "Filled ${first.totalSize} at ${first.averagePrice.toDoubleOrNull()?.let(::formatPrice) ?: first.averagePrice}."
         else -> reference to null
       }
     val problems = failures.takeIf { it.isNotEmpty() }?.joinToString(" ", prefix = "Not set: ")

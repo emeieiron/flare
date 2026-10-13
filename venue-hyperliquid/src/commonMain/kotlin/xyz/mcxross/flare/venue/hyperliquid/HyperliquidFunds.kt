@@ -83,7 +83,7 @@ class HyperliquidFunds(
       "This account shares one balance between perps and spot, so there’s nothing to move"
     }
     val subAccount = actions.vaultFor(account)
-    ownerSigned(UsdClassTransfer(usdc, toPerp, subAccount), prompt) { lapses ->
+    ownerSigned(UsdClassTransfer(usdc, toPerp, subAccount), prompt.copy(requireFreshAuthorization = true)) { lapses ->
       JournaledAction.MovePerpSpot(account, usdc.toWire(), toPerp, lapses)
     }
   }

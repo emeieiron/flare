@@ -38,7 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -279,23 +282,25 @@ private val ChartLayerPadding: (ExtraStore) -> CartesianLayerPadding = {
 @Composable
 fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier = Modifier) {
   val next = style.flipped()
+  val label = if (next == ChartStyle.LINE) "Show line chart" else "Show candles"
   Box(
     modifier
       .size(32.dp)
       .clip(CircleShape)
       .background(FlareColors.Surface)
-      .clickable(
-        role = Role.Button,
-        onClickLabel = if (next == ChartStyle.LINE) "Show line chart" else "Show candles",
-        onClick = onToggle,
-      ),
+      .clearAndSetSemantics {
+        contentDescription = label
+        role = Role.Button
+        onClick(label) { onToggle(); true }
+      }
+      .clickable(onClick = onToggle),
     contentAlignment = Alignment.Center,
   ) {
     Crossfade(next, label = "chartStyleToggle") { target ->
       Icon(
         if (target == ChartStyle.LINE) FlareIcons.ChartLine
         else FlareIcons.ChartCandles,
-        contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
+        contentDescription = null,
         modifier = Modifier.size(18.dp),
         tint = FlareColors.TextPrimary,
       )
@@ -311,8 +316,12 @@ fun ChartTimeframeButton(timeframe: ChartTimeframe, onClick: () -> Unit, modifie
       .height(32.dp)
       .clip(CircleShape)
       .background(FlareColors.Surface)
-      .clickable(role = Role.Button, onClickLabel = "Change timeframe", onClick = onClick)
-      .semantics { contentDescription = "Timeframe, ${timeframe.title}" }
+      .clearAndSetSemantics {
+        contentDescription = "Timeframe, ${timeframe.title}"
+        role = Role.Button
+        onClick("Change timeframe") { onClick(); true }
+      }
+      .clickable(onClick = onClick)
       .padding(start = 12.dp, end = 8.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
