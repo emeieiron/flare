@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -359,6 +360,15 @@ internal fun BackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
         "keep them offline.",
     actions = {
       SetupActions(state, onIntent) {
+        if (!state.backupRevealed) {
+          Text(
+            "Reveal your phrase and write it down to continue.",
+            Modifier.fillMaxWidth(),
+            color = FlareColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+          )
+        }
         FlareButton(
           "I’ve written it down",
           { onIntent(OnboardingIntent.ReviewBackup) },

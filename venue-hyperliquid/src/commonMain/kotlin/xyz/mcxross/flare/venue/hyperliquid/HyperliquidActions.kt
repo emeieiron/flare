@@ -1,8 +1,11 @@
 package xyz.mcxross.flare.venue.hyperliquid
 
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -238,6 +241,11 @@ internal enum class Reconciled {
   UNRESOLVED,
 }
 
+/** Marks a coroutine whose identity check, if any, already happened for the action it runs. */
+private class ConfirmedAction : AbstractCoroutineContextElement(ConfirmedAction) {
+  companion object Key : CoroutineContext.Key<ConfirmedAction>
+}
+
 /**
  * Sends Hyperliquid actions and follows them to an outcome. Each action takes a fresh nonce for its
  * signer and is journaled before it's sent; an answer that isn't definite leaves the entry
@@ -264,6 +272,17 @@ class HyperliquidActions(
           .map { it.toPendingTransaction() }
       }
       .distinctUntilChanged()
+
+  /**
+   * Asks for the person's identity once for everything [block] signs with the agent key, when they
+   * chose to confirm each transaction. Owner actions authenticate on their own, every time.
+   */
+  suspend fun <T> confirmed(prompt: VaultPrompt, block: suspend () -> T): T {
+    if (currentCoroutineContext()[ConfirmedAction] == null && preferences.values.first().confirmTransactions) {
+      wallets.confirmIdentity(prompt)
+    }
+    return withContext(ConfirmedAction()) { block() }
+  }
 
   /**
    * Signs [action] with the owner key and sends it. [record] describes it for reconciliation, given
@@ -300,13 +319,15 @@ class HyperliquidActions(
     settle: (response: ExchangeResponse, reference: String) -> ActionState?,
   ): ActionState =
     exclusively(action.type) {
-      wallets.withAgentSigner(prompt) { signer ->
-        val nonce = uniqueNonce(signer.address)
-        val reference = cloid?.hex ?: nonce.toString()
-        val expiresAfter = clockMs() + ACTION_TTL_MS
-        send(action.type, reference, record(expiresAfter + CLOCK_SKEW_MS), { settle(it, reference) }) {
-          beforeSend ->
-          submitter.submit(action, signer, nonce, vaultAddress, expiresAfter, beforeSend)
+      confirmed(prompt) {
+        wallets.withAgentSigner(prompt) { signer ->
+          val nonce = uniqueNonce(signer.address)
+          val reference = cloid?.hex ?: nonce.toString()
+          val expiresAfter = clockMs() + ACTION_TTL_MS
+          send(action.type, reference, record(expiresAfter + CLOCK_SKEW_MS), { settle(it, reference) }) {
+            beforeSend ->
+            submitter.submit(action, signer, nonce, vaultAddress, expiresAfter, beforeSend)
+          }
         }
       }
     }
