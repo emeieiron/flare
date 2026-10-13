@@ -376,14 +376,17 @@ fun FlareSearchField(
           innerTextField()
         }
         if (value.isNotEmpty()) {
-          IconButton(onClick = { onValueChange("") }, modifier = Modifier.size(40.dp)) {
+          IconButton(
+            onClick = { onValueChange("") },
+            modifier = Modifier.size(40.dp).semantics { contentDescription = "Clear search" },
+          ) {
             Box(
               Modifier.size(18.dp).background(FlareColors.BorderDefault, CircleShape),
               contentAlignment = Alignment.Center,
             ) {
               Icon(
                 FlareIcons.Close,
-                contentDescription = "Clear search",
+                contentDescription = null,
                 tint = FlareColors.TextPrimary,
                 modifier = Modifier.size(12.dp),
               )
@@ -916,12 +919,12 @@ fun MarketListRow(
       DeltaLabel(delta, positive)
     }
     Spacer(Modifier.width(8.dp))
-    IconButton(onClick = onFavorite) {
+    val favoriteLabel =
+      if (favorite) "Remove ${asset.symbol} from watchlist" else "Add ${asset.symbol} to watchlist"
+    IconButton(onClick = onFavorite, modifier = Modifier.semantics { contentDescription = favoriteLabel }) {
       Icon(
         if (favorite) FlareIcons.StarFilled else FlareIcons.Star,
-        contentDescription =
-          if (favorite) "Remove ${asset.symbol} from watchlist"
-          else "Add ${asset.symbol} to watchlist",
+        contentDescription = null,
         tint = if (favorite) colors.positive else colors.textTertiary,
         modifier = Modifier.size(20.dp),
       )

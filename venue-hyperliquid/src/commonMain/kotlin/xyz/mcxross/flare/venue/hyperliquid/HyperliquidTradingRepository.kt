@@ -61,15 +61,15 @@ class HyperliquidTradingRepository(
         is TradeAction.ApproveBuilderFee ->
           setup.approveBuilderFee(action.builder, action.maxFeeBps.toUInt(), prompt)
         is TradeAction.RevokeBuilderFee -> setup.revokeBuilderFee(action.builder, prompt)
-        is TradeAction.PlaceOrder -> beforeSending { placeOrder(action, prompt) }
+        is TradeAction.PlaceOrder -> beforeSending(prompt) { placeOrder(action, prompt) }
         is TradeAction.CancelOrder ->
-          beforeSending { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
+          beforeSending(prompt) { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
         is TradeAction.CancelPositionTpSl ->
-          beforeSending { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
-        is TradeAction.CancelOrders -> beforeSending { cancel(action.account, action.orders, prompt) }
-        is TradeAction.ConfigureMarket -> beforeSending { configureMarket(action, prompt) }
-        is TradeAction.SetPositionTpSl -> beforeSending { setPositionTpSl(action, prompt) }
-        is TradeAction.CancelTwapOrder -> beforeSending { cancelTwap(action, prompt) }
+          beforeSending(prompt) { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
+        is TradeAction.CancelOrders -> beforeSending(prompt) { cancel(action.account, action.orders, prompt) }
+        is TradeAction.ConfigureMarket -> beforeSending(prompt) { configureMarket(action, prompt) }
+        is TradeAction.SetPositionTpSl -> beforeSending(prompt) { setPositionTpSl(action, prompt) }
+        is TradeAction.CancelTwapOrder -> beforeSending(prompt) { cancelTwap(action, prompt) }
         is TradeAction.Withdraw -> funds.withdraw(action.account, null, action.amount, prompt)
         is TradeAction.Transfer -> funds.send(action.account, action.destination, action.amount, prompt)
         is TradeAction.MovePerpSpot ->
@@ -84,10 +84,13 @@ class HyperliquidTradingRepository(
     emit(result)
   }
 
+  override suspend fun <T> confirmedAction(prompt: VaultPrompt, block: suspend () -> T): T =
+    actions.confirmed(prompt, block)
+
   /** Anything that fails before [block] reaches [actions] was never sent. */
-  private suspend fun beforeSending(block: suspend () -> ActionState): ActionState =
+  private suspend fun beforeSending(prompt: VaultPrompt, block: suspend () -> ActionState): ActionState =
     try {
-      block()
+      actions.confirmed(prompt, block)
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {

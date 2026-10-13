@@ -24,9 +24,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -78,6 +81,7 @@ import xyz.mcxross.flare.venue.model.ActionKind
 @Composable
 fun PortfolioRoute(
   onOpenSetup: () -> Unit,
+  reselections: Flow<Unit> = emptyFlow(),
   onMarketClick: (String) -> Unit = {},
   onPositionClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
@@ -88,7 +92,7 @@ fun PortfolioRoute(
   LaunchedEffect(lifecycleOwner, viewModel) {
     lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.refreshWhileVisible() }
   }
-  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, onPositionClick, modifier)
+  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, onPositionClick, modifier, reselections)
 }
 
 private enum class PortfolioPage(val title: String) {
@@ -112,8 +116,11 @@ fun PortfolioScreen(
   onMarketClick: (String) -> Unit = {},
   onPositionClick: (String) -> Unit = {},
   modifier: Modifier = Modifier,
+  reselections: Flow<Unit> = emptyFlow(),
 ) {
   var page by rememberSaveable { mutableStateOf(PortfolioPage.OVERVIEW) }
+  val busy by rememberUpdatedState(state.busy)
+  LaunchedEffect(reselections) { reselections.collect { if (!busy) page = PortfolioPage.OVERVIEW } }
   // The position a left swipe asked to close.
   var closeTarget by rememberSaveable { mutableStateOf<String?>(null) }
   var showBalance by rememberSaveable { mutableStateOf(false) }

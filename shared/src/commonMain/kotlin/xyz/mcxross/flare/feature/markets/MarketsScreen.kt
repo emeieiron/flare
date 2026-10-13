@@ -30,12 +30,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -68,9 +72,17 @@ import xyz.mcxross.flare.venue.model.MarketKind
 fun MarketsRoute(
   onMarketClick: (String) -> Unit,
   modifier: Modifier = Modifier,
+  reselections: Flow<Unit> = emptyFlow(),
   viewModel: MarketsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val focus = LocalFocusManager.current
+  LaunchedEffect(reselections) {
+    reselections.collect {
+      focus.clearFocus()
+      viewModel.onIntent(MarketsIntent.CloseSearch)
+    }
+  }
   MarketsScreen(
     state = state,
     onIntent = viewModel::onIntent,
@@ -118,8 +130,11 @@ fun MarketsScreen(
         FlareTopBar(
           title = "Markets",
           action = {
-            IconButton({ onIntent(MarketsIntent.OpenSearch) }, Modifier.size(48.dp)) {
-              Icon(FlareIcons.Search, "Search markets", tint = FlareColors.TextPrimary)
+            IconButton(
+              { onIntent(MarketsIntent.OpenSearch) },
+              Modifier.size(48.dp).semantics { contentDescription = "Search markets" },
+            ) {
+              Icon(FlareIcons.Search, null, tint = FlareColors.TextPrimary)
             }
           },
         )

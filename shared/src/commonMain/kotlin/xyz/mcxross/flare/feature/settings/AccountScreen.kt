@@ -31,6 +31,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -149,8 +151,11 @@ fun AccountScreen(
   Column(modifier.fillMaxSize()
     .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)) {
     FlareTopBar("Account", action = {
-      IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-        Icon(FlareIcons.Settings, "Settings", tint = FlareColors.TextPrimary)
+      IconButton(
+        onClick = onOpenSettings,
+        modifier = Modifier.size(48.dp).semantics { contentDescription = "Settings" },
+      ) {
+        Icon(FlareIcons.Settings, null, tint = FlareColors.TextPrimary)
       }
     })
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 16.dp), NoticeTone.ALERT) }
@@ -196,8 +201,11 @@ fun AccountScreen(
           }
           if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
             modifier = Modifier.size(20.dp))
-          IconButton(onClick = { detailTitle = "Trading account address"; detailAddress = account.address }) {
-            Icon(FlareIcons.Copy, "Show trading account address", tint = FlareColors.TextSecondary,
+          IconButton(
+            onClick = { detailTitle = "Trading account address"; detailAddress = account.address },
+            modifier = Modifier.semantics { contentDescription = "Show trading account address" },
+          ) {
+            Icon(FlareIcons.Copy, null, tint = FlareColors.TextSecondary,
               modifier = Modifier.size(18.dp))
           }
         }

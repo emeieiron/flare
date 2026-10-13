@@ -70,7 +70,7 @@ class HyperliquidTradingTest {
       JournaledAction.decode(checkNotNull(journaled)),
     )
     assertEquals(ActionState.AwaitingAuthorization, states.first())
-    assertEquals(ActionState.Committed("123", "Filled 0.01 at 65010.5."), states.last())
+    assertEquals(ActionState.Committed("123", "Filled 0.01 at \$65,010.50."), states.last())
     assertTrue(harness.journal.entries.value.isEmpty())
     assertTrue(harness.wallet.ownerPrompts.isEmpty())
   }
@@ -518,7 +518,7 @@ class HyperliquidTradingTest {
       """{"type":"order","orders":[{"a":0,"b":false,"p":"64666","s":"0.76666","r":true,"t":{"limit":{"tif":"Ioc"}},"c":"0x0123456789abcdef0123456789abcdef"}],"grouping":"na"}""",
       harness.wire(),
     )
-    assertEquals(ActionState.Committed("9", "Filled 0.76666 at 64990."), result)
+    assertEquals(ActionState.Committed("9", "Filled 0.76666 at \$64,990.00."), result)
   }
 
   @Test

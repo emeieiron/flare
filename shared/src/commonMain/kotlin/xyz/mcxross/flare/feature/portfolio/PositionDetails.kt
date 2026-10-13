@@ -75,17 +75,17 @@ fun PositionScreen(
       Modifier.weight(1f).verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 24.dp),
     ) {
-      if (position != null) PositionDetails(state, position, onIntent)
-      else Text("This position is no longer open", color = FlareColors.TextSecondary)
-    }
-    if (position != null) {
-      FlareButton(
-        "Close position",
-        { confirmClose = true },
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-        enabled = !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
-        style = FlareButtonStyle.SELL,
-      )
+      if (position != null) {
+        PositionDetails(state, position, onIntent)
+        // In the content, not pinned to the bottom edge where the tab bar sits on other screens.
+        FlareButton(
+          "Close position",
+          { confirmClose = true },
+          Modifier.fillMaxWidth().padding(top = 32.dp),
+          enabled = !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
+          style = FlareButtonStyle.SELL,
+        )
+      } else Text("This position is no longer open", color = FlareColors.TextSecondary)
     }
   }
   if (confirmClose && position != null) {
