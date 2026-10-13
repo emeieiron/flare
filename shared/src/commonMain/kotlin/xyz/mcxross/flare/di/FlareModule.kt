@@ -28,6 +28,8 @@ import xyz.mcxross.flare.feature.settings.DirectJevKeyChecker
 import xyz.mcxross.flare.feature.settings.JevKeyChecker
 import xyz.mcxross.flare.feature.settings.JevSettingsViewModel
 import xyz.mcxross.flare.feature.settings.SettingsViewModel
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
+import xyz.mcxross.flare.feature.auto.AutoTradingViewModel
 import xyz.mcxross.flare.feature.strategies.StrategiesViewModel
 import xyz.mcxross.flare.feature.trade.TradeViewModel
 import xyz.mcxross.flare.jev.JevClient
@@ -95,6 +97,8 @@ fun flareModule(
   }
   single<JevKeyChecker> { DirectJevKeyChecker(get(named("jev"))) }
   viewModelOf(::JevSettingsViewModel)
+  single { AutoTradingRuntime(get(), get(), get(), get(), get(), get(), get(), get(), get()) } onClose { it?.close() }
+  viewModelOf(::AutoTradingViewModel)
   viewModel { StrategiesViewModel(get(), get(), get(), get(), get(), get()) }
   single { AccountSetupGate(get(), get()) }
   singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }

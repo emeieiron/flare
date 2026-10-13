@@ -20,6 +20,8 @@ data class PendingTransaction(
   val updatedAtMs: Long,
 )
 
+data class ExactAssetBalance(val total: String, val available: String)
+
 data class ReconciliationResult(val finalized: Int, val unresolved: Int)
 
 /**
@@ -47,6 +49,9 @@ interface TradingRepository {
 
   /** The fee token the owner wallet holds, which pays an owner action's fee if Flare can't. */
   suspend fun ownerFeeBalance(): ULong = error("The owner wallet's balance isn't available")
+
+  suspend fun assetBalanceDecimal(accountAddress: String, symbol: String): ExactAssetBalance =
+    error("Exact asset balances are unavailable")
 
   suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double = 0.0
 

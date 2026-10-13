@@ -3,6 +3,8 @@ package xyz.mcxross.flare.venue.hyperliquid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import xyz.mcxross.flare.data.ExactAssetBalance
+import xyz.mcxross.flare.strategies.AutoAmounts
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
@@ -273,6 +275,16 @@ class HyperliquidTradingRepository(
   override suspend fun tradingKeyFeeBalance(): ULong = 0uL
 
   override suspend fun ownerFeeBalance(): ULong = 0uL
+
+  override suspend fun assetBalanceDecimal(accountAddress: String, symbol: String): ExactAssetBalance {
+    val balance = client.info.spotClearinghouseState(accountAddress).balances.firstOrNull {
+      it.coin.trim().equals(symbol.substringBefore('/').trim(), ignoreCase = true)
+    } ?: return ExactAssetBalance("0", "0")
+    val total = AutoAmounts.normalize(balance.total)
+    val available = AutoAmounts.subtract(total, balance.hold)
+    require(AutoAmounts.compare(total, "0") >= 0 && AutoAmounts.compare(available, "0") >= 0)
+    return ExactAssetBalance(total, available)
+  }
 
   /** The spot balance free to trade: what [accountAddress] holds of [symbol], less what orders hold. */
   override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double {

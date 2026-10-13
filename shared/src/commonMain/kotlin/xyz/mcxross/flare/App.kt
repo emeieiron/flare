@@ -103,6 +103,7 @@ import xyz.mcxross.flare.feature.portfolio.PositionRoute
 import xyz.mcxross.flare.feature.settings.AccountRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
 import xyz.mcxross.flare.security.JevCredentials
 import xyz.mcxross.flare.security.ForegroundWalletVault
 import xyz.mcxross.flare.security.VaultPrompt
@@ -168,6 +169,8 @@ private fun FlareAppFlow() {
   val appPreferences: AppPreferences = koinInject()
   val vault: ForegroundWalletVault = koinInject()
   val jevCredentials: JevCredentials = koinInject()
+  val autoTrading: AutoTradingRuntime = koinInject()
+  LaunchedEffect(appPreferences) { appPreferences.recoverRealAutoTrading() }
   val accounts: AccountRepository = koinInject()
   val unlocked by vault.unlocked.collectAsStateWithLifecycle()
   var foreground by remember { mutableStateOf(true) }
@@ -175,6 +178,7 @@ private fun FlareAppFlow() {
   var unlockError by remember { mutableStateOf<String?>(null) }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     foreground = false
+    autoTrading.pause("Paused in background")
     vault.lock()
   }
   LifecycleEventEffect(Lifecycle.Event.ON_START) { foreground = true }
