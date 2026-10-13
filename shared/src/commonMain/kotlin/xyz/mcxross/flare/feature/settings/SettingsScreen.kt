@@ -285,9 +285,19 @@ fun SettingsScreen(
   }
 
   removal?.let { intent ->
+    val profiles = state.preferences.profiles
+    val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
+    val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+    val removed =
+      if (intent == SettingsIntent.RemoveApi) {
+        "$walletLabel’s trading key, ${shortAddress(state.profile.apiWalletAddress.orEmpty())}"
+      } else {
+        "$walletLabel, ${shortAddress(state.profile.ownerAddress.orEmpty())}"
+      }
     FlareConfirmSheet(
       title = "Remove from this device?",
-      message = "Save your recovery phrase or private key first. You’ll need it to return.",
+      message =
+        "This removes $removed. Save your recovery phrase or private key first. You’ll need it to return.",
       confirmLabel = "Remove",
       onConfirm = {
         removal = null
