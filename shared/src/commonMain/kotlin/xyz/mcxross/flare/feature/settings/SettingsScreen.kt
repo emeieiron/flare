@@ -294,10 +294,17 @@ fun SettingsScreen(
       } else {
         "$walletLabel, ${shortAddress(state.profile.ownerAddress.orEmpty())}"
       }
+    val advice =
+      when {
+        intent != SettingsIntent.RemoveApi ->
+          "Save your recovery phrase or private key first. You’ll need it to return."
+        state.profile.ownerAddress != null ->
+          "Trading stops on this device until you enable trading again, which makes a new key."
+        else -> "Save its private key first. You’ll need it to trade from this device again."
+      }
     FlareConfirmSheet(
       title = "Remove from this device?",
-      message =
-        "This removes $removed. Save your recovery phrase or private key first. You’ll need it to return.",
+      message = "This removes $removed. $advice",
       confirmLabel = "Remove",
       onConfirm = {
         removal = null
