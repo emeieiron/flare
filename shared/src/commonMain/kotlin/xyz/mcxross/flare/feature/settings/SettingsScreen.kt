@@ -285,9 +285,26 @@ fun SettingsScreen(
   }
 
   removal?.let { intent ->
+    val profiles = state.preferences.profiles
+    val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
+    val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+    val removed =
+      if (intent == SettingsIntent.RemoveApi) {
+        "$walletLabel’s trading key, ${shortAddress(state.profile.apiWalletAddress.orEmpty())}"
+      } else {
+        "$walletLabel, ${shortAddress(state.profile.ownerAddress.orEmpty())}"
+      }
+    val advice =
+      when {
+        intent != SettingsIntent.RemoveApi ->
+          "Save your recovery phrase or private key first. You’ll need it to return."
+        state.profile.ownerAddress != null ->
+          "Trading stops on this device until you enable trading again, which makes a new key."
+        else -> "Save its private key first. You’ll need it to trade from this device again."
+      }
     FlareConfirmSheet(
       title = "Remove from this device?",
-      message = "Save your recovery phrase or private key first. You’ll need it to return.",
+      message = "This removes $removed. $advice",
       confirmLabel = "Remove",
       onConfirm = {
         removal = null

@@ -34,6 +34,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
@@ -140,8 +142,11 @@ internal fun WelcomeScreen(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         if (onBack != null) {
-          IconButton(onClick = onBack, modifier = Modifier.padding(end = 4.dp)) {
-            Icon(FlareIcons.ArrowBack, contentDescription = "Back")
+          IconButton(
+            onClick = onBack,
+            modifier = Modifier.padding(end = 4.dp).semantics { contentDescription = "Back" },
+          ) {
+            Icon(FlareIcons.ArrowBack, contentDescription = null)
           }
         }
         Text("flare", style = MaterialTheme.typography.headlineSmall)
