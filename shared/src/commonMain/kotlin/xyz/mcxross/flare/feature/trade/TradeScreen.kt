@@ -55,6 +55,7 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.feature.auto.AutoTradingRoute
 import xyz.mcxross.flare.feature.strategies.StrategiesRoute
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ActionNotice
@@ -88,6 +89,7 @@ fun TradeRoute(
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   var showStrategies by rememberSaveable { mutableStateOf(false) }
+  var showAuto by rememberSaveable { mutableStateOf(false) }
   val assetCatalog: AssetCatalogRepository = koinInject()
   val assets by assetCatalog.assets.collectAsStateWithLifecycle()
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
@@ -100,8 +102,12 @@ fun TradeRoute(
   val market = state.quote?.market
   if (showStrategies && market != null) {
     StrategiesRoute(market.id, market.symbol, state.timeframe.durationMs,
-      state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showStrategies = false })
+      state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showStrategies = false },
+      onOpenAuto = { showStrategies = false; showAuto = true })
   }
+  if (showAuto && market != null) AutoTradingRoute(market, state.timeframe.durationMs,
+    state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showAuto = false },
+    onOpenSetup = { showAuto = false; onOpenSetup() })
 }
 
 internal enum class TradeStage { MARKET, EDIT, REVIEW, RESULT, FAILURE }

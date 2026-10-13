@@ -21,6 +21,7 @@ import xyz.mcxross.flare.feature.portfolio.*
 import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.feature.strategies.*
+import xyz.mcxross.flare.feature.auto.*
 import xyz.mcxross.flare.strategies.*
 import xyz.mcxross.flare.security.JevCredentialMetadata
 import xyz.mcxross.flare.store.FlarePreferences
@@ -98,6 +99,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
       )
     )
   }
+  var auto by remember { mutableStateOf(previewAuto(initialScreen)) }
   var strategies by remember { mutableStateOf(previewStrategies()) }
   var jevKey by remember { mutableStateOf(JevSettingsUiState(sheetOpen = true, keyInput = "sample-preview-key")) }
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
@@ -115,6 +117,18 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
     }
     Box(Modifier.weight(1f)) {
       when (screen) {
+        "auto", "auto-real", "auto-review" -> AutoTradingScreen(auto, { action ->
+          auto = when (action) {
+            is AutoTradingIntent.Configure -> auto.copy(config = action.config)
+            AutoTradingIntent.Pause -> auto.copy(active = false, status = "Paused")
+            AutoTradingIntent.Reset -> previewAuto("auto-real").copy(config = auto.config, active = false)
+            AutoTradingIntent.ReviewStart -> if (auto.config.mode == AutoRunMode.REAL) auto.copy(reviewOpen = true)
+              else auto.copy(active = true, status = "Simulation running")
+            AutoTradingIntent.DismissReview -> auto.copy(reviewOpen = false)
+            AutoTradingIntent.ConfirmStart -> auto.copy(reviewOpen = false, active = true, status = "Preview only")
+            else -> auto
+          }
+        }, { screen = "chart" })
         "strategies" -> StrategiesSheet("BTC", strategies, { action ->
           strategies = when (action) {
             is StrategiesIntent.Select -> strategies.copy(selected = action.strategy)
@@ -264,7 +278,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
             },
             { screen = "welcome" },
           )
-        "account", "account-owner" ->
+        "account", "account-owner", "settings-auto" ->
           SettingsScreen(
             settings,
             { intent ->
@@ -305,7 +319,8 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
 
 /** "account-owner" signs in with an owner key, which unlocks the builder approvals. */
 private fun previewSettingsState(screen: String): SettingsUiState =
-  if (screen != "account-owner") SettingsUiState()
+  if (screen == "settings-auto") SettingsUiState(preferences = FlarePreferences(autoTradingActive = true, confirmTransactions = false))
+  else if (screen != "account-owner") SettingsUiState()
   else
     SettingsUiState(
       profile = WalletProfile(ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8"),
@@ -668,5 +683,31 @@ private fun previewStrategies(): StrategiesUiState {
       "return1" to 0.0014, "volume" to 24.5, "bookFresh" to 1.0)),
     confluence = ConfluenceEvaluation(StrategyDirection.BUY,
       mapOf(StrategyDirection.BUY to 0.7, StrategyDirection.SELL to 0.1, StrategyDirection.WAIT to 0.2), 0.7),
+  )
+}
+
+private fun previewAuto(screen: String): AutoTradingUiState {
+  val real = screen in setOf("auto-real", "auto-review")
+  val signal = previewStrategies()
+  return AutoTradingUiState(
+    config = AutoRunConfig(StrategyKind.MACD_CROSSOVER, if (real) AutoRunMode.REAL else AutoRunMode.SIMULATION,
+      "0.001", "0.01", "1000", 10, 30, 60, 50, 1),
+    market = previewQuotes().first().market, timeframeMs = ChartTimeframe.FIVE_MINUTES.durationMs,
+    account = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48",
+    active = !real, reviewOpen = screen == "auto-review", status = if (real) "Ready" else "Running",
+    candles = previewCandles().map { StrategyCandle(it.openTimeMs, it.closeTimeMs, it.open, it.high, it.low, it.close, it.volume) },
+    markPrice = "83109.00", baseline = signal.baseline, confluence = signal.confluence,
+    useJev = true, keyConfigured = true, modelCalls = if (real) 0 else 8, modelLatencyMs = if (real) null else 243,
+    orders = if (real) 0 else 2, consumedNotional = if (real) "0" else "166.10", positionSize = if (real) "0" else "0.002",
+    realizedPnl = "0", unrealizedPnl = if (real) "0" else "0.12", startedAtMs = if (real) null else 1_790_518_500_000,
+    decision = if (real) null else AutoDecision(previewCandles()[previewCandles().size - 3].closeTimeMs, StrategyDirection.BUY, AutoOutcome.ACTED, 0.87, 243),
+    markers = if (real) emptyList() else previewCandles().let { c ->
+      listOf(AutoMarker(c[c.size - 12].closeTimeMs, StrategyDirection.BUY), AutoMarker(c[c.size - 3].closeTimeMs, StrategyDirection.BUY))
+    },
+    activity = if (real) emptyList() else listOf(
+      AutoActivity(1_790_518_620_000, 1_790_518_620_000 - 20_000, "Paper buy · 0.001 BTC at 83109.00", StrategyDirection.BUY, AutoOutcome.ACTED),
+      AutoActivity(1_790_518_320_000, 1_790_518_320_000 - 20_000, "Vetoed sell · Jev wait at 52% confidence", StrategyDirection.SELL, AutoOutcome.VETOED),
+      AutoActivity(1_790_518_020_000, 1_790_518_020_000 - 20_000, "Wait · no new MACD crossover signal", StrategyDirection.WAIT, AutoOutcome.WAITING),
+    ),
   )
 }

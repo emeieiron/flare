@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.koinInject
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
 import xyz.mcxross.flare.design.ActionNotice
@@ -64,12 +66,14 @@ fun SettingsRoute(
   jevViewModel: JevSettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val autoRuntime: AutoTradingRuntime = koinInject()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
   val jevState by jevViewModel.uiState.collectAsStateWithLifecycle()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { jevViewModel.onIntent(JevSettingsIntent.Dismiss) }
   DisposableEffect(jevViewModel) { onDispose { jevViewModel.onIntent(JevSettingsIntent.Dismiss) } }
-  SettingsScreen(state, viewModel::onIntent, onBack, modifier, jevState, jevViewModel::onIntent)
+  SettingsScreen(state, viewModel::onIntent, onBack, modifier, jevState, jevViewModel::onIntent,
+    onStopAuto = { autoRuntime.pause("Paused in Settings") })
 }
 
 @Composable
@@ -80,6 +84,7 @@ fun SettingsScreen(
   modifier: Modifier = Modifier,
   jevState: JevSettingsUiState = JevSettingsUiState(),
   onJevIntent: (JevSettingsIntent) -> Unit = {},
+  onStopAuto: (() -> Unit)? = null,
 ) {
   val venue = LocalVenue.current
   var showAccess by remember { mutableStateOf(false) }
@@ -129,11 +134,15 @@ fun SettingsScreen(
 
     SwitchRow(
       "Confirm transactions",
-      "Ask for your fingerprint, face, or passcode before each order, cancellation, or position change.",
+      if (state.preferences.autoTradingActive) "Off while real auto trading is active. Restored when the run stops."
+      else "Ask for your fingerprint, face, or passcode before each order, cancellation, or position change.",
       state.preferences.confirmTransactions,
       { onIntent(SettingsIntent.SetConfirmTransactions(it)) },
-      enabled = !state.busy,
+      enabled = !state.busy && !state.preferences.autoTradingActive,
     )
+    if (state.preferences.autoTradingActive && onStopAuto != null) {
+      ActionRow("Pause auto trading", "Stop new orders and restore transaction confirmation", onClick = onStopAuto)
+    }
 
     ActionRow(
       "Trading access",
