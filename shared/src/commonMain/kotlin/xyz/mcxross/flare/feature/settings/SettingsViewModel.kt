@@ -332,6 +332,9 @@ class SettingsViewModel(
         }
       is SettingsIntent.SetConfirmTransactions ->
         launchAction("Your confirmation setting didn’t change.") {
+          check(!preferences.values.first().autoTradingActive) {
+            "Pause real auto trading before changing confirmations."
+          }
           // Relaxing protection needs the person present; turning it back on never does.
           if (!intent.confirm) {
             wallets.confirmIdentity(VaultPrompt("Turn off confirmations", "Confirm your identity"))

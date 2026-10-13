@@ -22,6 +22,7 @@ import kotlin.time.Instant
 import kotlinx.coroutines.awaitCancellation
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.SwitchRow
@@ -41,6 +42,7 @@ fun StrategiesRoute(
   timeframeMs: Long,
   account: String?,
   onDismiss: () -> Unit,
+  onOpenAuto: (() -> Unit)? = null,
   viewModel: StrategiesViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -54,7 +56,7 @@ fun StrategiesRoute(
       try { awaitCancellation() } finally { viewModel.onIntent(StrategiesIntent.Pause) }
     }
   }
-  StrategiesSheet(symbol, state, viewModel::onIntent, onDismiss)
+  StrategiesSheet(symbol, state, viewModel::onIntent, onDismiss, onOpenAuto)
 }
 
 @Composable
@@ -63,6 +65,7 @@ fun StrategiesSheet(
   state: StrategiesUiState,
   onIntent: (StrategiesIntent) -> Unit,
   onDismiss: () -> Unit,
+  onOpenAuto: (() -> Unit)? = null,
 ) {
   FlareSheet("Strategies · $symbol", onDismiss, heightFraction = 0.85f) {
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -93,6 +96,7 @@ fun StrategiesSheet(
         Text("Indicator requests go directly to Jev and may incur charges on your account.",
           color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
       }
+      onOpenAuto?.let { ActionRow("Auto trading", "Simulation or real trading with run limits", onClick = it) }
       state.error?.let { ActionNotice(it) }
       state.baseline?.let { baseline ->
         SectionLabel("Strategy signals")
