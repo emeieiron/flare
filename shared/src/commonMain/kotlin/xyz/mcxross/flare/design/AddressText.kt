@@ -147,8 +147,8 @@ fun FlareAddressField(
                   .size(24.dp)
                   .clip(CircleShape)
                   .background(FlareColors.Elevated)
-                  .clickable(role = Role.Button, onClickLabel = "Clear address") { onValueChange("") }
-                  .semantics { contentDescription = "Clear address" },
+                  .semantics { contentDescription = "Clear address" }
+                  .clickable(role = Role.Button, onClickLabel = "Clear address") { onValueChange("") },
                 contentAlignment = Alignment.Center,
               ) {
                 Icon(

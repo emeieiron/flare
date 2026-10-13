@@ -279,14 +279,16 @@ private val ChartLayerPadding: (ExtraStore) -> CartesianLayerPadding = {
 @Composable
 fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier = Modifier) {
   val next = style.flipped()
+  val label = if (next == ChartStyle.LINE) "Show line chart" else "Show candles"
   Box(
     modifier
       .size(32.dp)
       .clip(CircleShape)
       .background(FlareColors.Surface)
+      .semantics { contentDescription = label }
       .clickable(
         role = Role.Button,
-        onClickLabel = if (next == ChartStyle.LINE) "Show line chart" else "Show candles",
+        onClickLabel = label,
         onClick = onToggle,
       ),
     contentAlignment = Alignment.Center,
@@ -295,7 +297,7 @@ fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier
       Icon(
         if (target == ChartStyle.LINE) FlareIcons.ChartLine
         else FlareIcons.ChartCandles,
-        contentDescription = if (target == ChartStyle.LINE) "Show line chart" else "Show candles",
+        contentDescription = null,
         modifier = Modifier.size(18.dp),
         tint = FlareColors.TextPrimary,
       )
@@ -311,8 +313,8 @@ fun ChartTimeframeButton(timeframe: ChartTimeframe, onClick: () -> Unit, modifie
       .height(32.dp)
       .clip(CircleShape)
       .background(FlareColors.Surface)
-      .clickable(role = Role.Button, onClickLabel = "Change timeframe", onClick = onClick)
       .semantics { contentDescription = "Timeframe, ${timeframe.title}" }
+      .clickable(role = Role.Button, onClickLabel = "Change timeframe", onClick = onClick)
       .padding(start = 12.dp, end = 8.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {

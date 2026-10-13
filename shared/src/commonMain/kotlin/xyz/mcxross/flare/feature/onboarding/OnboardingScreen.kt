@@ -164,10 +164,14 @@ private fun SetupFlow(
   Column(Modifier.fillMaxSize().background(FlareColors.Canvas).safeDrawingPadding()) {
     Box(Modifier.fillMaxWidth().height(56.dp)) {
       val canGoBack = !state.busy && !state.pastReturn
-      IconButton(goBack, Modifier.align(Alignment.CenterStart).padding(start = 4.dp), enabled = canGoBack) {
+      IconButton(
+        goBack,
+        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).semantics { contentDescription = "Back" },
+        enabled = canGoBack,
+      ) {
         Icon(
           FlareIcons.ArrowBack,
-          "Back",
+          null,
           tint = if (canGoBack) FlareColors.TextPrimary else FlareColors.TextDisabled,
         )
       }
