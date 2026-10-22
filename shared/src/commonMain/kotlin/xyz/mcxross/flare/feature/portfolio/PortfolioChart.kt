@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
@@ -112,11 +113,14 @@ fun FlareLineChart(
   loading: Boolean = false,
   error: String? = null,
   emptyText: String = "No history yet",
+  /** Reaches past the page's gutters, as a screen's headline chart does. */
+  fullBleed: Boolean = true,
+  height: Dp = 240.dp,
 ) {
   Column(modifier.fillMaxWidth()) {
     val values = points.map { it.value }
     if (points.isEmpty() && loading && error == null) {
-      Column(Modifier.fillMaxWidth().height(240.dp).shimmer(rememberFlareShimmer()),
+      Column(Modifier.fillMaxWidth().height(height).shimmer(rememberFlareShimmer()),
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         FlareSkeletonBox(Modifier.fillMaxWidth(0.45f).height(40.dp))
         FlareSkeletonBox(Modifier.fillMaxWidth().height(160.dp))
@@ -155,11 +159,11 @@ fun FlareLineChart(
           ),
         model = model,
         scrollState = rememberVicoScrollState(scrollEnabled = false),
-        modifier = Modifier.fullBleed().height(240.dp),
+        modifier = (if (fullBleed) Modifier.fullBleed() else Modifier.fillMaxWidth()).height(height),
       )
     } else {
       Box(
-        modifier = Modifier.fillMaxWidth().height(240.dp),
+        modifier = Modifier.fillMaxWidth().height(height),
         contentAlignment = Alignment.Center,
       ) {
         Text(emptyText, color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
