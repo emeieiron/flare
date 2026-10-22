@@ -166,6 +166,30 @@ already exist, not a client-side ranking pass. `AccountVaultPerformanceDto` furt
 the single per-position timestamp, plus `locked_amount`, `unrealized_pnl` and `weekly_win_rate_12w`.
 Note `current_num_shares` is an integer of raw chain units, as the existing normalization assumes.
 
+**Field semantics confirmed against mainnet.** Aptos testnet has no vaults, so these were read from
+15 live mainnet vaults through a second `wrangler dev` whose only difference is
+`DECIBEL_REST_ORIGIN`. Two of them contradicted a reasonable-looking assumption, so they are
+recorded here rather than re-derived:
+
+| Field | What it is | Caution |
+| --- | --- | --- |
+| `profit_share` | percentage | 10.0 is 10% |
+| `apr` | **percentage**, and may be negative | Hyperliquid's `apr` is a *fraction*; the venues differ |
+| `all_time_return`, `past_month_return`, `max_drawdown` | percentages | drawdown arrives already negative |
+| `sharpe_ratio` | bare ratio | |
+| `weekly_win_rate_12w` | **fraction** | 0.846 is 84.6%, unlike the returns beside it |
+| `volume_30d` | USD | `0.0` on a vault that never traded; not worth a row |
+| `depositors` | real count | Hyperliquid has no equivalent — its `followers` is a capped page |
+| `manager_cash_pct` | **share held in cash, not the manager's stake** | see below |
+
+`manager_cash_pct` is the share of the vault sitting in cash rather than deployed. All 12 mainnet
+vaults with no open position read exactly `100.000`, and those carry 1–119 depositors; the only
+three with exposure read below it and fall as leverage rises (`avg_lev` 0.01 → 99.8%, 1.33 → 65.5%,
+7.18 → 56.9%). It is therefore not a manager stake, and Decibel reports none: `managerStakePercent`
+stays null there and only Hyperliquid's `leaderFraction` fills it. The exact denominator could not
+be reconstructed from `tvl`, `perp_equity` and `average_leverage`, so it is shown as "Held in cash",
+a label the behaviour supports without needing the formula.
+
 **Phase 2 — campaigns and claiming.** Decibel binds `campaigns()`/`claim()`; Hyperliquid inherits
 the defaults. Decimal text end to end, journalled before broadcast, an uncertain claim stays pending
 rather than failed, never claimed twice. Expiry countdown per tile, since an allocation lapses at
