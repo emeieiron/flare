@@ -428,7 +428,7 @@ class HyperliquidAccountMappersTest {
     assertNull(vault.depositorCount)
     // Hyperliquid reports APR as a fraction; the model carries percent units.
     assertEquals(
-      listOf(VaultFact("APR", VaultFactValue.Percent(0.04780463600667063 * 100.0))),
+      listOf(VaultFact("APR", VaultFactValue.Percent(0.04780463600667063 * 100.0, signed = true))),
       vault.performance,
     )
     assertEquals(116561392.6439010054, vault.totalValue, 1e-3)
