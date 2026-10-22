@@ -190,10 +190,38 @@ stays null there and only Hyperliquid's `leaderFraction` fills it. The exact den
 be reconstructed from `tvl`, `perp_equity` and `average_leverage`, so it is shown as "Held in cash",
 a label the behaviour supports without needing the formula.
 
-**Phase 2 — campaigns and claiming.** Decibel binds `campaigns()`/`claim()`; Hyperliquid inherits
-the defaults. Decimal text end to end, journalled before broadcast, an uncertain claim stays pending
-rather than failed, never claimed twice. Expiry countdown per tile, since an allocation lapses at
-the end of the cycle after it is published.
+**Phase 2 — campaigns. Reading done; claiming blocked.**
+
+Reading is built: `Rewards.campaigns` carries a `CampaignRewards` the rewards page renders as its
+own section, with each allocation in a `ClaimState` of `NOT_ELIGIBLE | IN_PROGRESS | READY |
+CLAIMED | EXPIRED` derived from `has_allocation`, `ready_to_claim`, `claimed_amount` and the claim
+window. Amounts are integer chain units in the API and become exact decimal text through
+`ULong.toDecimalString(6)`; no campaign amount is ever a `Double`. Campaigns fold into the existing
+`Rewards` record rather than a separate port method, so `keepingUnavailableFrom` already covers a
+partial failure — `RewardPart.CAMPAIGNS`. Hyperliquid returns null and the section disappears.
+
+Mainnet has 13 active campaigns across `affiliate`, `volume_milestone`, `maker_incentive`,
+`liquidation_rebate` and `first_funded_trial`. `campaign_type` and `status` are documented as
+extensible enums, so both are kept as strings rather than Kotlin enums.
+
+Two things block the rest, both outside this repo:
+
+1. **The Worker does not allowlist the campaign routes.** `src/index.ts` in `decibel-worker` gates
+   every Decibel path through `PUBLIC_DECIBEL_ENDPOINTS` / `ACCOUNT_DECIBEL_ENDPOINTS`, and
+   `campaigns/active`, `campaigns/account`, `campaign_locks` and `protected_trials` are on neither,
+   so they 404 before reaching upstream. `campaigns/active` is public; the other three take an
+   `account` parameter and work with the existing `enforceAccountScope` default branch. This needs
+   a PR against `decibel-worker`; until it lands the section stays empty in any real build.
+2. **No claim transaction is discoverable.** The REST API is read-only for campaigns, the docs
+   describe no claim entry function, and the Decibel package has no campaign module — all 121
+   modules at `0x50ead22a…` were listed and none is campaign-, claim- or reward-related. Campaigns
+   are a separate on-chain package whose address `campaigns/active` does not return. Claiming is
+   therefore not implemented: guessing a Move call that moves money is the one thing not worth
+   doing. The screen says so rather than offering a button that cannot work.
+
+When the entry function is known, claiming is a `RewardsRepository.claim()` returning
+`Flow<ActionState>` through `trading.executeCommand`, journalled before broadcast, with an uncertain
+outcome staying pending rather than failed so nothing is claimed twice.
 
 **Phase 3 — the two series.** Vault NAV and daily points are the same shape. Generalize
 `PortfolioPoint`/`PortfolioChartRange`/[PortfolioChart](shared/src/commonMain/kotlin/xyz/mcxross/flare/feature/portfolio/PortfolioChart.kt)
