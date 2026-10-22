@@ -4,12 +4,19 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlin.time.Clock
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -566,9 +573,45 @@ private fun CampaignDetails(rewards: CampaignRewards) {
 
 @Composable
 private fun StreakDetails(streak: TradingStreak) {
+  SectionLabel("Streak")
+  if (streak.qualifyingDates.isNotEmpty() || streak.days > 0) StreakWeek(streak.qualifyingDates)
   DetailRow("Current streak", if (streak.days == 0) "No active streak" else "${streak.days} days")
   if (streak.longestDays > 0) DetailRow("Longest streak", "${streak.longestDays} days")
-  if (streak.graceDaysRemaining > 0) DetailRow("Grace remaining", "${streak.graceDaysRemaining} days")
+  DetailRow(
+    "Grace days left",
+    when (streak.graceDaysRemaining) {
+      0 -> "None — a missed day ends it"
+      1 -> "1 — one missed day is forgiven"
+      else -> "${streak.graceDaysRemaining} — that many missed days are forgiven"
+    },
+  )
+}
+
+/** The last seven days, filled where the account traded. Today is the rightmost. */
+@Composable
+private fun StreakWeek(qualifying: Set<LocalDate>) {
+  val today = Clock.System.now().toLocalDateTime(TimeZone.UTC).date
+  val days = (6 downTo 0).map { today.minus(DatePeriod(days = it)) }
+  Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    days.forEach { day ->
+      val traded = day in qualifying
+      Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+          Modifier.fillMaxWidth().height(36.dp)
+            .background(
+              if (traded) FlareColors.Positive else FlareColors.Surface,
+              RoundedCornerShape(6.dp),
+            )
+        )
+        Text(
+          day.dayOfWeek.name.take(1),
+          Modifier.padding(top = 6.dp),
+          color = if (traded) FlareColors.TextSecondary else FlareColors.TextTertiary,
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+    }
+  }
 }
 
 @Composable

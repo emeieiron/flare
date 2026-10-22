@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.venue.model
 
+import kotlinx.datetime.LocalDate
 /**
  * What a trading account holds and is worth, as the portfolio shows it. Display only: amounts that
  * feed a transfer or an order are entered as decimal text and checked by the venue.
@@ -474,6 +475,8 @@ data class TradingStreak(
   val days: Int,
   val longestDays: Int = 0,
   val graceDaysRemaining: Int = 0,
+  /** The days that counted, so a screen can show which ones they were. */
+  val qualifyingDates: Set<LocalDate> = emptySet(),
 )
 
 /** The account's tier, such as a rewards tier or a fee tier. */
