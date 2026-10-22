@@ -20,6 +20,7 @@ import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
 import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.ProtocolVaultTerms
 import xyz.mcxross.flare.venue.ReceiveInstructions
 import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.Venue
@@ -73,7 +74,20 @@ class HyperliquidVenue(
           feeUsdc = HyperliquidFunds.WITHDRAWAL_FEE.toWire(),
           internalTransfers = true,
         ),
-      vaultTerms = VaultTerms(stakeInUsdc = true, lockupPerDeposit = true),
+      vaultTerms =
+        VaultTerms(
+          stakeInUsdc = true,
+          lockupPerDeposit = true,
+          protocolVault =
+            ProtocolVaultTerms(
+              summary =
+                "Hyperliquid's own vault. It market-makes across the exchange and takes over " +
+                  "liquidated positions.",
+              risk =
+                "Taking on liquidated positions is how it earns and how it loses: a bad " +
+                  "liquidation is borne by depositors. Deposits are locked for 4 days.",
+            ),
+        ),
       // Hyperliquid files its markets under no asset class, so they're all crypto.
       perpCategories = listOf("crypto"),
     )

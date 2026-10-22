@@ -22,8 +22,10 @@ import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.ProtocolVaultTerms
 import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VaultMinimums
+import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
@@ -69,6 +71,16 @@ class DecibelVenue(
       builderFeeBps = config.defaultBuilderFeeBps.toInt(),
       maxBuilderFeeBps = 10,
       rewardPointsName = "Amps",
+      vaultTerms =
+        VaultTerms(
+          protocolVault =
+            ProtocolVaultTerms(
+              summary = "Decibel's own vault. It quotes both sides of every market and backstops liquidations.",
+              risk =
+                "As the backstop it absorbs liquidated positions the order book can't take, and " +
+                  "shares can be burned to cover them. Contributions are locked for 72 hours.",
+            )
+        ),
       vaultMinimums = VaultMinimums(deposit = 10.0, redemptionShares = 5.0, vaults = "DLP vaults"),
     )
 

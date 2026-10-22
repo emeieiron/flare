@@ -1,5 +1,10 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.animation.AnimatedVisibility
@@ -77,6 +82,7 @@ import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.TradingStreak
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.flare.venue.model.ActionKind
 
@@ -158,6 +164,7 @@ fun PortfolioScreen(
       }
       savedPages.SaveableStateProvider(displayedPage) {
         var query by rememberSaveable { mutableStateOf("") }
+        val protocolVaultTerms = LocalVenue.current.vaultTerms.protocolVault
         LazyColumn(
           state = rememberLazyListState(),
           modifier = Modifier.fillMaxWidth().weight(1f),
@@ -240,8 +247,17 @@ fun PortfolioScreen(
                   page = PortfolioPage.VAULT_DETAIL
                 }
               }
-              if (availableMatches.isNotEmpty()) item { SectionLabel("Discover") }
-              items(availableMatches, key = { it.address }) { vault ->
+              // The venue's own vault is a different product, so it isn't row one of the list.
+              val (protocolMatches, userMatches) =
+                availableMatches.partition { it.kind == VaultKind.PROTOCOL }
+              items(protocolMatches, key = { "protocol:${it.address}" }) { vault ->
+                ProtocolVaultCard(vault, protocolVaultTerms?.summary) {
+                  vaultAddress = vault.address
+                  page = PortfolioPage.VAULT_DETAIL
+                }
+              }
+              if (userMatches.isNotEmpty()) item { SectionLabel("Discover") }
+              items(userMatches, key = { it.address }) { vault ->
                 VaultSummaryRow(vault.name, formatBalance(vault.totalValue),
                   "Assets managed · ${managerFeeRate(vault.fee)} fee") {
                   vaultAddress = vault.address
@@ -444,6 +460,11 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
     Text(it, Modifier.padding(top = 16.dp), color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodySmall)
   }
+  if (vault.kind == VaultKind.PROTOCOL) {
+    LocalVenue.current.vaultTerms.protocolVault?.let {
+      ActionNotice(it.risk, Modifier.padding(top = 16.dp))
+    }
+  }
   val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.FUNDS)
   val lockedUntil = position?.lockedUntil()
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -567,6 +588,33 @@ private fun PositionsEmptyState(state: PortfolioUiState) {
 private fun HoldingsEmptyState(state: PortfolioUiState) {
   if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
   else QuietPortfolioMessage(if (state.holdingsError != null || state.account.overview == null || state.account.stale) "Holdings are updating" else "No assets held")
+}
+
+/** The venue's own vault, set apart from the managers' list because it is a different product. */
+@Composable
+private fun ProtocolVaultCard(vault: VaultSummary, summary: String?, onClick: () -> Unit) {
+  Column(
+    Modifier.fillMaxWidth().padding(top = 20.dp)
+      .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(12.dp))
+      .background(FlareColors.Surface, RoundedCornerShape(12.dp))
+      .clickable(role = Role.Button, onClickLabel = "View ${vault.name}", onClick = onClick)
+      .padding(16.dp)
+  ) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      Text(vault.name.ifBlank { "Protocol vault" }, Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium)
+      Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+    }
+    summary?.let {
+      Text(it, Modifier.padding(top = 6.dp), color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall)
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+      PortfolioMetric("Assets managed", formatBalance(vault.totalValue), Modifier.weight(1f))
+      PortfolioMetric("Fee", managerFeeRate(vault.fee), Modifier.weight(1f))
+    }
+  }
 }
 
 @Composable
