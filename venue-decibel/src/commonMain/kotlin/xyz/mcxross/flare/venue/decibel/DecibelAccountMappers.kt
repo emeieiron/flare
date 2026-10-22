@@ -274,12 +274,14 @@ internal fun VaultInfo.toVaultSummary(): VaultSummary =
 
 /** What Decibel measures about a vault beyond the common set, in the order its dashboard shows. */
 private fun VaultInfo.decibelVaultPerformance(): List<VaultFact> = buildList {
-  apr?.let { add(VaultFact("APR", VaultFactValue.Percent(it * 100.0))) }
+  // Decibel reports these as percentages already, unlike Hyperliquid's fractional APR.
+  apr?.let { add(VaultFact("APR", VaultFactValue.Percent(it, signed = true))) }
   pastMonthReturn?.let { add(VaultFact("Past month", VaultFactValue.Percent(it, signed = true))) }
   allTimeReturn?.let { add(VaultFact("All time", VaultFactValue.Percent(it, signed = true))) }
   maxDrawdown?.let { add(VaultFact("Max drawdown", VaultFactValue.Percent(it))) }
   sharpeRatio?.let { add(VaultFact("Sharpe ratio", VaultFactValue.Ratio(it))) }
-  volume30d?.let { add(VaultFact("30-day volume", VaultFactValue.Money(it))) }
+  // A vault that hasn't traded reports zero volume; that is nothing to show.
+  volume30d?.takeIf { it > 0.0 }?.let { add(VaultFact("30-day volume", VaultFactValue.Money(it))) }
 }
 
 internal fun AccountVaultPerformance.toVaultPosition(): VaultPosition =

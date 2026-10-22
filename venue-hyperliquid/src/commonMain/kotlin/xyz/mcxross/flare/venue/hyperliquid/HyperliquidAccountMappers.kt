@@ -453,10 +453,10 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
       else leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
     // `followers` is a capped page, not a count, so Hyperliquid reports no depositor total.
     depositorCount = null,
-    // Hyperliquid reports APR as a fraction.
+    // Hyperliquid reports APR as a fraction, where Decibel reports a percentage.
     performance =
-      apr.toDoubleOrZero().takeIf { it > 0.0 }
-        ?.let { listOf(VaultFact("APR", VaultFactValue.Percent(it * 100.0))) }
+      apr.toDoubleOrZero().takeIf { it != 0.0 }
+        ?.let { listOf(VaultFact("APR", VaultFactValue.Percent(it * 100.0, signed = true))) }
         .orEmpty(),
     isActive = !isClosed && allowDeposits,
   )
