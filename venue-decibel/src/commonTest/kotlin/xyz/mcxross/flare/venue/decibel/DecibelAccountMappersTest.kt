@@ -27,7 +27,7 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.ManagerFee
@@ -325,7 +325,7 @@ class DecibelAccountMappersTest {
         """[{"timestamp":1735758000000,"data_points":1250.5}]"""
       )
     assertEquals(
-      PortfolioPoint(1735758000000, 1250.5),
+      SeriesPoint(1735758000000, 1250.5),
       documented.single().toPortfolioPoint(PortfolioMetric.EQUITY),
     )
     val named =

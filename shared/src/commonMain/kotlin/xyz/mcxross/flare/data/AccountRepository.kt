@@ -14,7 +14,7 @@ import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
@@ -163,7 +163,7 @@ interface AccountRepository {
   suspend fun portfolioChart(
     range: PortfolioChartRange = PortfolioChartRange.DAY_1,
     metric: PortfolioMetric = PortfolioMetric.EQUITY,
-  ): List<PortfolioPoint>
+  ): List<SeriesPoint>
 
   suspend fun fees(): TradingFees? = null
 

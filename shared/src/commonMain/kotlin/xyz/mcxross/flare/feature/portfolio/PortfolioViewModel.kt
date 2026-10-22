@@ -54,7 +54,7 @@ import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
@@ -127,7 +127,7 @@ data class PortfolioUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUp: ULong? = null,
   val topUpTransaction: ActionState? = null,
-  val chartPoints: List<PortfolioPoint> = emptyList(),
+  val chartPoints: List<SeriesPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
   val chartLoading: Boolean = false,

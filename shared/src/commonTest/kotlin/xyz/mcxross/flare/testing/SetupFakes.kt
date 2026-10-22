@@ -30,7 +30,7 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
@@ -200,7 +200,7 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
   ) = error("Not used")
 
   override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric) =
-    emptyList<PortfolioPoint>()
+    emptyList<SeriesPoint>()
 
   override suspend fun rewards(): Rewards? = null
 

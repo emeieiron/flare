@@ -219,7 +219,8 @@ enum class PortfolioMetric(val label: String) {
 }
 
 /** One point of a portfolio chart, in USD. */
-data class PortfolioPoint(val timeMs: Long, val value: Double)
+/** One point of a time series: a portfolio's value, a day's points, a vault's NAV. */
+data class SeriesPoint(val timeMs: Long, val value: Double)
 
 /** A product's fee rates, as fractions of notional. */
 data class FeeRates(val makerRate: Double, val takerRate: Double)

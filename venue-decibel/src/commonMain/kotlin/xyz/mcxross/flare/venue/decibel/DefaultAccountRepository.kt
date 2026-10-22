@@ -61,7 +61,7 @@ import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
@@ -965,7 +965,7 @@ class DefaultAccountRepository(
   override suspend fun portfolioChart(
     range: PortfolioChartRange,
     metric: PortfolioMetric,
-  ): List<PortfolioPoint> {
+  ): List<SeriesPoint> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
     return readAccount(account) {
         client.accounts.portfolioChart(account, range.decibelWireValue, metric.decibelWireValue)
