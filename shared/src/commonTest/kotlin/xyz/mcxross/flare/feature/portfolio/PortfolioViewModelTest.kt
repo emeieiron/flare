@@ -35,6 +35,7 @@ import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
@@ -137,7 +138,7 @@ class PortfolioViewModelTest {
     )
 
   private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) :
-    AccountRepository, VaultsRepository {
+    AccountRepository, VaultsRepository, RewardsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(initialSnapshot)
     override val history: StateFlow<AccountHistorySnapshot> =
       MutableStateFlow(AccountHistorySnapshot())
@@ -713,6 +714,7 @@ class PortfolioViewModelTest {
     capabilities: VenueCapabilities = VenueCapabilities.All,
     trading: TradingRepository = FakeTradingRepository(),
     vaults: VaultsRepository? = accounts,
+    rewards: RewardsRepository? = accounts,
   ) =
     PortfolioViewModel(
       accounts = accounts,
@@ -723,12 +725,13 @@ class PortfolioViewModelTest {
       marketDetails = FakeMarketDetailsRepository(),
       venue = testVenue(capabilities),
       vaultsRepository = vaults,
+      rewardsRepository = rewards,
     )
 
   @Test
   fun featuresTheVenueLacksAreNeitherLoadedNorOffered() = runTest {
     val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
-    val vm = portfolio(accounts, BareCapabilities, vaults = null)
+    val vm = portfolio(accounts, BareCapabilities, vaults = null, rewards = null)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     vm.onIntent(PortfolioIntent.Refresh)
@@ -737,7 +740,7 @@ class PortfolioViewModelTest {
     assertEquals(BareCapabilities, state.capabilities)
     assertEquals(0, accounts.rewardReads)
     assertEquals(0, accounts.vaultReads)
-    assertFalse(state.vaultsAvailable)
+    assertFalse(state.vaultsAvailable || state.rewardsAvailable)
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
     assertNull(
@@ -758,7 +761,7 @@ class PortfolioViewModelTest {
     val state = vm.uiState.value
     assertEquals(1, accounts.rewardReads)
     assertEquals(1, accounts.vaultReads)
-    assertTrue(state.vaultsAvailable)
+    assertTrue(state.vaultsAvailable && state.rewardsAvailable)
     assertTrue(state.rewardsLoaded)
     assertTrue(state.vaultsLoaded)
     assertEquals("Amps", state.rewardPointsName)

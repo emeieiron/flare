@@ -30,6 +30,7 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.PendingTransaction
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
@@ -136,6 +137,8 @@ data class PortfolioUiState(
   val holdingsError: String? = null,
   /** True where the venue binds a vaults port. */
   val vaultsAvailable: Boolean = true,
+  /** True where the venue binds a rewards port. */
+  val rewardsAvailable: Boolean = true,
   val vaultsLoading: Boolean = false,
   val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
@@ -285,6 +288,7 @@ class PortfolioViewModel(
   private val marketDetails: MarketDetailsRepository,
   venue: VenueDescriptor,
   private val vaultsRepository: VaultsRepository? = null,
+  private val rewardsRepository: RewardsRepository? = null,
   private val assetCatalog: AssetCatalogRepository? = null,
   private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
@@ -298,6 +302,7 @@ class PortfolioViewModel(
         capabilities = capabilities,
         rewardPointsName = venue.rewardPointsName,
         vaultsAvailable = vaultsRepository != null,
+        rewardsAvailable = rewardsRepository != null,
       )
     )
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
@@ -879,9 +884,10 @@ class PortfolioViewModel(
 
   /** A part that fails to load keeps what was shown for it, and is retried while visible. */
   private fun fetchRewards() {
-    if (!capabilities.rewards || rewardsJob?.isActive == true) return
+    val repository = rewardsRepository ?: return
+    if (rewardsJob?.isActive == true) return
     rewardsJob = viewModelScope.launch {
-      val result = runSuspendCatching { accounts.rewards() }
+      val result = runSuspendCatching { repository.rewards() }
       local.update {
         val rewards = result.getOrNull()
         it.copy(

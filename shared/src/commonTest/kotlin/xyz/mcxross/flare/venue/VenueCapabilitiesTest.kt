@@ -72,7 +72,7 @@ class VenueCapabilitiesTest {
     assertTrue(VenueCapabilities.All.createSubaccounts && VenueCapabilities.All.referralCodes)
     assertTrue(VenueCapabilities.All.twapInterval)
     assertFalse(BareCapabilities.createSubaccounts || BareCapabilities.referralCodes)
-    val listsOnly = BareCapabilities.copy(subaccounts = true, rewards = true, createSubaccounts = false, referralCodes = false)
+    val listsOnly = BareCapabilities.copy(subaccounts = true, createSubaccounts = false)
     assertFalse(listsOnly.createSubaccounts || listsOnly.referralCodes)
   }
 

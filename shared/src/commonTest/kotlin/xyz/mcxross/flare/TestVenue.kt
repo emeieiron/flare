@@ -35,7 +35,6 @@ val BareCapabilities =
     spot = false,
     twap = false,
     subaccounts = false,
-    rewards = false,
     sponsoredFees = false,
     networkFeeTopUp = false,
     inAppDeposit = false,
