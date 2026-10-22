@@ -414,3 +414,34 @@ data class AccountVaultPerformance(
   val effectiveSharePrice: Double
     get() = positionSharePrice ?: vault.sharePrice
 }
+
+/**
+ * `/campaigns/account`. Amounts are integer units of [UserClaim.rewardAsset], never decimals: a
+ * claim signs them, so they stay exact all the way to the screen.
+ */
+@Serializable
+data class UserCampaigns(
+  @SerialName("ready_to_claim") val readyToClaim: Long = 0,
+  @SerialName("lifetime_earned") val lifetimeEarned: Long = 0,
+  @SerialName("total_claimed") val totalClaimed: Long = 0,
+  val claims: List<UserClaim> = emptyList(),
+)
+
+@Serializable
+data class UserClaim(
+  @SerialName("campaign_id") val campaignId: Long = 0,
+  /** Extensible: Decibel adds types, so this stays a string. */
+  @SerialName("campaign_type") val campaignType: String = "",
+  val title: String = "",
+  val description: String? = null,
+  val status: String = "",
+  @SerialName("reward_asset") val rewardAsset: String = "",
+  @SerialName("has_allocation") val hasAllocation: Boolean = false,
+  @SerialName("ready_to_claim") val readyToClaim: Long = 0,
+  @SerialName("claimable_amount") val claimableAmount: Long = 0,
+  @SerialName("claimed_amount") val claimedAmount: Long = 0,
+  @SerialName("claim_start_ts_sec") val claimStartTsSec: Long = 0,
+  @SerialName("claim_end_ts_sec") val claimEndTsSec: Long = 0,
+  @SerialName("claimed_at_ts_sec") val claimedAtTsSec: Long? = null,
+  @SerialName("claim_tx_hash") val claimTxHash: String? = null,
+)

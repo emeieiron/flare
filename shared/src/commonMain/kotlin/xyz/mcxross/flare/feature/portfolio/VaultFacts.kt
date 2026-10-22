@@ -5,6 +5,8 @@ import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.venue.model.Campaign
+import xyz.mcxross.flare.venue.model.ClaimState
 import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.VaultFactValue
 
@@ -69,3 +71,22 @@ internal fun vaultFactText(value: VaultFactValue): String =
 internal fun vaultFactColor(value: VaultFactValue): Color =
   if (value is VaultFactValue.Percent && value.signed) amountColor(value.percent)
   else Color.Unspecified
+
+/** An allocation's standing, with the amount where there is one and the deadline where it matters. */
+internal fun claimStateText(campaign: Campaign): String {
+  val amount = campaign.amount?.let { "$it ${campaign.assetSymbol}" }
+  return when (campaign.state) {
+    ClaimState.READY -> amount?.let { "$it ready" } ?: "Ready"
+    ClaimState.CLAIMED -> amount?.let { "$it claimed" } ?: "Claimed"
+    ClaimState.EXPIRED -> "Expired unclaimed"
+    ClaimState.IN_PROGRESS -> amount ?: "In progress"
+    ClaimState.NOT_ELIGIBLE -> "Nothing earned"
+  }
+}
+
+internal fun claimStateColor(state: ClaimState): Color =
+  when (state) {
+    ClaimState.READY -> FlareColors.Positive
+    ClaimState.EXPIRED -> FlareColors.Negative
+    else -> Color.Unspecified
+  }

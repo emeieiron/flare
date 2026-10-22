@@ -77,6 +77,8 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.CampaignRewards
+import xyz.mcxross.flare.venue.model.ClaimState
 import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
@@ -515,6 +517,7 @@ private fun RewardsDetails(state: PortfolioUiState) {
     FeeTierDetails(tier, headline)
     headline = false
   }
+  rewards?.campaigns?.takeIf { it.hasAnything }?.let { CampaignDetails(it) }
   rewards?.streak?.let { StreakDetails(it) }
   if (pointsName != null && points != null) PointsBreakdown(pointsName, points)
   rewards?.referral?.let { ReferralDetails(it) }
@@ -524,6 +527,22 @@ private fun RewardsDetails(state: PortfolioUiState) {
 private fun RewardsHeadline(label: String, value: String) {
   Text(label, color = FlareColors.TextSecondary)
   Text(value, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+}
+
+/** What the venue owes the account: what is claimable now, and when each allocation lapses. */
+@Composable
+private fun CampaignDetails(rewards: CampaignRewards) {
+  SectionLabel("Rewards to claim")
+  DetailRow("Ready to claim", "${rewards.readyToClaim} ${rewards.assetSymbol}")
+  DetailRow("Earned all time", "${rewards.lifetimeEarned} ${rewards.assetSymbol}")
+  rewards.campaigns.forEach { campaign ->
+    DetailRow(campaign.title, claimStateText(campaign), valueColor = claimStateColor(campaign.state))
+  }
+  if (rewards.campaigns.any { it.state == ClaimState.READY }) {
+    Text("Claim these in the ${LocalVenue.current.displayName} app; Flare can't claim them yet.",
+      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
+  }
 }
 
 @Composable

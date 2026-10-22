@@ -368,12 +368,16 @@ data class Rewards(
   val referral: ReferralSummary? = null,
   /** The account's trading-fee tier, where the venue sets fees by volume and staking. */
   val feeTier: FeeTier? = null,
+  /** Rewards the venue pays out on request; null where it runs no such programme. */
+  val campaigns: CampaignRewards? = null,
   /** Parts that couldn't be loaded this time. Screens keep what they showed for them. */
   val unavailable: Set<RewardPart> = emptySet(),
 ) {
   /** True when no part of the rewards has anything to show yet. */
   val isEmpty: Boolean
-    get() = points == null && streak == null && tier == null && referral == null && feeTier == null
+    get() =
+      points == null && streak == null && tier == null && referral == null && feeTier == null &&
+        campaigns?.hasAnything != true
 
   /** These rewards, with the parts that failed to load taken from [previous]. */
   fun keepingUnavailableFrom(previous: Rewards?): Rewards =
@@ -383,6 +387,7 @@ data class Rewards(
       tier = if (RewardPart.TIER in unavailable) previous?.tier else tier,
       referral = if (RewardPart.REFERRAL in unavailable) previous?.referral else referral,
       feeTier = if (RewardPart.FEE_TIER in unavailable) previous?.feeTier else feeTier,
+      campaigns = if (RewardPart.CAMPAIGNS in unavailable) previous?.campaigns else campaigns,
     )
 }
 
@@ -392,6 +397,7 @@ enum class RewardPart {
   TIER,
   REFERRAL,
   FEE_TIER,
+  CAMPAIGNS,
 }
 
 /** Where the account stands on the venue's fee schedule. Rates are fractions of notional. */
@@ -408,6 +414,49 @@ data class FeeTier(
   /** The share of fees taken off for being referred, as a fraction; null when none. */
   val referralDiscount: Double? = null,
 )
+
+/**
+ * A reward the venue has allocated and pays out on request, such as a rebate or a milestone. The
+ * amounts are exact decimal text because a claim signs them; nothing here is parsed to a Double.
+ */
+data class Campaign(
+  val id: String,
+  val title: String,
+  val detail: String = "",
+  val state: ClaimState,
+  /** What this allocation is worth, as exact decimal text; null when there is no allocation. */
+  val amount: String? = null,
+  val assetSymbol: String = "USDC",
+  /** When the claim window closes. An allocation lapses after it, unclaimed. */
+  val claimableUntilMs: Long? = null,
+  val claimedAtMs: Long? = null,
+  /** The transaction that paid it, where the venue reports one. */
+  val claimReference: String? = null,
+)
+
+/** Where an allocation stands, in the order a person moves through it. */
+enum class ClaimState {
+  /** The account earned nothing from this one. */
+  NOT_ELIGIBLE,
+  /** Still accruing, or published but not yet open to claim. */
+  IN_PROGRESS,
+  READY,
+  CLAIMED,
+  /** The claim window closed before it was taken. */
+  EXPIRED,
+}
+
+/** Everything the venue has allocated to the account, and what is claimable right now. */
+data class CampaignRewards(
+  /** Exact decimal text, summed across campaigns ready to claim. */
+  val readyToClaim: String,
+  val lifetimeEarned: String,
+  val assetSymbol: String = "USDC",
+  val campaigns: List<Campaign> = emptyList(),
+) {
+  val hasAnything: Boolean
+    get() = campaigns.isNotEmpty()
+}
 
 /** Reward points earned, such as Decibel's Amps; the venue descriptor names them. */
 data class RewardPoints(
