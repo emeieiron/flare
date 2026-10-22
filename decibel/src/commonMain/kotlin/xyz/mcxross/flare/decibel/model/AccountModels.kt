@@ -445,3 +445,22 @@ data class UserClaim(
   @SerialName("claimed_at_ts_sec") val claimedAtTsSec: Long? = null,
   @SerialName("claim_tx_hash") val claimTxHash: String? = null,
 )
+
+/** `/points/amps/daily`: one row per season day, newest first. */
+@Serializable
+data class OwnerAmpsDaily(
+  val owner: String = "",
+  val season: String = "",
+  val days: List<DailyAmps> = emptyList(),
+)
+
+@Serializable
+data class DailyAmps(
+  @SerialName("day_index") val dayIndex: Int = 0,
+  @SerialName("day_start_unix_ms") val dayStartUnixMs: Long = 0,
+  @SerialName("total_amps") val totalAmps: Double = 0.0,
+  @SerialName("trading_amps") val tradingAmps: Double = 0.0,
+  @SerialName("streak_amps") val streakAmps: Double = 0.0,
+  @SerialName("referral_amps") val referralAmps: Double = 0.0,
+  @SerialName("vault_amps") val vaultAmps: Double = 0.0,
+)

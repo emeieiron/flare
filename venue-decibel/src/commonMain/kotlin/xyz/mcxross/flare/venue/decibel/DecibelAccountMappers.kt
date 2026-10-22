@@ -8,6 +8,7 @@ import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.Order
+import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.ProductFees
 import xyz.mcxross.flare.decibel.model.SpotOverview
@@ -452,3 +453,7 @@ private fun UserClaim.toCampaign(nowMs: Long): Campaign {
 private fun Long.toUsdcText(): String = coerceAtLeast(0L).toULong().toDecimalString(USDC_DECIMALS)
 
 private const val USDC_DECIMALS = 6
+
+/** Decibel returns the season newest first; a chart reads oldest first. */
+internal fun OwnerAmpsDaily.toPointsHistory(): List<SeriesPoint> =
+  days.map { SeriesPoint(timeMs = it.dayStartUnixMs, value = it.totalAmps) }.sortedBy { it.timeMs }

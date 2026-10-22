@@ -83,6 +83,7 @@ import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultSummary
@@ -510,6 +511,7 @@ private fun RewardsDetails(state: PortfolioUiState) {
   if (pointsName != null) {
     RewardsHeadline("Total $pointsName", points?.let { formatCount(it.total) } ?: "—")
     headline = false
+    if (state.pointsHistory.size >= 2) PointsHistory(pointsName, state.pointsHistory)
     rewards?.tier?.let { DetailRow("Tier", it.name) }
     points?.rank?.let { DetailRow("Rank", "#$it") }
   }
@@ -521,6 +523,17 @@ private fun RewardsDetails(state: PortfolioUiState) {
   rewards?.streak?.let { StreakDetails(it) }
   if (pointsName != null && points != null) PointsBreakdown(pointsName, points)
   rewards?.referral?.let { ReferralDetails(it) }
+}
+
+/** What the account earned each day, and how that compares with its recent pace. */
+@Composable
+private fun PointsHistory(pointsName: String, history: List<SeriesPoint>) {
+  FlareLineChart(history, FlareColors.Positive, Modifier.padding(bottom = 8.dp))
+  val today = history.last().value
+  val week = history.takeLast(7)
+  val average = week.sumOf { it.value } / week.size
+  DetailRow("$pointsName today", formatCount(today))
+  DetailRow("${week.size}-day average", formatCount(average))
 }
 
 @Composable

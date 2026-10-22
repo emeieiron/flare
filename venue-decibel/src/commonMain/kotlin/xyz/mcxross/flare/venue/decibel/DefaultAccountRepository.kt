@@ -986,6 +986,12 @@ class DefaultAccountRepository(
     return decibelRewards(streak, amps, tier, campaigns)
   }
 
+  override suspend fun pointsHistory(): List<SeriesPoint> {
+    val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress
+      ?: return emptyList()
+    return client.accounts.dailyAmps(owner).toPointsHistory()
+  }
+
   private suspend fun accountCampaigns(): UserCampaigns? {
     val account = preferences.values.first().selectedSubaccount ?: return null
     return readAccount(account) { client.accounts.campaigns(account) }
