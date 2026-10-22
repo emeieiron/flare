@@ -528,7 +528,13 @@ private fun RewardsDetails(state: PortfolioUiState) {
 /** What the account earned each day, and how that compares with its recent pace. */
 @Composable
 private fun PointsHistory(pointsName: String, history: List<SeriesPoint>) {
-  FlareLineChart(history, FlareColors.Positive, Modifier.padding(bottom = 8.dp))
+  FlareLineChart(
+    points = history,
+    lineColor = FlareColors.Positive,
+    modifier = Modifier.padding(bottom = 8.dp),
+    fullBleed = false,
+    height = 140.dp,
+  )
   val today = history.last().value
   val week = history.takeLast(7)
   val average = week.sumOf { it.value } / week.size
