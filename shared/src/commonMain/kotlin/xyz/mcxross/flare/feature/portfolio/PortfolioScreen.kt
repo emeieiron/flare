@@ -313,7 +313,7 @@ private fun PortfolioOverview(
       DetailRow("Trading collateral", overview?.balances?.collateral?.let(::formatBalance) ?: "—")
       if (state.capabilities.spot) DetailRow("Spot assets",
         if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
-      if (state.capabilities.vaults) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      if (state.vaultsAvailable) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
       DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—")
       Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
         style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
@@ -359,7 +359,7 @@ private fun PortfolioOverview(
       is HoldingsPreview.Holding -> PreviewValue(preview.symbol, preview.valueUsd?.let(::formatBalance) ?: "—", preview.subtitle)
     }
   }
-  if (state.capabilities.vaults) PortfolioDestination("Vaults",
+  if (state.vaultsAvailable) PortfolioDestination("Vaults",
     state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
     { onPage(PortfolioPage.VAULTS) }) {
     if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)

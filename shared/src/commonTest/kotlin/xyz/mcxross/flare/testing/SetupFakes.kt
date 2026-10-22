@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
@@ -117,7 +118,8 @@ object SetupCredentials : CredentialParser {
  * an exchange that enables trading only once the account is funded; [depositCheckGate], when set,
  * holds the deposit check until it completes. With [preferences] it saves the selected account.
  */
-open class SetupAccounts(private val preferences: AppPreferences? = null) : AccountRepository {
+open class SetupAccounts(private val preferences: AppPreferences? = null) :
+  AccountRepository, VaultsRepository {
   val events = mutableListOf<String>()
   val listed =
     listOf(
@@ -211,10 +213,10 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) : Acco
 
   override suspend fun vaultPositions() = emptyList<VaultPosition>()
 
-  override fun contributeToVault(vaultAddress: String, amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
+  override fun contribute(vaultAddress: String, amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
     emptyFlow<ActionState>()
 
-  override fun redeemFromVault(vaultAddress: String, shares: String, prompt: VaultPrompt, feePayment: FeePayment) =
+  override fun redeem(vaultAddress: String, shares: String, prompt: VaultPrompt, feePayment: FeePayment) =
     emptyFlow<ActionState>()
 
   override suspend fun refresh() {}

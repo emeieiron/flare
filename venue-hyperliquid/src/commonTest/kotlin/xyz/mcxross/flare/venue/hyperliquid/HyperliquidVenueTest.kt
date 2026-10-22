@@ -62,7 +62,7 @@ class HyperliquidVenueTest {
   fun offersOnlyWhatHyperliquidHas() {
     val capabilities = HyperliquidVenue.Capabilities
 
-    assertTrue(capabilities.spot && capabilities.twap && capabilities.vaults)
+    assertTrue(capabilities.spot && capabilities.twap)
     assertTrue(capabilities.subaccounts && capabilities.perpSpotTransfer && capabilities.batchCancel)
     // Rewards are the fee tier and referral standing: no points, streak or code entry.
     assertTrue(capabilities.rewards)

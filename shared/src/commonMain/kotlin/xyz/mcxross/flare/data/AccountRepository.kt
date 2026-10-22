@@ -22,8 +22,6 @@ import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.venue.model.VaultPosition
-import xyz.mcxross.flare.venue.model.VaultSummary
 
 data class AccountSnapshot(
   val account: String? = null,
@@ -181,25 +179,6 @@ interface AccountRepository {
   suspend fun activeTwaps(): List<TwapOrder>
 
   suspend fun twapHistory(limit: Int = 50): List<TwapOrder>
-
-  suspend fun vaults(limit: Int = 50): List<VaultSummary>
-
-  /** The selected account's stakes in vaults. */
-  suspend fun vaultPositions(): List<VaultPosition>
-
-  fun contributeToVault(
-    vaultAddress: String,
-    amount: String,
-    prompt: VaultPrompt,
-    feePayment: FeePayment = FeePayment.SPONSORED,
-  ): Flow<ActionState>
-
-  fun redeemFromVault(
-    vaultAddress: String,
-    shares: String,
-    prompt: VaultPrompt,
-    feePayment: FeePayment = FeePayment.SPONSORED,
-  ): Flow<ActionState>
 
   suspend fun refresh()
 

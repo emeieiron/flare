@@ -128,7 +128,6 @@ data class VenueSetup(
 data class VenueCapabilities(
   val spot: Boolean,
   val twap: Boolean,
-  val vaults: Boolean,
   val subaccounts: Boolean,
   /** Exchange rewards, such as Decibel's Amps, streak and tier. */
   val rewards: Boolean,
@@ -163,7 +162,6 @@ data class VenueCapabilities(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
         rewards = true,
         sponsoredFees = true,
