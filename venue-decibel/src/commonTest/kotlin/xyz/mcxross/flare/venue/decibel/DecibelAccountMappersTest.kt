@@ -30,7 +30,9 @@ import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.RewardPointsSource
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.SpotReservation
@@ -411,16 +413,25 @@ class DecibelAccountMappersTest {
       json.decodeFromString<VaultInfo>(
         """{"address":"0xdlp","name":"DLP","manager":"0xm","description":"Liquidity",""" +
           """"total_shares":1000.0,"share_price":1.05,"tvl":500000.0,"profit_share":10.0,""" +
-          """"lockdown_period_s":86400,"status":"active"}"""
+          """"lockdown_period_s":86400,"status":"active","vault_type":"protocol",""" +
+          """"depositors":42,"manager_cash_pct":7.5}"""
       )
     val summary = vault.toVaultSummary()
     assertEquals("0xdlp", summary.address)
     assertEquals(500_000.0, summary.totalValue)
     assertEquals(1.05, summary.sharePrice)
-    assertEquals(1000, summary.performanceFeeBps)
-    assertEquals(10.0, summary.performanceFeePercent)
+    // Decibel crystallizes on an interval whose length it doesn't report.
+    assertEquals(ManagerFee.Interval(10.0), summary.fee)
+    assertEquals(VaultKind.PROTOCOL, summary.kind)
+    assertEquals(7.5, summary.managerStakePercent)
+    assertEquals(42, summary.depositorCount)
     assertEquals(86_400L, summary.lockupSeconds)
     assertTrue(summary.isActive)
+    // A vault Decibel doesn't type is one of its users'.
+    val userVault = vault.copy(vaultType = null, depositors = null, managerCashPct = null).toVaultSummary()
+    assertEquals(VaultKind.USER, userVault.kind)
+    assertNull(userVault.managerStakePercent)
+    assertNull(userVault.depositorCount)
     // Decibel's zero lockup means none; a missing one is unknown.
     assertEquals(0L, vault.copy(lockdownPeriodS = 0).toVaultSummary().lockupSeconds)
     assertNull(vault.copy(lockdownPeriodS = null).toVaultSummary().lockupSeconds)
@@ -430,7 +441,8 @@ class DecibelAccountMappersTest {
         .decodeFromString<AccountVaultPerformance>(
           """{"vault":{"address":"0xdlp","name":"DLP","share_price":1.05},""" +
             """"current_num_shares":10000000,"current_value_of_shares":10.6,""" +
-            """"all_time_return":5.0}"""
+            """"all_time_return":5.0,"total_deposited":20.0,"total_withdrawn":12.0,""" +
+            """"all_time_earned":2.6}"""
         )
         .toVaultPosition()
     // Decibel reports raw share units; ten shares are 10,000,000 of them.
@@ -439,6 +451,9 @@ class DecibelAccountMappersTest {
     assertEquals(5.0, stake.returnPercent)
     assertEquals(1.05, stake.sharePrice)
     assertNull(stake.lockedUntilMs)
+    assertEquals(20.0, stake.deposited)
+    assertEquals(12.0, stake.withdrawn)
+    assertEquals(2.6, stake.earned)
   }
 
   @Test

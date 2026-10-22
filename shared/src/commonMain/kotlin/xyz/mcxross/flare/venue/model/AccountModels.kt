@@ -241,6 +241,38 @@ data class TwapOrder(
   val frequencySeconds: Long,
 )
 
+/** Who runs a vault: the venue itself, or one of its users. */
+enum class VaultKind {
+  /** The venue's own vault, such as Decibel's DLP or Hyperliquid's HLP. */
+  PROTOCOL,
+  USER,
+}
+
+/**
+ * How a vault's manager is paid. The mechanic decides what a depositor has to be told before they
+ * contribute, so it is a type rather than a number: a venue with a new one won't compile until the
+ * screen that explains fees accounts for it.
+ */
+sealed interface ManagerFee {
+  /** The manager's share of profits, as a percentage. */
+  val percent: Double
+
+  /**
+   * Charged at the end of each interval on the gain since that interval began, with no high
+   * watermark. A stake that joins mid-interval pays on gains that predate it, and a manager earns
+   * on a recovery that hasn't made earlier depositors whole. [days] and [nextChargeAtMs] are null
+   * where the venue doesn't report them.
+   */
+  data class Interval(
+    override val percent: Double,
+    val days: Int? = null,
+    val nextChargeAtMs: Long? = null,
+  ) : ManagerFee
+
+  /** Charged only on profits above the stake's own previous peak. */
+  data class HighWatermark(override val percent: Double) : ManagerFee
+}
+
 /** A vault the account can deposit into. Display only. */
 data class VaultSummary(
   /** The venue's id for the vault, which deposits and redemptions name. */
@@ -248,15 +280,20 @@ data class VaultSummary(
   val name: String,
   val manager: String = "",
   val description: String = "",
+  val kind: VaultKind = VaultKind.USER,
   /** Assets under management, in USD. */
   val totalValue: Double = 0.0,
   val sharePrice: Double = 1.0,
-  /** The manager's share of profits, in basis points. */
-  val performanceFeeBps: Int = 0,
-  /** The manager's share of profits, as a percentage. */
-  val performanceFeePercent: Double = 0.0,
+  val fee: ManagerFee = ManagerFee.Interval(0.0),
   /** How long a deposit stays locked; null when the venue doesn't say. */
   val lockupSeconds: Long? = null,
+  /**
+   * What share of the vault the manager holds themselves, as a percentage. The manager's own money
+   * at risk; null where the venue doesn't report it.
+   */
+  val managerStakePercent: Double? = null,
+  /** How many accounts hold a stake; null where the venue doesn't report it. */
+  val depositorCount: Int? = null,
   val isActive: Boolean = true,
 )
 
@@ -272,6 +309,12 @@ data class VaultPosition(
   val sharePrice: Double = vault.sharePrice,
   /** Until when the latest deposit is locked, if the venue locks deposits. */
   val lockedUntilMs: Long? = null,
+  /** Everything ever put in, in USD; null where the venue doesn't report it. */
+  val deposited: Double? = null,
+  /** Everything ever taken out, in USD; null where the venue doesn't report it. */
+  val withdrawn: Double? = null,
+  /** What the stake has made, in USD; null where the venue doesn't report it. */
+  val earned: Double? = null,
 )
 
 /** What a key may trade for the account. */

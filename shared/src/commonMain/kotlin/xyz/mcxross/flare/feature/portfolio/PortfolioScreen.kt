@@ -243,7 +243,7 @@ fun PortfolioScreen(
               if (availableMatches.isNotEmpty()) item { SectionLabel("Discover") }
               items(availableMatches, key = { it.address }) { vault ->
                 VaultSummaryRow(vault.name, formatBalance(vault.totalValue),
-                  "Assets managed · ${formatQuantity(vault.performanceFeePercent, 2)}% fee") {
+                  "Assets managed · ${managerFeeRate(vault.fee)} fee") {
                   vaultAddress = vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
@@ -427,10 +427,23 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
     DetailRow("Your value", formatBalance(it.value))
     if (!stakeInUsdc) DetailRow("Your shares", formatQuantity(it.shares, 4))
     DetailRow("Return", "${if (it.returnPercent >= 0) "+" else ""}${formatQuantity(it.returnPercent, 2)}%")
+    it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
+    it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
+      DetailRow("You took out", formatBalance(amount))
+    }
+    it.earned?.let { amount -> DetailRow("Earned", formatSignedBalance(amount)) }
   }
   if (!stakeInUsdc) DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
-  DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
+  DetailRow("Performance fee", managerFeeRate(vault.fee))
+  vault.managerStakePercent?.let { DetailRow("Manager holds", "${formatQuantity(it, 2)}% of the vault") }
+  vault.depositorCount?.let {
+    DetailRow("Depositors", "$it ${if (it == 1) "account" else "accounts"}")
+  }
+  managerFeeNote(vault.fee)?.let {
+    Text(it, Modifier.padding(top = 16.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
+  }
   val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.FUNDS)
   val lockedUntil = position?.lockedUntil()
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

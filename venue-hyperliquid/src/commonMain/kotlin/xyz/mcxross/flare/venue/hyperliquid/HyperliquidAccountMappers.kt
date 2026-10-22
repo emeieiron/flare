@@ -45,6 +45,8 @@ import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -437,11 +439,14 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
     name = name,
     manager = leader,
     description = description,
+    kind = if (isProtocolVault) VaultKind.PROTOCOL else VaultKind.USER,
     totalValue = portfolio?.get("day")?.accountValueHistory?.lastOrNull()?.value.toDoubleOrZero(),
     sharePrice = 1.0,
-    performanceFeeBps = (leaderCommission.toDoubleOrZero() * 10_000).toInt(),
-    performanceFeePercent = leaderCommission.toDoubleOrZero() * 100.0,
+    // Hyperliquid takes its commission on profits above a depositor's own peak.
+    fee = ManagerFee.HighWatermark(leaderCommission.toDoubleOrZero() * 100.0),
     lockupSeconds = if (isProtocolVault) PROTOCOL_VAULT_LOCKUP_SECONDS else USER_VAULT_LOCKUP_SECONDS,
+    managerStakePercent = leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
+    depositorCount = followers.size.takeIf { it > 0 },
     isActive = !isClosed && allowDeposits,
   )
 
@@ -457,6 +462,8 @@ internal fun VaultEquity.toVaultPosition(vault: VaultSummary, details: VaultDeta
     returnPercent = if (invested != null && invested > 0.0) allTimePnl / invested * 100.0 else 0.0,
     sharePrice = 1.0,
     lockedUntilMs = (lockedUntilTimestamp ?: follower?.lockupUntil)?.takeIf { it > 0L },
+    // Hyperliquid reports the stake's profit, not what went in and out of it.
+    earned = allTimePnl,
   )
 }
 
