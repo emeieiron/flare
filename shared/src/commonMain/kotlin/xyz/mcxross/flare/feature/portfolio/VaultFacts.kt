@@ -3,6 +3,11 @@ package xyz.mcxross.flare.feature.portfolio
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.venue.model.ManagerFee
 
+/** A manager's own share of the vault. A real but tiny stake must not read as none. */
+internal fun managerStakeText(percent: Double): String =
+  if (percent > 0.0 && percent < 0.01) "<0.01% of the vault"
+  else "${formatQuantity(percent, 2)}% of the vault"
+
 /** The manager's cut as a rate, naming the interval where the venue states one. */
 internal fun managerFeeRate(fee: ManagerFee): String {
   val percent = "${formatQuantity(fee.percent, 2)}%"
