@@ -31,6 +31,7 @@ import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.formatBalance
@@ -133,6 +134,8 @@ data class PortfolioUiState(
   val historyVisible: Boolean = false,
   val chartError: String? = null,
   val holdingsError: String? = null,
+  /** True where the venue binds a vaults port. */
+  val vaultsAvailable: Boolean = true,
   val vaultsLoading: Boolean = false,
   val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
@@ -281,6 +284,7 @@ class PortfolioViewModel(
   private val markets: MarketsRepository,
   private val marketDetails: MarketDetailsRepository,
   venue: VenueDescriptor,
+  private val vaultsRepository: VaultsRepository? = null,
   private val assetCatalog: AssetCatalogRepository? = null,
   private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
@@ -290,7 +294,11 @@ class PortfolioViewModel(
   private val vaultTerms = venue.vaultTerms
   private val local =
     MutableStateFlow(
-      PortfolioUiState(capabilities = capabilities, rewardPointsName = venue.rewardPointsName)
+      PortfolioUiState(
+        capabilities = capabilities,
+        rewardPointsName = venue.rewardPointsName,
+        vaultsAvailable = vaultsRepository != null,
+      )
     )
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private val primaryUsdcBalance = MutableStateFlow(0.0)
@@ -904,12 +912,13 @@ class PortfolioViewModel(
   }
 
   fun refreshVaults() {
-    if (!capabilities.vaults || vaultsJob?.isActive == true) return
+    val repository = vaultsRepository ?: return
+    if (vaultsJob?.isActive == true) return
     vaultsJob = viewModelScope.launch {
       local.update { it.copy(vaultsLoading = true) }
       runSuspendCatching {
-        val vaults = accounts.vaults()
-        val positions = accounts.vaultPositions()
+        val vaults = repository.vaults()
+        val positions = repository.vaultPositions()
         local.update { it.copy(vaults = vaults, accountVaults = positions, vaultsLoaded = true, vaultsError = null) }
       }.onFailure {
         local.update { it.copy(vaultsError = "Vaults are temporarily unavailable. Reconnecting automatically.") }
@@ -962,6 +971,7 @@ class PortfolioViewModel(
         return
       }
     }
+    val repository = vaultsRepository ?: return
     launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
       val prompt =
         VaultPrompt(
@@ -970,9 +980,9 @@ class PortfolioViewModel(
         )
       val flow =
         if (mode == VaultActionMode.DEPOSIT) {
-          accounts.contributeToVault(vault.address, amount, prompt)
+          repository.contribute(vault.address, amount, prompt)
         } else {
-          accounts.redeemFromVault(vault.address, amount, prompt)
+          repository.redeem(vault.address, amount, prompt)
         }
       flow.collect { transaction ->
         local.update { it.copy(vaultTransaction = transaction) }

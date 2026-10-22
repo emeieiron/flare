@@ -3,6 +3,7 @@ package xyz.mcxross.flare.venue.hyperliquid
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
+import org.koin.dsl.binds
 import org.koin.dsl.module
 import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
@@ -11,6 +12,7 @@ import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
@@ -91,7 +93,6 @@ class HyperliquidVenue(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
         rewards = true,
         sponsoredFees = false,
@@ -159,7 +160,8 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
     single { HyperliquidFunds(get(), get(), get()) }
-    single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), get(), builder) }
+    single { HyperliquidAccountRepository(get(), get(), get(), get(), builder) } binds
+      arrayOf(AccountRepository::class, VaultsRepository::class)
     single { HyperliquidAssets(get()) }
     single<TradingRepository> {
       HyperliquidTradingRepository(client = get(), actions = get(), setup = get(), funds = get(), assets = get())

@@ -97,8 +97,7 @@ class DecibelVenueTest {
     assertEquals(Network.MAINNET, descriptor.network)
     with(descriptor.capabilities) {
       assertTrue(
-        spot && twap && vaults && subaccounts && rewards && sponsoredFees && networkFeeTopUp &&
-          inAppDeposit
+        spot && twap && subaccounts && rewards && sponsoredFees && networkFeeTopUp && inAppDeposit
       )
     }
   }

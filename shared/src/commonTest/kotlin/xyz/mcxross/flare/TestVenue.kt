@@ -34,7 +34,6 @@ val BareCapabilities =
   VenueCapabilities(
     spot = false,
     twap = false,
-    vaults = false,
     subaccounts = false,
     rewards = false,
     sponsoredFees = false,

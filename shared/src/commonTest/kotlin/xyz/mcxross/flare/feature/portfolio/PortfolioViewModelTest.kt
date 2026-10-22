@@ -35,6 +35,7 @@ import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
@@ -135,7 +136,8 @@ class PortfolioViewModelTest {
       ),
     )
 
-  private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) : AccountRepository {
+  private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) :
+    AccountRepository, VaultsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(initialSnapshot)
     override val history: StateFlow<AccountHistorySnapshot> =
       MutableStateFlow(AccountHistorySnapshot())
@@ -230,14 +232,14 @@ class PortfolioViewModelTest {
 
     override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
 
-    override fun contributeToVault(
+    override fun contribute(
       vaultAddress: String,
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): Flow<ActionState> = emptyFlow()
 
-    override fun redeemFromVault(
+    override fun redeem(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,
@@ -607,6 +609,7 @@ class PortfolioViewModelTest {
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
         venue = testVenue(),
+        vaultsRepository = fakeAccounts,
         assetCatalog = FakeAssetCatalogRepository(),
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
@@ -706,9 +709,10 @@ class PortfolioViewModelTest {
   }
 
   private fun portfolio(
-    accounts: AccountRepository,
+    accounts: FakeAccountRepository,
     capabilities: VenueCapabilities = VenueCapabilities.All,
     trading: TradingRepository = FakeTradingRepository(),
+    vaults: VaultsRepository? = accounts,
   ) =
     PortfolioViewModel(
       accounts = accounts,
@@ -718,12 +722,13 @@ class PortfolioViewModelTest {
       markets = FakeMarketsRepository(quotes),
       marketDetails = FakeMarketDetailsRepository(),
       venue = testVenue(capabilities),
+      vaultsRepository = vaults,
     )
 
   @Test
   fun featuresTheVenueLacksAreNeitherLoadedNorOffered() = runTest {
     val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
-    val vm = portfolio(accounts, BareCapabilities)
+    val vm = portfolio(accounts, BareCapabilities, vaults = null)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     vm.onIntent(PortfolioIntent.Refresh)
@@ -732,6 +737,7 @@ class PortfolioViewModelTest {
     assertEquals(BareCapabilities, state.capabilities)
     assertEquals(0, accounts.rewardReads)
     assertEquals(0, accounts.vaultReads)
+    assertFalse(state.vaultsAvailable)
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
     assertNull(
@@ -752,6 +758,7 @@ class PortfolioViewModelTest {
     val state = vm.uiState.value
     assertEquals(1, accounts.rewardReads)
     assertEquals(1, accounts.vaultReads)
+    assertTrue(state.vaultsAvailable)
     assertTrue(state.rewardsLoaded)
     assertTrue(state.vaultsLoaded)
     assertEquals("Amps", state.rewardPointsName)

@@ -104,7 +104,21 @@ fun flareModule(
   singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }
   viewModelOf(::MarketsViewModel)
   viewModelOf(::OnboardingViewModel)
-  viewModelOf(::PortfolioViewModel)
+  // Only venues with vaults bind a VaultsRepository.
+  viewModel {
+    PortfolioViewModel(
+      accounts = get(),
+      wallets = get(),
+      preferences = get(),
+      trading = get(),
+      markets = get(),
+      marketDetails = get(),
+      venue = get(),
+      vaultsRepository = getOrNull(),
+      assetCatalog = getOrNull(),
+      setupGate = getOrNull(),
+    )
+  }
   viewModelOf(::OrdersViewModel)
   viewModelOf(::TradeViewModel)
   // Only venues with a backend session (Decibel's Worker) bind a SessionRepository.

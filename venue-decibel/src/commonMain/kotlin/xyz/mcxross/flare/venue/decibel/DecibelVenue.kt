@@ -15,6 +15,7 @@ import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
@@ -78,7 +79,6 @@ class DecibelVenue(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
         rewards = true,
         sponsoredFees = true,
@@ -151,5 +151,8 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     bind<TradingRepository>()
     bind<DecibelTrading>()
   }
-  singleOf(::DefaultAccountRepository) { bind<AccountRepository>() }
+  singleOf(::DefaultAccountRepository) {
+    bind<AccountRepository>()
+    bind<VaultsRepository>()
+  }
 }

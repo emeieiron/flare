@@ -25,6 +25,7 @@ import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
@@ -123,7 +124,7 @@ class SettingsViewModelTest {
     }
   }
 
-  private class FakeAccountRepository : AccountRepository {
+  private class FakeAccountRepository : AccountRepository, VaultsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(AccountSnapshot())
     override val history: StateFlow<AccountHistorySnapshot> = MutableStateFlow(AccountHistorySnapshot())
     var withdrawCallCount = 0
@@ -203,13 +204,13 @@ class SettingsViewModelTest {
     override suspend fun twapHistory(limit: Int): List<TwapOrder> = emptyList()
     override suspend fun vaults(limit: Int): List<VaultSummary> = emptyList()
     override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
-    override fun contributeToVault(
+    override fun contribute(
       vaultAddress: String,
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): Flow<ActionState> = flowOf(ActionState.Committed("0xvault"))
-    override fun redeemFromVault(
+    override fun redeem(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,

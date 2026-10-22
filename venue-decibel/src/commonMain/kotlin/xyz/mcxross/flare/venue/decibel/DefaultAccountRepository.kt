@@ -50,6 +50,7 @@ import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.toChainUnits
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
@@ -85,7 +86,7 @@ class DefaultAccountRepository(
   private val trading: DecibelTrading,
   private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
-) : AccountRepository {
+) : AccountRepository, VaultsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1032,7 +1033,7 @@ class DefaultAccountRepository(
       .map { it.toVaultPosition() }
   }
 
-  override fun contributeToVault(
+  override fun contribute(
     vaultAddress: String,
     amount: String,
     prompt: VaultPrompt,
@@ -1061,7 +1062,7 @@ class DefaultAccountRepository(
     }
   }
 
-  override fun redeemFromVault(
+  override fun redeem(
     vaultAddress: String,
     shares: String,
     prompt: VaultPrompt,
