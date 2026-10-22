@@ -71,7 +71,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       }
       DetailRow("Total AUM", formatBalance(vault.totalValue))
       DetailRow("Share price", formatPrice(vault.sharePrice))
-      DetailRow("Performance fee", "${vault.performanceFeeBps / 100.0}%")
+      DetailRow("Performance fee", managerFeeRate(vault.fee))
       DetailRow("Deposit lockup", vault.lockupSeconds?.let { lockup ->
         when {
           lockup <= 0 -> "None"
@@ -88,6 +88,9 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       val lockedUntil = userPerformance?.lockedUntil()
       if (mode == VaultActionMode.DEPOSIT) {
         DetailRow("Available to deposit", formatBalance(state.collateralBalance))
+        managerFeeNote(vault.fee)?.let {
+          ActionNotice(it, Modifier.padding(top = 12.dp))
+        }
         vault.lockupSeconds?.takeIf { terms.lockupPerDeposit && it > 0 }?.let { lockup ->
           ActionNotice(
             "This deposit locks your whole stake for ${lockupText(lockup)}: you can redeem from " +

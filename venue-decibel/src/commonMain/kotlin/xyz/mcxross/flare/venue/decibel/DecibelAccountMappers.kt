@@ -43,6 +43,8 @@ import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
@@ -255,12 +257,15 @@ internal fun VaultInfo.toVaultSummary(): VaultSummary =
     name = name,
     manager = manager,
     description = description,
+    kind = if (isProtocol) VaultKind.PROTOCOL else VaultKind.USER,
     totalValue = totalAum,
     sharePrice = sharePrice,
-    performanceFeeBps = performanceFeeBps,
-    performanceFeePercent = performanceFeePercent,
+    // Decibel crystallizes on an interval it doesn't report the length of.
+    fee = ManagerFee.Interval(performanceFeePercent),
     // A lockup Decibel reports as zero means none; one it leaves out is unknown.
     lockupSeconds = lockdownPeriodS ?: lockupSecondsFallback.takeIf { it > 0 },
+    managerStakePercent = managerCashPct,
+    depositorCount = depositors,
     isActive = isActive,
   )
 
@@ -271,6 +276,9 @@ internal fun AccountVaultPerformance.toVaultPosition(): VaultPosition =
     value = currentValue,
     returnPercent = returnsPercent,
     sharePrice = effectiveSharePrice,
+    deposited = totalDeposited,
+    withdrawn = totalWithdrawn,
+    earned = allTimeEarned,
   )
 
 internal fun Delegation.toTradingKey(): TradingKey =

@@ -280,6 +280,10 @@ data class VaultInfo(
   @SerialName("lockup_seconds") val lockupSecondsFallback: Long = 0L,
   @SerialName("status") val status: String? = null,
   @SerialName("is_active") val isActiveFallback: Boolean = true,
+  @SerialName("vault_type") val vaultType: String? = null,
+  @SerialName("depositors") val depositors: Int? = null,
+  /** The manager's own share of the vault, as a percentage. */
+  @SerialName("manager_cash_pct") val managerCashPct: Double? = null,
 ) {
   constructor(
     address: String = "",
@@ -307,6 +311,9 @@ data class VaultInfo(
     lockupSecondsFallback = lockupSeconds,
     status = null,
     isActiveFallback = isActive,
+    vaultType = null,
+    depositors = null,
+    managerCashPct = null,
   )
 
   val totalAum: Double get() = tvl ?: totalAumFallback
@@ -316,6 +323,9 @@ data class VaultInfo(
   val lockupSeconds: Long get() = lockdownPeriodS ?: lockupSecondsFallback
   val isActive: Boolean
     get() = if (status != null) status.equals("active", ignoreCase = true) else isActiveFallback
+
+  /** Decibel's own DLP vault, rather than one a user launched. */
+  val isProtocol: Boolean get() = vaultType?.equals("protocol", ignoreCase = true) == true
 }
 
 @Serializable
