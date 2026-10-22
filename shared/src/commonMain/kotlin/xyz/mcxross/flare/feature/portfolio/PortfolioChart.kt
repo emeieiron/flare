@@ -41,11 +41,11 @@ import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 
 @Composable
 fun PortfolioPerformanceChart(
-  points: List<PortfolioPoint>,
+  points: List<SeriesPoint>,
   range: PortfolioChartRange,
   metric: PortfolioMetric,
   onRangeSelect: (PortfolioChartRange) -> Unit,

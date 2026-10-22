@@ -47,7 +47,7 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingFees
@@ -444,7 +444,7 @@ class HyperliquidAccountRepository(
   override suspend fun portfolioChart(
     range: PortfolioChartRange,
     metric: PortfolioMetric,
-  ): List<PortfolioPoint> {
+  ): List<SeriesPoint> {
     val account = currentAccount() ?: return emptyList()
     return client.info.portfolio(account).chart(range, metric)
   }

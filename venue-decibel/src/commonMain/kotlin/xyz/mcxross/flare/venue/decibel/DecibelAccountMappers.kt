@@ -33,7 +33,7 @@ import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
@@ -233,8 +233,8 @@ internal val PortfolioMetric.decibelWireValue: String
  * Decibel names the plotted value differently by endpoint version; any of them will do. Its
  * account value is perps only, and spot holdings come beside it, so they are added back.
  */
-internal fun PortfolioChartPoint.toPortfolioPoint(metric: PortfolioMetric): PortfolioPoint =
-  PortfolioPoint(
+internal fun PortfolioChartPoint.toPortfolioPoint(metric: PortfolioMetric): SeriesPoint =
+  SeriesPoint(
     timeMs = timestamp,
     value =
       when (metric) {

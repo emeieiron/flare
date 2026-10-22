@@ -64,7 +64,7 @@ import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
@@ -210,7 +210,7 @@ class PortfolioViewModelTest {
     override suspend fun portfolioChart(
       range: PortfolioChartRange,
       metric: PortfolioMetric,
-    ): List<PortfolioPoint> = emptyList()
+    ): List<SeriesPoint> = emptyList()
 
     var rewardReads = 0
     var vaultReads = 0
@@ -527,9 +527,9 @@ class PortfolioViewModelTest {
   fun historyRecoversAutomaticallyAndRetainsCachedPoints() = runTest {
     var unavailable = true
     var reads = 0
-    val point = PortfolioPoint(timeMs = 1, value = 25.0)
+    val point = SeriesPoint(timeMs = 1, value = 25.0)
     val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<PortfolioPoint> {
+      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
         reads++
         check(!unavailable) { "Offline" }
         return listOf(point)

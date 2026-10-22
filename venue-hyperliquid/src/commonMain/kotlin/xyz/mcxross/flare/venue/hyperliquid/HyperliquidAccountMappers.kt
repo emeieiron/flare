@@ -36,7 +36,7 @@ import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
@@ -340,7 +340,7 @@ internal val PortfolioChartRange.hyperliquidPeriod: String
     }
 
 /** The whole account's history over [range]: account value, or P&L since the range began. */
-internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric): List<PortfolioPoint> {
+internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
   val period = this[range.hyperliquidPeriod] ?: return emptyList()
   val points =
     when (metric) {
@@ -350,7 +350,7 @@ internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric
   return points.map(HyperliquidPortfolioPoint::toPortfolioPoint)
 }
 
-private fun HyperliquidPortfolioPoint.toPortfolioPoint() = PortfolioPoint(timeMs, value.toDoubleOrZero())
+private fun HyperliquidPortfolioPoint.toPortfolioPoint() = SeriesPoint(timeMs, value.toDoubleOrZero())
 
 internal fun UserFees.toTradingFees(): TradingFees =
   TradingFees(

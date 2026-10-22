@@ -46,7 +46,7 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.Rewards
@@ -195,7 +195,7 @@ class SettingsViewModelTest {
     override suspend fun portfolioChart(
       range: PortfolioChartRange,
       metric: PortfolioMetric,
-    ): List<PortfolioPoint> = emptyList()
+    ): List<SeriesPoint> = emptyList()
     override suspend fun rewards(): Rewards {
       rewardReads++
       return Rewards(points = RewardPoints(total = 120.0))
