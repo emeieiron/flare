@@ -445,8 +445,12 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
     // Hyperliquid takes its commission on profits above a depositor's own peak.
     fee = ManagerFee.HighWatermark(leaderCommission.toDoubleOrZero() * 100.0),
     lockupSeconds = if (isProtocolVault) PROTOCOL_VAULT_LOCKUP_SECONDS else USER_VAULT_LOCKUP_SECONDS,
-    managerStakePercent = leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
-    depositorCount = followers.size.takeIf { it > 0 },
+    // A protocol vault has no manager staking their own money, so the leader's sliver isn't one.
+    managerStakePercent =
+      if (isProtocolVault) null
+      else leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
+    // `followers` is a capped page, not a count, so Hyperliquid reports no depositor total.
+    depositorCount = null,
     isActive = !isClosed && allowDeposits,
   )
 

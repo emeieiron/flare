@@ -421,13 +421,16 @@ class HyperliquidAccountMappersTest {
     // Hyperliquid charges above a depositor's own peak; HLP charges nothing.
     assertEquals(ManagerFee.HighWatermark(0.0), vault.fee)
     assertEquals(VaultKind.PROTOCOL, vault.kind)
-    assertEquals(6.645107064126772e-7 * 100.0, assertNotNull(vault.managerStakePercent), 1e-12)
-    assertEquals(2, vault.depositorCount)
+    // HLP has no manager staking their own money, and `followers` is a capped page, not a count.
+    assertNull(vault.managerStakePercent)
+    assertNull(vault.depositorCount)
     assertEquals(116561392.6439010054, vault.totalValue, 1e-3)
     assertTrue(vault.isActive)
     val userVault = details.toVaultSummary(isProtocolVault = false)
     assertEquals(24 * 60 * 60L, userVault.lockupSeconds)
     assertEquals(VaultKind.USER, userVault.kind)
+    // A manager's own stake is a user-vault fact, and this one is far below a rounded 0.01%.
+    assertEquals(6.645107064126772e-7 * 100.0, assertNotNull(userVault.managerStakePercent), 1e-12)
 
     val stake = decode<List<VaultEquity>>(Fixtures.USER_VAULT_EQUITIES).single().toVaultPosition(vault, details)
     assertEquals(1070.102048, stake.value)

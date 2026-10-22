@@ -452,7 +452,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   if (!stakeInUsdc) DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
   DetailRow("Performance fee", managerFeeRate(vault.fee))
-  vault.managerStakePercent?.let { DetailRow("Manager holds", "${formatQuantity(it, 2)}% of the vault") }
+  vault.managerStakePercent?.let { DetailRow("Manager holds", managerStakeText(it)) }
   vault.depositorCount?.let {
     DetailRow("Depositors", "$it ${if (it == 1) "account" else "accounts"}")
   }
