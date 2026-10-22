@@ -72,12 +72,9 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       DetailRow("Total AUM", formatBalance(vault.totalValue))
       DetailRow("Share price", formatPrice(vault.sharePrice))
       DetailRow("Performance fee", managerFeeRate(vault.fee))
+      // How long the lockup is doesn't depend on whether each deposit re-locks the whole stake.
       DetailRow("Deposit lockup", vault.lockupSeconds?.let { lockup ->
-        when {
-          lockup <= 0 -> "None"
-          terms.lockupPerDeposit -> lockupText(lockup)
-          else -> "${formatQuantity(lockup / 3600.0, 1)} hours"
-        }
+        if (lockup <= 0) "None" else lockupText(lockup)
       } ?: "Not available")
 
       val userPerformance = state.accountVaults.firstOrNull { it.vault.address == vault.address }
