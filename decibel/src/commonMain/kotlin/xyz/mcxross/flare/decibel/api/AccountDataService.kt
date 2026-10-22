@@ -26,6 +26,7 @@ import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.TwapOrder
+import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.VaultInfo
 
 interface AccountDataService {
@@ -91,6 +92,8 @@ interface AccountDataService {
   suspend fun activeTwaps(account: String): List<TwapOrder>
 
   suspend fun twapHistory(account: String, limit: Int = 20): List<TwapOrder>
+
+  suspend fun campaigns(account: String): UserCampaigns
 
   suspend fun vaults(limit: Int = 50): List<VaultInfo>
 
@@ -270,6 +273,12 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         else -> emptyList()
       }
     }.getOrElse { emptyList() }
+
+  override suspend fun campaigns(account: String): UserCampaigns =
+    api.get("campaigns/account") {
+      parameter("account", account)
+      parameter("pagination", "true")
+    }
 
   override suspend fun vaults(limit: Int): List<VaultInfo> =
     run {

@@ -49,6 +49,7 @@ import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
@@ -981,7 +982,13 @@ class DefaultAccountRepository(
     val streak = runSuspendCatching { tradingStreak() }
     val amps = runSuspendCatching { ampsBreakdown() }
     val tier = runSuspendCatching { tierInfo() }
-    return decibelRewards(streak, amps, tier)
+    val campaigns = runSuspendCatching { accountCampaigns() }
+    return decibelRewards(streak, amps, tier, campaigns)
+  }
+
+  private suspend fun accountCampaigns(): UserCampaigns? {
+    val account = preferences.values.first().selectedSubaccount ?: return null
+    return readAccount(account) { client.accounts.campaigns(account) }
   }
 
   private suspend fun tradingStreak(): DecibelTradingStreak? {

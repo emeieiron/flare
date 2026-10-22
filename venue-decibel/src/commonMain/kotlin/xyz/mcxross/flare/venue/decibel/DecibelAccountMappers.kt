@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.venue.decibel
 
+import kotlin.time.Clock
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.model.AccountFees
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
@@ -11,10 +13,15 @@ import xyz.mcxross.flare.decibel.model.ProductFees
 import xyz.mcxross.flare.decibel.model.SpotOverview
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.UserCampaigns
+import xyz.mcxross.flare.decibel.model.UserClaim
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.decibel.model.isLong
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.Balances
+import xyz.mcxross.flare.venue.model.Campaign
+import xyz.mcxross.flare.venue.model.CampaignRewards
+import xyz.mcxross.flare.venue.model.ClaimState
 import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.FillDirection
@@ -360,6 +367,8 @@ internal fun decibelRewards(
   streak: Result<DecibelTradingStreak?>,
   amps: Result<AmpsBreakdown?>,
   tier: Result<TierInfo?>,
+  campaigns: Result<UserCampaigns?> = Result.success(null),
+  nowMs: Long = Clock.System.now().toEpochMilliseconds(),
 ): Rewards =
   Rewards(
     points = amps.getOrNull()?.toRewardPoints(),
@@ -375,11 +384,13 @@ internal fun decibelRewards(
       tier.getOrNull()?.let {
         RewardTier(name = it.tier, percentile = it.percentile, feeDiscountBps = it.feeDiscountBps)
       },
+    campaigns = campaigns.getOrNull()?.toCampaignRewards(nowMs),
     unavailable =
       buildSet {
         if (amps.isFailure) add(RewardPart.POINTS)
         if (streak.isFailure) add(RewardPart.STREAK)
         if (tier.isFailure) add(RewardPart.TIER)
+        if (campaigns.isFailure) add(RewardPart.CAMPAIGNS)
       },
   )
 
@@ -396,3 +407,48 @@ private fun AmpsBreakdown.toRewardPoints(): RewardPoints =
         RewardPointsSource("Bonuses", bonusAmps),
       ),
   )
+
+/**
+ * Decibel's campaign allocations. Amounts stay exact decimal text from chain units: a claim signs
+ * them, so nothing here becomes a Double. [nowMs] decides whether a window has closed.
+ */
+internal fun UserCampaigns.toCampaignRewards(nowMs: Long): CampaignRewards =
+  CampaignRewards(
+    readyToClaim = readyToClaim.toUsdcText(),
+    lifetimeEarned = lifetimeEarned.toUsdcText(),
+    campaigns = claims.map { it.toCampaign(nowMs) },
+  )
+
+private fun UserClaim.toCampaign(nowMs: Long): Campaign {
+  val claimEndMs = claimEndTsSec * 1_000
+  val claimStartMs = claimStartTsSec * 1_000
+  val state =
+    when {
+      claimedAmount > 0 || claimedAtTsSec != null -> ClaimState.CLAIMED
+      !hasAllocation -> ClaimState.NOT_ELIGIBLE
+      claimEndTsSec > 0 && nowMs > claimEndMs -> ClaimState.EXPIRED
+      readyToClaim > 0 && nowMs >= claimStartMs -> ClaimState.READY
+      else -> ClaimState.IN_PROGRESS
+    }
+  val units =
+    when (state) {
+      ClaimState.CLAIMED -> claimedAmount
+      ClaimState.READY -> readyToClaim
+      else -> claimableAmount
+    }
+  return Campaign(
+    id = campaignId.toString(),
+    title = title,
+    detail = description.orEmpty(),
+    state = state,
+    amount = units.takeIf { it > 0 }?.toUsdcText(),
+    claimableUntilMs = claimEndMs.takeIf { claimEndTsSec > 0 },
+    claimedAtMs = claimedAtTsSec?.let { it * 1_000 },
+    claimReference = claimTxHash,
+  )
+}
+
+/** Chain units to exact decimal text; Decibel pays campaigns in USDC's six decimals. */
+private fun Long.toUsdcText(): String = coerceAtLeast(0L).toULong().toDecimalString(USDC_DECIMALS)
+
+private const val USDC_DECIMALS = 6
