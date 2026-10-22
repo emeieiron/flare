@@ -139,6 +139,8 @@ data class PortfolioUiState(
   val vaultsAvailable: Boolean = true,
   /** True where the venue binds a rewards port. */
   val rewardsAvailable: Boolean = true,
+  /** Points earned per day, oldest first; empty where the venue keeps no history. */
+  val pointsHistory: List<SeriesPoint> = emptyList(),
   val vaultsLoading: Boolean = false,
   val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
@@ -887,6 +889,11 @@ class PortfolioViewModel(
     val repository = rewardsRepository ?: return
     if (rewardsJob?.isActive == true) return
     rewardsJob = viewModelScope.launch {
+      launch {
+        // A chart the venue has no history for simply doesn't appear.
+        runSuspendCatching { repository.pointsHistory() }
+          .onSuccess { history -> local.update { it.copy(pointsHistory = history) } }
+      }
       val result = runSuspendCatching { repository.rewards() }
       local.update {
         val rewards = result.getOrNull()
