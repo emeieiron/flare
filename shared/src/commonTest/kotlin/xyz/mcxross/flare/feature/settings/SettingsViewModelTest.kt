@@ -25,6 +25,7 @@ import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
@@ -124,7 +125,7 @@ class SettingsViewModelTest {
     }
   }
 
-  private class FakeAccountRepository : AccountRepository, VaultsRepository {
+  private class FakeAccountRepository : AccountRepository, VaultsRepository, RewardsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(AccountSnapshot())
     override val history: StateFlow<AccountHistorySnapshot> = MutableStateFlow(AccountHistorySnapshot())
     var withdrawCallCount = 0
@@ -228,6 +229,7 @@ class SettingsViewModelTest {
         wallets = FakeWalletRepository(),
         accounts = fakeAccounts,
         sessions = FakeSessionRepository(),
+        rewardsRepository = fakeAccounts,
         venue = testVenue(),
         credentials = AddressCredentials,
       )
@@ -276,8 +278,8 @@ class SettingsViewModelTest {
     val venue = testVenue().copy(withdrawal = WithdrawalTerms("Arbitrum", "1", internalTransfers = true))
     val vm =
       SettingsViewModel(
-        AppPreferences(MemoryPreferences()), FakeWalletRepository(), fakeAccounts, FakeSessionRepository(), venue,
-        AddressCredentials,
+        AppPreferences(MemoryPreferences()), FakeWalletRepository(), fakeAccounts, FakeSessionRepository(),
+        fakeAccounts, venue, AddressCredentials,
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
@@ -334,6 +336,7 @@ class SettingsViewModelTest {
         FakeWalletRepository(),
         accounts,
         null,
+        accounts,
         testVenue(),
         AddressCredentials,
       )
@@ -356,6 +359,7 @@ class SettingsViewModelTest {
         preferences,
         FakeWalletRepository(),
         accounts,
+        null,
         null,
         testVenue(BareCapabilities),
         AddressCredentials,
@@ -386,7 +390,7 @@ class SettingsViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
     val vm =
-      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, testVenue(), AddressCredentials)
+      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, accounts, testVenue(), AddressCredentials)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     vm.onIntent(SettingsIntent.SetBuilderFeeBps(MarketKind.PERP, 5))
@@ -411,7 +415,8 @@ class SettingsViewModelTest {
     }
     val vm =
       SettingsViewModel(
-        AppPreferences(MemoryPreferences()), FakeWalletRepository(), accounts, null, testVenue(), AddressCredentials,
+        AppPreferences(MemoryPreferences()), FakeWalletRepository(), accounts, null, accounts, testVenue(),
+        AddressCredentials,
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
@@ -430,6 +435,7 @@ class SettingsViewModelTest {
       wallets = wallets,
       accounts = FakeAccountRepository(),
       sessions = sessions,
+      rewardsRepository = FakeAccountRepository(),
       venue = testVenue(),
       credentials = AddressCredentials,
     )

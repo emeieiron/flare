@@ -16,7 +16,6 @@ import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.PortfolioPoint
 import xyz.mcxross.flare.venue.model.Position
-import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
@@ -167,14 +166,6 @@ interface AccountRepository {
   ): List<PortfolioPoint>
 
   suspend fun fees(): TradingFees? = null
-
-  /**
-   * The account's rewards, or null when there are none to show. Parts that failed to load are
-   * listed in [Rewards.unavailable], so the others still show.
-   */
-  suspend fun rewards(): Rewards?
-
-  suspend fun redeemReferralCode(code: String): Boolean
 
   suspend fun activeTwaps(): List<TwapOrder>
 

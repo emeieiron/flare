@@ -35,6 +35,7 @@ import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
 import xyz.mcxross.flare.hyperliquid.model.TwapState
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
@@ -66,7 +67,7 @@ class HyperliquidAccountRepository(
   private val setup: HyperliquidSetup,
   private val funds: HyperliquidFunds,
   private val builderAddress: String? = null,
-) : AccountRepository, VaultsRepository {
+) : AccountRepository, VaultsRepository, RewardsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   override val snapshot: StateFlow<AccountSnapshot> = mutableSnapshot.asStateFlow()

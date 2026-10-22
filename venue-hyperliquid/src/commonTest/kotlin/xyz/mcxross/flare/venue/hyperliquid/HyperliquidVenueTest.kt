@@ -65,7 +65,6 @@ class HyperliquidVenueTest {
     assertTrue(capabilities.spot && capabilities.twap)
     assertTrue(capabilities.subaccounts && capabilities.perpSpotTransfer && capabilities.batchCancel)
     // Rewards are the fee tier and referral standing: no points, streak or code entry.
-    assertTrue(capabilities.rewards)
     assertFalse(capabilities.referralCodes || capabilities.createSubaccounts || capabilities.twapInterval)
     assertFalse(capabilities.sponsoredFees || capabilities.networkFeeTopUp || capabilities.inAppDeposit)
     ActionKind.entries.forEach { assertNull(capabilities.unavailableReason(it), it.name) }

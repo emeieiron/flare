@@ -12,6 +12,7 @@ import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
@@ -94,7 +95,6 @@ class HyperliquidVenue(
         spot = true,
         twap = true,
         subaccounts = true,
-        rewards = true,
         sponsoredFees = false,
         networkFeeTopUp = false,
         inAppDeposit = false,
@@ -161,7 +161,7 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
     single { HyperliquidFunds(get(), get(), get()) }
     single { HyperliquidAccountRepository(get(), get(), get(), get(), builder) } binds
-      arrayOf(AccountRepository::class, VaultsRepository::class)
+      arrayOf(AccountRepository::class, VaultsRepository::class, RewardsRepository::class)
     single { HyperliquidAssets(get()) }
     single<TradingRepository> {
       HyperliquidTradingRepository(client = get(), actions = get(), setup = get(), funds = get(), assets = get())

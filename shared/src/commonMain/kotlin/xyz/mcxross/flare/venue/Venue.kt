@@ -129,8 +129,6 @@ data class VenueCapabilities(
   val spot: Boolean,
   val twap: Boolean,
   val subaccounts: Boolean,
-  /** Exchange rewards, such as Decibel's Amps, streak and tier. */
-  val rewards: Boolean,
   /** Network fees paid by a gas station, with the wallet paying itself as the fallback. */
   val sponsoredFees: Boolean,
   /** Topping up the trading key with the chain's fee token. */
@@ -146,7 +144,7 @@ data class VenueCapabilities(
   /** Creating trading accounts (subaccounts) from the app, beyond selecting existing ones. */
   val createSubaccounts: Boolean = subaccounts,
   /** Redeeming a referral code from the app. */
-  val referralCodes: Boolean = rewards,
+  val referralCodes: Boolean = false,
   /**
    * The kinds of action the app can't send on the venue yet, each with the reason shown in its
    * place. The screens still show the account, and disable just those actions.
@@ -163,11 +161,11 @@ data class VenueCapabilities(
         spot = true,
         twap = true,
         subaccounts = true,
-        rewards = true,
         sponsoredFees = true,
         networkFeeTopUp = true,
         inAppDeposit = true,
         perpSpotTransfer = true,
+        referralCodes = true,
       )
   }
 }

@@ -366,7 +366,7 @@ private fun PortfolioOverview(
     else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
       if (state.vaultsError != null) "Updating automatically" else null)
   }
-  if (state.capabilities.rewards && state.rewardPointsName == null) {
+  if (state.rewardsAvailable && state.rewardPointsName == null) {
     // Without reward points, the card is the account's fee tier.
     val feeTier = state.rewards?.feeTier
     PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
@@ -374,7 +374,7 @@ private fun PortfolioOverview(
       else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
         if (state.rewardsError) "Updating automatically" else null)
     }
-  } else if (state.capabilities.rewards) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
+  } else if (state.rewardsAvailable) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
     val points = state.rewards?.points
     if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
     else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",

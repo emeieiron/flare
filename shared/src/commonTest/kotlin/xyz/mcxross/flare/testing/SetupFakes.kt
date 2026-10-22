@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
@@ -119,7 +120,7 @@ object SetupCredentials : CredentialParser {
  * holds the deposit check until it completes. With [preferences] it saves the selected account.
  */
 open class SetupAccounts(private val preferences: AppPreferences? = null) :
-  AccountRepository, VaultsRepository {
+  AccountRepository, VaultsRepository, RewardsRepository {
   val events = mutableListOf<String>()
   val listed =
     listOf(
