@@ -9,6 +9,9 @@ work is therefore mostly widening neutral models and splitting two ports out of
 [AccountRepository](shared/src/commonMain/kotlin/xyz/mcxross/flare/data/AccountRepository.kt), not
 adding venue-specific screens.
 
+Phases 0 and 1 are done. The sections below are kept as the record of why, with progress marked
+under **Phases**.
+
 ## What each venue already returns and the app discards
 
 | Datum | Decibel | Hyperliquid | Shown today |
@@ -124,7 +127,7 @@ venue mapper is where it degrades, so a claim must not take that path.
 
 ## Phases
 
-**Phase 0 — ports and section-driven rewards. No features.**
+**Phase 0 — ports and section-driven rewards. No features. Done.**
 
 1. `VaultsRepository`: move `vaults`, `vaultPositions`, `contributeToVault`, `redeemFromVault` off
    `AccountRepository`. Bind in both venue modules. `PortfolioViewModel` takes it optional and gates
@@ -138,9 +141,30 @@ venue mapper is where it degrades, so a claim must not take that path.
 
 Behaviour identical; tests green.
 
-**Phase 1 — data already fetched and discarded.** `VaultKind`, `ManagerFee`, manager stake,
-depositor count, and the stake's cash flows. No new endpoints on either venue. Pulls the DLP/HLP
-vault out of the list as its own card, and states the interval-fee consequence in the deposit sheet.
+**Phase 1 — what the venues report and the app dropped. Done.** `VaultKind`, `ManagerFee`, manager
+stake, depositor count and the stake's cash flows, with the DLP/HLP vault pulled out of the list as
+its own card and the interval-fee consequence stated in the deposit sheet.
+
+Two things turned out differently from the sketch above. Decibel's real `PublicVaultDto` already
+carries `vault_type`, `depositors` and `manager_cash_pct`, which `VaultInfo` was not parsing, so
+these needed SDK fields rather than only mappers — no manager-capital rule had to be inferred. And
+nothing in either API states the fee *interval length*, so `ManagerFee.Interval` carries nullable
+`days`/`nextChargeAtMs`: the mechanic is a documented protocol fact, the period is not published.
+`acceptsDeposits` was dropped as planned-but-redundant, since `isActive` already means exactly that
+on both venues.
+
+The venue's own vault needed copy that must not live in `:shared`, so `VaultTerms` gained
+`ProtocolVaultTerms(summary, risk)`, set per descriptor the way `ReceiveInstructions` already is.
+
+**What `openapi.json` showed for later phases.** `PublicVaultDto` also returns `apr`,
+`all_time_return`, `past_month_return`, `pnl_90d`, `max_drawdown`, `sharpe_ratio`, `volume_30d`,
+`average_leverage` and `created_at`, and `/api/v1/vaults` takes a `VaultSortKey` of
+`tvl | age | pnl | sharpe_ratio | weekly_win_rate | max_drawdown | apr` plus `status`, `vault_type`,
+`vault_address` and `search`. So making the list judgeable is server-side sorting over fields that
+already exist, not a client-side ranking pass. `AccountVaultPerformanceDto` further carries a
+`deposits` array whose entries have `unlock_timestamp_ms`, which is a better lockup countdown than
+the single per-position timestamp, plus `locked_amount`, `unrealized_pnl` and `weekly_win_rate_12w`.
+Note `current_num_shares` is an integer of raw chain units, as the existing normalization assumes.
 
 **Phase 2 — campaigns and claiming.** Decibel binds `campaigns()`/`claim()`; Hyperliquid inherits
 the defaults. Decimal text end to end, journalled before broadcast, an uncertain claim stays pending
