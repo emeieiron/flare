@@ -75,6 +75,8 @@ import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.flare.venue.model.ActionKind
 
@@ -258,8 +260,7 @@ fun PortfolioScreen(
             }
             PortfolioPage.REWARDS -> item {
               val rewards = state.rewards
-              if (rewards?.streak != null || rewards?.points != null || rewards?.tier != null ||
-                rewards?.feeTier != null || rewards?.referral != null) {
+              if (rewards != null && !rewards.isEmpty) {
                 Column { RewardsDetails(state) }
                 if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
@@ -447,37 +448,61 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   actionsUnavailable?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 12.dp)) }
 }
 
+/**
+ * The sections the venue reports, in order. One with no data is left out, so a venue with both
+ * points and a fee tier shows both, and adding a programme adds a section rather than a branch.
+ */
 @Composable
 private fun RewardsDetails(state: PortfolioUiState) {
-  if (state.rewardPointsName == null) {
-    FeeTierDetails(state.rewards?.feeTier)
-    state.rewards?.referral?.let { ReferralDetails(it) }
-    return
-  }
+  val rewards = state.rewards
   val pointsName = state.rewardPointsName
-  val points = state.rewards?.points
-  Text("Total $pointsName", color = FlareColors.TextSecondary)
-  Text(points?.let { formatCount(it.total) } ?: "—",
-    Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
-  state.rewards?.tier?.let { DetailRow("Tier", it.name) }
-  points?.rank?.let { DetailRow("Rank", "#$it") }
-  state.rewards?.streak?.let {
-    DetailRow("Current streak", if (it.days == 0) "No active streak" else "${it.days} days")
-    if (it.longestDays > 0) DetailRow("Longest streak", "${it.longestDays} days")
-    if (it.graceDaysRemaining > 0) DetailRow("Grace remaining", "${it.graceDaysRemaining} days")
+  val points = rewards?.points
+  // The first section that has one carries the page's large number.
+  var headline = true
+
+  if (pointsName != null) {
+    RewardsHeadline("Total $pointsName", points?.let { formatCount(it.total) } ?: "—")
+    headline = false
+    rewards?.tier?.let { DetailRow("Tier", it.name) }
+    points?.rank?.let { DetailRow("Rank", "#$it") }
   }
-  points?.let {
-    val breakdown = it.sources.filter { source -> source.amount > 0 }
-    if (breakdown.isNotEmpty()) SectionLabel("$pointsName earned")
-    breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
+  rewards?.feeTier?.let { tier ->
+    FeeTierDetails(tier, headline)
+    headline = false
   }
+  rewards?.streak?.let { StreakDetails(it) }
+  if (pointsName != null && points != null) PointsBreakdown(pointsName, points)
+  rewards?.referral?.let { ReferralDetails(it) }
 }
 
 @Composable
-private fun FeeTierDetails(tier: FeeTier?) {
-  if (tier == null) return
-  Text("Fee tier", color = FlareColors.TextSecondary)
-  Text(tier.name, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+private fun RewardsHeadline(label: String, value: String) {
+  Text(label, color = FlareColors.TextSecondary)
+  Text(value, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+}
+
+@Composable
+private fun StreakDetails(streak: TradingStreak) {
+  DetailRow("Current streak", if (streak.days == 0) "No active streak" else "${streak.days} days")
+  if (streak.longestDays > 0) DetailRow("Longest streak", "${streak.longestDays} days")
+  if (streak.graceDaysRemaining > 0) DetailRow("Grace remaining", "${streak.graceDaysRemaining} days")
+}
+
+@Composable
+private fun PointsBreakdown(pointsName: String, points: RewardPoints) {
+  val breakdown = points.sources.filter { it.amount > 0 }
+  if (breakdown.isEmpty()) return
+  SectionLabel("$pointsName earned")
+  breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
+}
+
+@Composable
+private fun FeeTierDetails(tier: FeeTier, headline: Boolean) {
+  if (headline) RewardsHeadline("Fee tier", tier.name)
+  else {
+    SectionLabel("Fees")
+    DetailRow("Tier", tier.name)
+  }
   DetailRow("14-day volume", formatBalance(tier.volumeUsd))
   DetailRow("Perps taker", feeRate(tier.perp.takerRate))
   DetailRow("Perps maker", feeRate(tier.perp.makerRate))

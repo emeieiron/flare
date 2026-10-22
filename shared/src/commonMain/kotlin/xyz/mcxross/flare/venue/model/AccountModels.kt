@@ -306,6 +306,10 @@ data class Rewards(
   /** Parts that couldn't be loaded this time. Screens keep what they showed for them. */
   val unavailable: Set<RewardPart> = emptySet(),
 ) {
+  /** True when no part of the rewards has anything to show yet. */
+  val isEmpty: Boolean
+    get() = points == null && streak == null && tier == null && referral == null && feeTier == null
+
   /** These rewards, with the parts that failed to load taken from [previous]. */
   fun keepingUnavailableFrom(previous: Rewards?): Rewards =
     copy(
