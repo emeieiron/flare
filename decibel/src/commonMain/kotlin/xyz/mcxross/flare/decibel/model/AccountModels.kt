@@ -200,10 +200,12 @@ data class FundHistory(
 
 @Serializable
 data class TradingStreak(
-  @SerialName("streak_count") val streakCount: Int = 0,
-  @SerialName("longest_streak") val longestStreak: Int = 0,
-  @SerialName("grace_days_remaining") val graceDaysRemaining: Int = 0,
-  @SerialName("qualifying_dates") val qualifyingDates: List<String> = emptyList(),
+  /** `/streaks/account` answers in camelCase, unlike the rest of the API. */
+  @SerialName("currentStreak") val streakCount: Int = 0,
+  @SerialName("graceDaysAvailable") val graceDaysRemaining: Int = 0,
+  @SerialName("graceDaysUsed") val graceDaysUsed: Int = 0,
+  /** ISO dates the account traded on, which the streak is counted from. */
+  @SerialName("qualifyingDates") val qualifyingDates: List<String> = emptyList(),
 )
 
 @Serializable

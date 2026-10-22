@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.venue.decibel
 
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -481,8 +482,9 @@ class DecibelAccountMappersTest {
   fun rewardsMarkWhatFailedAndListAmpsSourcesInOrder() {
     val streak =
       json.decodeFromString<DecibelTradingStreak>(
-        """{"streak_count":5,"longest_streak":10,"grace_days_remaining":2,""" +
-          """"qualifying_dates":["2026-09-20","2026-09-21"]}"""
+        // `/streaks/account` answers in camelCase, unlike the rest of the API.
+        """{"owner":"0x1","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
+          """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
       )
     val amps =
       json.decodeFromString<AmpsBreakdown>(
@@ -496,7 +498,14 @@ class DecibelAccountMappersTest {
         tier = Result.failure(IllegalStateException("Offline")),
       )
 
-    assertEquals(TradingStreak(days = 5, longestDays = 10, graceDaysRemaining = 2), rewards.streak)
+    assertEquals(
+      TradingStreak(
+        days = 5,
+        graceDaysRemaining = 2,
+        qualifyingDates = setOf(LocalDate.parse("2026-09-20"), LocalDate.parse("2026-09-21")),
+      ),
+      rewards.streak,
+    )
     assertEquals(1500.0, rewards.points?.total)
     assertEquals(42, rewards.points?.rank)
     assertEquals(

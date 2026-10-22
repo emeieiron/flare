@@ -66,7 +66,8 @@ kotlin {
       implementation(libs.koin.compose.viewmodel)
       implementation(libs.koin.core)
       implementation(libs.kotlinx.coroutines.core)
-      implementation(libs.kotlinx.datetime)
+      // Exposed by TradingStreak.qualifyingDates, so consumers compile against it.
+      api(libs.kotlinx.datetime)
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.ktor.client.content.negotiation)
       implementation(libs.ktor.client.core)

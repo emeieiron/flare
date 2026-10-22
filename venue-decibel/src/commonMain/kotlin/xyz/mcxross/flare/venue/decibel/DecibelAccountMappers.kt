@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.venue.decibel
 
+import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.decibel.api.SubaccountStatus
@@ -376,8 +377,11 @@ internal fun decibelRewards(
     streak =
       streak.getOrNull()?.let {
         TradingStreak(
+          qualifyingDates =
+            it.qualifyingDates.mapNotNullTo(mutableSetOf()) { date ->
+              runCatching { LocalDate.parse(date) }.getOrNull()
+            },
           days = it.streakCount,
-          longestDays = it.longestStreak,
           graceDaysRemaining = it.graceDaysRemaining,
         )
       },
