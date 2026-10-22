@@ -282,7 +282,10 @@ data class VaultInfo(
   @SerialName("is_active") val isActiveFallback: Boolean = true,
   @SerialName("vault_type") val vaultType: String? = null,
   @SerialName("depositors") val depositors: Int? = null,
-  /** The manager's own share of the vault, as a percentage. */
+  /**
+   * The share of the vault held as cash rather than deployed into positions, as a percentage. Not
+   * the manager's own stake: every vault with no open position reports exactly 100.
+   */
   @SerialName("manager_cash_pct") val managerCashPct: Double? = null,
   /** A fraction, as Hyperliquid also reports it: 0.184 is 18.4%. */
   @SerialName("apr") val apr: Double? = null,
@@ -292,6 +295,8 @@ data class VaultInfo(
   @SerialName("max_drawdown") val maxDrawdown: Double? = null,
   @SerialName("sharpe_ratio") val sharpeRatio: Double? = null,
   @SerialName("volume_30d") val volume30d: Double? = null,
+  /** A fraction, unlike the returns above: 0.846 is 84.6%. */
+  @SerialName("weekly_win_rate_12w") val weeklyWinRate12w: Double? = null,
 ) {
   constructor(
     address: String = "",
@@ -328,6 +333,7 @@ data class VaultInfo(
     maxDrawdown = null,
     sharpeRatio = null,
     volume30d = null,
+    weeklyWinRate12w = null,
   )
 
   val totalAum: Double get() = tvl ?: totalAumFallback

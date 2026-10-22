@@ -266,7 +266,9 @@ internal fun VaultInfo.toVaultSummary(): VaultSummary =
     fee = ManagerFee.Interval(performanceFeePercent),
     // A lockup Decibel reports as zero means none; one it leaves out is unknown.
     lockupSeconds = lockdownPeriodS ?: lockupSecondsFallback.takeIf { it > 0 },
-    managerStakePercent = managerCashPct,
+    // Decibel reports no manager stake. `manager_cash_pct` is not one: every vault with no open
+    // position reads exactly 100, including vaults with a hundred depositors.
+    managerStakePercent = null,
     depositorCount = depositors,
     performance = decibelVaultPerformance(),
     isActive = isActive,
@@ -280,8 +282,12 @@ private fun VaultInfo.decibelVaultPerformance(): List<VaultFact> = buildList {
   allTimeReturn?.let { add(VaultFact("All time", VaultFactValue.Percent(it, signed = true))) }
   maxDrawdown?.let { add(VaultFact("Max drawdown", VaultFactValue.Percent(it))) }
   sharpeRatio?.let { add(VaultFact("Sharpe ratio", VaultFactValue.Ratio(it))) }
+  // A fraction, unlike the returns above.
+  weeklyWinRate12w?.let { add(VaultFact("Weekly win rate", VaultFactValue.Percent(it * 100.0))) }
   // A vault that hasn't traded reports zero volume; that is nothing to show.
   volume30d?.takeIf { it > 0.0 }?.let { add(VaultFact("30-day volume", VaultFactValue.Money(it))) }
+  // How much of the vault is sitting in cash rather than deployed: 100% means nothing is open.
+  managerCashPct?.let { add(VaultFact("Held in cash", VaultFactValue.Percent(it))) }
 }
 
 internal fun AccountVaultPerformance.toVaultPosition(): VaultPosition =
