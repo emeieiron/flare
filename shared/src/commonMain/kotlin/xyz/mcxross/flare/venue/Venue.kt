@@ -70,6 +70,19 @@ data class VaultTerms(
   val stakeInUsdc: Boolean = false,
   /** Every deposit locks the whole stake again for the vault's lockup, which deposits state. */
   val lockupPerDeposit: Boolean = false,
+  /** What the venue's own vault is for; null where the venue runs none. */
+  val protocolVault: ProtocolVaultTerms? = null,
+)
+
+/**
+ * The venue's own vault, in the venue's words. It is a different product from a user's vault, so
+ * the screens set it apart and say what being in it carries.
+ */
+data class ProtocolVaultTerms(
+  /** What it does for the exchange, as in "Provides Decibel's liquidity". */
+  val summary: String,
+  /** What a depositor takes on that a user vault wouldn't. */
+  val risk: String,
 )
 
 /** How to fund an account on the venue, in the venue's words. */

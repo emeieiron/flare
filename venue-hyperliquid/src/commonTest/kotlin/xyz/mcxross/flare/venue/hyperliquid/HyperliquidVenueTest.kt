@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
@@ -13,7 +14,6 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.venue.Network
-import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.WithdrawalTerms
 import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.ActionState
@@ -75,7 +75,10 @@ class HyperliquidVenueTest {
     val descriptor = HyperliquidVenue().descriptor
 
     assertEquals(WithdrawalTerms("Arbitrum", "1", internalTransfers = true), descriptor.withdrawal)
-    assertEquals(VaultTerms(stakeInUsdc = true, lockupPerDeposit = true), descriptor.vaultTerms)
+    assertTrue(descriptor.vaultTerms.stakeInUsdc && descriptor.vaultTerms.lockupPerDeposit)
+    // HLP is set apart from the managers' vaults and says what being in it carries.
+    val hlp = assertNotNull(descriptor.vaultTerms.protocolVault)
+    assertTrue("liquidated" in hlp.risk && "4 days" in hlp.risk)
     assertNull(descriptor.rewardPointsName)
   }
 
