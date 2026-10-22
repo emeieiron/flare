@@ -29,7 +29,12 @@ import xyz.mcxross.flare.venue.VenueExplorer
 
 /** A single label/value rhythm for account, market, and transaction details. */
 @Composable
-fun DetailRow(label: String, value: String, modifier: Modifier = Modifier) {
+fun DetailRow(
+  label: String,
+  value: String,
+  modifier: Modifier = Modifier,
+  valueColor: Color = Color.Unspecified,
+) {
   Row(
     modifier.fillMaxWidth().padding(vertical = 16.dp),
     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -40,7 +45,7 @@ fun DetailRow(label: String, value: String, modifier: Modifier = Modifier) {
       style = MaterialTheme.typography.bodyMedium,
       color = FlareColors.TextSecondary,
     )
-    Text(value, style = MaterialTheme.typography.bodyMedium)
+    Text(value, style = MaterialTheme.typography.bodyMedium, color = valueColor)
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
 }

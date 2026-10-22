@@ -44,6 +44,8 @@ import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
@@ -266,8 +268,19 @@ internal fun VaultInfo.toVaultSummary(): VaultSummary =
     lockupSeconds = lockdownPeriodS ?: lockupSecondsFallback.takeIf { it > 0 },
     managerStakePercent = managerCashPct,
     depositorCount = depositors,
+    performance = decibelVaultPerformance(),
     isActive = isActive,
   )
+
+/** What Decibel measures about a vault beyond the common set, in the order its dashboard shows. */
+private fun VaultInfo.decibelVaultPerformance(): List<VaultFact> = buildList {
+  apr?.let { add(VaultFact("APR", VaultFactValue.Percent(it * 100.0))) }
+  pastMonthReturn?.let { add(VaultFact("Past month", VaultFactValue.Percent(it, signed = true))) }
+  allTimeReturn?.let { add(VaultFact("All time", VaultFactValue.Percent(it, signed = true))) }
+  maxDrawdown?.let { add(VaultFact("Max drawdown", VaultFactValue.Percent(it))) }
+  sharpeRatio?.let { add(VaultFact("Sharpe ratio", VaultFactValue.Ratio(it))) }
+  volume30d?.let { add(VaultFact("30-day volume", VaultFactValue.Money(it))) }
+}
 
 internal fun AccountVaultPerformance.toVaultPosition(): VaultPosition =
   VaultPosition(

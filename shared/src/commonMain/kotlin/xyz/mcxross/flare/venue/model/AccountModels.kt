@@ -273,6 +273,26 @@ sealed interface ManagerFee {
   data class HighWatermark(override val percent: Double) : ManagerFee
 }
 
+/**
+ * One measure a venue reports about a vault beyond the common set. The venue says what it has and
+ * what kind of number it is; the screens decide how to show it, so a venue can be as detailed as
+ * its exchange without `:shared` learning anything venue-specific.
+ */
+data class VaultFact(val label: String, val value: VaultFactValue)
+
+sealed interface VaultFactValue {
+  /** A USD amount. */
+  data class Money(val usd: Double) : VaultFactValue
+
+  /** Already in percent units: 12.5 means 12.5%. [signed] shows a leading + on gains. */
+  data class Percent(val percent: Double, val signed: Boolean = false) : VaultFactValue
+
+  /** A bare number, such as a ratio or a multiple. */
+  data class Ratio(val value: Double, val decimals: Int = 2) : VaultFactValue
+
+  data class Text(val text: String) : VaultFactValue
+}
+
 /** A vault the account can deposit into. Display only. */
 data class VaultSummary(
   /** The venue's id for the vault, which deposits and redemptions name. */
@@ -294,6 +314,8 @@ data class VaultSummary(
   val managerStakePercent: Double? = null,
   /** How many accounts hold a stake; null where the venue doesn't report it. */
   val depositorCount: Int? = null,
+  /** The venue's own performance and risk measures, in the order it reports them. */
+  val performance: List<VaultFact> = emptyList(),
   val isActive: Boolean = true,
 )
 

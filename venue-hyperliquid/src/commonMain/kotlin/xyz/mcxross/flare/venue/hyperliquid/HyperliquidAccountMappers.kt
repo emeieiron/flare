@@ -46,6 +46,8 @@ import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TwapOrder
 import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
@@ -451,6 +453,11 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
       else leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
     // `followers` is a capped page, not a count, so Hyperliquid reports no depositor total.
     depositorCount = null,
+    // Hyperliquid reports APR as a fraction.
+    performance =
+      apr.toDoubleOrZero().takeIf { it > 0.0 }
+        ?.let { listOf(VaultFact("APR", VaultFactValue.Percent(it * 100.0))) }
+        .orEmpty(),
     isActive = !isClosed && allowDeposits,
   )
 

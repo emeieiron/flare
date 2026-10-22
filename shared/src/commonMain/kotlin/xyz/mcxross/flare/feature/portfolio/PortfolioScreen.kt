@@ -440,21 +440,32 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
   val stakeInUsdc = LocalVenue.current.vaultTerms.stakeInUsdc
   position?.let {
-    DetailRow("Your value", formatBalance(it.value))
-    if (!stakeInUsdc) DetailRow("Your shares", formatQuantity(it.shares, 4))
-    DetailRow("Return", "${if (it.returnPercent >= 0) "+" else ""}${formatQuantity(it.returnPercent, 2)}%")
+    SectionLabel("Your stake")
+    DetailRow("Value", formatBalance(it.value))
+    if (!stakeInUsdc) DetailRow("Shares", formatQuantity(it.shares, 4))
+    DetailRow("Return", signedPercent(it.returnPercent), valueColor = amountColor(it.returnPercent))
     it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
     it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
       DetailRow("You took out", formatBalance(amount))
     }
-    it.earned?.let { amount -> DetailRow("Earned", formatSignedBalance(amount)) }
+    it.earned?.let { amount ->
+      DetailRow("Earned", formatSignedBalance(amount), valueColor = amountColor(amount))
+    }
   }
+  SectionLabel("The vault")
   if (!stakeInUsdc) DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
   DetailRow("Performance fee", managerFeeRate(vault.fee))
   vault.managerStakePercent?.let { DetailRow("Manager holds", managerStakeText(it)) }
   vault.depositorCount?.let {
     DetailRow("Depositors", "$it ${if (it == 1) "account" else "accounts"}")
+  }
+  // Whatever else this venue measures, in its own order.
+  if (vault.performance.isNotEmpty()) {
+    SectionLabel("Performance")
+    vault.performance.forEach { fact ->
+      DetailRow(fact.label, vaultFactText(fact.value), valueColor = vaultFactColor(fact.value))
+    }
   }
   managerFeeNote(vault.fee)?.let {
     Text(it, Modifier.padding(top = 16.dp), color = FlareColors.TextSecondary,
