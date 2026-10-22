@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFactValue
 
 class VaultFactsTest {
   @Test
@@ -27,5 +28,16 @@ class VaultFactsTest {
     // Nothing to disclose when the manager takes nothing.
     assertNull(managerFeeNote(ManagerFee.HighWatermark(0.0)))
     assertNull(managerFeeNote(ManagerFee.Interval(0.0)))
+  }
+
+  @Test
+  fun aVenuesMeasureReadsByItsKindNotByTheVenue() {
+    assertEquals("$1,250.00", vaultFactText(VaultFactValue.Money(1250.0)))
+    assertEquals("18.4%", vaultFactText(VaultFactValue.Percent(18.4)))
+    assertEquals("1.42", vaultFactText(VaultFactValue.Ratio(1.4231)))
+    assertEquals("flat", vaultFactText(VaultFactValue.Text("flat")))
+    // A signed measure keeps its sign so a loss cannot read as a gain.
+    assertEquals("+4.2%", vaultFactText(VaultFactValue.Percent(4.2, signed = true)))
+    assertEquals("-3.1%", vaultFactText(VaultFactValue.Percent(-3.1, signed = true)))
   }
 }

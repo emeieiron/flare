@@ -30,6 +30,8 @@ import xyz.mcxross.flare.hyperliquid.model.UserFees
 import xyz.mcxross.flare.hyperliquid.model.VaultDetails
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
 import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.FillDirection
@@ -424,6 +426,11 @@ class HyperliquidAccountMappersTest {
     // HLP has no manager staking their own money, and `followers` is a capped page, not a count.
     assertNull(vault.managerStakePercent)
     assertNull(vault.depositorCount)
+    // Hyperliquid reports APR as a fraction; the model carries percent units.
+    assertEquals(
+      listOf(VaultFact("APR", VaultFactValue.Percent(0.04780463600667063 * 100.0))),
+      vault.performance,
+    )
     assertEquals(116561392.6439010054, vault.totalValue, 1e-3)
     assertTrue(vault.isActive)
     val userVault = details.toVaultSummary(isProtocolVault = false)

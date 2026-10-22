@@ -32,6 +32,7 @@ import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.RewardPointsSource
+import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
@@ -414,7 +415,8 @@ class DecibelAccountMappersTest {
         """{"address":"0xdlp","name":"DLP","manager":"0xm","description":"Liquidity",""" +
           """"total_shares":1000.0,"share_price":1.05,"tvl":500000.0,"profit_share":10.0,""" +
           """"lockdown_period_s":86400,"status":"active","vault_type":"protocol",""" +
-          """"depositors":42,"manager_cash_pct":7.5}"""
+          """"depositors":42,"manager_cash_pct":7.5,"apr":0.184,"past_month_return":6.2,""" +
+          """"all_time_return":23.4,"max_drawdown":8.1,"sharpe_ratio":1.42,"volume_30d":912000.0}"""
       )
     val summary = vault.toVaultSummary()
     assertEquals("0xdlp", summary.address)
@@ -425,6 +427,14 @@ class DecibelAccountMappersTest {
     assertEquals(VaultKind.PROTOCOL, summary.kind)
     assertEquals(7.5, summary.managerStakePercent)
     assertEquals(42, summary.depositorCount)
+    // Decibel's own measures, in its order; APR is a fraction and the returns are percentages.
+    assertEquals(
+      listOf("APR", "Past month", "All time", "Max drawdown", "Sharpe ratio", "30-day volume"),
+      summary.performance.map { it.label },
+    )
+    assertEquals(VaultFactValue.Percent(18.4), summary.performance.first().value)
+    assertEquals(VaultFactValue.Percent(6.2, signed = true), summary.performance[1].value)
+    assertEquals(VaultFactValue.Ratio(1.42), summary.performance[4].value)
     assertEquals(86_400L, summary.lockupSeconds)
     assertTrue(summary.isActive)
     // A vault Decibel doesn't type is one of its users'.
@@ -432,6 +442,12 @@ class DecibelAccountMappersTest {
     assertEquals(VaultKind.USER, userVault.kind)
     assertNull(userVault.managerStakePercent)
     assertNull(userVault.depositorCount)
+    // A vault Decibel measures nothing for shows no performance section at all.
+    assertEquals(
+      emptyList(),
+      vault.copy(apr = null, pastMonthReturn = null, allTimeReturn = null, maxDrawdown = null,
+        sharpeRatio = null, volume30d = null).toVaultSummary().performance,
+    )
     // Decibel's zero lockup means none; a missing one is unknown.
     assertEquals(0L, vault.copy(lockdownPeriodS = 0).toVaultSummary().lockupSeconds)
     assertNull(vault.copy(lockdownPeriodS = null).toVaultSummary().lockupSeconds)

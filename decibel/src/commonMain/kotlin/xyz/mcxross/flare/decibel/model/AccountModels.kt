@@ -284,6 +284,14 @@ data class VaultInfo(
   @SerialName("depositors") val depositors: Int? = null,
   /** The manager's own share of the vault, as a percentage. */
   @SerialName("manager_cash_pct") val managerCashPct: Double? = null,
+  /** A fraction, as Hyperliquid also reports it: 0.184 is 18.4%. */
+  @SerialName("apr") val apr: Double? = null,
+  /** Percentages, matching `all_time_return` on the account's own performance. */
+  @SerialName("all_time_return") val allTimeReturn: Double? = null,
+  @SerialName("past_month_return") val pastMonthReturn: Double? = null,
+  @SerialName("max_drawdown") val maxDrawdown: Double? = null,
+  @SerialName("sharpe_ratio") val sharpeRatio: Double? = null,
+  @SerialName("volume_30d") val volume30d: Double? = null,
 ) {
   constructor(
     address: String = "",
@@ -314,6 +322,12 @@ data class VaultInfo(
     vaultType = null,
     depositors = null,
     managerCashPct = null,
+    apr = null,
+    allTimeReturn = null,
+    pastMonthReturn = null,
+    maxDrawdown = null,
+    sharpeRatio = null,
+    volume30d = null,
   )
 
   val totalAum: Double get() = tvl ?: totalAumFallback
