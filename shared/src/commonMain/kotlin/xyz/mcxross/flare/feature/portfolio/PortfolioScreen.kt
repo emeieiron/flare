@@ -520,7 +520,7 @@ private fun RewardsDetails(state: PortfolioUiState) {
     headline = false
     if (state.pointsHistory.size >= 2) PointsHistory(pointsName, state.pointsHistory)
     rewards?.tier?.let { DetailRow("Tier", it.name) }
-    points?.rank?.let { DetailRow("Rank", "#$it") }
+    points?.let { PointsStandingRows(pointsName, it) }
   }
   rewards?.feeTier?.let { tier ->
     FeeTierDetails(tier, headline)
@@ -611,6 +611,22 @@ private fun StreakWeek(qualifying: Set<LocalDate>) {
         )
       }
     }
+  }
+}
+
+/** A rank on its own is a number; against the field it is a position. */
+@Composable
+private fun PointsStandingRows(pointsName: String, points: RewardPoints) {
+  val standing = points.standing
+  points.rank?.let { rank ->
+    DetailRow(
+      "Rank",
+      if (standing == null) "#$rank" else "#${formatCount(rank.toDouble())} of ${formatCount(standing.holders.toDouble())}",
+    )
+    standing?.topPercent(rank)?.let { DetailRow("Standing", "Top ${formatQuantity(it, 2)}%") }
+  }
+  standing?.shareOf(points.total)?.let {
+    DetailRow("Share of all $pointsName", "${formatQuantity(it, 3)}%")
   }
 }
 

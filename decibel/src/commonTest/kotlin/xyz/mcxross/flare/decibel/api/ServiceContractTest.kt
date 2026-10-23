@@ -151,11 +151,15 @@ class ServiceContractTest {
 
   @Test
   fun streakAndAmpsDecodeFields() = runTest {
+    var streakQuery = ""
     val httpStreak =
       HttpClient(
-        MockEngine {
+        MockEngine { request ->
+          streakQuery = request.url.encodedQuery
+          // `/streaks/account` answers in camelCase, unlike the rest of the API.
           respondJson(
-            """{"streak_count":5,"longest_streak":10,"grace_days_remaining":2,"qualifying_dates":["2026-09-20","2026-09-21"]}"""
+            """{"owner":"0x22","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
+              """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
           )
         }
       )
@@ -163,6 +167,9 @@ class ServiceContractTest {
     val streak = assertNotNull(streakService.streak("0x22"))
     assertEquals(5, streak.streakCount)
     assertEquals(2, streak.graceDaysRemaining)
+    assertEquals(listOf("2026-09-20", "2026-09-21"), streak.qualifyingDates)
+    // It is scoped by owner, not by account: the proxy rejects it otherwise.
+    assertEquals("owner=0x22", streakQuery)
 
     val httpAmps =
       HttpClient(

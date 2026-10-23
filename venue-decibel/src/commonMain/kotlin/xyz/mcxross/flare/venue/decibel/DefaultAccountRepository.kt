@@ -983,26 +983,24 @@ class DefaultAccountRepository(
     val amps = runSuspendCatching { ampsBreakdown() }
     val tier = runSuspendCatching { tierInfo() }
     val campaigns = runSuspendCatching { accountCampaigns() }
-    return decibelRewards(streak, amps, tier, campaigns)
+    // Public season totals; a failure here only costs the rank its context.
+    val global = runSuspendCatching { client.accounts.globalPoints() }.getOrNull()
+    return decibelRewards(streak, amps, tier, campaigns, global = global)
   }
 
-  override suspend fun pointsHistory(): List<SeriesPoint> {
-    val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress
-      ?: return emptyList()
-    return client.accounts.dailyAmps(owner).toPointsHistory()
-  }
+  override suspend fun pointsHistory(): List<SeriesPoint> =
+    readOwner { client.accounts.dailyAmps(it).toPointsHistory() }.orEmpty()
 
   private suspend fun accountCampaigns(): UserCampaigns? {
     val account = preferences.values.first().selectedSubaccount ?: return null
     return readAccount(account) { client.accounts.campaigns(account) }
   }
 
-  private suspend fun tradingStreak(): DecibelTradingStreak? {
-    val account = preferences.values.first().selectedSubaccount ?: return null
-    return readAccount(account) { client.accounts.streak(account) }
-  }
-
-  private suspend fun ampsBreakdown(): AmpsBreakdown? {
+  /**
+   * Runs a read the venue scopes by `owner`: points, the streak and the tier are the wallet's,
+   * not a subaccount's, and need the wallet's own session to pass the proxy's scope check.
+   */
+  private suspend fun <T> readOwner(block: suspend (owner: String) -> T): T? {
     val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
     val account = preferences.values.first().selectedSubaccount
     val current = sessions.status.value
@@ -1013,13 +1011,15 @@ class DefaultAccountRepository(
     ) current else sessions.authenticateOwner(
       account, VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
     )
-    return sessions.bind(session, flow { emit(client.accounts.amps(owner)) }).first()
+    return sessions.bind(session, flow { emit(block(owner)) }).first()
   }
 
-  private suspend fun tierInfo(): TierInfo? {
-    val account = preferences.values.first().selectedSubaccount ?: return null
-    return readAccount(account) { client.accounts.tier(account) }
-  }
+  private suspend fun tradingStreak(): DecibelTradingStreak? =
+    readOwner { client.accounts.streak(it) }
+
+  private suspend fun ampsBreakdown(): AmpsBreakdown? = readOwner { client.accounts.amps(it) }
+
+  private suspend fun tierInfo(): TierInfo? = readOwner { client.accounts.tier(it) }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
     val account = preferences.values.first().selectedSubaccount ?: return false
