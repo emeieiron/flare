@@ -466,7 +466,21 @@ data class RewardPoints(
   val rank: Int? = null,
   /** Where the points came from, in the venue's order. */
   val sources: List<RewardPointsSource> = emptyList(),
+  /** Everyone else, so a rank reads as a position rather than a number. */
+  val standing: PointsStanding? = null,
 )
+
+/** The season across every account, which puts one account's rank in proportion. */
+data class PointsStanding(val holders: Int, val distributed: Double) {
+  /** Where [rank] falls, as a percentage; null when either number can't say. */
+  fun topPercent(rank: Int?): Double? =
+    if (rank == null || rank <= 0 || holders <= 0) null
+    else (rank.toDouble() / holders * 100.0).coerceIn(0.01, 100.0)
+
+  /** What share of everything handed out so far [total] is; null when nothing has been. */
+  fun shareOf(total: Double): Double? =
+    if (distributed <= 0.0 || total <= 0.0) null else total / distributed * 100.0
+}
 
 data class RewardPointsSource(val label: String, val amount: Double)
 

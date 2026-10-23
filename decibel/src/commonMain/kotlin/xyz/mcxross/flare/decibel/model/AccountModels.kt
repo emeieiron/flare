@@ -466,3 +466,10 @@ data class DailyAmps(
   @SerialName("referral_amps") val referralAmps: Double = 0.0,
   @SerialName("vault_amps") val vaultAmps: Double = 0.0,
 )
+
+/** `/points/global`: the season across everyone, for putting one account's rank in proportion. */
+@Serializable
+data class GlobalPointsStats(
+  @SerialName("total_users") val totalUsers: Int = 0,
+  @SerialName("total_amps_distributed") val totalAmpsDistributed: Double = 0.0,
+)

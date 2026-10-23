@@ -8,6 +8,7 @@ import xyz.mcxross.flare.decibel.model.AccountFees
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.GlobalPointsStats
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
@@ -33,6 +34,7 @@ import xyz.mcxross.flare.venue.model.FundingPayment
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
+import xyz.mcxross.flare.venue.model.PointsStanding
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.SeriesPoint
@@ -371,9 +373,10 @@ internal fun decibelRewards(
   tier: Result<TierInfo?>,
   campaigns: Result<UserCampaigns?> = Result.success(null),
   nowMs: Long = Clock.System.now().toEpochMilliseconds(),
+  global: GlobalPointsStats? = null,
 ): Rewards =
   Rewards(
-    points = amps.getOrNull()?.toRewardPoints(),
+    points = amps.getOrNull()?.toRewardPoints(global),
     streak =
       streak.getOrNull()?.let {
         TradingStreak(
@@ -399,10 +402,14 @@ internal fun decibelRewards(
       },
   )
 
-private fun AmpsBreakdown.toRewardPoints(): RewardPoints =
+private fun AmpsBreakdown.toRewardPoints(global: GlobalPointsStats?): RewardPoints =
   RewardPoints(
     total = totalAmps,
     rank = rank,
+    standing =
+      global?.takeIf { it.totalUsers > 0 }?.let {
+        PointsStanding(holders = it.totalUsers, distributed = it.totalAmpsDistributed)
+      },
     sources =
       listOf(
         RewardPointsSource("Trading", tradingAmps),
