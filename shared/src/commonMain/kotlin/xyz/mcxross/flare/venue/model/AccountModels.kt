@@ -1,5 +1,6 @@
 package xyz.mcxross.flare.venue.model
 
+import kotlinx.datetime.LocalDate
 /**
  * What a trading account holds and is worth, as the portfolio shows it. Display only: amounts that
  * feed a transfer or an order are entered as decimal text and checked by the venue.
@@ -16,6 +17,8 @@ data class AccountOverview(
   val withdrawable: Double,
   /** Equity held in vaults that isn't locked; null when the venue doesn't report it. */
   val vaultEquity: Double? = null,
+  /** Collateral besides the settlement asset, where the venue accepts any. */
+  val secondaryCollateral: List<CollateralAsset> = emptyList(),
   val balances: Balances = Balances(),
   /**
    * Perpetuals and spot hold separate USDC, so moving USDC between them means something (see
@@ -219,7 +222,24 @@ enum class PortfolioMetric(val label: String) {
 }
 
 /** One point of a portfolio chart, in USD. */
-data class PortfolioPoint(val timeMs: Long, val value: Double)
+/** One point of a time series: a portfolio's value, a day's points, a vault's NAV. */
+data class SeriesPoint(val timeMs: Long, val value: Double)
+
+/**
+ * Collateral the venue accepts besides its settlement asset, counted toward margin at less than
+ * full value. Only what the venue reports: the credited figure is its arithmetic, not ours.
+ */
+data class CollateralAsset(
+  /** What the venue calls it, or its asset identifier where it gives no name. */
+  val name: String,
+  val amount: Double,
+  /** What the venue values the holding at, in USD. */
+  val valueUsd: Double,
+  /** The share of that value counting toward margin, as a percentage. */
+  val creditPercent: Double,
+  /** How much of it can be taken back out right now. */
+  val withdrawable: Double = 0.0,
+)
 
 /** A product's fee rates, as fractions of notional. */
 data class FeeRates(val makerRate: Double, val takerRate: Double)
@@ -241,6 +261,58 @@ data class TwapOrder(
   val frequencySeconds: Long,
 )
 
+/** Who runs a vault: the venue itself, or one of its users. */
+enum class VaultKind {
+  /** The venue's own vault, such as Decibel's DLP or Hyperliquid's HLP. */
+  PROTOCOL,
+  USER,
+}
+
+/**
+ * How a vault's manager is paid. The mechanic decides what a depositor has to be told before they
+ * contribute, so it is a type rather than a number: a venue with a new one won't compile until the
+ * screen that explains fees accounts for it.
+ */
+sealed interface ManagerFee {
+  /** The manager's share of profits, as a percentage. */
+  val percent: Double
+
+  /**
+   * Charged at the end of each interval on the gain since that interval began, with no high
+   * watermark. A stake that joins mid-interval pays on gains that predate it, and a manager earns
+   * on a recovery that hasn't made earlier depositors whole. [days] and [nextChargeAtMs] are null
+   * where the venue doesn't report them.
+   */
+  data class Interval(
+    override val percent: Double,
+    val days: Int? = null,
+    val nextChargeAtMs: Long? = null,
+  ) : ManagerFee
+
+  /** Charged only on profits above the stake's own previous peak. */
+  data class HighWatermark(override val percent: Double) : ManagerFee
+}
+
+/**
+ * One measure a venue reports about a vault beyond the common set. The venue says what it has and
+ * what kind of number it is; the screens decide how to show it, so a venue can be as detailed as
+ * its exchange without `:shared` learning anything venue-specific.
+ */
+data class VaultFact(val label: String, val value: VaultFactValue)
+
+sealed interface VaultFactValue {
+  /** A USD amount. */
+  data class Money(val usd: Double) : VaultFactValue
+
+  /** Already in percent units: 12.5 means 12.5%. [signed] shows a leading + on gains. */
+  data class Percent(val percent: Double, val signed: Boolean = false) : VaultFactValue
+
+  /** A bare number, such as a ratio or a multiple. */
+  data class Ratio(val value: Double, val decimals: Int = 2) : VaultFactValue
+
+  data class Text(val text: String) : VaultFactValue
+}
+
 /** A vault the account can deposit into. Display only. */
 data class VaultSummary(
   /** The venue's id for the vault, which deposits and redemptions name. */
@@ -248,16 +320,36 @@ data class VaultSummary(
   val name: String,
   val manager: String = "",
   val description: String = "",
+  val kind: VaultKind = VaultKind.USER,
   /** Assets under management, in USD. */
   val totalValue: Double = 0.0,
   val sharePrice: Double = 1.0,
-  /** The manager's share of profits, in basis points. */
-  val performanceFeeBps: Int = 0,
-  /** The manager's share of profits, as a percentage. */
-  val performanceFeePercent: Double = 0.0,
+  val fee: ManagerFee = ManagerFee.Interval(0.0),
   /** How long a deposit stays locked; null when the venue doesn't say. */
   val lockupSeconds: Long? = null,
+  /**
+   * What share of the vault the manager holds themselves, as a percentage. The manager's own money
+   * at risk; null where the venue doesn't report it.
+   */
+  val managerStakePercent: Double? = null,
+  /** How many accounts hold a stake; null where the venue doesn't report it. */
+  val depositorCount: Int? = null,
+  /** The venue's own performance and risk measures, in the order it reports them. */
+  val performance: List<VaultFact> = emptyList(),
   val isActive: Boolean = true,
+)
+
+/**
+ * A vault stake used as margin. Venues that accept vault shares as collateral credit them below
+ * face value and refuse shares still inside the vault's lockup.
+ */
+data class VaultCollateral(
+  /** Shares free to pledge now, excluding any still locked. */
+  val pledgeable: Double,
+  /** Shares already counting toward margin. */
+  val pledged: Double,
+  /** The share of their value that counts, as a percentage; null where the venue doesn't say. */
+  val creditPercent: Double? = null,
 )
 
 /** The account's stake in a vault. Display only. */
@@ -272,6 +364,12 @@ data class VaultPosition(
   val sharePrice: Double = vault.sharePrice,
   /** Until when the latest deposit is locked, if the venue locks deposits. */
   val lockedUntilMs: Long? = null,
+  /** Everything ever put in, in USD; null where the venue doesn't report it. */
+  val deposited: Double? = null,
+  /** Everything ever taken out, in USD; null where the venue doesn't report it. */
+  val withdrawn: Double? = null,
+  /** What the stake has made, in USD; null where the venue doesn't report it. */
+  val earned: Double? = null,
 )
 
 /** What a key may trade for the account. */
@@ -303,9 +401,17 @@ data class Rewards(
   val referral: ReferralSummary? = null,
   /** The account's trading-fee tier, where the venue sets fees by volume and staking. */
   val feeTier: FeeTier? = null,
+  /** Rewards the venue pays out on request; null where it runs no such programme. */
+  val campaigns: CampaignRewards? = null,
   /** Parts that couldn't be loaded this time. Screens keep what they showed for them. */
   val unavailable: Set<RewardPart> = emptySet(),
 ) {
+  /** True when no part of the rewards has anything to show yet. */
+  val isEmpty: Boolean
+    get() =
+      points == null && streak == null && tier == null && referral == null && feeTier == null &&
+        campaigns?.hasAnything != true
+
   /** These rewards, with the parts that failed to load taken from [previous]. */
   fun keepingUnavailableFrom(previous: Rewards?): Rewards =
     copy(
@@ -314,6 +420,7 @@ data class Rewards(
       tier = if (RewardPart.TIER in unavailable) previous?.tier else tier,
       referral = if (RewardPart.REFERRAL in unavailable) previous?.referral else referral,
       feeTier = if (RewardPart.FEE_TIER in unavailable) previous?.feeTier else feeTier,
+      campaigns = if (RewardPart.CAMPAIGNS in unavailable) previous?.campaigns else campaigns,
     )
 }
 
@@ -323,6 +430,7 @@ enum class RewardPart {
   TIER,
   REFERRAL,
   FEE_TIER,
+  CAMPAIGNS,
 }
 
 /** Where the account stands on the venue's fee schedule. Rates are fractions of notional. */
@@ -340,13 +448,70 @@ data class FeeTier(
   val referralDiscount: Double? = null,
 )
 
+/**
+ * A reward the venue has allocated and pays out on request, such as a rebate or a milestone. The
+ * amounts are exact decimal text because a claim signs them; nothing here is parsed to a Double.
+ */
+data class Campaign(
+  val id: String,
+  val title: String,
+  val detail: String = "",
+  val state: ClaimState,
+  /** What this allocation is worth, as exact decimal text; null when there is no allocation. */
+  val amount: String? = null,
+  val assetSymbol: String = "USDC",
+  /** When the claim window closes. An allocation lapses after it, unclaimed. */
+  val claimableUntilMs: Long? = null,
+  val claimedAtMs: Long? = null,
+  /** The transaction that paid it, where the venue reports one. */
+  val claimReference: String? = null,
+)
+
+/** Where an allocation stands, in the order a person moves through it. */
+enum class ClaimState {
+  /** The account earned nothing from this one. */
+  NOT_ELIGIBLE,
+  /** Still accruing, or published but not yet open to claim. */
+  IN_PROGRESS,
+  READY,
+  CLAIMED,
+  /** The claim window closed before it was taken. */
+  EXPIRED,
+}
+
+/** Everything the venue has allocated to the account, and what is claimable right now. */
+data class CampaignRewards(
+  /** Exact decimal text, summed across campaigns ready to claim. */
+  val readyToClaim: String,
+  val lifetimeEarned: String,
+  val assetSymbol: String = "USDC",
+  val campaigns: List<Campaign> = emptyList(),
+) {
+  val hasAnything: Boolean
+    get() = campaigns.isNotEmpty()
+}
+
 /** Reward points earned, such as Decibel's Amps; the venue descriptor names them. */
 data class RewardPoints(
   val total: Double,
   val rank: Int? = null,
   /** Where the points came from, in the venue's order. */
   val sources: List<RewardPointsSource> = emptyList(),
+  /** Everyone else, so a rank reads as a position rather than a number. */
+  val standing: PointsStanding? = null,
 )
+
+/** The season across every account, which puts one account's rank in proportion. */
+data class PointsStanding(val holders: Int, val distributed: Double) {
+  /** Where [rank] falls, as a percentage; null when either number can't say. */
+  fun topPercent(rank: Int?): Double? =
+    if (rank == null || rank <= 0 || holders <= 0) null
+    else (rank.toDouble() / holders * 100.0).coerceIn(0.01, 100.0)
+
+  /** What share of everything handed out so far [total] is; null when nothing has been. */
+  fun shareOf(total: Double): Double? =
+    if (distributed <= 0.0 || total <= 0.0) null else total / distributed * 100.0
+}
 
 data class RewardPointsSource(val label: String, val amount: Double)
 
@@ -355,6 +520,8 @@ data class TradingStreak(
   val days: Int,
   val longestDays: Int = 0,
   val graceDaysRemaining: Int = 0,
+  /** The days that counted, so a screen can show which ones they were. */
+  val qualifyingDates: Set<LocalDate> = emptySet(),
 )
 
 /** The account's tier, such as a rewards tier or a fee tier. */
@@ -372,4 +539,10 @@ data class ReferralSummary(
   val referredBy: String? = null,
   /** Rewards earned from referrals, in USD. */
   val earnedUsd: Double? = null,
+  /** How many traders the account brought in; null where the venue doesn't report it. */
+  val referredCount: Int? = null,
+  /** False while a venue still withholds the code behind a gate; null where it has none. */
+  val codeUnlocked: Boolean? = null,
+  /** An approved affiliate rather than an ordinary referrer. */
+  val affiliate: Boolean = false,
 )

@@ -14,16 +14,13 @@ import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
-import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.venue.model.VaultPosition
-import xyz.mcxross.flare.venue.model.VaultSummary
 
 data class AccountSnapshot(
   val account: String? = null,
@@ -166,40 +163,13 @@ interface AccountRepository {
   suspend fun portfolioChart(
     range: PortfolioChartRange = PortfolioChartRange.DAY_1,
     metric: PortfolioMetric = PortfolioMetric.EQUITY,
-  ): List<PortfolioPoint>
+  ): List<SeriesPoint>
 
   suspend fun fees(): TradingFees? = null
-
-  /**
-   * The account's rewards, or null when there are none to show. Parts that failed to load are
-   * listed in [Rewards.unavailable], so the others still show.
-   */
-  suspend fun rewards(): Rewards?
-
-  suspend fun redeemReferralCode(code: String): Boolean
 
   suspend fun activeTwaps(): List<TwapOrder>
 
   suspend fun twapHistory(limit: Int = 50): List<TwapOrder>
-
-  suspend fun vaults(limit: Int = 50): List<VaultSummary>
-
-  /** The selected account's stakes in vaults. */
-  suspend fun vaultPositions(): List<VaultPosition>
-
-  fun contributeToVault(
-    vaultAddress: String,
-    amount: String,
-    prompt: VaultPrompt,
-    feePayment: FeePayment = FeePayment.SPONSORED,
-  ): Flow<ActionState>
-
-  fun redeemFromVault(
-    vaultAddress: String,
-    shares: String,
-    prompt: VaultPrompt,
-    feePayment: FeePayment = FeePayment.SPONSORED,
-  ): Flow<ActionState>
 
   suspend fun refresh()
 

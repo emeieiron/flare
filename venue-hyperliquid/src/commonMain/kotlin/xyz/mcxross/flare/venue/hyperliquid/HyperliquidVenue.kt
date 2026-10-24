@@ -3,6 +3,7 @@ package xyz.mcxross.flare.venue.hyperliquid
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
+import org.koin.dsl.binds
 import org.koin.dsl.module
 import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
@@ -11,12 +12,15 @@ import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
 import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.ProtocolVaultTerms
 import xyz.mcxross.flare.venue.ReceiveInstructions
 import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.Venue
@@ -70,7 +74,20 @@ class HyperliquidVenue(
           feeUsdc = HyperliquidFunds.WITHDRAWAL_FEE.toWire(),
           internalTransfers = true,
         ),
-      vaultTerms = VaultTerms(stakeInUsdc = true, lockupPerDeposit = true),
+      vaultTerms =
+        VaultTerms(
+          stakeInUsdc = true,
+          lockupPerDeposit = true,
+          protocolVault =
+            ProtocolVaultTerms(
+              summary =
+                "Hyperliquid's own vault. It market-makes across the exchange and takes over " +
+                  "liquidated positions.",
+              risk =
+                "Taking on liquidated positions is how it earns and how it loses: a bad " +
+                  "liquidation is borne by depositors. Deposits are locked for 4 days.",
+            ),
+        ),
       // Hyperliquid files its markets under no asset class, so they're all crypto.
       perpCategories = listOf("crypto"),
     )
@@ -91,9 +108,7 @@ class HyperliquidVenue(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
-        rewards = true,
         sponsoredFees = false,
         networkFeeTopUp = false,
         inAppDeposit = false,
@@ -159,7 +174,8 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
     singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
     singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
     single { HyperliquidFunds(get(), get(), get()) }
-    single<AccountRepository> { HyperliquidAccountRepository(get(), get(), get(), get(), builder) }
+    single { HyperliquidAccountRepository(get(), get(), get(), get(), builder) } binds
+      arrayOf(AccountRepository::class, VaultsRepository::class, RewardsRepository::class)
     single { HyperliquidAssets(get()) }
     single<TradingRepository> {
       HyperliquidTradingRepository(client = get(), actions = get(), setup = get(), funds = get(), assets = get())

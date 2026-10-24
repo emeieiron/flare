@@ -49,7 +49,10 @@ import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.toChainUnits
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
@@ -58,13 +61,15 @@ import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.kaptos.model.AccountAddress
@@ -85,7 +90,7 @@ class DefaultAccountRepository(
   private val trading: DecibelTrading,
   private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
-) : AccountRepository {
+) : AccountRepository, VaultsRepository, RewardsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -962,7 +967,7 @@ class DefaultAccountRepository(
   override suspend fun portfolioChart(
     range: PortfolioChartRange,
     metric: PortfolioMetric,
-  ): List<PortfolioPoint> {
+  ): List<SeriesPoint> {
     val account = preferences.values.first().selectedSubaccount ?: return emptyList()
     return readAccount(account) {
         client.accounts.portfolioChart(account, range.decibelWireValue, metric.decibelWireValue)
@@ -979,15 +984,26 @@ class DefaultAccountRepository(
     val streak = runSuspendCatching { tradingStreak() }
     val amps = runSuspendCatching { ampsBreakdown() }
     val tier = runSuspendCatching { tierInfo() }
-    return decibelRewards(streak, amps, tier)
+    val campaigns = runSuspendCatching { accountCampaigns() }
+    val referral = runSuspendCatching { referralSummary() }
+    // Public season totals; a failure here only costs the rank its context.
+    val global = runSuspendCatching { client.accounts.globalPoints() }.getOrNull()
+    return decibelRewards(streak, amps, tier, campaigns, referral, global = global)
   }
 
-  private suspend fun tradingStreak(): DecibelTradingStreak? {
+  override suspend fun pointsHistory(): List<SeriesPoint> =
+    readOwner { client.accounts.dailyAmps(it).toPointsHistory() }.orEmpty()
+
+  private suspend fun accountCampaigns(): UserCampaigns? {
     val account = preferences.values.first().selectedSubaccount ?: return null
-    return readAccount(account) { client.accounts.streak(account) }
+    return readAccount(account) { client.accounts.campaigns(account) }
   }
 
-  private suspend fun ampsBreakdown(): AmpsBreakdown? {
+  /**
+   * Runs a read the venue scopes by `owner`: points, the streak and the tier are the wallet's,
+   * not a subaccount's, and need the wallet's own session to pass the proxy's scope check.
+   */
+  private suspend fun <T> readOwner(block: suspend (owner: String) -> T): T? {
     val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
     val account = preferences.values.first().selectedSubaccount
     val current = sessions.status.value
@@ -998,13 +1014,18 @@ class DefaultAccountRepository(
     ) current else sessions.authenticateOwner(
       account, VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
     )
-    return sessions.bind(session, flow { emit(client.accounts.amps(owner)) }).first()
+    return sessions.bind(session, flow { emit(block(owner)) }).first()
   }
 
-  private suspend fun tierInfo(): TierInfo? {
-    val account = preferences.values.first().selectedSubaccount ?: return null
-    return readAccount(account) { client.accounts.tier(account) }
-  }
+  private suspend fun tradingStreak(): DecibelTradingStreak? =
+    readOwner { client.accounts.streak(it) }
+
+  private suspend fun ampsBreakdown(): AmpsBreakdown? = readOwner { client.accounts.amps(it) }
+
+  private suspend fun tierInfo(): TierInfo? = readOwner { client.accounts.tier(it) }
+
+  private suspend fun referralSummary(): ReferralSummary? =
+    readOwner { decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it)) }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
     val account = preferences.values.first().selectedSubaccount ?: return false
@@ -1032,7 +1053,7 @@ class DefaultAccountRepository(
       .map { it.toVaultPosition() }
   }
 
-  override fun contributeToVault(
+  override fun contribute(
     vaultAddress: String,
     amount: String,
     prompt: VaultPrompt,
@@ -1061,7 +1082,7 @@ class DefaultAccountRepository(
     }
   }
 
-  override fun redeemFromVault(
+  override fun redeem(
     vaultAddress: String,
     shares: String,
     prompt: VaultPrompt,
@@ -1089,11 +1110,67 @@ class DefaultAccountRepository(
     }
   }
 
+  override suspend fun collateral(vaultAddress: String): VaultCollateral? {
+    val subaccount = preferences.values.first().selectedSubaccount ?: return null
+    val shares =
+      when (val result = client.vaultCollateral.shareCollateral(vaultAddress, subaccount)) {
+        is AptosResult.Success -> result.value
+        is AptosResult.Failure -> return null
+      }
+    // The credit comes from the overview, which reports it per secondary asset.
+    val credit = snapshot.value.overview?.secondaryCollateral?.firstOrNull()?.creditPercent
+    return VaultCollateral(
+      pledgeable = shares.pledgeable.toShareAmount(),
+      pledged = shares.pledged.toShareAmount(),
+      creditPercent = credit,
+    )
+  }
+
+  override fun setCollateral(
+    vaultAddress: String,
+    shares: String,
+    pledge: Boolean,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): Flow<ActionState> = flow {
+    val subaccount =
+      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val units = DecimalInput(shares).toChainUnits("Share amount", SHARE_DECIMALS).getOrThrow()
+    require(units > 0uL) { "Enter an amount greater than zero" }
+    require(units <= Long.MAX_VALUE.toULong()) { "That is more shares than the vault holds" }
+    val asset =
+      when (val result = client.vaultCollateral.shareCollateral(vaultAddress, subaccount)) {
+        is AptosResult.Success -> result.value.assetMetadata
+        is AptosResult.Failure -> error("Flare couldn't read this vault's shares")
+      }
+    try {
+      emitAll(
+        trading.executeCommand(
+          command =
+            DecibelCommand.PledgeCollateral(
+              subaccount = subaccount,
+              assetMetadata = asset,
+              // The chain takes one signed amount: positive pledges, negative releases.
+              shares = units.toLong().let { if (pledge) it else -it },
+            ),
+          prompt = prompt.copy(requireFreshAuthorization = true),
+          feePayment = feePayment,
+        )
+      )
+    } finally {
+      runSuspendCatching { restoreTrading() }
+    }
+  }
+
+  /** Decibel stores shares with six decimals, as the vault performance reader also assumes. */
+  private fun ULong.toShareAmount(): Double = toDouble() / 1_000_000.0
+
   private companion object {
     /** One reviewed "create account and enable trading" may span its two transactions. */
     const val SETUP_APPROVAL_WINDOW_MS = 60_000L
     const val BACKFILL_INTERVAL_MS = 2_000L
     const val USDC_DECIMALS = 6
+    const val SHARE_DECIMALS = 6
     const val HISTORY_PAGE_SIZE = 50
   }
 }

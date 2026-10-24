@@ -27,8 +27,26 @@ data class AccountOverview(
   @SerialName("cross_available_to_trade") val availableToTrade: Double = 0.0,
   @SerialName("usdc_cross_balance") val crossUsdcBalance: Double? = null,
   @SerialName("free_vault_equity") val freeVaultEquity: Double? = null,
+  @SerialName("secondary_collateral") val secondaryCollateral: List<SecondaryCollateral> = emptyList(),
   val spot: SpotOverview? = null,
 )
+
+/**
+ * Collateral other than USDC. Decibel credits it below full value, storing the discount as a
+ * haircut in basis points: 1,000 bps is a 90% credit.
+ */
+@Serializable
+data class SecondaryCollateral(
+  @SerialName("asset_type") val assetType: String = "",
+  val amount: Double = 0.0,
+  @SerialName("haircut_bps") val haircutBps: Int = 0,
+  @SerialName("nav_per_unit") val navPerUnit: Double = 0.0,
+  @SerialName("value_in_usdc") val valueInUsdc: Double = 0.0,
+  @SerialName("withdrawable_amount") val withdrawableAmount: Double = 0.0,
+) {
+  /** The share of value that counts toward margin, as a percentage. */
+  val creditPercent: Double get() = (10_000 - haircutBps) / 100.0
+}
 
 @Serializable
 data class SpotOverview(
@@ -200,10 +218,12 @@ data class FundHistory(
 
 @Serializable
 data class TradingStreak(
-  @SerialName("streak_count") val streakCount: Int = 0,
-  @SerialName("longest_streak") val longestStreak: Int = 0,
-  @SerialName("grace_days_remaining") val graceDaysRemaining: Int = 0,
-  @SerialName("qualifying_dates") val qualifyingDates: List<String> = emptyList(),
+  /** `/streaks/account` answers in camelCase, unlike the rest of the API. */
+  @SerialName("currentStreak") val streakCount: Int = 0,
+  @SerialName("graceDaysAvailable") val graceDaysRemaining: Int = 0,
+  @SerialName("graceDaysUsed") val graceDaysUsed: Int = 0,
+  /** ISO dates the account traded on, which the streak is counted from. */
+  @SerialName("qualifyingDates") val qualifyingDates: List<String> = emptyList(),
 )
 
 @Serializable
@@ -280,6 +300,23 @@ data class VaultInfo(
   @SerialName("lockup_seconds") val lockupSecondsFallback: Long = 0L,
   @SerialName("status") val status: String? = null,
   @SerialName("is_active") val isActiveFallback: Boolean = true,
+  @SerialName("vault_type") val vaultType: String? = null,
+  @SerialName("depositors") val depositors: Int? = null,
+  /**
+   * The share of the vault held as cash rather than deployed into positions, as a percentage. Not
+   * the manager's own stake: every vault with no open position reports exactly 100.
+   */
+  @SerialName("manager_cash_pct") val managerCashPct: Double? = null,
+  /** A fraction, as Hyperliquid also reports it: 0.184 is 18.4%. */
+  @SerialName("apr") val apr: Double? = null,
+  /** Percentages, matching `all_time_return` on the account's own performance. */
+  @SerialName("all_time_return") val allTimeReturn: Double? = null,
+  @SerialName("past_month_return") val pastMonthReturn: Double? = null,
+  @SerialName("max_drawdown") val maxDrawdown: Double? = null,
+  @SerialName("sharpe_ratio") val sharpeRatio: Double? = null,
+  @SerialName("volume_30d") val volume30d: Double? = null,
+  /** A fraction, unlike the returns above: 0.846 is 84.6%. */
+  @SerialName("weekly_win_rate_12w") val weeklyWinRate12w: Double? = null,
 ) {
   constructor(
     address: String = "",
@@ -307,6 +344,16 @@ data class VaultInfo(
     lockupSecondsFallback = lockupSeconds,
     status = null,
     isActiveFallback = isActive,
+    vaultType = null,
+    depositors = null,
+    managerCashPct = null,
+    apr = null,
+    allTimeReturn = null,
+    pastMonthReturn = null,
+    maxDrawdown = null,
+    sharpeRatio = null,
+    volume30d = null,
+    weeklyWinRate12w = null,
   )
 
   val totalAum: Double get() = tvl ?: totalAumFallback
@@ -316,6 +363,9 @@ data class VaultInfo(
   val lockupSeconds: Long get() = lockdownPeriodS ?: lockupSecondsFallback
   val isActive: Boolean
     get() = if (status != null) status.equals("active", ignoreCase = true) else isActiveFallback
+
+  /** Decibel's own DLP vault, rather than one a user launched. */
+  val isProtocol: Boolean get() = vaultType?.equals("protocol", ignoreCase = true) == true
 }
 
 @Serializable
@@ -384,3 +434,78 @@ data class AccountVaultPerformance(
   val effectiveSharePrice: Double
     get() = positionSharePrice ?: vault.sharePrice
 }
+
+/**
+ * `/campaigns/account`. Amounts are integer units of [UserClaim.rewardAsset], never decimals: a
+ * claim signs them, so they stay exact all the way to the screen.
+ */
+@Serializable
+data class UserCampaigns(
+  @SerialName("ready_to_claim") val readyToClaim: Long = 0,
+  @SerialName("lifetime_earned") val lifetimeEarned: Long = 0,
+  @SerialName("total_claimed") val totalClaimed: Long = 0,
+  val claims: List<UserClaim> = emptyList(),
+)
+
+@Serializable
+data class UserClaim(
+  @SerialName("campaign_id") val campaignId: Long = 0,
+  /** Extensible: Decibel adds types, so this stays a string. */
+  @SerialName("campaign_type") val campaignType: String = "",
+  val title: String = "",
+  val description: String? = null,
+  val status: String = "",
+  @SerialName("reward_asset") val rewardAsset: String = "",
+  @SerialName("has_allocation") val hasAllocation: Boolean = false,
+  @SerialName("ready_to_claim") val readyToClaim: Long = 0,
+  @SerialName("claimable_amount") val claimableAmount: Long = 0,
+  @SerialName("claimed_amount") val claimedAmount: Long = 0,
+  @SerialName("claim_start_ts_sec") val claimStartTsSec: Long = 0,
+  @SerialName("claim_end_ts_sec") val claimEndTsSec: Long = 0,
+  @SerialName("claimed_at_ts_sec") val claimedAtTsSec: Long? = null,
+  @SerialName("claim_tx_hash") val claimTxHash: String? = null,
+)
+
+/** `/points/amps/daily`: one row per season day, newest first. */
+@Serializable
+data class OwnerAmpsDaily(
+  val owner: String = "",
+  val season: String = "",
+  val days: List<DailyAmps> = emptyList(),
+)
+
+@Serializable
+data class DailyAmps(
+  @SerialName("day_index") val dayIndex: Int = 0,
+  @SerialName("day_start_unix_ms") val dayStartUnixMs: Long = 0,
+  @SerialName("total_amps") val totalAmps: Double = 0.0,
+  @SerialName("trading_amps") val tradingAmps: Double = 0.0,
+  @SerialName("streak_amps") val streakAmps: Double = 0.0,
+  @SerialName("referral_amps") val referralAmps: Double = 0.0,
+  @SerialName("vault_amps") val vaultAmps: Double = 0.0,
+)
+
+/** `/points/global`: the season across everyone, for putting one account's rank in proportion. */
+@Serializable
+data class GlobalPointsStats(
+  @SerialName("total_users") val totalUsers: Int = 0,
+  @SerialName("total_amps_distributed") val totalAmpsDistributed: Double = 0.0,
+)
+
+/** `/referrals/stats/{account}`: the account as a referrer. */
+@Serializable
+data class ReferrerStats(
+  /** Withheld until the volume threshold is met, unless the account is an affiliate. */
+  val codes: List<String> = emptyList(),
+  @SerialName("is_affiliate") val isAffiliate: Boolean = false,
+  @SerialName("total_referrals") val totalReferrals: Int = 0,
+  @SerialName("volume_threshold_met") val volumeThresholdMet: Boolean = false,
+)
+
+/** `/referrals/account/{account}`: who referred this account, if anyone. */
+@Serializable
+data class AccountReferralInfo(
+  @SerialName("referral_code") val referralCode: String = "",
+  @SerialName("referrer_account") val referrerAccount: String = "",
+  @SerialName("is_active") val isActive: Boolean = false,
+)

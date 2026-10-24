@@ -45,7 +45,7 @@ class SetupGatingTest {
     preferences.deferSetup()
     val accounts = SetupAccounts().apply { awaitingDeposit = true }
     val gate = AccountSetupGate(preferences, accounts)
-    val vm = SettingsViewModel(preferences, SetupWallets(), accounts, null, testVenue(), SetupCredentials, gate)
+    val vm = SettingsViewModel(preferences, SetupWallets(), accounts, null, accounts, testVenue(), SetupCredentials, gate)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     assertEquals(SetupNeed.TRADING, vm.uiState.value.setupNeed)

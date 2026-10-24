@@ -35,6 +35,8 @@ import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
 import xyz.mcxross.flare.hyperliquid.model.TwapState
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.venue.model.ActionState
@@ -45,7 +47,7 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingFees
@@ -65,7 +67,7 @@ class HyperliquidAccountRepository(
   private val setup: HyperliquidSetup,
   private val funds: HyperliquidFunds,
   private val builderAddress: String? = null,
-) : AccountRepository {
+) : AccountRepository, VaultsRepository, RewardsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   override val snapshot: StateFlow<AccountSnapshot> = mutableSnapshot.asStateFlow()
@@ -442,7 +444,7 @@ class HyperliquidAccountRepository(
   override suspend fun portfolioChart(
     range: PortfolioChartRange,
     metric: PortfolioMetric,
-  ): List<PortfolioPoint> {
+  ): List<SeriesPoint> {
     val account = currentAccount() ?: return emptyList()
     return client.info.portfolio(account).chart(range, metric)
   }
@@ -597,7 +599,7 @@ class HyperliquidAccountRepository(
   override fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> =
     moving { account -> funds.send(account, destination, amount, prompt) }
 
-  override fun contributeToVault(
+  override fun contribute(
     vaultAddress: String,
     amount: String,
     prompt: VaultPrompt,
@@ -605,7 +607,7 @@ class HyperliquidAccountRepository(
   ): Flow<ActionState> = moving { account -> funds.vault(account, vaultAddress, true, amount, prompt) }
 
   /** Hyperliquid vault stakes are USDC amounts, so [shares] is the USDC to take out. */
-  override fun redeemFromVault(
+  override fun redeem(
     vaultAddress: String,
     shares: String,
     prompt: VaultPrompt,

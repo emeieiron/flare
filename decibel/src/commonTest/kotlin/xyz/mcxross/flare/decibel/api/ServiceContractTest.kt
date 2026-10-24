@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
@@ -151,11 +152,15 @@ class ServiceContractTest {
 
   @Test
   fun streakAndAmpsDecodeFields() = runTest {
+    var streakQuery = ""
     val httpStreak =
       HttpClient(
-        MockEngine {
+        MockEngine { request ->
+          streakQuery = request.url.encodedQuery
+          // `/streaks/account` answers in camelCase, unlike the rest of the API.
           respondJson(
-            """{"streak_count":5,"longest_streak":10,"grace_days_remaining":2,"qualifying_dates":["2026-09-20","2026-09-21"]}"""
+            """{"owner":"0x22","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
+              """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
           )
         }
       )
@@ -163,6 +168,9 @@ class ServiceContractTest {
     val streak = assertNotNull(streakService.streak("0x22"))
     assertEquals(5, streak.streakCount)
     assertEquals(2, streak.graceDaysRemaining)
+    assertEquals(listOf("2026-09-20", "2026-09-21"), streak.qualifyingDates)
+    // It is scoped by owner, not by account: the proxy rejects it otherwise.
+    assertEquals("owner=0x22", streakQuery)
 
     val httpAmps =
       HttpClient(
@@ -202,12 +210,50 @@ class ServiceContractTest {
     })))
     assertNull(missing.streak("0x22"))
     assertNull(missing.tier("0x22"))
+    assertNull(missing.referrerStats("0x22"))
+    assertNull(missing.accountReferral("0x22"))
     val denied = DefaultAccountDataService(api(HttpClient(MockEngine {
       respondJson("{}", HttpStatusCode.Forbidden)
     })))
     assertFailsWith<DecibelApiError> { denied.amps("0xowner") }
     assertFailsWith<DecibelApiError> { denied.streak("0x22") }
     assertFailsWith<DecibelApiError> { denied.tier("0x22") }
+    assertFailsWith<DecibelApiError> { denied.referrerStats("0x22") }
+    assertFailsWith<DecibelApiError> { denied.accountReferral("0x22") }
+  }
+
+  @Test
+  fun referralReadsCarryTheOwnerInThePath() = runTest {
+    val paths = mutableListOf<String>()
+    val http =
+      HttpClient(
+        MockEngine { request ->
+          paths += request.url.encodedPath
+          if ("referrals/stats/" in request.url.encodedPath) {
+            respondJson(
+              """{"referrer_account":"0x22","total_referrals":3,"total_codes_created":1,""" +
+                """"is_affiliate":false,"codes":[],"volume_threshold_met":false}"""
+            )
+          } else {
+            respondJson(
+              """{"account":"0x22","referrer_account":"0x33","referral_code":"FRIEND",""" +
+                """"is_affiliate_referral":false,"referred_at_ms":1735758000000,"is_active":true}"""
+            )
+          }
+        }
+      )
+    val service = DefaultAccountDataService(api(http))
+
+    val stats = assertNotNull(service.referrerStats("0x22"))
+    assertEquals(3, stats.totalReferrals)
+    assertTrue(stats.codes.isEmpty())
+    assertFalse(stats.volumeThresholdMet)
+    val referral = assertNotNull(service.accountReferral("0x22"))
+    assertEquals("FRIEND", referral.referralCode)
+    assertEquals("0x33", referral.referrerAccount)
+    // The proxy scopes both by the owner in the path, not by a parameter.
+    assertTrue(paths[0].endsWith("/referrals/stats/0x22"), paths[0])
+    assertTrue(paths[1].endsWith("/referrals/account/0x22"), paths[1])
   }
 
   private fun api(client: HttpClient) =

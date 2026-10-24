@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -28,6 +29,10 @@ import xyz.mcxross.flare.hyperliquid.model.TwapHistoryEntry
 import xyz.mcxross.flare.hyperliquid.model.UserFees
 import xyz.mcxross.flare.hyperliquid.model.VaultDetails
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
+import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
@@ -415,16 +420,34 @@ class HyperliquidAccountMappersTest {
     assertEquals(Fixtures.HLP_VAULT, vault.address)
     assertEquals("Hyperliquidity Provider (HLP)", vault.name)
     assertEquals(4 * 24 * 60 * 60L, vault.lockupSeconds)
-    assertEquals(0, vault.performanceFeeBps)
+    // Hyperliquid charges above a depositor's own peak; HLP charges nothing.
+    assertEquals(ManagerFee.HighWatermark(0.0), vault.fee)
+    assertEquals(VaultKind.PROTOCOL, vault.kind)
+    // HLP has no manager staking their own money, and `followers` is a capped page, not a count.
+    assertNull(vault.managerStakePercent)
+    assertNull(vault.depositorCount)
+    // Hyperliquid reports APR as a fraction; the model carries percent units.
+    assertEquals(
+      listOf(VaultFact("APR", VaultFactValue.Percent(0.04780463600667063 * 100.0, signed = true))),
+      vault.performance,
+    )
     assertEquals(116561392.6439010054, vault.totalValue, 1e-3)
     assertTrue(vault.isActive)
-    assertEquals(24 * 60 * 60L, details.toVaultSummary(isProtocolVault = false).lockupSeconds)
+    val userVault = details.toVaultSummary(isProtocolVault = false)
+    assertEquals(24 * 60 * 60L, userVault.lockupSeconds)
+    assertEquals(VaultKind.USER, userVault.kind)
+    // A manager's own stake is a user-vault fact, and this one is far below a rounded 0.01%.
+    assertEquals(6.645107064126772e-7 * 100.0, assertNotNull(userVault.managerStakePercent), 1e-12)
 
     val stake = decode<List<VaultEquity>>(Fixtures.USER_VAULT_EQUITIES).single().toVaultPosition(vault, details)
     assertEquals(1070.102048, stake.value)
     assertEquals(stake.value, stake.shares)
     assertEquals(1765926140668L, stake.lockedUntilMs)
     assertEquals(71.1020487389 / (1070.102048 - 71.1020487389) * 100.0, stake.returnPercent, 1e-9)
+    // Hyperliquid reports the stake's profit but not what went in and out of it.
+    assertEquals(71.1020487389, assertNotNull(stake.earned))
+    assertNull(stake.deposited)
+    assertNull(stake.withdrawn)
   }
 
   @Test

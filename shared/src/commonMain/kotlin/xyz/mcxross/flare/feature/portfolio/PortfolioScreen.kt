@@ -1,10 +1,22 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlin.time.Clock
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -72,9 +84,15 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.CampaignRewards
+import xyz.mcxross.flare.venue.model.ClaimState
 import xyz.mcxross.flare.venue.model.FeeTier
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.venue.model.RewardPoints
+import xyz.mcxross.flare.venue.model.SeriesPoint
+import xyz.mcxross.flare.venue.model.TradingStreak
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.flare.venue.model.ActionKind
 
@@ -145,6 +163,10 @@ fun PortfolioScreen(
     onIntent(PortfolioIntent.SetHistoryVisible(page == PortfolioPage.HISTORY))
     if (page == PortfolioPage.VAULTS) onIntent(PortfolioIntent.RefreshVaults)
   }
+  LaunchedEffect(page, vaultAddress) {
+    if (page == PortfolioPage.VAULT_DETAIL)
+      vaultAddress?.let { onIntent(PortfolioIntent.InspectVaultCollateral(it)) }
+  }
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
     Column(Modifier.fillMaxSize()) {
       if (displayedPage != PortfolioPage.OVERVIEW) {
@@ -156,6 +178,7 @@ fun PortfolioScreen(
       }
       savedPages.SaveableStateProvider(displayedPage) {
         var query by rememberSaveable { mutableStateOf("") }
+        val protocolVaultTerms = LocalVenue.current.vaultTerms.protocolVault
         LazyColumn(
           state = rememberLazyListState(),
           modifier = Modifier.fillMaxWidth().weight(1f),
@@ -238,10 +261,19 @@ fun PortfolioScreen(
                   page = PortfolioPage.VAULT_DETAIL
                 }
               }
-              if (availableMatches.isNotEmpty()) item { SectionLabel("Discover") }
-              items(availableMatches, key = { it.address }) { vault ->
+              // The venue's own vault is a different product, so it isn't row one of the list.
+              val (protocolMatches, userMatches) =
+                availableMatches.partition { it.kind == VaultKind.PROTOCOL }
+              items(protocolMatches, key = { "protocol:${it.address}" }) { vault ->
+                ProtocolVaultCard(vault, protocolVaultTerms?.summary) {
+                  vaultAddress = vault.address
+                  page = PortfolioPage.VAULT_DETAIL
+                }
+              }
+              if (userMatches.isNotEmpty()) item { SectionLabel("Discover") }
+              items(userMatches, key = { it.address }) { vault ->
                 VaultSummaryRow(vault.name, formatBalance(vault.totalValue),
-                  "Assets managed · ${formatQuantity(vault.performanceFeePercent, 2)}% fee") {
+                  "Assets managed · ${managerFeeRate(vault.fee)} fee") {
                   vaultAddress = vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
@@ -258,8 +290,7 @@ fun PortfolioScreen(
             }
             PortfolioPage.REWARDS -> item {
               val rewards = state.rewards
-              if (rewards?.streak != null || rewards?.points != null || rewards?.tier != null ||
-                rewards?.feeTier != null || rewards?.referral != null) {
+              if (rewards != null && !rewards.isEmpty) {
                 Column { RewardsDetails(state) }
                 if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
@@ -313,7 +344,14 @@ private fun PortfolioOverview(
       DetailRow("Trading collateral", overview?.balances?.collateral?.let(::formatBalance) ?: "—")
       if (state.capabilities.spot) DetailRow("Spot assets",
         if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
-      if (state.capabilities.vaults) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      if (state.vaultsAvailable) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      // Collateral the venue credits below full value states the credit, not a figure we derived.
+      overview?.secondaryCollateral.orEmpty().forEach { collateral ->
+        DetailRow(
+          collateral.name,
+          "${formatBalance(collateral.valueUsd)} · counts at ${formatQuantity(collateral.creditPercent, 2)}%",
+        )
+      }
       DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—")
       Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
         style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
@@ -359,14 +397,14 @@ private fun PortfolioOverview(
       is HoldingsPreview.Holding -> PreviewValue(preview.symbol, preview.valueUsd?.let(::formatBalance) ?: "—", preview.subtitle)
     }
   }
-  if (state.capabilities.vaults) PortfolioDestination("Vaults",
+  if (state.vaultsAvailable) PortfolioDestination("Vaults",
     state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
     { onPage(PortfolioPage.VAULTS) }) {
     if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
     else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
       if (state.vaultsError != null) "Updating automatically" else null)
   }
-  if (state.capabilities.rewards && state.rewardPointsName == null) {
+  if (state.rewardsAvailable && state.rewardPointsName == null) {
     // Without reward points, the card is the account's fee tier.
     val feeTier = state.rewards?.feeTier
     PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
@@ -374,7 +412,7 @@ private fun PortfolioOverview(
       else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
         if (state.rewardsError) "Updating automatically" else null)
     }
-  } else if (state.capabilities.rewards) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
+  } else if (state.rewardsAvailable) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
     val points = state.rewards?.points
     if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
     else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
@@ -423,13 +461,42 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
   val stakeInUsdc = LocalVenue.current.vaultTerms.stakeInUsdc
   position?.let {
-    DetailRow("Your value", formatBalance(it.value))
-    if (!stakeInUsdc) DetailRow("Your shares", formatQuantity(it.shares, 4))
-    DetailRow("Return", "${if (it.returnPercent >= 0) "+" else ""}${formatQuantity(it.returnPercent, 2)}%")
+    SectionLabel("Your stake")
+    DetailRow("Value", formatBalance(it.value))
+    if (!stakeInUsdc) DetailRow("Shares", formatQuantity(it.shares, 4))
+    DetailRow("Return", signedPercent(it.returnPercent), valueColor = amountColor(it.returnPercent))
+    it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
+    it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
+      DetailRow("You took out", formatBalance(amount))
+    }
+    it.earned?.let { amount ->
+      DetailRow("Earned", formatSignedBalance(amount), valueColor = amountColor(amount))
+    }
   }
+  SectionLabel("The vault")
   if (!stakeInUsdc) DetailRow("Share price", formatPrice(position?.sharePrice ?: vault.sharePrice))
   DetailRow("Assets managed", formatBalance(vault.totalValue))
-  DetailRow("Performance fee", "${formatQuantity(vault.performanceFeePercent, 2)}%")
+  DetailRow("Performance fee", managerFeeRate(vault.fee))
+  vault.managerStakePercent?.let { DetailRow("Manager holds", managerStakeText(it)) }
+  vault.depositorCount?.let {
+    DetailRow("Depositors", "$it ${if (it == 1) "account" else "accounts"}")
+  }
+  // Whatever else this venue measures, in its own order.
+  if (vault.performance.isNotEmpty()) {
+    SectionLabel("Performance")
+    vault.performance.forEach { fact ->
+      DetailRow(fact.label, vaultFactText(fact.value), valueColor = vaultFactColor(fact.value))
+    }
+  }
+  managerFeeNote(vault.fee)?.let {
+    Text(it, Modifier.padding(top = 16.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
+  }
+  if (vault.kind == VaultKind.PROTOCOL) {
+    LocalVenue.current.vaultTerms.protocolVault?.let {
+      ActionNotice(it.risk, Modifier.padding(top = 16.dp))
+    }
+  }
   val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.FUNDS)
   val lockedUntil = position?.lockedUntil()
   Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -440,6 +507,22 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
       Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
       enabled = !state.busy && actionsUnavailable == null && lockedUntil == null)
   }
+  state.collateralFor(vault.address)?.let { collateral ->
+    SectionLabel("As margin")
+    DetailRow("Pledged", "${formatQuantity(collateral.pledged, 4)} shares")
+    DetailRow("Free to pledge", "${formatQuantity(collateral.pledgeable, 4)} shares")
+    collateral.creditPercent?.let { DetailRow("Counts at", "${formatQuantity(it, 2)}%") }
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      if (collateral.pledgeable > 0.0) FlareButton("Use as margin",
+        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE)) },
+        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
+        enabled = !state.busy && actionsUnavailable == null)
+      if (collateral.pledged > 0.0) FlareButton("Release",
+        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE)) },
+        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
+        enabled = !state.busy && actionsUnavailable == null)
+    }
+  }
   lockedUntil?.let {
     Text("Your latest deposit is locked until ${formatCalendarDateTime(it)}.", Modifier.padding(top = 12.dp),
       color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
@@ -447,37 +530,148 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   actionsUnavailable?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 12.dp)) }
 }
 
+/**
+ * The sections the venue reports, in order. One with no data is left out, so a venue with both
+ * points and a fee tier shows both, and adding a programme adds a section rather than a branch.
+ */
 @Composable
 private fun RewardsDetails(state: PortfolioUiState) {
-  if (state.rewardPointsName == null) {
-    FeeTierDetails(state.rewards?.feeTier)
-    state.rewards?.referral?.let { ReferralDetails(it) }
-    return
-  }
+  val rewards = state.rewards
   val pointsName = state.rewardPointsName
-  val points = state.rewards?.points
-  Text("Total $pointsName", color = FlareColors.TextSecondary)
-  Text(points?.let { formatCount(it.total) } ?: "—",
-    Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
-  state.rewards?.tier?.let { DetailRow("Tier", it.name) }
-  points?.rank?.let { DetailRow("Rank", "#$it") }
-  state.rewards?.streak?.let {
-    DetailRow("Current streak", if (it.days == 0) "No active streak" else "${it.days} days")
-    if (it.longestDays > 0) DetailRow("Longest streak", "${it.longestDays} days")
-    if (it.graceDaysRemaining > 0) DetailRow("Grace remaining", "${it.graceDaysRemaining} days")
+  val points = rewards?.points
+  // The first section that has one carries the page's large number.
+  var headline = true
+
+  if (pointsName != null) {
+    RewardsHeadline("Total $pointsName", points?.let { formatCount(it.total) } ?: "—")
+    headline = false
+    if (state.pointsHistory.size >= 2) PointsHistory(pointsName, state.pointsHistory)
+    rewards?.tier?.let { DetailRow("Tier", it.name) }
+    points?.let { PointsStandingRows(pointsName, it) }
   }
-  points?.let {
-    val breakdown = it.sources.filter { source -> source.amount > 0 }
-    if (breakdown.isNotEmpty()) SectionLabel("$pointsName earned")
-    breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
+  rewards?.feeTier?.let { tier ->
+    FeeTierDetails(tier, headline)
+    headline = false
+  }
+  rewards?.campaigns?.takeIf { it.hasAnything }?.let { CampaignDetails(it) }
+  rewards?.streak?.let { StreakDetails(it) }
+  if (pointsName != null && points != null) PointsBreakdown(pointsName, points)
+  rewards?.referral?.let { ReferralDetails(it, state.referralGate) }
+}
+
+/** What the account earned each day, and how that compares with its recent pace. */
+@Composable
+private fun PointsHistory(pointsName: String, history: List<SeriesPoint>) {
+  FlareLineChart(
+    points = history,
+    lineColor = FlareColors.Positive,
+    modifier = Modifier.padding(bottom = 8.dp),
+    fullBleed = false,
+    height = 140.dp,
+  )
+  val today = history.last().value
+  val week = history.takeLast(7)
+  val average = week.sumOf { it.value } / week.size
+  DetailRow("$pointsName today", formatCount(today))
+  DetailRow("${week.size}-day average", formatCount(average))
+}
+
+@Composable
+private fun RewardsHeadline(label: String, value: String) {
+  Text(label, color = FlareColors.TextSecondary)
+  Text(value, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+}
+
+/** What the venue owes the account: what is claimable now, and when each allocation lapses. */
+@Composable
+private fun CampaignDetails(rewards: CampaignRewards) {
+  SectionLabel("Rewards to claim")
+  DetailRow("Ready to claim", "${rewards.readyToClaim} ${rewards.assetSymbol}")
+  DetailRow("Earned all time", "${rewards.lifetimeEarned} ${rewards.assetSymbol}")
+  rewards.campaigns.forEach { campaign ->
+    DetailRow(campaign.title, claimStateText(campaign), valueColor = claimStateColor(campaign.state))
+  }
+  if (rewards.campaigns.any { it.state == ClaimState.READY }) {
+    Text("Claim these in the ${LocalVenue.current.displayName} app; Flare can't claim them yet.",
+      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
   }
 }
 
 @Composable
-private fun FeeTierDetails(tier: FeeTier?) {
-  if (tier == null) return
-  Text("Fee tier", color = FlareColors.TextSecondary)
-  Text(tier.name, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+private fun StreakDetails(streak: TradingStreak) {
+  SectionLabel("Streak")
+  if (streak.qualifyingDates.isNotEmpty() || streak.days > 0) StreakWeek(streak.qualifyingDates)
+  DetailRow("Current streak", if (streak.days == 0) "No active streak" else "${streak.days} days")
+  if (streak.longestDays > 0) DetailRow("Longest streak", "${streak.longestDays} days")
+  DetailRow(
+    "Grace days left",
+    when (streak.graceDaysRemaining) {
+      0 -> "None — a missed day ends it"
+      1 -> "1 — one missed day is forgiven"
+      else -> "${streak.graceDaysRemaining} — that many missed days are forgiven"
+    },
+  )
+}
+
+/** The last seven days, filled where the account traded. Today is the rightmost. */
+@Composable
+private fun StreakWeek(qualifying: Set<LocalDate>) {
+  val today = Clock.System.now().toLocalDateTime(TimeZone.UTC).date
+  val days = (6 downTo 0).map { today.minus(DatePeriod(days = it)) }
+  Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    days.forEach { day ->
+      val traded = day in qualifying
+      Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+          Modifier.fillMaxWidth().height(36.dp)
+            .background(
+              if (traded) FlareColors.Positive else FlareColors.Surface,
+              RoundedCornerShape(6.dp),
+            )
+        )
+        Text(
+          day.dayOfWeek.name.take(1),
+          Modifier.padding(top = 6.dp),
+          color = if (traded) FlareColors.TextSecondary else FlareColors.TextTertiary,
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+    }
+  }
+}
+
+/** A rank on its own is a number; against the field it is a position. */
+@Composable
+private fun PointsStandingRows(pointsName: String, points: RewardPoints) {
+  val standing = points.standing
+  points.rank?.let { rank ->
+    DetailRow(
+      "Rank",
+      if (standing == null) "#$rank" else "#${formatCount(rank.toDouble())} of ${formatCount(standing.holders.toDouble())}",
+    )
+    standing?.topPercent(rank)?.let { DetailRow("Standing", "Top ${formatQuantity(it, 2)}%") }
+  }
+  standing?.shareOf(points.total)?.let {
+    DetailRow("Share of all $pointsName", "${formatQuantity(it, 3)}%")
+  }
+}
+
+@Composable
+private fun PointsBreakdown(pointsName: String, points: RewardPoints) {
+  val breakdown = points.sources.filter { it.amount > 0 }
+  if (breakdown.isEmpty()) return
+  SectionLabel("$pointsName earned")
+  breakdown.forEach { source -> DetailRow(source.label, formatQuantity(source.amount, 0)) }
+}
+
+@Composable
+private fun FeeTierDetails(tier: FeeTier, headline: Boolean) {
+  if (headline) RewardsHeadline("Fee tier", tier.name)
+  else {
+    SectionLabel("Fees")
+    DetailRow("Tier", tier.name)
+  }
   DetailRow("14-day volume", formatBalance(tier.volumeUsd))
   DetailRow("Perps taker", feeRate(tier.perp.takerRate))
   DetailRow("Perps maker", feeRate(tier.perp.makerRate))
@@ -490,11 +684,19 @@ private fun FeeTierDetails(tier: FeeTier?) {
 }
 
 @Composable
-private fun ReferralDetails(referral: ReferralSummary) {
+private fun ReferralDetails(referral: ReferralSummary, gate: String?) {
+  val code = referral.code
+  val locked = code == null && referral.codeUnlocked == false && gate != null
   SectionLabel("Referrals")
-  DetailRow("Your code", referral.code ?: "None yet")
+  DetailRow("Your code", code ?: if (locked) "Locked" else "None yet")
+  if (referral.affiliate) DetailRow("Status", "Affiliate")
+  referral.referredCount?.let { DetailRow("Traders referred", formatCount(it.toDouble())) }
   referral.referredBy?.let { DetailRow("Referred with", it) }
   referral.earnedUsd?.let { DetailRow("Earned", formatBalance(it)) }
+  if (locked && gate != null) {
+    Text(gate, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
+  }
 }
 
 /** A fee rate as a percentage of notional, with a rebate shown as negative. */
@@ -529,6 +731,33 @@ private fun PositionsEmptyState(state: PortfolioUiState) {
 private fun HoldingsEmptyState(state: PortfolioUiState) {
   if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
   else QuietPortfolioMessage(if (state.holdingsError != null || state.account.overview == null || state.account.stale) "Holdings are updating" else "No assets held")
+}
+
+/** The venue's own vault, set apart from the managers' list because it is a different product. */
+@Composable
+private fun ProtocolVaultCard(vault: VaultSummary, summary: String?, onClick: () -> Unit) {
+  Column(
+    Modifier.fillMaxWidth().padding(top = 20.dp)
+      .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(12.dp))
+      .background(FlareColors.Surface, RoundedCornerShape(12.dp))
+      .clickable(role = Role.Button, onClickLabel = "View ${vault.name}", onClick = onClick)
+      .padding(16.dp)
+  ) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      Text(vault.name.ifBlank { "Protocol vault" }, Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium)
+      Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+    }
+    summary?.let {
+      Text(it, Modifier.padding(top = 6.dp), color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall)
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+      PortfolioMetric("Assets managed", formatBalance(vault.totalValue), Modifier.weight(1f))
+      PortfolioMetric("Fee", managerFeeRate(vault.fee), Modifier.weight(1f))
+    }
+  }
 }
 
 @Composable
