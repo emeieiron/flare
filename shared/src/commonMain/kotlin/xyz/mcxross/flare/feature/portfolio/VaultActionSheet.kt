@@ -128,8 +128,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         )
       }
 
+      val collateral = state.collateralFor(vault.address)
       if (mode == VaultActionMode.PLEDGE || mode == VaultActionMode.RELEASE) {
-        val collateral = state.vaultCollateral
         DetailRow("Free to pledge", "${formatQuantity(collateral?.pledgeable ?: 0.0, 4)} shares")
         DetailRow("Already margin", "${formatQuantity(collateral?.pledged ?: 0.0, 4)} shares")
         collateral?.creditPercent?.let {
@@ -153,13 +153,13 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
               }
             } else null
           VaultActionMode.PLEDGE -> {
-            val free = state.vaultCollateral?.pledgeable ?: 0.0
+            val free = collateral?.pledgeable ?: 0.0
             if (free > 0.0) {
               { onIntent(PortfolioIntent.ChangeVaultAmount(formatQuantity(free, 4))) }
             } else null
           }
           VaultActionMode.RELEASE -> {
-            val held = state.vaultCollateral?.pledged ?: 0.0
+            val held = collateral?.pledged ?: 0.0
             if (held > 0.0) {
               { onIntent(PortfolioIntent.ChangeVaultAmount(formatQuantity(held, 4))) }
             } else null
@@ -212,9 +212,9 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         availableText =
           when {
             mode == VaultActionMode.PLEDGE ->
-              "Free: ${formatQuantity(state.vaultCollateral?.pledgeable ?: 0.0, 4)} shares"
+              "Free: ${formatQuantity(collateral?.pledgeable ?: 0.0, 4)} shares"
             mode == VaultActionMode.RELEASE ->
-              "Pledged: ${formatQuantity(state.vaultCollateral?.pledged ?: 0.0, 4)} shares"
+              "Pledged: ${formatQuantity(collateral?.pledged ?: 0.0, 4)} shares"
             mode == VaultActionMode.DEPOSIT -> "Available: ${formatBalance(state.collateralBalance)}"
             inUsdc -> "Held: ${formatBalance(availableShares)}"
             else -> "Held: ${formatQuantity(availableShares, 4)} shares"
