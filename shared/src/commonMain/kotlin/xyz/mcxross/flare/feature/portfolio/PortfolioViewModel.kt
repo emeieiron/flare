@@ -104,6 +104,8 @@ data class PortfolioUiState(
   val setupNeed: SetupNeed? = null,
   /** What the venue calls its reward points, such as Amps. */
   val rewardPointsName: String? = null,
+  /** What unlocks a referral code, shown while the venue withholds it. */
+  val referralGate: String? = null,
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
   val markPrices: Map<String, Double> = emptyMap(),
@@ -303,6 +305,7 @@ class PortfolioViewModel(
       PortfolioUiState(
         capabilities = capabilities,
         rewardPointsName = venue.rewardPointsName,
+        referralGate = venue.referralGate,
         vaultsAvailable = vaultsRepository != null,
         rewardsAvailable = rewardsRepository != null,
       )

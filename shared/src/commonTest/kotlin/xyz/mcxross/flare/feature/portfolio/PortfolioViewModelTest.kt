@@ -765,6 +765,7 @@ class PortfolioViewModelTest {
     assertTrue(state.rewardsLoaded)
     assertTrue(state.vaultsLoaded)
     assertEquals("Amps", state.rewardPointsName)
+    assertEquals("Trade to unlock your code.", state.referralGate)
     assertEquals(
       5_000uL,
       state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),

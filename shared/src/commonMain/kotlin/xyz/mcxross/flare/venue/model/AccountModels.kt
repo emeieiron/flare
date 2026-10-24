@@ -508,4 +508,10 @@ data class ReferralSummary(
   val referredBy: String? = null,
   /** Rewards earned from referrals, in USD. */
   val earnedUsd: Double? = null,
+  /** How many traders the account brought in; null where the venue doesn't report it. */
+  val referredCount: Int? = null,
+  /** False while a venue still withholds the code behind a gate; null where it has none. */
+  val codeUnlocked: Boolean? = null,
+  /** An approved affiliate rather than an ordinary referrer. */
+  val affiliate: Boolean = false,
 )

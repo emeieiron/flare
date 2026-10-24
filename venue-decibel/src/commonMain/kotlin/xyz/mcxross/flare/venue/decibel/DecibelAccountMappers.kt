@@ -5,6 +5,7 @@ import kotlin.time.Clock
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.model.AccountFees
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
@@ -13,6 +14,7 @@ import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.ProductFees
+import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.SpotOverview
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
@@ -39,6 +41,7 @@ import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardPointsSource
@@ -364,14 +367,15 @@ internal fun SubaccountStatus.toTradingAccountStatus(): TradingAccountStatus =
   }
 
 /**
- * Decibel's rewards: Amps, the trading streak and the tier, each read on its own. A part that
- * failed is marked unavailable so the screens keep what they showed for it.
+ * Decibel's rewards: Amps, the trading streak, the tier, campaigns and referrals, each read on its
+ * own. A part that failed is marked unavailable so the screens keep what they showed for it.
  */
 internal fun decibelRewards(
   streak: Result<DecibelTradingStreak?>,
   amps: Result<AmpsBreakdown?>,
   tier: Result<TierInfo?>,
   campaigns: Result<UserCampaigns?> = Result.success(null),
+  referral: Result<ReferralSummary?> = Result.success(null),
   nowMs: Long = Clock.System.now().toEpochMilliseconds(),
   global: GlobalPointsStats? = null,
 ): Rewards =
@@ -393,12 +397,14 @@ internal fun decibelRewards(
         RewardTier(name = it.tier, percentile = it.percentile, feeDiscountBps = it.feeDiscountBps)
       },
     campaigns = campaigns.getOrNull()?.toCampaignRewards(nowMs),
+    referral = referral.getOrNull(),
     unavailable =
       buildSet {
         if (amps.isFailure) add(RewardPart.POINTS)
         if (streak.isFailure) add(RewardPart.STREAK)
         if (tier.isFailure) add(RewardPart.TIER)
         if (campaigns.isFailure) add(RewardPart.CAMPAIGNS)
+        if (referral.isFailure) add(RewardPart.REFERRAL)
       },
   )
 
@@ -419,6 +425,22 @@ private fun AmpsBreakdown.toRewardPoints(global: GlobalPointsStats?): RewardPoin
         RewardPointsSource("Bonuses", bonusAmps),
       ),
   )
+
+/**
+ * The account as a referrer and as a referral. Decibel withholds a trader's code until the account
+ * passes its lifetime volume gate; an affiliate sees theirs regardless. Null [stats] is an account
+ * that has never referred anyone.
+ */
+internal fun decibelReferral(stats: ReferrerStats?, referral: AccountReferralInfo?): ReferralSummary {
+  val code = stats?.codes?.firstOrNull(String::isNotBlank)
+  return ReferralSummary(
+    code = code,
+    referredBy = referral?.referralCode?.takeIf(String::isNotBlank),
+    referredCount = stats?.totalReferrals,
+    codeUnlocked = code != null || stats?.volumeThresholdMet == true || stats?.isAffiliate == true,
+    affiliate = stats?.isAffiliate == true,
+  )
+}
 
 /**
  * Decibel's campaign allocations. Amounts stay exact decimal text from chain units: a claim signs

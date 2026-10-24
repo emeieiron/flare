@@ -26,8 +26,10 @@ import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.TwapOrder
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.GlobalPointsStats
 import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
+import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.VaultInfo
 
@@ -94,6 +96,12 @@ interface AccountDataService {
   suspend fun activeTwaps(account: String): List<TwapOrder>
 
   suspend fun twapHistory(account: String, limit: Int = 20): List<TwapOrder>
+
+  /** Null when the account has never been a referrer. */
+  suspend fun referrerStats(owner: String): ReferrerStats?
+
+  /** Null when the account was never referred. */
+  suspend fun accountReferral(owner: String): AccountReferralInfo?
 
   suspend fun globalPoints(): GlobalPointsStats
 
@@ -279,6 +287,20 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         else -> emptyList()
       }
     }.getOrElse { emptyList() }
+
+  override suspend fun referrerStats(owner: String): ReferrerStats? =
+    try {
+      api.get<ReferrerStats>("referrals/stats/$owner")
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
+
+  override suspend fun accountReferral(owner: String): AccountReferralInfo? =
+    try {
+      api.get<AccountReferralInfo>("referrals/account/$owner")
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
 
   override suspend fun globalPoints(): GlobalPointsStats = api.get("points/global")
 

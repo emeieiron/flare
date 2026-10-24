@@ -61,6 +61,7 @@ import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
+import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
@@ -983,9 +984,10 @@ class DefaultAccountRepository(
     val amps = runSuspendCatching { ampsBreakdown() }
     val tier = runSuspendCatching { tierInfo() }
     val campaigns = runSuspendCatching { accountCampaigns() }
+    val referral = runSuspendCatching { referralSummary() }
     // Public season totals; a failure here only costs the rank its context.
     val global = runSuspendCatching { client.accounts.globalPoints() }.getOrNull()
-    return decibelRewards(streak, amps, tier, campaigns, global = global)
+    return decibelRewards(streak, amps, tier, campaigns, referral, global = global)
   }
 
   override suspend fun pointsHistory(): List<SeriesPoint> =
@@ -1020,6 +1022,9 @@ class DefaultAccountRepository(
   private suspend fun ampsBreakdown(): AmpsBreakdown? = readOwner { client.accounts.amps(it) }
 
   private suspend fun tierInfo(): TierInfo? = readOwner { client.accounts.tier(it) }
+
+  private suspend fun referralSummary(): ReferralSummary? =
+    readOwner { decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it)) }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
     val account = preferences.values.first().selectedSubaccount ?: return false

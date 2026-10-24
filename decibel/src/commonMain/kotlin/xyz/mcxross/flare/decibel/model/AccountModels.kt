@@ -473,3 +473,21 @@ data class GlobalPointsStats(
   @SerialName("total_users") val totalUsers: Int = 0,
   @SerialName("total_amps_distributed") val totalAmpsDistributed: Double = 0.0,
 )
+
+/** `/referrals/stats/{account}`: the account as a referrer. */
+@Serializable
+data class ReferrerStats(
+  /** Withheld until the volume threshold is met, unless the account is an affiliate. */
+  val codes: List<String> = emptyList(),
+  @SerialName("is_affiliate") val isAffiliate: Boolean = false,
+  @SerialName("total_referrals") val totalReferrals: Int = 0,
+  @SerialName("volume_threshold_met") val volumeThresholdMet: Boolean = false,
+)
+
+/** `/referrals/account/{account}`: who referred this account, if anyone. */
+@Serializable
+data class AccountReferralInfo(
+  @SerialName("referral_code") val referralCode: String = "",
+  @SerialName("referrer_account") val referrerAccount: String = "",
+  @SerialName("is_active") val isActive: Boolean = false,
+)

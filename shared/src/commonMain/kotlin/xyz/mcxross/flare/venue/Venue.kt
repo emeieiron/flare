@@ -41,6 +41,8 @@ data class VenueDescriptor(
   val vaultMinimums: VaultMinimums? = null,
   /** What the venue calls its reward points, such as Decibel's Amps; null when it has none. */
   val rewardPointsName: String? = null,
+  /** What unlocks a referral code here; null where a venue gates nothing. */
+  val referralGate: String? = null,
   /** The steps account setup takes once the wallet exists. */
   val setup: VenueSetup = VenueSetup(),
   /** What the receive screen tells someone funding the account; null for the chain's defaults. */
