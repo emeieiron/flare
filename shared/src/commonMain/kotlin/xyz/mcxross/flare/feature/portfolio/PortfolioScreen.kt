@@ -163,6 +163,9 @@ fun PortfolioScreen(
     onIntent(PortfolioIntent.SetHistoryVisible(page == PortfolioPage.HISTORY))
     if (page == PortfolioPage.VAULTS) onIntent(PortfolioIntent.RefreshVaults)
   }
+  LaunchedEffect(vaultAddress) {
+    vaultAddress?.let { onIntent(PortfolioIntent.InspectVaultCollateral(it)) }
+  }
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
     Column(Modifier.fillMaxSize()) {
       if (displayedPage != PortfolioPage.OVERVIEW) {
@@ -502,6 +505,22 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
       { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
       Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
       enabled = !state.busy && actionsUnavailable == null && lockedUntil == null)
+  }
+  state.vaultCollateral?.let { collateral ->
+    SectionLabel("As margin")
+    DetailRow("Pledged", "${formatQuantity(collateral.pledged, 4)} shares")
+    DetailRow("Free to pledge", "${formatQuantity(collateral.pledgeable, 4)} shares")
+    collateral.creditPercent?.let { DetailRow("Counts at", "${formatQuantity(it, 2)}%") }
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      if (collateral.pledgeable > 0.0) FlareButton("Use as margin",
+        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE)) },
+        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
+        enabled = !state.busy && actionsUnavailable == null)
+      if (collateral.pledged > 0.0) FlareButton("Release",
+        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE)) },
+        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
+        enabled = !state.busy && actionsUnavailable == null)
+    }
   }
   lockedUntil?.let {
     Text("Your latest deposit is locked until ${formatCalendarDateTime(it)}.", Modifier.padding(top = 12.dp),

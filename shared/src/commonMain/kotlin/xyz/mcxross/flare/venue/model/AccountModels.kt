@@ -339,6 +339,19 @@ data class VaultSummary(
   val isActive: Boolean = true,
 )
 
+/**
+ * A vault stake used as margin. Venues that accept vault shares as collateral credit them below
+ * face value and refuse shares still inside the vault's lockup.
+ */
+data class VaultCollateral(
+  /** Shares free to pledge now, excluding any still locked. */
+  val pledgeable: Double,
+  /** Shares already counting toward margin. */
+  val pledged: Double,
+  /** The share of their value that counts, as a percentage; null where the venue doesn't say. */
+  val creditPercent: Double? = null,
+)
+
 /** The account's stake in a vault. Display only. */
 data class VaultPosition(
   val vault: VaultSummary,

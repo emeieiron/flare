@@ -69,6 +69,7 @@ import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.kaptos.model.AccountAddress
@@ -1109,11 +1110,67 @@ class DefaultAccountRepository(
     }
   }
 
+  override suspend fun collateral(vaultAddress: String): VaultCollateral? {
+    val subaccount = preferences.values.first().selectedSubaccount ?: return null
+    val shares =
+      when (val result = client.vaultCollateral.shareCollateral(vaultAddress, subaccount)) {
+        is AptosResult.Success -> result.value
+        is AptosResult.Failure -> return null
+      }
+    // The credit comes from the overview, which reports it per secondary asset.
+    val credit = snapshot.value.overview?.secondaryCollateral?.firstOrNull()?.creditPercent
+    return VaultCollateral(
+      pledgeable = shares.pledgeable.toShareAmount(),
+      pledged = shares.pledged.toShareAmount(),
+      creditPercent = credit,
+    )
+  }
+
+  override fun setCollateral(
+    vaultAddress: String,
+    shares: String,
+    pledge: Boolean,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): Flow<ActionState> = flow {
+    val subaccount =
+      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val units = DecimalInput(shares).toChainUnits("Share amount", SHARE_DECIMALS).getOrThrow()
+    require(units > 0uL) { "Enter an amount greater than zero" }
+    require(units <= Long.MAX_VALUE.toULong()) { "That is more shares than the vault holds" }
+    val asset =
+      when (val result = client.vaultCollateral.shareCollateral(vaultAddress, subaccount)) {
+        is AptosResult.Success -> result.value.assetMetadata
+        is AptosResult.Failure -> error("Flare couldn't read this vault's shares")
+      }
+    try {
+      emitAll(
+        trading.executeCommand(
+          command =
+            DecibelCommand.PledgeCollateral(
+              subaccount = subaccount,
+              assetMetadata = asset,
+              // The chain takes one signed amount: positive pledges, negative releases.
+              shares = units.toLong().let { if (pledge) it else -it },
+            ),
+          prompt = prompt.copy(requireFreshAuthorization = true),
+          feePayment = feePayment,
+        )
+      )
+    } finally {
+      runSuspendCatching { restoreTrading() }
+    }
+  }
+
+  /** Decibel stores shares with six decimals, as the vault performance reader also assumes. */
+  private fun ULong.toShareAmount(): Double = toDouble() / 1_000_000.0
+
   private companion object {
     /** One reviewed "create account and enable trading" may span its two transactions. */
     const val SETUP_APPROVAL_WINDOW_MS = 60_000L
     const val BACKFILL_INTERVAL_MS = 2_000L
     const val USDC_DECIMALS = 6
+    const val SHARE_DECIMALS = 6
     const val HISTORY_PAGE_SIZE = 50
   }
 }

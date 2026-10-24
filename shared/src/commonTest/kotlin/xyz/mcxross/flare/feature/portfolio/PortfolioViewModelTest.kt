@@ -77,6 +77,7 @@ import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -750,6 +751,54 @@ class PortfolioViewModelTest {
     // Without in-app deposits, a transfer can only go out to the wallet.
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     assertEquals(FundingMode.WITHDRAW, vm.uiState.value.fundingMode)
+  }
+
+  @Test
+  fun aPledgeIsBoundedByWhatIsOutsideTheVaultsLockup() = runTest {
+    val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 1.0)
+    var submitted: Pair<String, Boolean>? = null
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun vaults(limit: Int) = listOf(vault)
+        // A 500-share stake of which only 120.5 is outside the lockup.
+        override suspend fun collateral(vaultAddress: String) =
+          VaultCollateral(pledgeable = 120.5, pledged = 40.0, creditPercent = 90.0)
+
+        override fun setCollateral(
+          vaultAddress: String,
+          shares: String,
+          pledge: Boolean,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> {
+          submitted = shares to pledge
+          return flowOf(ActionState.Committed("0xhash"))
+        }
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(vault.address))
+    vm.uiState.first { it.vaultCollateral != null }
+
+    // Locked shares cannot be pledged, and the refusal says why.
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("200"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    val refused = vm.uiState.value
+    assertTrue(refused.actionError.orEmpty().contains("lockup"), refused.actionError.orEmpty())
+    assertNull(submitted)
+
+    // Within the unlocked amount it goes through, as a pledge rather than a release.
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("100"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    vm.uiState.first { it.vaultTransaction is ActionState.Committed }
+    assertEquals("100" to true, submitted)
+
+    // Releasing more than is pledged is refused too.
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("41"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    assertTrue(vm.uiState.value.actionError.orEmpty().contains("40"))
   }
 
   @Test

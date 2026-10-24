@@ -58,6 +58,7 @@ import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -73,6 +74,10 @@ enum class FundingMode {
 enum class VaultActionMode {
   DEPOSIT,
   REDEEM,
+  /** Put the stake to work as margin. */
+  PLEDGE,
+  /** Take it back out of margin. */
+  RELEASE,
 }
 
 data class SpotHolding(
@@ -153,6 +158,8 @@ data class PortfolioUiState(
   val accountVaults: List<VaultPosition> = emptyList(),
   val selectedVault: VaultSummary? = null,
   val vaultAction: VaultActionMode? = null,
+  /** The inspected vault's shares as margin, where the venue takes them. */
+  val vaultCollateral: VaultCollateral? = null,
   val vaultAmountInput: String = "",
   val vaultTransaction: ActionState? = null,
   val busy: Boolean = false,
@@ -281,6 +288,9 @@ sealed interface PortfolioIntent {
   data object DismissVaultAction : PortfolioIntent
 
   data object RefreshVaults : PortfolioIntent
+
+  /** Reads how much of [vaultAddress] may be pledged as margin, and how much already is. */
+  data class InspectVaultCollateral(val vaultAddress: String) : PortfolioIntent
 }
 
 class PortfolioViewModel(
@@ -628,6 +638,7 @@ class PortfolioViewModel(
           )
         }
       PortfolioIntent.RefreshVaults -> refreshVaults()
+      is PortfolioIntent.InspectVaultCollateral -> inspectVaultCollateral(intent.vaultAddress)
     }
   }
 
@@ -927,6 +938,15 @@ class PortfolioViewModel(
     }
   }
 
+  /** A venue that doesn't take vault shares as margin simply answers null and shows nothing. */
+  private fun inspectVaultCollateral(vaultAddress: String) {
+    val repository = vaultsRepository ?: return
+    viewModelScope.launch {
+      val collateral = runSuspendCatching { repository.collateral(vaultAddress) }.getOrNull()
+      local.update { it.copy(vaultCollateral = collateral) }
+    }
+  }
+
   fun refreshVaults() {
     val repository = vaultsRepository ?: return
     if (vaultsJob?.isActive == true) return
@@ -987,18 +1007,52 @@ class PortfolioViewModel(
         return
       }
     }
+    // Pledging and releasing are bounded by what the venue says is movable right now.
+    val collateral = state.vaultCollateral
+    if (mode == VaultActionMode.PLEDGE && collateral != null && parsedAmount > collateral.pledgeable) {
+      local.update {
+        it.copy(
+          actionError =
+            "You can pledge up to ${formatQuantity(collateral.pledgeable, 4)} shares. " +
+              "Shares still inside the vault's lockup cannot be used as margin."
+        )
+      }
+      return
+    }
+    if (mode == VaultActionMode.RELEASE && collateral != null && parsedAmount > collateral.pledged) {
+      local.update {
+        it.copy(actionError = "You have ${formatQuantity(collateral.pledged, 4)} shares pledged.")
+      }
+      return
+    }
     val repository = vaultsRepository ?: return
-    launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
+    launchAction(
+      when (mode) {
+        VaultActionMode.DEPOSIT -> "Vault deposit failed."
+        VaultActionMode.REDEEM -> "Vault redemption failed."
+        VaultActionMode.PLEDGE -> "Using the shares as margin failed."
+        VaultActionMode.RELEASE -> "Releasing the shares failed."
+      }
+    ) {
       val prompt =
         VaultPrompt(
-          title = if (mode == VaultActionMode.DEPOSIT) "Contribute to ${vault.name}" else "Redeem from ${vault.name}",
+          title =
+            when (mode) {
+              VaultActionMode.DEPOSIT -> "Contribute to ${vault.name}"
+              VaultActionMode.REDEEM -> "Redeem from ${vault.name}"
+              VaultActionMode.PLEDGE -> "Use ${vault.name} shares as margin"
+              VaultActionMode.RELEASE -> "Release ${vault.name} shares"
+            },
           subtitle = "Confirm with owner wallet",
         )
       val flow =
-        if (mode == VaultActionMode.DEPOSIT) {
-          repository.contribute(vault.address, amount, prompt)
-        } else {
-          repository.redeem(vault.address, amount, prompt)
+        when (mode) {
+          VaultActionMode.DEPOSIT -> repository.contribute(vault.address, amount, prompt)
+          VaultActionMode.REDEEM -> repository.redeem(vault.address, amount, prompt)
+          VaultActionMode.PLEDGE ->
+            repository.setCollateral(vault.address, amount, pledge = true, prompt = prompt)
+          VaultActionMode.RELEASE ->
+            repository.setCollateral(vault.address, amount, pledge = false, prompt = prompt)
         }
       flow.collect { transaction ->
         local.update { it.copy(vaultTransaction = transaction) }
@@ -1006,6 +1060,9 @@ class PortfolioViewModel(
       when (val terminal = local.value.vaultTransaction) {
         is ActionState.Committed -> {
           refreshVaults()
+          if (mode == VaultActionMode.PLEDGE || mode == VaultActionMode.RELEASE) {
+            inspectVaultCollateral(vault.address)
+          }
           accounts.refresh()
           // Keep the committed action visible until the receipt is dismissed.
         }

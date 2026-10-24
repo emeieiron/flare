@@ -74,6 +74,11 @@ data class VaultTerms(
   val lockupPerDeposit: Boolean = false,
   /** What the venue's own vault is for; null where the venue runs none. */
   val protocolVault: ProtocolVaultTerms? = null,
+  /**
+   * What pledging vault shares as margin carries, in the venue's words; null where the venue
+   * doesn't take them. Shown before the pledge is signed, not after.
+   */
+  val collateralRisk: String? = null,
 )
 
 /**

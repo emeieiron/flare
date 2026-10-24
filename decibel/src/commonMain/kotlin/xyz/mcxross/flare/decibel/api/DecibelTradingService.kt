@@ -121,6 +121,17 @@ sealed interface DecibelCommand {
     val vaultAddress: String,
     val shares: ULong,
   ) : DecibelCommand
+
+  /**
+   * Moves an asset between one subaccount's collateral and non-collateral balances, which is what
+   * pledging a vault's shares as margin does. [shares] is signed: positive pledges, negative
+   * releases.
+   */
+  data class PledgeCollateral(
+    val subaccount: String,
+    val assetMetadata: String,
+    val shares: Long,
+  ) : DecibelCommand
 }
 
 sealed interface TransactionState {
@@ -475,6 +486,17 @@ internal class DefaultDecibelTradingService(
             MoveArgument.U64(command.shares),
           )
       }
+      is DecibelCommand.PledgeCollateral -> {
+        require(command.shares != 0L) { "Enter an amount to move" }
+        function =
+          "$packageAddress::dex_accounts_entry::transfer_assets_between_non_collateral_and_collateral"
+        arguments =
+          listOf(
+            address(command.subaccount),
+            address(command.assetMetadata),
+            signed64(command.shares),
+          )
+      }
     }
     return EntryFunctionCall(function, arguments)
   }
@@ -731,6 +753,13 @@ internal class DefaultDecibelTradingService(
     MoveArgument.Address(AccountAddress.fromString(value))
 
   private fun option(value: MoveArgument?): MoveArgument.Option = MoveArgument.Option(value)
+
+  /**
+   * A Move `i64`. The bytes match a u64 of the same bit pattern, but Kaptos checks an argument
+   * against the ABI's declared type and refuses a u64 here, so the signed type is the only one
+   * that builds. `DecibelTradingPayloadTest` pins the bytes for a negative amount.
+   */
+  private fun signed64(value: Long): MoveArgument.I64 = MoveArgument.I64(value)
 
   private data class EntryFunctionCall(val function: String, val arguments: List<MoveArgument>)
 }

@@ -750,6 +750,7 @@ internal fun DecibelCommand.requiredSigner(): TradingSigner =
     is DecibelCommand.ApproveMaxSpotBuilderFee,
     is DecibelCommand.RevokeMaxSpotBuilderFee,
     is DecibelCommand.ContributeToVault,
+    is DecibelCommand.PledgeCollateral,
     is DecibelCommand.RedeemFromVault -> TradingSigner.OWNER
     is DecibelCommand.ConfigureMarket,
     is DecibelCommand.PlaceOrder,
@@ -768,6 +769,7 @@ private fun DecibelCommand.journalName(): String =
     is DecibelCommand.Deposit -> "DEPOSIT"
     is DecibelCommand.Withdraw -> "WITHDRAW"
     is DecibelCommand.TransferCollateral -> "TRANSFER_COLLATERAL"
+    is DecibelCommand.PledgeCollateral -> "PLEDGE_COLLATERAL"
     is DecibelCommand.DelegateTrading -> "DELEGATE_TRADING"
     is DecibelCommand.RevokeDelegation -> "REVOKE_DELEGATION"
     is DecibelCommand.ConfigureMarket -> "CONFIGURE_MARKET"
@@ -803,6 +805,7 @@ internal fun DecibelCommand.subaccountAddress(): String? =
     is DecibelCommand.Deposit -> subaccount
     is DecibelCommand.Withdraw -> subaccount
     is DecibelCommand.TransferCollateral -> subaccount
+    is DecibelCommand.PledgeCollateral -> subaccount
     is DecibelCommand.DelegateTrading -> subaccount
     is DecibelCommand.RevokeDelegation -> subaccount
     is DecibelCommand.ConfigureMarket -> subaccount

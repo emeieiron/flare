@@ -80,7 +80,11 @@ class DecibelVenue(
               risk =
                 "As the backstop it absorbs liquidated positions the order book can't take, and " +
                   "shares can be burned to cover them. Contributions are locked for 72 hours.",
-            )
+            ),
+          collateralRisk =
+            "Pledged shares count toward your margin at a discount and still move with the " +
+              "vault. If your account is liquidated they are burned through the vault rather " +
+              "than sold, and you cannot redeem them while they back a position.",
         ),
       vaultMinimums = VaultMinimums(deposit = 10.0, redemptionShares = 5.0, vaults = "DLP vaults"),
     )

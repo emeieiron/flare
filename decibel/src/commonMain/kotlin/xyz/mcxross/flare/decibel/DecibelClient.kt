@@ -11,8 +11,10 @@ import xyz.mcxross.flare.decibel.api.DefaultDecibelStreamService
 import xyz.mcxross.flare.decibel.api.DefaultDecibelTradingService
 import xyz.mcxross.flare.decibel.api.DefaultMarketDataService
 import xyz.mcxross.flare.decibel.api.DefaultSubaccountService
+import xyz.mcxross.flare.decibel.api.DefaultVaultCollateralService
 import xyz.mcxross.flare.decibel.api.MarketDataService
 import xyz.mcxross.flare.decibel.api.SubaccountService
+import xyz.mcxross.flare.decibel.api.VaultCollateralService
 import xyz.mcxross.kaptos.Aptos
 
 class DecibelClient(
@@ -28,6 +30,8 @@ class DecibelClient(
   val stream: DecibelStreamService = DefaultDecibelStreamService(httpClient, config, json)
   val trading: DecibelTradingService = DefaultDecibelTradingService(aptosClient, config.deployment)
   val subaccounts: SubaccountService = DefaultSubaccountService(aptosClient, config.deployment)
+  val vaultCollateral: VaultCollateralService =
+    DefaultVaultCollateralService(aptosClient, config.deployment)
 
   companion object {
     val DefaultJson = Json {
