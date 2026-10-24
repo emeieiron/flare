@@ -109,9 +109,9 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
             Modifier.padding(top = 12.dp),
           )
         }
-      } else if (inUsdc) {
+      } else if (mode == VaultActionMode.REDEEM && inUsdc) {
         DetailRow("Current value", formatBalance(userPerformance?.value ?: 0.0))
-      } else {
+      } else if (mode == VaultActionMode.REDEEM) {
         DetailRow(
           "Shares held",
           "${formatQuantity(availableShares, 4)} shares",
@@ -184,6 +184,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
           minimumDeposit?.let {
             "${venue.displayName} protocol requires a minimum deposit of $it USDC."
           }
+        } else if (mode != VaultActionMode.REDEEM) {
+          null
         } else {
           when {
             inUsdc -> null
@@ -218,9 +220,11 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
             else -> "Held: ${formatQuantity(availableShares, 4)} shares"
           },
         placeholder =
-          if (mode == VaultActionMode.DEPOSIT) {
-            minimumDeposit?.let { if ('.' in it) it else "$it.00" } ?: "0.00"
-          } else minimumShares ?: "0",
+          when (mode) {
+            VaultActionMode.DEPOSIT -> minimumDeposit?.let { if ('.' in it) it else "$it.00" } ?: "0.00"
+            VaultActionMode.REDEEM -> minimumShares ?: "0"
+            VaultActionMode.PLEDGE, VaultActionMode.RELEASE -> "0"
+          },
         onMaxClick = maxClick,
         supportingText = supportingText,
         enabled = !state.busy,
