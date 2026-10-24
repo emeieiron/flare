@@ -17,6 +17,8 @@ data class AccountOverview(
   val withdrawable: Double,
   /** Equity held in vaults that isn't locked; null when the venue doesn't report it. */
   val vaultEquity: Double? = null,
+  /** Collateral besides the settlement asset, where the venue accepts any. */
+  val secondaryCollateral: List<CollateralAsset> = emptyList(),
   val balances: Balances = Balances(),
   /**
    * Perpetuals and spot hold separate USDC, so moving USDC between them means something (see
@@ -222,6 +224,22 @@ enum class PortfolioMetric(val label: String) {
 /** One point of a portfolio chart, in USD. */
 /** One point of a time series: a portfolio's value, a day's points, a vault's NAV. */
 data class SeriesPoint(val timeMs: Long, val value: Double)
+
+/**
+ * Collateral the venue accepts besides its settlement asset, counted toward margin at less than
+ * full value. Only what the venue reports: the credited figure is its arithmetic, not ours.
+ */
+data class CollateralAsset(
+  /** What the venue calls it, or its asset identifier where it gives no name. */
+  val name: String,
+  val amount: Double,
+  /** What the venue values the holding at, in USD. */
+  val valueUsd: Double,
+  /** The share of that value counting toward margin, as a percentage. */
+  val creditPercent: Double,
+  /** How much of it can be taken back out right now. */
+  val withdrawable: Double = 0.0,
+)
 
 /** A product's fee rates, as fractions of notional. */
 data class FeeRates(val makerRate: Double, val takerRate: Double)

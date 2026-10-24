@@ -341,6 +341,13 @@ private fun PortfolioOverview(
       if (state.capabilities.spot) DetailRow("Spot assets",
         if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
       if (state.vaultsAvailable) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      // Collateral the venue credits below full value states the credit, not a figure we derived.
+      overview?.secondaryCollateral.orEmpty().forEach { collateral ->
+        DetailRow(
+          collateral.name,
+          "${formatBalance(collateral.valueUsd)} · counts at ${formatQuantity(collateral.creditPercent, 2)}%",
+        )
+      }
       DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—")
       Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
         style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
