@@ -7,6 +7,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.model.AccountFees
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
@@ -14,6 +15,7 @@ import xyz.mcxross.flare.decibel.model.FundHistory
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
+import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.venue.model.AccountOverview
@@ -30,6 +32,7 @@ import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.RewardPointsSource
@@ -530,5 +533,39 @@ class DecibelAccountMappersTest {
     assertEquals("Gold", tiered.tier?.name)
     assertEquals(2, tiered.tier?.feeDiscountBps)
     assertTrue(tiered.unavailable.isEmpty())
+  }
+
+  @Test
+  fun referralWithholdsTheCodeBelowTheGateAndKeepsWhoReferred() {
+    val gated =
+      decibelReferral(
+        ReferrerStats(totalReferrals = 2, volumeThresholdMet = false),
+        AccountReferralInfo(referralCode = "FRIEND", referrerAccount = "0x33", isActive = true),
+      )
+    assertEquals(ReferralSummary(referredBy = "FRIEND", referredCount = 2, codeUnlocked = false), gated)
+
+    val unlocked =
+      decibelReferral(ReferrerStats(codes = listOf("MINE"), totalReferrals = 5, volumeThresholdMet = true), null)
+    assertEquals(ReferralSummary(code = "MINE", referredCount = 5, codeUnlocked = true), unlocked)
+
+    // An affiliate sees its codes whatever it has traded.
+    val affiliate = decibelReferral(ReferrerStats(codes = listOf("AFF"), isAffiliate = true), null)
+    assertEquals(ReferralSummary(code = "AFF", referredCount = 0, codeUnlocked = true, affiliate = true), affiliate)
+
+    // No record at all means the count is unknown, which is not the same as none.
+    assertEquals(ReferralSummary(referredCount = null, codeUnlocked = false), decibelReferral(null, null))
+  }
+
+  @Test
+  fun aFailedReferralReadIsMarkedUnavailable() {
+    val rewards =
+      decibelRewards(
+        Result.success(null),
+        Result.success(null),
+        Result.success(null),
+        referral = Result.failure(IllegalStateException("Offline")),
+      )
+    assertNull(rewards.referral)
+    assertEquals(setOf(RewardPart.REFERRAL), rewards.unavailable)
   }
 }

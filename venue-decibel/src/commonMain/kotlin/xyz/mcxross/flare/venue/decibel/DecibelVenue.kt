@@ -71,6 +71,7 @@ class DecibelVenue(
       builderFeeBps = config.defaultBuilderFeeBps.toInt(),
       maxBuilderFeeBps = 10,
       rewardPointsName = "Amps",
+      referralGate = "Your code appears once you have traded $25,000 all time.",
       vaultTerms =
         VaultTerms(
           protocolVault =

@@ -25,6 +25,7 @@ fun testVenue(
     builderFeeBps = 5,
     maxBuilderFeeBps = 10,
     rewardPointsName = "Amps",
+    referralGate = "Trade to unlock your code.",
     vaultMinimums = VaultMinimums(deposit = 10.0, redemptionShares = 5.0, vaults = "DLP vaults"),
     setup = setup,
   )

@@ -529,7 +529,7 @@ private fun RewardsDetails(state: PortfolioUiState) {
   rewards?.campaigns?.takeIf { it.hasAnything }?.let { CampaignDetails(it) }
   rewards?.streak?.let { StreakDetails(it) }
   if (pointsName != null && points != null) PointsBreakdown(pointsName, points)
-  rewards?.referral?.let { ReferralDetails(it) }
+  rewards?.referral?.let { ReferralDetails(it, state.referralGate) }
 }
 
 /** What the account earned each day, and how that compares with its recent pace. */
@@ -657,11 +657,19 @@ private fun FeeTierDetails(tier: FeeTier, headline: Boolean) {
 }
 
 @Composable
-private fun ReferralDetails(referral: ReferralSummary) {
+private fun ReferralDetails(referral: ReferralSummary, gate: String?) {
+  val code = referral.code
+  val locked = code == null && referral.codeUnlocked == false && gate != null
   SectionLabel("Referrals")
-  DetailRow("Your code", referral.code ?: "None yet")
+  DetailRow("Your code", code ?: if (locked) "Locked" else "None yet")
+  if (referral.affiliate) DetailRow("Status", "Affiliate")
+  referral.referredCount?.let { DetailRow("Traders referred", formatCount(it.toDouble())) }
   referral.referredBy?.let { DetailRow("Referred with", it) }
   referral.earnedUsd?.let { DetailRow("Earned", formatBalance(it)) }
+  if (locked && gate != null) {
+    Text(gate, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall)
+  }
 }
 
 /** A fee rate as a percentage of notional, with a rebate shown as negative. */
