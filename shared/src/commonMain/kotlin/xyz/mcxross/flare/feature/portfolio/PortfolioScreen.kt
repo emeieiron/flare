@@ -163,8 +163,9 @@ fun PortfolioScreen(
     onIntent(PortfolioIntent.SetHistoryVisible(page == PortfolioPage.HISTORY))
     if (page == PortfolioPage.VAULTS) onIntent(PortfolioIntent.RefreshVaults)
   }
-  LaunchedEffect(vaultAddress) {
-    vaultAddress?.let { onIntent(PortfolioIntent.InspectVaultCollateral(it)) }
+  LaunchedEffect(page, vaultAddress) {
+    if (page == PortfolioPage.VAULT_DETAIL)
+      vaultAddress?.let { onIntent(PortfolioIntent.InspectVaultCollateral(it)) }
   }
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
     Column(Modifier.fillMaxSize()) {
@@ -506,7 +507,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
       Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
       enabled = !state.busy && actionsUnavailable == null && lockedUntil == null)
   }
-  state.vaultCollateral?.let { collateral ->
+  state.collateralFor(vault.address)?.let { collateral ->
     SectionLabel("As margin")
     DetailRow("Pledged", "${formatQuantity(collateral.pledged, 4)} shares")
     DetailRow("Free to pledge", "${formatQuantity(collateral.pledgeable, 4)} shares")

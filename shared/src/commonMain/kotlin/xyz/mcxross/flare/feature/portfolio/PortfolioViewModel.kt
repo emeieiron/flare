@@ -158,8 +158,10 @@ data class PortfolioUiState(
   val accountVaults: List<VaultPosition> = emptyList(),
   val selectedVault: VaultSummary? = null,
   val vaultAction: VaultActionMode? = null,
-  /** The inspected vault's shares as margin, where the venue takes them. */
+  /** The inspected vault's shares as margin, where the venue takes them. See [collateralFor]. */
   val vaultCollateral: VaultCollateral? = null,
+  /** Which vault [vaultCollateral] was read for. */
+  val vaultCollateralAddress: String? = null,
   val vaultAmountInput: String = "",
   val vaultTransaction: ActionState? = null,
   val busy: Boolean = false,
@@ -202,6 +204,10 @@ data class PortfolioUiState(
 
   val collateralBalance: Double
     get() = account.overview?.withdrawable ?: 0.0
+
+  /** This vault's shares as margin, or null while the only reading in hand is another vault's. */
+  fun collateralFor(vaultAddress: String): VaultCollateral? =
+    vaultCollateral?.takeIf { vaultCollateralAddress == vaultAddress }
 
   /** Spot USDC free to move, where the venue reports spot with the account. */
   val spotUsdc: Double
@@ -325,6 +331,7 @@ class PortfolioViewModel(
   private var chartJob: Job? = null
   private var vaultsJob: Job? = null
   private var rewardsJob: Job? = null
+  private var collateralKey: Pair<String, String?>? = null
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var lastPositionAction: TradeAction? = null
@@ -357,6 +364,9 @@ class PortfolioViewModel(
           if (local.value.historyVisible) fetchPortfolioChart()
           fetchRewards()
           refreshVaults()
+          val inspected = local.value.vaultCollateralAddress
+          local.update { it.copy(vaultCollateralAddress = null, vaultCollateral = null) }
+          inspected?.let { inspectVaultCollateral(it) }
         }
     }
     viewModelScope.launch {
@@ -941,9 +951,14 @@ class PortfolioViewModel(
   /** A venue that doesn't take vault shares as margin simply answers null and shows nothing. */
   private fun inspectVaultCollateral(vaultAddress: String) {
     val repository = vaultsRepository ?: return
+    val key = vaultAddress to accounts.snapshot.value.account
+    collateralKey = key
+    // Another vault's balances must never stand in for this one's; a repeat read swaps in place.
+    if (local.value.vaultCollateralAddress != vaultAddress)
+      local.update { it.copy(vaultCollateralAddress = vaultAddress, vaultCollateral = null) }
     viewModelScope.launch {
       val collateral = runSuspendCatching { repository.collateral(vaultAddress) }.getOrNull()
-      local.update { it.copy(vaultCollateral = collateral) }
+      if (collateralKey == key) local.update { it.copy(vaultCollateral = collateral) }
     }
   }
 
@@ -1008,7 +1023,7 @@ class PortfolioViewModel(
       }
     }
     // Pledging and releasing are bounded by what the venue says is movable right now.
-    val collateral = state.vaultCollateral
+    val collateral = state.collateralFor(vault.address)
     if (mode == VaultActionMode.PLEDGE && collateral != null && parsedAmount > collateral.pledgeable) {
       local.update {
         it.copy(
@@ -1060,9 +1075,7 @@ class PortfolioViewModel(
       when (val terminal = local.value.vaultTransaction) {
         is ActionState.Committed -> {
           refreshVaults()
-          if (mode == VaultActionMode.PLEDGE || mode == VaultActionMode.RELEASE) {
-            inspectVaultCollateral(vault.address)
-          }
+          inspectVaultCollateral(vault.address)
           accounts.refresh()
           // Keep the committed action visible until the receipt is dismissed.
         }

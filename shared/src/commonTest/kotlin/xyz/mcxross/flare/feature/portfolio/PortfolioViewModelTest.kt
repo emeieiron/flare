@@ -17,6 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -799,6 +800,85 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.ChangeVaultAmount("41"))
     vm.onIntent(PortfolioIntent.SubmitVaultAction)
     assertTrue(vm.uiState.value.actionError.orEmpty().contains("40"))
+  }
+
+  @Test
+  fun aCollateralReadingBelongsToOneVaultAndOneAccount() = runTest {
+    val slow = VaultSummary(address = "0xslow", name = "Slow", totalValue = 1.0)
+    val quick = VaultSummary(address = "0xquick", name = "Quick", totalValue = 1.0)
+    val selected = MutableStateFlow(AccountSnapshot(account = "0xfirst", stale = false))
+    val accounts =
+      object : FakeAccountRepository(selected.value) {
+        override val snapshot: StateFlow<AccountSnapshot> = selected
+
+        override suspend fun vaults(limit: Int) = listOf(slow, quick)
+
+        override suspend fun collateral(vaultAddress: String): VaultCollateral {
+          if (vaultAddress == slow.address) delay(50)
+          return VaultCollateral(
+            pledgeable = if (vaultAddress == slow.address) 500.0 else 1.0,
+            pledged = if (selected.value.account == "0xfirst") 10.0 else 0.0,
+          )
+        }
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    // Opening one vault and then another leaves the first read still in flight.
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(slow.address))
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(quick.address))
+    runCurrent()
+    assertEquals(1.0, vm.uiState.value.collateralFor(quick.address)?.pledgeable)
+    assertEquals(10.0, vm.uiState.value.collateralFor(quick.address)?.pledged)
+
+    // The slower answer lands last, and is dropped rather than shown as this vault's.
+    advanceTimeBy(100)
+    runCurrent()
+    assertEquals(1.0, vm.uiState.value.collateralFor(quick.address)?.pledgeable)
+    assertNull(vm.uiState.value.collateralFor(slow.address))
+
+    // Pledged shares belong to one account, so a switch re-reads instead of carrying them over.
+    selected.value = AccountSnapshot(account = "0xsecond", stale = false)
+    advanceTimeBy(100)
+    runCurrent()
+    assertEquals(0.0, vm.uiState.value.collateralFor(quick.address)?.pledged)
+  }
+
+  @Test
+  fun aDepositRereadsWhatIsFreeToPledge() = runTest {
+    val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 1.0)
+    var reads = 0
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun vaults(limit: Int) = listOf(vault)
+
+        // Nothing is free to pledge until the contribution lands.
+        override suspend fun collateral(vaultAddress: String): VaultCollateral {
+          reads++
+          return VaultCollateral(pledgeable = if (reads > 1) 25.0 else 0.0, pledged = 0.0)
+        }
+
+        override fun contribute(
+          vaultAddress: String,
+          amount: String,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> = flowOf(ActionState.Committed("0xhash"))
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(vault.address))
+    vm.uiState.first { it.collateralFor(vault.address) != null }
+    assertEquals(0.0, vm.uiState.value.collateralFor(vault.address)?.pledgeable)
+
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("100"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    vm.uiState.first { it.vaultTransaction is ActionState.Committed }
+
+    // The shares the deposit freed are offered as margin without leaving the page.
+    assertEquals(25.0, vm.uiState.first { it.collateralFor(vault.address)?.pledgeable == 25.0 }
+      .collateralFor(vault.address)?.pledgeable)
   }
 
   @Test
