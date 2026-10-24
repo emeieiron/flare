@@ -96,6 +96,36 @@ class DecibelTradingPayloadTest {
   }
 
   @Test
+  fun pledgingCollateralEncodesASignedAmount() = runTest {
+    withService { service ->
+      val pledge =
+        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, 5_000_000L)).success()
+      assertEquals(
+        "transfer_assets_between_non_collateral_and_collateral",
+        pledge.call.function.toString(),
+      )
+      assertEquals("dex_accounts_entry", pledge.call.module.name.toString())
+      assertEquals(
+        listOf(addressHex(SUBACCOUNT), addressHex(MARKET), "404b4c0000000000"),
+        pledge.argumentHex(),
+      )
+
+      // Releasing is the same call with a negative amount: i64 is two's complement, eight bytes
+      // little-endian, which is why -5_000_000 reads as the complement of the pledge above.
+      val release =
+        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, -5_000_000L)).success()
+      assertEquals("c0b4b3ffffffffff", release.argumentHex().last())
+      // -1 is every bit set; 0 is refused outright.
+      val minusOne =
+        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, -1L)).success()
+      assertEquals("ffffffffffffffff", minusOne.argumentHex().last())
+      assertIs<AptosResult.Failure>(
+        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, 0L))
+      )
+    }
+  }
+
+  @Test
   fun approveAndRevokeBuilderFeeEncodingMatchesAbi() = runTest {
     withService { service ->
       val approve =
@@ -504,6 +534,12 @@ internal val DECIBEL_ENTRY_ABI =
               "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
               "address",
               "u64",
+            ),
+            function(
+              "transfer_assets_between_non_collateral_and_collateral",
+              "0x1::object::Object<${DEPLOYMENT.packageAddress}::dex_accounts::Subaccount>",
+              "0x1::object::Object<0x1::fungible_asset::Metadata>",
+              "i64",
             ),
           ),
         structs = emptyList(),
