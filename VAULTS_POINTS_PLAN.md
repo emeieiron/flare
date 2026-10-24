@@ -9,7 +9,7 @@ work is therefore mostly widening neutral models and splitting two ports out of
 [AccountRepository](shared/src/commonMain/kotlin/xyz/mcxross/flare/data/AccountRepository.kt), not
 adding venue-specific screens.
 
-Phases 0 and 1 are done. The sections below are kept as the record of why, with progress marked
+Phases 0 through 4 are done. The sections below are kept as the record of why, with progress marked
 under **Phases**.
 
 ## What each venue already returns and the app discards
@@ -228,9 +228,33 @@ outcome staying pending rather than failed so nothing is claimed twice.
 into one `Series` plus one chart taking a value formatter, rather than growing a third bespoke
 chart. Both ports move to a cached `StateFlow` snapshot with a day-boundary-aware refresh.
 
-**Phase 4 — context and habit.** Leaderboard window and global stats behind the rank, a referral
-panel with gate progress and the account's own code, and the streak as a week strip with the grace
-day labelled as the one free miss it is.
+**Phase 4 — context and habit. Done, and it fixed more than it added.**
+
+The rank now reads against the field from `points/global` — "#4,812 of 61,200", "Top 7.86%", and a
+share of everything distributed. A leaderboard *window* was dropped deliberately: it shows strangers'
+addresses either side of you, which is a lot of screen for little meaning. The streak is a week
+strip with the grace day spelled out, and the referral panel shows the code, how many traders it
+brought in, who referred the account, and — when Decibel still withholds a code — what unlocks it.
+The gate wording lives on the descriptor (`VenueDescriptor.referralGate`), not in `:shared`.
+
+**Three bugs, each hiding the next.** Streak and tier had never worked on Decibel:
+
+1. Neither route was allowlisted in the Worker, so both 404'd in 1–3ms before reaching upstream.
+2. The streak DTO declared snake_case where `/streaks/account` answers in **camelCase** — every
+   field would have decoded to a default. A passing test encoded the same wrong assumption.
+3. Both sent `account=` with the subaccount where the API takes `owner=` with the wallet. All four
+   owner-scoped reads — amps, daily amps, streak, tier — now share one `readOwner` helper.
+
+Only the first was visible from outside; each had to be fixed before the next could be observed.
+
+**Worker changes this needed**, in `decibel-worker`: PR #2 allowlists `points_leaderboard`,
+`points/global`, `points/tier` and `streaks/account`, and turns the owner-scope branch into a set.
+PR #3, stacked on it, scopes the referral routes — two of which carry the account in the *path*,
+which `enforceAccountScope` had no mechanism for — and makes a malformed address refuse rather than
+raise a 500. Its helpers live in `src/scope.ts` so they can be tested; `index.ts` imports
+`cloudflare:workers` and cannot be loaded by the node test environment.
+
+**Phase 5 — DLP shares as collateral** remains the only phase not started.
 
 **Phase 5 — DLP shares as collateral.** Decibel-only on-chain action with an explicit opt-in and
 risk acknowledgement. Genuinely venue-specific, so it comes last.
