@@ -15,13 +15,17 @@ import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.ProtocolVaultTerms
 import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VaultMinimums
+import xyz.mcxross.flare.venue.VaultTerms
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
@@ -67,6 +71,21 @@ class DecibelVenue(
       builderFeeBps = config.defaultBuilderFeeBps.toInt(),
       maxBuilderFeeBps = 10,
       rewardPointsName = "Amps",
+      referralGate = "Your code appears once you have traded $25,000 all time.",
+      vaultTerms =
+        VaultTerms(
+          protocolVault =
+            ProtocolVaultTerms(
+              summary = "Decibel's own vault. It quotes both sides of every market and backstops liquidations.",
+              risk =
+                "As the backstop it absorbs liquidated positions the order book can't take, and " +
+                  "shares can be burned to cover them. Contributions are locked for 72 hours.",
+            ),
+          collateralRisk =
+            "Pledged shares count toward your margin at a discount and still move with the " +
+              "vault. If your account is liquidated they are burned through the vault rather " +
+              "than sold, and you cannot redeem them while they back a position.",
+        ),
       vaultMinimums = VaultMinimums(deposit = 10.0, redemptionShares = 5.0, vaults = "DLP vaults"),
     )
 
@@ -78,13 +97,12 @@ class DecibelVenue(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
-        rewards = true,
         sponsoredFees = true,
         networkFeeTopUp = true,
         inAppDeposit = true,
         perpSpotTransfer = false,
+        referralCodes = true,
       )
   }
 }
@@ -151,5 +169,9 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     bind<TradingRepository>()
     bind<DecibelTrading>()
   }
-  singleOf(::DefaultAccountRepository) { bind<AccountRepository>() }
+  singleOf(::DefaultAccountRepository) {
+    bind<AccountRepository>()
+    bind<VaultsRepository>()
+    bind<RewardsRepository>()
+  }
 }

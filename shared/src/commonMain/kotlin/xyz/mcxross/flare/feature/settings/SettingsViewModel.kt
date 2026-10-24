@@ -20,6 +20,7 @@ import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
@@ -145,6 +146,8 @@ class SettingsViewModel(
   private val accounts: AccountRepository,
   /** The venue's backend session, signed out when a key is removed; null when it has none. */
   private val sessions: SessionRepository?,
+  /** The venue's reward programs; null when it has none. */
+  private val rewardsRepository: RewardsRepository?,
   venue: VenueDescriptor,
   private val credentials: CredentialParser,
   private val setupGate: AccountSetupGate? = null,
@@ -172,9 +175,9 @@ class SettingsViewModel(
       }
     }
     viewModelScope.launch {
-      if (capabilities.rewards) {
+      rewardsRepository?.let { repository ->
         // Parts that fail to load are simply left out here.
-        val rewards = runSuspendCatching { accounts.rewards() }.getOrNull()
+        val rewards = runSuspendCatching { repository.rewards() }.getOrNull()
         local.update { it.copy(rewards = rewards) }
       }
       loadSubaccounts()
@@ -203,7 +206,8 @@ class SettingsViewModel(
         launchAction("Redeeming referral code failed.") {
           val code = local.value.referralCodeInput.trim()
           check(code.isNotBlank()) { "Enter a referral code" }
-          val success = accounts.redeemReferralCode(code)
+          val repository = checkNotNull(rewardsRepository) { "Referral codes aren’t available here" }
+          val success = repository.redeemReferralCode(code)
           if (success) {
             local.update {
               it.copy(

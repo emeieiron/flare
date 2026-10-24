@@ -18,6 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
@@ -41,11 +43,11 @@ import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 
 @Composable
 fun PortfolioPerformanceChart(
-  points: List<PortfolioPoint>,
+  points: List<SeriesPoint>,
   range: PortfolioChartRange,
   metric: PortfolioMetric,
   onRangeSelect: (PortfolioChartRange) -> Unit,
@@ -74,18 +76,58 @@ fun PortfolioPerformanceChart(
       }
     }
     if (values.isNotEmpty()) Text(formatBalance(values.last()), style = MaterialTheme.typography.displaySmall)
+    FlareLineChart(
+      points = points,
+      lineColor =
+        if (values.isEmpty() || values.last() >= values.first()) FlareColors.Positive
+        else FlareColors.Negative,
+      loading = loading,
+      error = error,
+      emptyText =
+        when {
+          error != null -> "History is temporarily unavailable"
+          points.size == 1 -> "More history will appear as your account updates"
+          else -> "No history for this period"
+        },
+    )
+    TimeRangeSelector(PortfolioChartRange.entries, range, { it.label }, onRangeSelect)
+    if (error != null) Text(
+      if (points.isEmpty()) "Reconnecting automatically" else "Updating · showing your last history",
+      color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall,
+    )
+    Text(
+      if (metric == PortfolioMetric.EQUITY) "Net deposits and realized P&L. Excludes unrealized P&L."
+      else "Realized P&L from completed trades.",
+      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
+  }
+}
+
+/** One line over time: a portfolio's value, a day's points, a vault's NAV. */
+@Composable
+fun FlareLineChart(
+  points: List<SeriesPoint>,
+  lineColor: Color,
+  modifier: Modifier = Modifier,
+  loading: Boolean = false,
+  error: String? = null,
+  emptyText: String = "No history yet",
+  /** Reaches past the page's gutters, as a screen's headline chart does. */
+  fullBleed: Boolean = true,
+  height: Dp = 240.dp,
+) {
+  Column(modifier.fillMaxWidth()) {
+    val values = points.map { it.value }
     if (points.isEmpty() && loading && error == null) {
-      Column(Modifier.fillMaxWidth().height(240.dp).shimmer(rememberFlareShimmer()),
+      Column(Modifier.fillMaxWidth().height(height).shimmer(rememberFlareShimmer()),
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         FlareSkeletonBox(Modifier.fillMaxWidth(0.45f).height(40.dp))
         FlareSkeletonBox(Modifier.fillMaxWidth().height(160.dp))
       }
     } else if (points.size >= 2) {
-      val isPositive = values.last() >= values.first()
-      val lineColor = if (isPositive) FlareColors.Positive else FlareColors.Negative
-
       val model =
-        remember(points, metric) {
+        remember(points) {
           CartesianChartModel(
             LineCartesianLayerModel.build {
               series(x = points.indices.toList(), y = values)
@@ -117,34 +159,15 @@ fun PortfolioPerformanceChart(
           ),
         model = model,
         scrollState = rememberVicoScrollState(scrollEnabled = false),
-        modifier = Modifier.fullBleed().height(240.dp),
+        modifier = (if (fullBleed) Modifier.fullBleed() else Modifier.fillMaxWidth()).height(height),
       )
     } else {
       Box(
-        modifier = Modifier.fillMaxWidth().height(240.dp),
+        modifier = Modifier.fillMaxWidth().height(height),
         contentAlignment = Alignment.Center,
       ) {
-        Text(
-          when {
-            error != null -> "History is temporarily unavailable"
-            points.size == 1 -> "More history will appear as your account updates"
-            else -> "No history for this period"
-          },
-          color = FlareColors.TextTertiary,
-          style = MaterialTheme.typography.bodySmall,
-        )
+        Text(emptyText, color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
       }
     }
-    TimeRangeSelector(PortfolioChartRange.entries, range, { it.label }, onRangeSelect)
-    if (error != null) Text(
-      if (points.isEmpty()) "Reconnecting automatically" else "Updating · showing your last history",
-      color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall,
-    )
-    Text(
-      if (metric == PortfolioMetric.EQUITY) "Net deposits and realized P&L. Excludes unrealized P&L."
-      else "Realized P&L from completed trades.",
-      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall,
-    )
   }
 }

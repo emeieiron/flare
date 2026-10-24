@@ -17,6 +17,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +36,8 @@ import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
@@ -62,7 +65,7 @@ import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
@@ -75,6 +78,7 @@ import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -135,7 +139,8 @@ class PortfolioViewModelTest {
       ),
     )
 
-  private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) : AccountRepository {
+  private open class FakeAccountRepository(initialSnapshot: AccountSnapshot) :
+    AccountRepository, VaultsRepository, RewardsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(initialSnapshot)
     override val history: StateFlow<AccountHistorySnapshot> =
       MutableStateFlow(AccountHistorySnapshot())
@@ -207,7 +212,7 @@ class PortfolioViewModelTest {
     override suspend fun portfolioChart(
       range: PortfolioChartRange,
       metric: PortfolioMetric,
-    ): List<PortfolioPoint> = emptyList()
+    ): List<SeriesPoint> = emptyList()
 
     var rewardReads = 0
     var vaultReads = 0
@@ -230,14 +235,14 @@ class PortfolioViewModelTest {
 
     override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
 
-    override fun contributeToVault(
+    override fun contribute(
       vaultAddress: String,
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): Flow<ActionState> = emptyFlow()
 
-    override fun redeemFromVault(
+    override fun redeem(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,
@@ -524,9 +529,9 @@ class PortfolioViewModelTest {
   fun historyRecoversAutomaticallyAndRetainsCachedPoints() = runTest {
     var unavailable = true
     var reads = 0
-    val point = PortfolioPoint(timeMs = 1, value = 25.0)
+    val point = SeriesPoint(timeMs = 1, value = 25.0)
     val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<PortfolioPoint> {
+      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
         reads++
         check(!unavailable) { "Offline" }
         return listOf(point)
@@ -607,6 +612,7 @@ class PortfolioViewModelTest {
         markets = FakeMarketsRepository(quotes),
         marketDetails = FakeMarketDetailsRepository(),
         venue = testVenue(),
+        vaultsRepository = fakeAccounts,
         assetCatalog = FakeAssetCatalogRepository(),
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
@@ -706,9 +712,11 @@ class PortfolioViewModelTest {
   }
 
   private fun portfolio(
-    accounts: AccountRepository,
+    accounts: FakeAccountRepository,
     capabilities: VenueCapabilities = VenueCapabilities.All,
     trading: TradingRepository = FakeTradingRepository(),
+    vaults: VaultsRepository? = accounts,
+    rewards: RewardsRepository? = accounts,
   ) =
     PortfolioViewModel(
       accounts = accounts,
@@ -718,12 +726,14 @@ class PortfolioViewModelTest {
       markets = FakeMarketsRepository(quotes),
       marketDetails = FakeMarketDetailsRepository(),
       venue = testVenue(capabilities),
+      vaultsRepository = vaults,
+      rewardsRepository = rewards,
     )
 
   @Test
   fun featuresTheVenueLacksAreNeitherLoadedNorOffered() = runTest {
     val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
-    val vm = portfolio(accounts, BareCapabilities)
+    val vm = portfolio(accounts, BareCapabilities, vaults = null, rewards = null)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     vm.onIntent(PortfolioIntent.Refresh)
@@ -732,6 +742,7 @@ class PortfolioViewModelTest {
     assertEquals(BareCapabilities, state.capabilities)
     assertEquals(0, accounts.rewardReads)
     assertEquals(0, accounts.vaultReads)
+    assertFalse(state.vaultsAvailable || state.rewardsAvailable)
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
     assertNull(
@@ -744,6 +755,133 @@ class PortfolioViewModelTest {
   }
 
   @Test
+  fun aPledgeIsBoundedByWhatIsOutsideTheVaultsLockup() = runTest {
+    val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 1.0)
+    var submitted: Pair<String, Boolean>? = null
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun vaults(limit: Int) = listOf(vault)
+        // A 500-share stake of which only 120.5 is outside the lockup.
+        override suspend fun collateral(vaultAddress: String) =
+          VaultCollateral(pledgeable = 120.5, pledged = 40.0, creditPercent = 90.0)
+
+        override fun setCollateral(
+          vaultAddress: String,
+          shares: String,
+          pledge: Boolean,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> {
+          submitted = shares to pledge
+          return flowOf(ActionState.Committed("0xhash"))
+        }
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(vault.address))
+    vm.uiState.first { it.vaultCollateral != null }
+
+    // Locked shares cannot be pledged, and the refusal says why.
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("200"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    val refused = vm.uiState.value
+    assertTrue(refused.actionError.orEmpty().contains("lockup"), refused.actionError.orEmpty())
+    assertNull(submitted)
+
+    // Within the unlocked amount it goes through, as a pledge rather than a release.
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("100"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    vm.uiState.first { it.vaultTransaction is ActionState.Committed }
+    assertEquals("100" to true, submitted)
+
+    // Releasing more than is pledged is refused too.
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("41"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    assertTrue(vm.uiState.value.actionError.orEmpty().contains("40"))
+  }
+
+  @Test
+  fun aCollateralReadingBelongsToOneVaultAndOneAccount() = runTest {
+    val slow = VaultSummary(address = "0xslow", name = "Slow", totalValue = 1.0)
+    val quick = VaultSummary(address = "0xquick", name = "Quick", totalValue = 1.0)
+    val selected = MutableStateFlow(AccountSnapshot(account = "0xfirst", stale = false))
+    val accounts =
+      object : FakeAccountRepository(selected.value) {
+        override val snapshot: StateFlow<AccountSnapshot> = selected
+
+        override suspend fun vaults(limit: Int) = listOf(slow, quick)
+
+        override suspend fun collateral(vaultAddress: String): VaultCollateral {
+          if (vaultAddress == slow.address) delay(50)
+          return VaultCollateral(
+            pledgeable = if (vaultAddress == slow.address) 500.0 else 1.0,
+            pledged = if (selected.value.account == "0xfirst") 10.0 else 0.0,
+          )
+        }
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    // Opening one vault and then another leaves the first read still in flight.
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(slow.address))
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(quick.address))
+    runCurrent()
+    assertEquals(1.0, vm.uiState.value.collateralFor(quick.address)?.pledgeable)
+    assertEquals(10.0, vm.uiState.value.collateralFor(quick.address)?.pledged)
+
+    // The slower answer lands last, and is dropped rather than shown as this vault's.
+    advanceTimeBy(100)
+    runCurrent()
+    assertEquals(1.0, vm.uiState.value.collateralFor(quick.address)?.pledgeable)
+    assertNull(vm.uiState.value.collateralFor(slow.address))
+
+    // Pledged shares belong to one account, so a switch re-reads instead of carrying them over.
+    selected.value = AccountSnapshot(account = "0xsecond", stale = false)
+    advanceTimeBy(100)
+    runCurrent()
+    assertEquals(0.0, vm.uiState.value.collateralFor(quick.address)?.pledged)
+  }
+
+  @Test
+  fun aDepositRereadsWhatIsFreeToPledge() = runTest {
+    val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 1.0)
+    var reads = 0
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun vaults(limit: Int) = listOf(vault)
+
+        // Nothing is free to pledge until the contribution lands.
+        override suspend fun collateral(vaultAddress: String): VaultCollateral {
+          reads++
+          return VaultCollateral(pledgeable = if (reads > 1) 25.0 else 0.0, pledged = 0.0)
+        }
+
+        override fun contribute(
+          vaultAddress: String,
+          amount: String,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> = flowOf(ActionState.Committed("0xhash"))
+      }
+    val vm = portfolio(accounts)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.InspectVaultCollateral(vault.address))
+    vm.uiState.first { it.collateralFor(vault.address) != null }
+    assertEquals(0.0, vm.uiState.value.collateralFor(vault.address)?.pledgeable)
+
+    vm.onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeVaultAmount("100"))
+    vm.onIntent(PortfolioIntent.SubmitVaultAction)
+    vm.uiState.first { it.vaultTransaction is ActionState.Committed }
+
+    // The shares the deposit freed are offered as margin without leaving the page.
+    assertEquals(25.0, vm.uiState.first { it.collateralFor(vault.address)?.pledgeable == 25.0 }
+      .collateralFor(vault.address)?.pledgeable)
+  }
+
+  @Test
   fun aVenueWithEveryFeatureLoadsAndOffersThemAll() = runTest {
     val accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false))
     val vm = portfolio(accounts)
@@ -752,9 +890,11 @@ class PortfolioViewModelTest {
     val state = vm.uiState.value
     assertEquals(1, accounts.rewardReads)
     assertEquals(1, accounts.vaultReads)
+    assertTrue(state.vaultsAvailable && state.rewardsAvailable)
     assertTrue(state.rewardsLoaded)
     assertTrue(state.vaultsLoaded)
     assertEquals("Amps", state.rewardPointsName)
+    assertEquals("Trade to unlock your code.", state.referralGate)
     assertEquals(
       5_000uL,
       state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),

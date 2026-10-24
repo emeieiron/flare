@@ -41,6 +41,8 @@ data class VenueDescriptor(
   val vaultMinimums: VaultMinimums? = null,
   /** What the venue calls its reward points, such as Decibel's Amps; null when it has none. */
   val rewardPointsName: String? = null,
+  /** What unlocks a referral code here; null where a venue gates nothing. */
+  val referralGate: String? = null,
   /** The steps account setup takes once the wallet exists. */
   val setup: VenueSetup = VenueSetup(),
   /** What the receive screen tells someone funding the account; null for the chain's defaults. */
@@ -70,6 +72,24 @@ data class VaultTerms(
   val stakeInUsdc: Boolean = false,
   /** Every deposit locks the whole stake again for the vault's lockup, which deposits state. */
   val lockupPerDeposit: Boolean = false,
+  /** What the venue's own vault is for; null where the venue runs none. */
+  val protocolVault: ProtocolVaultTerms? = null,
+  /**
+   * What pledging vault shares as margin carries, in the venue's words; null where the venue
+   * doesn't take them. Shown before the pledge is signed, not after.
+   */
+  val collateralRisk: String? = null,
+)
+
+/**
+ * The venue's own vault, in the venue's words. It is a different product from a user's vault, so
+ * the screens set it apart and say what being in it carries.
+ */
+data class ProtocolVaultTerms(
+  /** What it does for the exchange, as in "Provides Decibel's liquidity". */
+  val summary: String,
+  /** What a depositor takes on that a user vault wouldn't. */
+  val risk: String,
 )
 
 /** How to fund an account on the venue, in the venue's words. */
@@ -128,10 +148,7 @@ data class VenueSetup(
 data class VenueCapabilities(
   val spot: Boolean,
   val twap: Boolean,
-  val vaults: Boolean,
   val subaccounts: Boolean,
-  /** Exchange rewards, such as Decibel's Amps, streak and tier. */
-  val rewards: Boolean,
   /** Network fees paid by a gas station, with the wallet paying itself as the fallback. */
   val sponsoredFees: Boolean,
   /** Topping up the trading key with the chain's fee token. */
@@ -147,7 +164,7 @@ data class VenueCapabilities(
   /** Creating trading accounts (subaccounts) from the app, beyond selecting existing ones. */
   val createSubaccounts: Boolean = subaccounts,
   /** Redeeming a referral code from the app. */
-  val referralCodes: Boolean = rewards,
+  val referralCodes: Boolean = false,
   /**
    * The kinds of action the app can't send on the venue yet, each with the reason shown in its
    * place. The screens still show the account, and disable just those actions.
@@ -163,13 +180,12 @@ data class VenueCapabilities(
       VenueCapabilities(
         spot = true,
         twap = true,
-        vaults = true,
         subaccounts = true,
-        rewards = true,
         sponsoredFees = true,
         networkFeeTopUp = true,
         inAppDeposit = true,
         perpSpotTransfer = true,
+        referralCodes = true,
       )
   }
 }

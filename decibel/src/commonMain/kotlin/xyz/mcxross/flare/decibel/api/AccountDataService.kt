@@ -26,6 +26,11 @@ import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.TwapOrder
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
+import xyz.mcxross.flare.decibel.model.GlobalPointsStats
+import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
+import xyz.mcxross.flare.decibel.model.ReferrerStats
+import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.VaultInfo
 
 interface AccountDataService {
@@ -78,11 +83,11 @@ interface AccountDataService {
     offset: Int = 0,
   ): Page<FundMovement>
 
-  suspend fun streak(account: String): TradingStreak?
+  suspend fun streak(owner: String): TradingStreak?
 
   suspend fun amps(owner: String): AmpsBreakdown
 
-  suspend fun tier(account: String): TierInfo?
+  suspend fun tier(owner: String): TierInfo?
 
   suspend fun verifyReferralCode(code: String): ReferralCodeInfo
 
@@ -91,6 +96,18 @@ interface AccountDataService {
   suspend fun activeTwaps(account: String): List<TwapOrder>
 
   suspend fun twapHistory(account: String, limit: Int = 20): List<TwapOrder>
+
+  /** Null when the account has never been a referrer. */
+  suspend fun referrerStats(owner: String): ReferrerStats?
+
+  /** Null when the account was never referred. */
+  suspend fun accountReferral(owner: String): AccountReferralInfo?
+
+  suspend fun globalPoints(): GlobalPointsStats
+
+  suspend fun dailyAmps(owner: String): OwnerAmpsDaily
+
+  suspend fun campaigns(account: String): UserCampaigns
 
   suspend fun vaults(limit: Int = 50): List<VaultInfo>
 
@@ -214,9 +231,9 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
     return Page(items = history.funds, totalCount = history.total)
   }
 
-  override suspend fun streak(account: String): TradingStreak? =
+  override suspend fun streak(owner: String): TradingStreak? =
     try {
-      api.get<TradingStreak>("streaks/account") { parameter("account", account) }
+      api.get<TradingStreak>("streaks/account") { parameter("owner", owner) }
     } catch (error: DecibelApiError) {
       if (error.statusCode == 404) null else throw error
     }
@@ -224,9 +241,9 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
   override suspend fun amps(owner: String): AmpsBreakdown =
     api.get("points/amps") { parameter("owner", owner) }
 
-  override suspend fun tier(account: String): TierInfo? =
+  override suspend fun tier(owner: String): TierInfo? =
     try {
-      api.get<TierInfo>("points/tier") { parameter("account", account) }
+      api.get<TierInfo>("points/tier") { parameter("owner", owner) }
     } catch (error: DecibelApiError) {
       if (error.statusCode == 404) null else throw error
     }
@@ -270,6 +287,31 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
         else -> emptyList()
       }
     }.getOrElse { emptyList() }
+
+  override suspend fun referrerStats(owner: String): ReferrerStats? =
+    try {
+      api.get<ReferrerStats>("referrals/stats/$owner")
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
+
+  override suspend fun accountReferral(owner: String): AccountReferralInfo? =
+    try {
+      api.get<AccountReferralInfo>("referrals/account/$owner")
+    } catch (error: DecibelApiError) {
+      if (error.statusCode == 404) null else throw error
+    }
+
+  override suspend fun globalPoints(): GlobalPointsStats = api.get("points/global")
+
+  override suspend fun dailyAmps(owner: String): OwnerAmpsDaily =
+    api.get("points/amps/daily") { parameter("owner", owner) }
+
+  override suspend fun campaigns(account: String): UserCampaigns =
+    api.get("campaigns/account") {
+      parameter("account", account)
+      parameter("pagination", "true")
+    }
 
   override suspend fun vaults(limit: Int): List<VaultInfo> =
     run {

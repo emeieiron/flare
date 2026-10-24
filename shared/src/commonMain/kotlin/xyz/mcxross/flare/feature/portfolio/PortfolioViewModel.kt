@@ -30,7 +30,9 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.PendingTransaction
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.formatBalance
@@ -52,10 +54,11 @@ import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
+import xyz.mcxross.flare.venue.model.VaultCollateral
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -71,6 +74,10 @@ enum class FundingMode {
 enum class VaultActionMode {
   DEPOSIT,
   REDEEM,
+  /** Put the stake to work as margin. */
+  PLEDGE,
+  /** Take it back out of margin. */
+  RELEASE,
 }
 
 data class SpotHolding(
@@ -102,6 +109,8 @@ data class PortfolioUiState(
   val setupNeed: SetupNeed? = null,
   /** What the venue calls its reward points, such as Amps. */
   val rewardPointsName: String? = null,
+  /** What unlocks a referral code, shown while the venue withholds it. */
+  val referralGate: String? = null,
   val profile: WalletProfile = WalletProfile(),
   val marketSymbols: Map<String, String> = emptyMap(),
   val markPrices: Map<String, Double> = emptyMap(),
@@ -125,7 +134,7 @@ data class PortfolioUiState(
   val apiWalletNeedsTopUp: Boolean = false,
   val suggestedTopUp: ULong? = null,
   val topUpTransaction: ActionState? = null,
-  val chartPoints: List<PortfolioPoint> = emptyList(),
+  val chartPoints: List<SeriesPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
   val chartLoading: Boolean = false,
@@ -133,6 +142,12 @@ data class PortfolioUiState(
   val historyVisible: Boolean = false,
   val chartError: String? = null,
   val holdingsError: String? = null,
+  /** True where the venue binds a vaults port. */
+  val vaultsAvailable: Boolean = true,
+  /** True where the venue binds a rewards port. */
+  val rewardsAvailable: Boolean = true,
+  /** Points earned per day, oldest first; empty where the venue keeps no history. */
+  val pointsHistory: List<SeriesPoint> = emptyList(),
   val vaultsLoading: Boolean = false,
   val vaultsLoaded: Boolean = false,
   val vaultsError: String? = null,
@@ -143,6 +158,10 @@ data class PortfolioUiState(
   val accountVaults: List<VaultPosition> = emptyList(),
   val selectedVault: VaultSummary? = null,
   val vaultAction: VaultActionMode? = null,
+  /** The inspected vault's shares as margin, where the venue takes them. See [collateralFor]. */
+  val vaultCollateral: VaultCollateral? = null,
+  /** Which vault [vaultCollateral] was read for. */
+  val vaultCollateralAddress: String? = null,
   val vaultAmountInput: String = "",
   val vaultTransaction: ActionState? = null,
   val busy: Boolean = false,
@@ -185,6 +204,10 @@ data class PortfolioUiState(
 
   val collateralBalance: Double
     get() = account.overview?.withdrawable ?: 0.0
+
+  /** This vault's shares as margin, or null while the only reading in hand is another vault's. */
+  fun collateralFor(vaultAddress: String): VaultCollateral? =
+    vaultCollateral?.takeIf { vaultCollateralAddress == vaultAddress }
 
   /** Spot USDC free to move, where the venue reports spot with the account. */
   val spotUsdc: Double
@@ -271,6 +294,9 @@ sealed interface PortfolioIntent {
   data object DismissVaultAction : PortfolioIntent
 
   data object RefreshVaults : PortfolioIntent
+
+  /** Reads how much of [vaultAddress] may be pledged as margin, and how much already is. */
+  data class InspectVaultCollateral(val vaultAddress: String) : PortfolioIntent
 }
 
 class PortfolioViewModel(
@@ -281,6 +307,8 @@ class PortfolioViewModel(
   private val markets: MarketsRepository,
   private val marketDetails: MarketDetailsRepository,
   venue: VenueDescriptor,
+  private val vaultsRepository: VaultsRepository? = null,
+  private val rewardsRepository: RewardsRepository? = null,
   private val assetCatalog: AssetCatalogRepository? = null,
   private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
@@ -290,13 +318,20 @@ class PortfolioViewModel(
   private val vaultTerms = venue.vaultTerms
   private val local =
     MutableStateFlow(
-      PortfolioUiState(capabilities = capabilities, rewardPointsName = venue.rewardPointsName)
+      PortfolioUiState(
+        capabilities = capabilities,
+        rewardPointsName = venue.rewardPointsName,
+        referralGate = venue.referralGate,
+        vaultsAvailable = vaultsRepository != null,
+        rewardsAvailable = rewardsRepository != null,
+      )
     )
   private val spotBalances = MutableStateFlow<Map<String, Double>>(emptyMap())
   private val primaryUsdcBalance = MutableStateFlow(0.0)
   private var chartJob: Job? = null
   private var vaultsJob: Job? = null
   private var rewardsJob: Job? = null
+  private var collateralKey: Pair<String, String?>? = null
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var lastPositionAction: TradeAction? = null
@@ -329,6 +364,9 @@ class PortfolioViewModel(
           if (local.value.historyVisible) fetchPortfolioChart()
           fetchRewards()
           refreshVaults()
+          val inspected = local.value.vaultCollateralAddress
+          local.update { it.copy(vaultCollateralAddress = null, vaultCollateral = null) }
+          inspected?.let { inspectVaultCollateral(it) }
         }
     }
     viewModelScope.launch {
@@ -610,6 +648,7 @@ class PortfolioViewModel(
           )
         }
       PortfolioIntent.RefreshVaults -> refreshVaults()
+      is PortfolioIntent.InspectVaultCollateral -> inspectVaultCollateral(intent.vaultAddress)
     }
   }
 
@@ -871,9 +910,15 @@ class PortfolioViewModel(
 
   /** A part that fails to load keeps what was shown for it, and is retried while visible. */
   private fun fetchRewards() {
-    if (!capabilities.rewards || rewardsJob?.isActive == true) return
+    val repository = rewardsRepository ?: return
+    if (rewardsJob?.isActive == true) return
     rewardsJob = viewModelScope.launch {
-      val result = runSuspendCatching { accounts.rewards() }
+      launch {
+        // A chart the venue has no history for simply doesn't appear.
+        runSuspendCatching { repository.pointsHistory() }
+          .onSuccess { history -> local.update { it.copy(pointsHistory = history) } }
+      }
+      val result = runSuspendCatching { repository.rewards() }
       local.update {
         val rewards = result.getOrNull()
         it.copy(
@@ -903,13 +948,28 @@ class PortfolioViewModel(
     }
   }
 
+  /** A venue that doesn't take vault shares as margin simply answers null and shows nothing. */
+  private fun inspectVaultCollateral(vaultAddress: String) {
+    val repository = vaultsRepository ?: return
+    val key = vaultAddress to accounts.snapshot.value.account
+    collateralKey = key
+    // Another vault's balances must never stand in for this one's; a repeat read swaps in place.
+    if (local.value.vaultCollateralAddress != vaultAddress)
+      local.update { it.copy(vaultCollateralAddress = vaultAddress, vaultCollateral = null) }
+    viewModelScope.launch {
+      val collateral = runSuspendCatching { repository.collateral(vaultAddress) }.getOrNull()
+      if (collateralKey == key) local.update { it.copy(vaultCollateral = collateral) }
+    }
+  }
+
   fun refreshVaults() {
-    if (!capabilities.vaults || vaultsJob?.isActive == true) return
+    val repository = vaultsRepository ?: return
+    if (vaultsJob?.isActive == true) return
     vaultsJob = viewModelScope.launch {
       local.update { it.copy(vaultsLoading = true) }
       runSuspendCatching {
-        val vaults = accounts.vaults()
-        val positions = accounts.vaultPositions()
+        val vaults = repository.vaults()
+        val positions = repository.vaultPositions()
         local.update { it.copy(vaults = vaults, accountVaults = positions, vaultsLoaded = true, vaultsError = null) }
       }.onFailure {
         local.update { it.copy(vaultsError = "Vaults are temporarily unavailable. Reconnecting automatically.") }
@@ -962,17 +1022,52 @@ class PortfolioViewModel(
         return
       }
     }
-    launchAction(if (mode == VaultActionMode.DEPOSIT) "Vault deposit failed." else "Vault redemption failed.") {
+    // Pledging and releasing are bounded by what the venue says is movable right now.
+    val collateral = state.collateralFor(vault.address)
+    if (mode == VaultActionMode.PLEDGE && collateral != null && parsedAmount > collateral.pledgeable) {
+      local.update {
+        it.copy(
+          actionError =
+            "You can pledge up to ${formatQuantity(collateral.pledgeable, 4)} shares. " +
+              "Shares still inside the vault's lockup cannot be used as margin."
+        )
+      }
+      return
+    }
+    if (mode == VaultActionMode.RELEASE && collateral != null && parsedAmount > collateral.pledged) {
+      local.update {
+        it.copy(actionError = "You have ${formatQuantity(collateral.pledged, 4)} shares pledged.")
+      }
+      return
+    }
+    val repository = vaultsRepository ?: return
+    launchAction(
+      when (mode) {
+        VaultActionMode.DEPOSIT -> "Vault deposit failed."
+        VaultActionMode.REDEEM -> "Vault redemption failed."
+        VaultActionMode.PLEDGE -> "Using the shares as margin failed."
+        VaultActionMode.RELEASE -> "Releasing the shares failed."
+      }
+    ) {
       val prompt =
         VaultPrompt(
-          title = if (mode == VaultActionMode.DEPOSIT) "Contribute to ${vault.name}" else "Redeem from ${vault.name}",
+          title =
+            when (mode) {
+              VaultActionMode.DEPOSIT -> "Contribute to ${vault.name}"
+              VaultActionMode.REDEEM -> "Redeem from ${vault.name}"
+              VaultActionMode.PLEDGE -> "Use ${vault.name} shares as margin"
+              VaultActionMode.RELEASE -> "Release ${vault.name} shares"
+            },
           subtitle = "Confirm with owner wallet",
         )
       val flow =
-        if (mode == VaultActionMode.DEPOSIT) {
-          accounts.contributeToVault(vault.address, amount, prompt)
-        } else {
-          accounts.redeemFromVault(vault.address, amount, prompt)
+        when (mode) {
+          VaultActionMode.DEPOSIT -> repository.contribute(vault.address, amount, prompt)
+          VaultActionMode.REDEEM -> repository.redeem(vault.address, amount, prompt)
+          VaultActionMode.PLEDGE ->
+            repository.setCollateral(vault.address, amount, pledge = true, prompt = prompt)
+          VaultActionMode.RELEASE ->
+            repository.setCollateral(vault.address, amount, pledge = false, prompt = prompt)
         }
       flow.collect { transaction ->
         local.update { it.copy(vaultTransaction = transaction) }
@@ -980,6 +1075,7 @@ class PortfolioViewModel(
       when (val terminal = local.value.vaultTransaction) {
         is ActionState.Committed -> {
           refreshVaults()
+          inspectVaultCollateral(vault.address)
           accounts.refresh()
           // Keep the committed action visible until the receipt is dismissed.
         }

@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
@@ -28,7 +30,7 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
@@ -117,7 +119,8 @@ object SetupCredentials : CredentialParser {
  * an exchange that enables trading only once the account is funded; [depositCheckGate], when set,
  * holds the deposit check until it completes. With [preferences] it saves the selected account.
  */
-open class SetupAccounts(private val preferences: AppPreferences? = null) : AccountRepository {
+open class SetupAccounts(private val preferences: AppPreferences? = null) :
+  AccountRepository, VaultsRepository, RewardsRepository {
   val events = mutableListOf<String>()
   val listed =
     listOf(
@@ -197,7 +200,7 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) : Acco
   ) = error("Not used")
 
   override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric) =
-    emptyList<PortfolioPoint>()
+    emptyList<SeriesPoint>()
 
   override suspend fun rewards(): Rewards? = null
 
@@ -211,10 +214,10 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) : Acco
 
   override suspend fun vaultPositions() = emptyList<VaultPosition>()
 
-  override fun contributeToVault(vaultAddress: String, amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
+  override fun contribute(vaultAddress: String, amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
     emptyFlow<ActionState>()
 
-  override fun redeemFromVault(vaultAddress: String, shares: String, prompt: VaultPrompt, feePayment: FeePayment) =
+  override fun redeem(vaultAddress: String, shares: String, prompt: VaultPrompt, feePayment: FeePayment) =
     emptyFlow<ActionState>()
 
   override suspend fun refresh() {}

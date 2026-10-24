@@ -1,11 +1,13 @@
 package xyz.mcxross.flare.venue.decibel
 
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.model.AccountFees
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
@@ -13,6 +15,7 @@ import xyz.mcxross.flare.decibel.model.FundHistory
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
+import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.venue.model.AccountOverview
@@ -27,10 +30,14 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.RewardPointsSource
+import xyz.mcxross.flare.venue.model.VaultFactValue
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.SpotReservation
@@ -322,7 +329,7 @@ class DecibelAccountMappersTest {
         """[{"timestamp":1735758000000,"data_points":1250.5}]"""
       )
     assertEquals(
-      PortfolioPoint(1735758000000, 1250.5),
+      SeriesPoint(1735758000000, 1250.5),
       documented.single().toPortfolioPoint(PortfolioMetric.EQUITY),
     )
     val named =
@@ -411,16 +418,45 @@ class DecibelAccountMappersTest {
       json.decodeFromString<VaultInfo>(
         """{"address":"0xdlp","name":"DLP","manager":"0xm","description":"Liquidity",""" +
           """"total_shares":1000.0,"share_price":1.05,"tvl":500000.0,"profit_share":10.0,""" +
-          """"lockdown_period_s":86400,"status":"active"}"""
+          """"lockdown_period_s":86400,"status":"active","vault_type":"protocol",""" +
+          """"depositors":42,"manager_cash_pct":56.9,"apr":18.4,"past_month_return":6.2,""" +
+          """"all_time_return":23.4,"max_drawdown":8.1,"sharpe_ratio":1.42,"volume_30d":912000.0,"weekly_win_rate_12w":0.75}"""
       )
     val summary = vault.toVaultSummary()
     assertEquals("0xdlp", summary.address)
     assertEquals(500_000.0, summary.totalValue)
     assertEquals(1.05, summary.sharePrice)
-    assertEquals(1000, summary.performanceFeeBps)
-    assertEquals(10.0, summary.performanceFeePercent)
+    // Decibel crystallizes on an interval whose length it doesn't report.
+    assertEquals(ManagerFee.Interval(10.0), summary.fee)
+    assertEquals(VaultKind.PROTOCOL, summary.kind)
+    // `manager_cash_pct` is how much sits in cash, not a manager stake, so no stake is claimed.
+    assertNull(summary.managerStakePercent)
+    assertEquals(42, summary.depositorCount)
+    // Decibel's own measures, in its order; APR is a fraction and the returns are percentages.
+    assertEquals(
+      listOf("APR", "Past month", "All time", "Max drawdown", "Sharpe ratio", "Weekly win rate",
+        "30-day volume", "Held in cash"),
+      summary.performance.map { it.label },
+    )
+    // The win rate is a fraction where the returns are percentages.
+    assertEquals(VaultFactValue.Percent(75.0), summary.performance[5].value)
+    assertEquals(VaultFactValue.Percent(56.9), summary.performance.last().value)
+    assertEquals(VaultFactValue.Percent(18.4, signed = true), summary.performance.first().value)
+    assertEquals(VaultFactValue.Percent(6.2, signed = true), summary.performance[1].value)
+    assertEquals(VaultFactValue.Ratio(1.42), summary.performance[4].value)
     assertEquals(86_400L, summary.lockupSeconds)
     assertTrue(summary.isActive)
+    // A vault Decibel doesn't type is one of its users'.
+    val userVault = vault.copy(vaultType = null, depositors = null).toVaultSummary()
+    assertEquals(VaultKind.USER, userVault.kind)
+    assertNull(userVault.depositorCount)
+    // A vault Decibel measures nothing for shows no performance section at all.
+    assertEquals(
+      emptyList(),
+      vault.copy(apr = null, pastMonthReturn = null, allTimeReturn = null, maxDrawdown = null,
+        sharpeRatio = null, volume30d = null, weeklyWinRate12w = null, managerCashPct = null)
+        .toVaultSummary().performance,
+    )
     // Decibel's zero lockup means none; a missing one is unknown.
     assertEquals(0L, vault.copy(lockdownPeriodS = 0).toVaultSummary().lockupSeconds)
     assertNull(vault.copy(lockdownPeriodS = null).toVaultSummary().lockupSeconds)
@@ -430,7 +466,8 @@ class DecibelAccountMappersTest {
         .decodeFromString<AccountVaultPerformance>(
           """{"vault":{"address":"0xdlp","name":"DLP","share_price":1.05},""" +
             """"current_num_shares":10000000,"current_value_of_shares":10.6,""" +
-            """"all_time_return":5.0}"""
+            """"all_time_return":5.0,"total_deposited":20.0,"total_withdrawn":12.0,""" +
+            """"all_time_earned":2.6}"""
         )
         .toVaultPosition()
     // Decibel reports raw share units; ten shares are 10,000,000 of them.
@@ -439,14 +476,18 @@ class DecibelAccountMappersTest {
     assertEquals(5.0, stake.returnPercent)
     assertEquals(1.05, stake.sharePrice)
     assertNull(stake.lockedUntilMs)
+    assertEquals(20.0, stake.deposited)
+    assertEquals(12.0, stake.withdrawn)
+    assertEquals(2.6, stake.earned)
   }
 
   @Test
   fun rewardsMarkWhatFailedAndListAmpsSourcesInOrder() {
     val streak =
       json.decodeFromString<DecibelTradingStreak>(
-        """{"streak_count":5,"longest_streak":10,"grace_days_remaining":2,""" +
-          """"qualifying_dates":["2026-09-20","2026-09-21"]}"""
+        // `/streaks/account` answers in camelCase, unlike the rest of the API.
+        """{"owner":"0x1","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
+          """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
       )
     val amps =
       json.decodeFromString<AmpsBreakdown>(
@@ -460,7 +501,14 @@ class DecibelAccountMappersTest {
         tier = Result.failure(IllegalStateException("Offline")),
       )
 
-    assertEquals(TradingStreak(days = 5, longestDays = 10, graceDaysRemaining = 2), rewards.streak)
+    assertEquals(
+      TradingStreak(
+        days = 5,
+        graceDaysRemaining = 2,
+        qualifyingDates = setOf(LocalDate.parse("2026-09-20"), LocalDate.parse("2026-09-21")),
+      ),
+      rewards.streak,
+    )
     assertEquals(1500.0, rewards.points?.total)
     assertEquals(42, rewards.points?.rank)
     assertEquals(
@@ -485,5 +533,39 @@ class DecibelAccountMappersTest {
     assertEquals("Gold", tiered.tier?.name)
     assertEquals(2, tiered.tier?.feeDiscountBps)
     assertTrue(tiered.unavailable.isEmpty())
+  }
+
+  @Test
+  fun referralWithholdsTheCodeBelowTheGateAndKeepsWhoReferred() {
+    val gated =
+      decibelReferral(
+        ReferrerStats(totalReferrals = 2, volumeThresholdMet = false),
+        AccountReferralInfo(referralCode = "FRIEND", referrerAccount = "0x33", isActive = true),
+      )
+    assertEquals(ReferralSummary(referredBy = "FRIEND", referredCount = 2, codeUnlocked = false), gated)
+
+    val unlocked =
+      decibelReferral(ReferrerStats(codes = listOf("MINE"), totalReferrals = 5, volumeThresholdMet = true), null)
+    assertEquals(ReferralSummary(code = "MINE", referredCount = 5, codeUnlocked = true), unlocked)
+
+    // An affiliate sees its codes whatever it has traded.
+    val affiliate = decibelReferral(ReferrerStats(codes = listOf("AFF"), isAffiliate = true), null)
+    assertEquals(ReferralSummary(code = "AFF", referredCount = 0, codeUnlocked = true, affiliate = true), affiliate)
+
+    // No record at all means the count is unknown, which is not the same as none.
+    assertEquals(ReferralSummary(referredCount = null, codeUnlocked = false), decibelReferral(null, null))
+  }
+
+  @Test
+  fun aFailedReferralReadIsMarkedUnavailable() {
+    val rewards =
+      decibelRewards(
+        Result.success(null),
+        Result.success(null),
+        Result.success(null),
+        referral = Result.failure(IllegalStateException("Offline")),
+      )
+    assertNull(rewards.referral)
+    assertEquals(setOf(RewardPart.REFERRAL), rewards.unavailable)
   }
 }

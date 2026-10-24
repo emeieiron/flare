@@ -36,7 +36,7 @@ import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.PortfolioPoint
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
@@ -45,6 +45,10 @@ import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TwapOrder
+import xyz.mcxross.flare.venue.model.ManagerFee
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
+import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 
@@ -336,7 +340,7 @@ internal val PortfolioChartRange.hyperliquidPeriod: String
     }
 
 /** The whole account's history over [range]: account value, or P&L since the range began. */
-internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric): List<PortfolioPoint> {
+internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
   val period = this[range.hyperliquidPeriod] ?: return emptyList()
   val points =
     when (metric) {
@@ -346,7 +350,7 @@ internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric
   return points.map(HyperliquidPortfolioPoint::toPortfolioPoint)
 }
 
-private fun HyperliquidPortfolioPoint.toPortfolioPoint() = PortfolioPoint(timeMs, value.toDoubleOrZero())
+private fun HyperliquidPortfolioPoint.toPortfolioPoint() = SeriesPoint(timeMs, value.toDoubleOrZero())
 
 internal fun UserFees.toTradingFees(): TradingFees =
   TradingFees(
@@ -437,11 +441,23 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
     name = name,
     manager = leader,
     description = description,
+    kind = if (isProtocolVault) VaultKind.PROTOCOL else VaultKind.USER,
     totalValue = portfolio?.get("day")?.accountValueHistory?.lastOrNull()?.value.toDoubleOrZero(),
     sharePrice = 1.0,
-    performanceFeeBps = (leaderCommission.toDoubleOrZero() * 10_000).toInt(),
-    performanceFeePercent = leaderCommission.toDoubleOrZero() * 100.0,
+    // Hyperliquid takes its commission on profits above a depositor's own peak.
+    fee = ManagerFee.HighWatermark(leaderCommission.toDoubleOrZero() * 100.0),
     lockupSeconds = if (isProtocolVault) PROTOCOL_VAULT_LOCKUP_SECONDS else USER_VAULT_LOCKUP_SECONDS,
+    // A protocol vault has no manager staking their own money, so the leader's sliver isn't one.
+    managerStakePercent =
+      if (isProtocolVault) null
+      else leaderFraction.toDoubleOrZero().takeIf { it > 0.0 }?.let { it * 100.0 },
+    // `followers` is a capped page, not a count, so Hyperliquid reports no depositor total.
+    depositorCount = null,
+    // Hyperliquid reports APR as a fraction, where Decibel reports a percentage.
+    performance =
+      apr.toDoubleOrZero().takeIf { it != 0.0 }
+        ?.let { listOf(VaultFact("APR", VaultFactValue.Percent(it * 100.0, signed = true))) }
+        .orEmpty(),
     isActive = !isClosed && allowDeposits,
   )
 
@@ -457,6 +473,8 @@ internal fun VaultEquity.toVaultPosition(vault: VaultSummary, details: VaultDeta
     returnPercent = if (invested != null && invested > 0.0) allTimePnl / invested * 100.0 else 0.0,
     sharePrice = 1.0,
     lockedUntilMs = (lockedUntilTimestamp ?: follower?.lockupUntil)?.takeIf { it > 0L },
+    // Hyperliquid reports the stake's profit, not what went in and out of it.
+    earned = allTimePnl,
   )
 }
 
