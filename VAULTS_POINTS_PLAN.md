@@ -9,7 +9,7 @@ work is therefore mostly widening neutral models and splitting two ports out of
 [AccountRepository](shared/src/commonMain/kotlin/xyz/mcxross/flare/data/AccountRepository.kt), not
 adding venue-specific screens.
 
-Phases 0 through 4 are done. The sections below are kept as the record of why, with progress marked
+All five phases are done; see Phase 5 for the one Worker change still outstanding. The sections below are kept as the record of why, with progress marked
 under **Phases**.
 
 ## What each venue already returns and the app discards
@@ -256,7 +256,7 @@ raise a 500. Its helpers live in `src/scope.ts` so they can be tested; `index.ts
 
 **Phase 5 — DLP shares as collateral** remains the only phase not started.
 
-**Phase 5 — DLP shares as collateral. Reading done; the write is specified and not written.**
+**Phase 5 — DLP shares as collateral. Done, bar gas sponsorship.**
 
 `account_overviews` already carries `secondary_collateral`, which `AccountOverview` was not parsing.
 The balance breakdown now lists each secondary asset with what the venue values it at and the credit
@@ -284,12 +284,25 @@ Worker already proxies, so no further proxy change is needed:
 | `vault_share_asset::get_user_unlocked_balance(metadata, account)` | what may be pledged, excluding shares still in lockup |
 | `accounts_collateral::get_cross_secondary_balance(account, metadata)` | what is pledged now |
 
-Two things to get right when it is written. The amount is **i64**: Kaptos has no signed variant, but
-BCS encodes i64 and u64 identically for the same bit pattern, so `MoveArgument.U64(value.toULong())`
-is correct for a negative Kotlin `Long` — and deserves a test asserting the exact bytes for a
-negative amount rather than trusting that reasoning. And pledging changes what a liquidation takes:
-DLP collateral is burned through the vault rather than sold, so the confirmation has to say that
-before it is signed, the way the vault deposit sheet states the fee mechanic.
+**Written, and the i64 note above was wrong.** Kaptos *does* have `MoveArgument.I64`, and it checks
+an argument against the ABI's declared type: a `U64` is refused with "Expected i64 number, got U64",
+whatever its bytes. The reasoning about BCS was right and the conclusion was not, which is why the
+byte test came first — `DecibelTradingPayloadTest` now pins `5_000_000`, `-5_000_000` and `-1`, and
+that zero is refused.
+
+Pledging moves collateral, so `requiredSigner()` puts it with the owner key alongside
+`ContributeToVault`, not the device trading key. The disclosure sits on the descriptor as
+`VaultTerms.collateralRisk` and is shown before signing, not after.
+
+One thing the compiler could not catch: widening `VaultActionMode` from two cases to four left three
+`if (mode == DEPOSIT) … else …` chains in the sheet treating "else" as a redemption, so a pledge
+showed redemption rows, a redemption minimum and a redemption placeholder. The exhaustive `when`s
+were flagged; the `if/else` chains were not, and only looking at the screen found them.
+
+**Still outstanding:** the gas station will not sponsor
+`transfer_assets_between_non_collateral_and_collateral` — it is not in `OWNER_FUNCTIONS` in
+`decibel-worker/src/gasStation.ts`, so a pledge falls back to self-pay where a vault contribution is
+free. That is a small Worker change, not an app one.
 
 ## Testing
 
