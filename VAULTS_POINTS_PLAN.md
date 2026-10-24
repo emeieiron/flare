@@ -9,7 +9,7 @@ work is therefore mostly widening neutral models and splitting two ports out of
 [AccountRepository](shared/src/commonMain/kotlin/xyz/mcxross/flare/data/AccountRepository.kt), not
 adding venue-specific screens.
 
-All five phases are done; see Phase 5 for the one Worker change still outstanding. The sections below are kept as the record of why, with progress marked
+All five phases are done. Three Worker PRs are open: #2 and #3 for read routes, #4 for sponsorship. The sections below are kept as the record of why, with progress marked
 under **Phases**.
 
 ## What each venue already returns and the app discards
@@ -256,7 +256,7 @@ raise a 500. Its helpers live in `src/scope.ts` so they can be tested; `index.ts
 
 **Phase 5 — DLP shares as collateral** remains the only phase not started.
 
-**Phase 5 — DLP shares as collateral. Done, bar gas sponsorship.**
+**Phase 5 — DLP shares as collateral. Done.**
 
 `account_overviews` already carries `secondary_collateral`, which `AccountOverview` was not parsing.
 The balance breakdown now lists each secondary asset with what the venue values it at and the credit
@@ -299,10 +299,10 @@ One thing the compiler could not catch: widening `VaultActionMode` from two case
 showed redemption rows, a redemption minimum and a redemption placeholder. The exhaustive `when`s
 were flagged; the `if/else` chains were not, and only looking at the screen found them.
 
-**Still outstanding:** the gas station will not sponsor
-`transfer_assets_between_non_collateral_and_collateral` — it is not in `OWNER_FUNCTIONS` in
-`decibel-worker/src/gasStation.ts`, so a pledge falls back to self-pay where a vault contribution is
-free. That is a small Worker change, not an app one.
+Sponsorship is `decibel-worker` PR #4: the pledge joins `OWNER_FUNCTIONS`, keeping it on the owner
+key beside `contribute_to_vault`, and stays out of `FUNDING_FUNCTIONS` because that set pins the
+asset to USDC while a pledge's asset is the vault's share token. Until it merges a pledge falls back
+to self-pay, which works but costs gas where a contribution is free.
 
 ## Testing
 
