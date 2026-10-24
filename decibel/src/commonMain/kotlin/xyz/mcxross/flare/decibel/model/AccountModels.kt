@@ -27,8 +27,26 @@ data class AccountOverview(
   @SerialName("cross_available_to_trade") val availableToTrade: Double = 0.0,
   @SerialName("usdc_cross_balance") val crossUsdcBalance: Double? = null,
   @SerialName("free_vault_equity") val freeVaultEquity: Double? = null,
+  @SerialName("secondary_collateral") val secondaryCollateral: List<SecondaryCollateral> = emptyList(),
   val spot: SpotOverview? = null,
 )
+
+/**
+ * Collateral other than USDC. Decibel credits it below full value, storing the discount as a
+ * haircut in basis points: 1,000 bps is a 90% credit.
+ */
+@Serializable
+data class SecondaryCollateral(
+  @SerialName("asset_type") val assetType: String = "",
+  val amount: Double = 0.0,
+  @SerialName("haircut_bps") val haircutBps: Int = 0,
+  @SerialName("nav_per_unit") val navPerUnit: Double = 0.0,
+  @SerialName("value_in_usdc") val valueInUsdc: Double = 0.0,
+  @SerialName("withdrawable_amount") val withdrawableAmount: Double = 0.0,
+) {
+  /** The share of value that counts toward margin, as a percentage. */
+  val creditPercent: Double get() = (10_000 - haircutBps) / 100.0
+}
 
 @Serializable
 data class SpotOverview(

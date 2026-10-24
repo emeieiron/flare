@@ -15,6 +15,7 @@ import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.ProductFees
 import xyz.mcxross.flare.decibel.model.ReferrerStats
+import xyz.mcxross.flare.decibel.model.SecondaryCollateral
 import xyz.mcxross.flare.decibel.model.SpotOverview
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
@@ -27,6 +28,7 @@ import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Campaign
 import xyz.mcxross.flare.venue.model.CampaignRewards
 import xyz.mcxross.flare.venue.model.ClaimState
+import xyz.mcxross.flare.venue.model.CollateralAsset
 import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.Fill
 import xyz.mcxross.flare.venue.model.FillDirection
@@ -82,6 +84,7 @@ internal fun DecibelAccountOverview.toAccountOverview(): AccountOverview =
     availableToTrade = availableToTrade,
     withdrawable = crossWithdrawableBalance,
     vaultEquity = freeVaultEquity,
+    secondaryCollateral = secondaryCollateral.map { it.toCollateralAsset() },
     balances = Balances(collateral = crossUsdcBalance, spot = spot?.toSpotBalances()),
   )
 
@@ -490,3 +493,16 @@ private const val USDC_DECIMALS = 6
 /** Decibel returns the season newest first; a chart reads oldest first. */
 internal fun OwnerAmpsDaily.toPointsHistory(): List<SeriesPoint> =
   days.map { SeriesPoint(timeMs = it.dayStartUnixMs, value = it.totalAmps) }.sortedBy { it.timeMs }
+
+/**
+ * Decibel's secondary collateral. Only what it reports: the credited value is Decibel's own
+ * arithmetic over the haircut, so the screen states the credit rather than recomputing the figure.
+ */
+internal fun SecondaryCollateral.toCollateralAsset(): CollateralAsset =
+  CollateralAsset(
+    name = if (assetType.startsWith("0x")) "DLP shares" else assetType.ifBlank { "DLP shares" },
+    amount = amount,
+    valueUsd = valueInUsdc,
+    creditPercent = creditPercent,
+    withdrawable = withdrawableAmount,
+  )
