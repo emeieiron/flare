@@ -86,7 +86,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Advisory until Dependency graph is enabled for the repository: without it the action
+      # fails before reading a single dependency, which would block every pull request.
       - uses: actions/dependency-review-action@v4
+        continue-on-error: true
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
