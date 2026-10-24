@@ -256,8 +256,40 @@ raise a 500. Its helpers live in `src/scope.ts` so they can be tested; `index.ts
 
 **Phase 5 — DLP shares as collateral** remains the only phase not started.
 
-**Phase 5 — DLP shares as collateral.** Decibel-only on-chain action with an explicit opt-in and
-risk acknowledgement. Genuinely venue-specific, so it comes last.
+**Phase 5 — DLP shares as collateral. Reading done; the write is specified and not written.**
+
+`account_overviews` already carries `secondary_collateral`, which `AccountOverview` was not parsing.
+The balance breakdown now lists each secondary asset with what the venue values it at and the credit
+it counts at — Decibel stores the discount as a haircut in basis points, so 1,000 bps is shown as
+"counts at 90%". The screen deliberately does **not** multiply value by credit: whether
+`value_in_usdc` is already haircut is not stated anywhere, and inventing that figure is how the APR
+and `manager_cash_pct` mistakes happened.
+
+**The write is a transfer, not a toggle.** The docs describe a "toggle Enable as Collateral", but
+on-chain it is:
+
+```
+dex_accounts_entry::transfer_assets_between_non_collateral_and_collateral(
+  &signer, Object<Subaccount>, Object<Metadata>, i64
+)
+```
+
+A signed amount moves shares between a subaccount's non-collateral and collateral buckets —
+positive pledges, negative releases. Three reads support it, all through `POST /view`, which the
+Worker already proxies, so no further proxy change is needed:
+
+| Call | Gives |
+| --- | --- |
+| `vault::get_vault_share_asset_type(vault)` | the share asset's `Metadata`, needed before anything is pledged |
+| `vault_share_asset::get_user_unlocked_balance(metadata, account)` | what may be pledged, excluding shares still in lockup |
+| `accounts_collateral::get_cross_secondary_balance(account, metadata)` | what is pledged now |
+
+Two things to get right when it is written. The amount is **i64**: Kaptos has no signed variant, but
+BCS encodes i64 and u64 identically for the same bit pattern, so `MoveArgument.U64(value.toULong())`
+is correct for a negative Kotlin `Long` — and deserves a test asserting the exact bytes for a
+negative amount rather than trusting that reasoning. And pledging changes what a liquidation takes:
+DLP collateral is burned through the vault rather than sold, so the confirmation has to say that
+before it is signed, the way the vault deposit sheet states the fee mechanic.
 
 ## Testing
 
