@@ -126,6 +126,7 @@ class DefaultMarketsRepository(
             )
           }
         }
+        cache.clearMarkets()
         cache.upsertMarkets(rows)
         val quotes = cachedQuotes.map(CachedMarketQuote::toMarketQuote)
         mutableCatalog.value =

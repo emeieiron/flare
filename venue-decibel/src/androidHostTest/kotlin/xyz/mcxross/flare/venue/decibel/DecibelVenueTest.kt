@@ -179,4 +179,6 @@ private object EmptyJournal : TransactionJournalDao {
   ): Int = 0
 
   override suspend fun remove(hash: String) = Unit
+
+  override suspend fun deleteOtherNetworks(network: String) = Unit
 }

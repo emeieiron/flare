@@ -117,6 +117,10 @@ interface MarketCacheDao {
 
   @Query("SELECT * FROM selected_markets ORDER BY selectedAtMs DESC LIMIT 1")
   fun observeSelectedMarket(): Flow<SelectedMarketEntity?>
+
+  @Query("DELETE FROM candles") suspend fun clearCandles()
+
+  @Query("DELETE FROM selected_markets") suspend fun clearSelectedMarkets()
 }
 
 @Dao
@@ -144,6 +148,9 @@ interface TransactionJournalDao {
   ): Int
 
   @Query("DELETE FROM pending_transactions WHERE hash = :hash") suspend fun remove(hash: String)
+
+  @Query("DELETE FROM pending_transactions WHERE network <> :network")
+  suspend fun deleteOtherNetworks(network: String)
 }
 
 @Dao
