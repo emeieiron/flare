@@ -58,6 +58,7 @@ jobs:
           :decibel:iosSimulatorArm64Test
           :hyperliquid:iosSimulatorArm64Test
           :shared:iosSimulatorArm64Test
+          :venue-decibel:iosSimulatorArm64Test
           :venue-hyperliquid:iosSimulatorArm64Test
           :ios-decibel:compileKotlinIosSimulatorArm64
           :ios-hyperliquid:compileKotlinIosSimulatorArm64
