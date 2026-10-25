@@ -22,7 +22,7 @@ class PhoneTransactionConfigIosTest {
     val aptos =
       Aptos(
         AptosConfig(
-          network = Network.TESTNET,
+          network = Network.MAINNET,
           transactionDefaults = DecibelRuntimeConfig().transactionDefaults,
         )
       )
