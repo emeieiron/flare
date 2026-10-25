@@ -65,7 +65,7 @@ testnet account needs a mainnet deposit from the same address first.
 ## Change workflow
 
 - Add focused tests for protocol JSON, fixed-point math, BCS payloads, authentication policy, or UI-state transitions as appropriate.
-- Run Android, iOS compilation, and Decibel tests before opening a pull request. Key derivation and signing call FastKrypto natively, whose Android artifact has device ABIs only, so those tests run in `:hyperliquid:jvmTest` or the iOS tests, never Android host tests. Changes spanning the proxy contract must also pass the separate `decibel-worker` repository's checks.
+- Run Android, iOS compilation, and Decibel tests before opening a pull request. Key derivation and signing call FastKrypto natively, whose Android artifact has device ABIs only, so those tests run in `:hyperliquid:jvmTest` or the iOS tests, never Android host tests. Changes spanning the proxy contract must also pass the separate mainnet-only `decibel-worker` repository's checks.
 - Explain any security-boundary change in the pull request and update [THREAT_MODEL.md](THREAT_MODEL.md) when an assumption changes.
 - Keep unrelated formatting and generated changes out of the patch.
 - The app version is `FLARE_VERSION` in [version.properties](version.properties); both Android flavors and both iOS schemes read it, and a release tag must be `v` plus that value.

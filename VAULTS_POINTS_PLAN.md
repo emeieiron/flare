@@ -166,9 +166,9 @@ already exist, not a client-side ranking pass. `AccountVaultPerformanceDto` furt
 the single per-position timestamp, plus `locked_amount`, `unrealized_pnl` and `weekly_win_rate_12w`.
 Note `current_num_shares` is an integer of raw chain units, as the existing normalization assumes.
 
-**Field semantics confirmed against mainnet.** Aptos testnet has no vaults, so these were read from
-15 live mainnet vaults through a second `wrangler dev` whose only difference is
-`DECIBEL_REST_ORIGIN`. Two of them contradicted a reasonable-looking assumption, so they are
+**Field semantics confirmed against mainnet.** Aptos testnet had no vaults, so these were read from
+15 live mainnet vaults through a second `wrangler dev` whose only difference was
+`DECIBEL_REST_ORIGIN`; the Worker now points there by default. Two of them contradicted a reasonable-looking assumption, so they are
 recorded here rather than re-derived:
 
 | Field | What it is | Caution |
