@@ -30,8 +30,8 @@ jobs:
       # the HTTPS Worker the app talks to, and the address that receives Flare's builder fee.
       FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL }}
       FLARE_BUILDER_ADDRESS: ${{ vars.FLARE_BUILDER_ADDRESS }}
-      # Hyperliquid ships on testnet, as Decibel does. Its builder is optional: unset, the app
-      # offers no builder fee.
+      # Hyperliquid still ships on testnet; Decibel is mainnet-only. Its builder is optional:
+      # unset, the app offers no builder fee.
       FLARE_HYPERLIQUID_NETWORK: testnet
       FLARE_HYPERLIQUID_BUILDER_ADDRESS: ${{ vars.FLARE_HYPERLIQUID_BUILDER_ADDRESS }}
     permissions:
@@ -137,6 +137,10 @@ jobs:
             cp "$apk" "dist/flare-$flavor-android.apk"
           done
           decibel=dist/flare-decibel-android.apk
+          if [[ "$FLARE_WORKER_URL" == *testnet* ]]; then
+            echo "::error::Decibel is mainnet-only; FLARE_WORKER_URL still names a testnet host"
+            exit 1
+          fi
           has_string "$decibel" flare_worker_url "$FLARE_WORKER_URL" \
             || { echo "::error::The Decibel APK does not point at $FLARE_WORKER_URL"; exit 1; }
           has_string "$decibel" flare_builder_address "$FLARE_BUILDER_ADDRESS" \

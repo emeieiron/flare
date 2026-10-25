@@ -7,7 +7,7 @@ import xyz.mcxross.kaptos.TransactionDefaults
  * receives Flare's fee.
  */
 data class DecibelRuntimeConfig(
-  val workerBaseUrl: String = "http://127.0.0.1:8787",
+  val workerBaseUrl: String = "https://api.mcxross.xyz",
   val defaultBuilderAddress: String =
     "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b",
   val defaultBuilderFeeBps: UInt = 5u,
