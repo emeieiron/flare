@@ -671,7 +671,7 @@ private fun previewOnboardingIntent(state: OnboardingUiState, intent: Onboarding
 
 
 private fun previewStrategies(): StrategiesUiState {
-  val key = StrategyMarketKey("decibel", "testnet", "0xbtc", 60_000)
+  val key = StrategyMarketKey("decibel", "mainnet", "0xbtc", 60_000)
   val time = 1_790_518_620_000L
   return StrategiesUiState(
     key = key, active = true, keyConfigured = true, useJev = true,

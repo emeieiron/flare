@@ -41,7 +41,7 @@ class DecibelStrategyMarketFeedTest {
     })
     val aptos = Aptos()
     try {
-      val key = StrategyMarketKey("decibel", "testnet", "0x1", 60_000)
+      val key = StrategyMarketKey("decibel", "mainnet", "0x1", 60_000)
       val result = DecibelStrategyMarketFeed(DecibelClient(http, aptos), DecibelVenue().descriptor, { clock }).snapshot(key)
       assertEquals(key, result.key)
       assertEquals(12_000_000L, result.fetchedAtMs)
