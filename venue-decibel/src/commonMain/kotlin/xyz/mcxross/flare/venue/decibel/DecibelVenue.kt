@@ -153,7 +153,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
       aptosClient = get(),
       config =
         DecibelConfig(
-          deployment = DecibelDeployment.forNetwork(runtime.network.toDecibelNetwork()),
+          deployment = DecibelDeployment.Mainnet,
           restBaseUrl = config.decibelRestUrl,
           webSocketUrl = config.decibelWebSocketUrl,
           accessToken = { sessionRepository.accessToken() },

@@ -1,10 +1,8 @@
 package xyz.mcxross.flare.venue.decibel
 
-import xyz.mcxross.flare.decibel.DecibelNetwork
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.CandleInterval
 import xyz.mcxross.flare.store.CandleEntity
-import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
@@ -18,12 +16,6 @@ import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
 import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 
 // Decibel's market data as the app's exchange-neutral models.
-
-fun Network.toDecibelNetwork(): DecibelNetwork =
-  when (this) {
-    Network.TESTNET -> DecibelNetwork.TESTNET
-    Network.MAINNET -> DecibelNetwork.MAINNET
-  }
 
 internal fun AssetType.toMarketKind(): MarketKind =
   when (this) {

@@ -95,6 +95,6 @@ class SubaccountServiceTest {
           transport = http.asAptosTransport(),
         )
       )
-    return DefaultSubaccountService(aptos, DecibelDeployment.Testnet)
+    return DefaultSubaccountService(aptos, DecibelDeployment.Mainnet)
   }
 }

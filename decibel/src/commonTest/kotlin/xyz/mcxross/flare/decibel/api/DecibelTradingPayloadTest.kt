@@ -400,7 +400,7 @@ private fun function(name: String, vararg params: String) =
     `return` = emptyList(),
   )
 
-private val DEPLOYMENT = DecibelDeployment.Testnet
+private val DEPLOYMENT = DecibelDeployment.Mainnet
 private const val SUBACCOUNT = "0x11"
 private const val MARKET = "0x22"
 private const val ASSET = "0x33"
