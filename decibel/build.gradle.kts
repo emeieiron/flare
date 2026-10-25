@@ -9,7 +9,6 @@ plugins {
 kotlin {
   jvm {
     compilerOptions.jvmTarget = JvmTarget.JVM_11
-    testRuns["test"].executionTask.configure { useJUnitPlatform() }
   }
 
   listOf(iosArm64(), iosSimulatorArm64())
@@ -51,9 +50,6 @@ kotlin {
     }
     jvmMain.dependencies {
       implementation(libs.ktor.client.cio)
-    }
-    jvmTest.dependencies {
-      implementation(libs.kotlin.testJunit5)
     }
   }
 }
