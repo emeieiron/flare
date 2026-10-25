@@ -87,7 +87,6 @@ jobs:
           ./gradlew
           :strategies:jvmTest
           :jev:jvmTest
-          :decibel:jvmTest
           :hyperliquid:jvmTest
           :hyperliquid:testAndroidHostTest
           :shared:testAndroidHostTest
