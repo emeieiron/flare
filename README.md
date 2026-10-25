@@ -19,7 +19,7 @@
 </p>
 
 > [!NOTE]
-> Flare is under active development and runs reliably on Decibel **testnet**. Try it there and [share feedback](https://github.com/emeieiron/flare/issues). Power users can switch to mainnet at their own risk.
+> Flare is under active development. The Decibel app trades on **Aptos mainnet** with real funds, so start small and [share feedback](https://github.com/emeieiron/flare/issues). The Hyperliquid app is still a testnet build.
 
 ## Contents
 
@@ -67,8 +67,9 @@ During a real run, **Confirm transactions** in Settings is off and locked. Its p
 
 **Android:** each exchange is its own app. Download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-decibel-android.apk) or [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-hyperliquid-android.apk) from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
 
+- **Decibel** runs on Aptos mainnet and trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover.
 - **Hyperliquid** runs on testnet. Send test USDC to your address from another Hyperliquid testnet account; Hyperliquid's own testnet faucet only serves addresses that have deposited on mainnet.
-- **Already testing Decibel?** The Decibel app now installs as `xyz.mcxross.flare.decibel`, so it can't upgrade an earlier Flare in place. Install it alongside, then restore your wallet from its recovery phrase or re-import your trading key.
+- **Already testing Decibel?** The Decibel app now installs as `xyz.mcxross.flare.decibel`, so it can't upgrade an earlier Flare in place. Install it alongside, then restore your wallet from its recovery phrase or re-import your trading key. Your wallet carries over; the trading account does not, so setup runs again on mainnet.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
 
@@ -132,8 +133,9 @@ Each build links one exchange. A `:venue-*` module implements `:shared`'s neutra
 git clone https://github.com/emeieiron/decibel-worker
 cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 
-# 2. Run Android (debug builds connect to http://10.0.2.2:8787)
-./gradlew :androidApp:installDecibelDebug
+# 2. Run Android against that local worker. Without -PflareWorkerUrl a build talks to the
+#    deployed mainnet worker and trades real funds.
+./gradlew :androidApp:installDecibelDebug -PflareWorkerUrl=http://10.0.2.2:8787
 ```
 
 Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet, shows live markets and the account, and trades perps and spot (market, limit and TWAP orders, TP/SL, cancels, leverage) with an agent key on the device, for the wallet's account or a sub-account it already has. It withdraws to Arbitrum, sends USDC to other Hyperliquid accounts and between perps and spot, deposits into and redeems from vaults such as HLP, and shows the fee tier and referral standing. It uses testnet unless built with `-PflareHyperliquidNetwork=mainnet`, and offers Flare's builder fee only when built with `-PflareHyperliquidBuilderAddress=0x…` (on iOS, `FLARE_HYPERLIQUID_BUILDER_ADDRESS` in `Hyperliquid.xcconfig`).
@@ -146,4 +148,4 @@ Keys never leave the device's secure hardware and are excluded from backups. Nod
 
 ## Contributing & license
 
-Contributions and testnet feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Flare is licensed under [Apache 2.0](LICENSE).
+Contributions and feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Flare is licensed under [Apache 2.0](LICENSE).
