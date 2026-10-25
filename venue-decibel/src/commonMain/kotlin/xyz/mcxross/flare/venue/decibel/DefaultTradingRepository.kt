@@ -90,7 +90,7 @@ class DefaultTradingRepository(
       .observePending()
       .combine(preferences.values) { entries, saved ->
         entries
-          .filter { it.profileId == saved.activeProfileId }
+          .filter { it.profileId == saved.activeProfileId && it.network == runtime.network.name }
           .map(PendingTransactionEntity::toDomain)
       }
       .distinctUntilChanged()
