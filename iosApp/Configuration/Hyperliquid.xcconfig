@@ -11,8 +11,5 @@ FLARE_VENUE=hyperliquid
 KOTLIN_FRAMEWORK_BUILD_TYPE[config=Debug-Hyperliquid]=debug
 KOTLIN_FRAMEWORK_BUILD_TYPE[config=Release-Hyperliquid]=release
 
-// testnet or mainnet.
-FLARE_HYPERLIQUID_NETWORK=testnet
-
 // Flare's builder on Hyperliquid, which receives the optional builder fee; none when empty.
 FLARE_HYPERLIQUID_BUILDER_ADDRESS=
