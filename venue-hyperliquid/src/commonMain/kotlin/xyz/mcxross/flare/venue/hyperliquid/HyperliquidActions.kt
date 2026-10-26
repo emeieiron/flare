@@ -258,9 +258,9 @@ class HyperliquidActions(
   private val client: HyperliquidClient,
   private val submitter: HyperliquidSubmitter,
   private val nonces: HyperliquidNonces,
-  private val network: Network,
   private val clockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
+  private val network = Network.MAINNET
   private val submissionMutex = Mutex()
 
   val pendingTransactions: Flow<List<PendingTransaction>> =

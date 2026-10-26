@@ -21,26 +21,21 @@ import xyz.mcxross.flare.venue.model.TradeAction
 
 class HyperliquidVenueTest {
   @Test
-  fun describesHyperliquidOnEachNetwork() {
-    val testnet = HyperliquidVenue().descriptor
-    val mainnet = HyperliquidVenue(Network.MAINNET).descriptor
+  fun describesHyperliquidMainnet() {
+    val mainnet = HyperliquidVenue().descriptor
 
-    assertEquals("hyperliquid", testnet.id)
-    assertEquals("Hyperliquid", testnet.displayName)
-    assertEquals(Network.TESTNET, testnet.network)
-    assertEquals(
-      "https://app.hyperliquid-testnet.xyz/explorer/tx/$TX_HASH",
-      testnet.explorer.transactionUrl(TX_HASH),
-    )
+    assertEquals("hyperliquid", mainnet.id)
+    assertEquals("Hyperliquid", mainnet.displayName)
+    assertEquals(Network.MAINNET, mainnet.network)
     assertEquals("https://app.hyperliquid.xyz/explorer/tx/$TX_HASH", mainnet.explorer.transactionUrl(TX_HASH))
     // Order ids and nonces aren't transactions, so they get no link.
     assertNull(mainnet.explorer.transactionUrl("123456789"))
     assertNull(mainnet.explorer.transactionUrl("1784361909247"))
     assertNull(mainnet.explorer.transactionUrl("0x0123456789abcdef0123456789abcdef"))
-    assertEquals(listOf("USDC"), testnet.chain.depositAssets)
-    assertEquals(10, testnet.maxBuilderFeeBps)
-    assertNull(testnet.vaultMinimums)
-    assertNull(testnet.proxyUrl)
+    assertEquals(listOf("USDC"), mainnet.chain.depositAssets)
+    assertEquals(10, mainnet.maxBuilderFeeBps)
+    assertNull(mainnet.vaultMinimums)
+    assertNull(mainnet.proxyUrl)
   }
 
   @Test
@@ -84,11 +79,11 @@ class HyperliquidVenueTest {
 
   @Test
   fun explainsHowToFundTheAccount() {
-    val testnet = HyperliquidVenue().descriptor.receive!!
-    val mainnet = HyperliquidVenue(Network.MAINNET).descriptor.receive!!
+    val receive = HyperliquidVenue().descriptor.receive!!
 
-    assertTrue("Hyperliquid" in testnet.summary && "bridge" in testnet.summary)
-    assertEquals(testnet.warning, mainnet.warning)
+    // Funds arrive on Hyperliquid itself: the Arbitrum bridge credits whoever sent the deposit.
+    assertTrue("on Hyperliquid" in receive.summary && "wallet that bridged it" in receive.summary)
+    assertTrue("on Arbitrum" in receive.warning && "under 5 USDC" in receive.warning)
   }
 
   @Test
