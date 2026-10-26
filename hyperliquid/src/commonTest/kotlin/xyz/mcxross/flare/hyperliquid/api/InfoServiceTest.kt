@@ -36,7 +36,7 @@ class InfoServiceTest {
 
     val request = harness.requests.single()
     assertEquals(HttpMethod.Post, request.method)
-    assertEquals("https://api.hyperliquid-testnet.xyz/info", request.url)
+    assertEquals("https://api.hyperliquid.xyz/info", request.url)
     assertEquals(ContentType.Application.Json, request.contentType?.withoutParameters())
     assertEquals("""{"type":"meta"}""", request.body)
   }
