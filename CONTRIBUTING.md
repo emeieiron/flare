@@ -43,25 +43,6 @@ FLARE_MAVEN_LOCAL=true ./gradlew :decibel:jvmTest
 
 Do not commit absolute paths or use checkout paths as Gradle dependencies.
 
-### Live Hyperliquid testnet tests
-
-`hyperliquid/src/jvmTest/.../HyperliquidTestnetTest.kt` runs against Hyperliquid testnet only, and
-every test in it is skipped unless enabled, so a normal `jvmTest` run never touches the network:
-
-| Environment variable | What runs |
-|---|---|
-| `FLARE_HYPERLIQUID_LIVE=1` | Read-only REST and WebSocket checks (markets, book, candles, streams, the 60 s ping), plus signing proofs with a fresh unfunded key (approving and revoking an agent, revoking a builder fee, withdrawals and transfers, vault transfers and TWAPs as the agent signs them, actions for a sub-account, a cancel, and every order shape Flare sends): Hyperliquid rejects the actions and names the address it recovered from each signature, which is the signer's only if it read the payload as signed. |
-| `FLARE_HYPERLIQUID_TEST_KEY_FILE=<path>` | The funded lifecycle, signed by the 0x hex private key in that file: leverage, a far-from-market order placed and canceled by the owner and by an approved agent named `flare-test` (then revoked with the zero address under its name, as Hyperliquid's app does), and a builder fee approved and revoked. The key is never printed; keep the file outside the repository. |
-| `FLARE_HYPERLIQUID_TEST_VAULT=1` | With the key file: also deposits 5 USDC into HLP. HLP locks a deposit for 4 days, and the test does not withdraw it. |
-
-```sh
-FLARE_HYPERLIQUID_LIVE=1 ./gradlew :hyperliquid:jvmTest --tests '*Testnet*'
-FLARE_HYPERLIQUID_TEST_KEY_FILE=$HOME/.flare/hl-testnet.key ./gradlew :hyperliquid:jvmTest --tests '*Testnet*'
-```
-
-The testnet faucet only serves addresses that have deposited on Hyperliquid mainnet, so a funded
-testnet account needs a mainnet deposit from the same address first.
-
 ## Change workflow
 
 - Add focused tests for protocol JSON, fixed-point math, BCS payloads, authentication policy, or UI-state transitions as appropriate.

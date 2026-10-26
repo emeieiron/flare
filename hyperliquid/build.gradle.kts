@@ -9,19 +9,7 @@ plugins {
 kotlin {
   jvm {
     compilerOptions.jvmTarget = JvmTarget.JVM_11
-    testRuns["test"].executionTask.configure {
-      useJUnitPlatform()
-      // The live testnet tests skip without these; changing them must re-run the tests.
-      listOf(
-          "FLARE_HYPERLIQUID_LIVE",
-          "FLARE_HYPERLIQUID_TEST_KEY_FILE",
-          "FLARE_HYPERLIQUID_TEST_VAULT",
-          "FLARE_HYPERLIQUID_TEST_BUILDER",
-        )
-        .forEach { name ->
-          inputs.property(name, providers.environmentVariable(name).orElse("")).optional(true)
-        }
-    }
+    testRuns["test"].executionTask.configure { useJUnitPlatform() }
   }
 
   listOf(iosArm64(), iosSimulatorArm64())
