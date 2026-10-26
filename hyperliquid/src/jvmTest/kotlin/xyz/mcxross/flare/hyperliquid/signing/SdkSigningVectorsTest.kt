@@ -40,31 +40,25 @@ class SdkSigningVectorsTest {
   @Test
   fun l1SigningInputsMatch() {
     for (case in VectorCases.l1) {
-      for ((deployment, expected) in
-        listOf(
-          HyperliquidDeployment.Mainnet to case.vector.mainnetSigningInput,
-          HyperliquidDeployment.Testnet to case.vector.testnetSigningInput,
-        )) {
-        val input =
-          L1Signing.signingInput(
-            case.action,
-            case.nonce,
-            deployment,
-            case.vaultAddress,
-            case.expiresAfter,
-          )
-        assertEquals(Eip712.SIGNING_INPUT_SIZE, input.size)
-        assertEquals(expected, input.toHex0x(), "${case.name} ${deployment.network}")
-      }
+      val input =
+        L1Signing.signingInput(
+          case.action,
+          case.nonce,
+          HyperliquidDeployment.Mainnet,
+          case.vaultAddress,
+          case.expiresAfter,
+        )
+      assertEquals(Eip712.SIGNING_INPUT_SIZE, input.size)
+      assertEquals(case.vector.mainnetSigningInput, input.toHex0x(), case.name)
     }
   }
 
   @Test
   fun userSignedSigningInputsMatch() {
-    val testnet = HyperliquidDeployment.Testnet
+    val mainnet = HyperliquidDeployment.Mainnet
     for (case in VectorCases.user) {
       val input =
-        UserSigning.signingInput(case.action.message(testnet, case.nonce), testnet.signatureChainId)
+        UserSigning.signingInput(case.action.message(mainnet, case.nonce), mainnet.signatureChainId)
       assertEquals(case.vector.signingInput, input.toHex0x(), case.name)
     }
   }

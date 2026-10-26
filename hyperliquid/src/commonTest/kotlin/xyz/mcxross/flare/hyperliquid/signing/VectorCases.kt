@@ -57,7 +57,7 @@ internal object VectorCases {
   const val CLOID = "0x0123456789abcdef0123456789abcdef"
   const val BUILDER = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d"
   const val DESTINATION = "0x5e9ee1089755c3435139848e47e6635505d5a13a"
-  const val HLP_VAULT = "0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0"
+  const val HLP_VAULT = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303"
 
   private fun gtc100(cloid: Cloid? = null) =
     PlaceOrders(
