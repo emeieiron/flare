@@ -10,5 +10,6 @@ FLARE_VENUE=decibel
 KOTLIN_FRAMEWORK_BUILD_TYPE[config=Debug-Decibel]=debug
 KOTLIN_FRAMEWORK_BUILD_TYPE[config=Release-Decibel]=release
 
-// Override this build setting with the deployed HTTPS Worker URL for release builds.
-FLARE_WORKER_URL=http:/$()/127.0.0.1:8787
+// Decibel is mainnet-only. Override this with a local Worker for development:
+// FLARE_WORKER_URL=http:/$()/127.0.0.1:8787
+FLARE_WORKER_URL=https:/$()/api.mcxross.xyz

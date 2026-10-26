@@ -3,12 +3,6 @@ package xyz.mcxross.flare.decibel
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class DecibelNetwork {
-  TESTNET,
-  MAINNET,
-}
-
-@Serializable
 data class DecibelCapabilities(
   val gasSponsorship: Boolean = false,
   val encryptedOrders: Boolean = false,
@@ -16,7 +10,6 @@ data class DecibelCapabilities(
 
 @Serializable
 data class DecibelDeployment(
-  val network: DecibelNetwork,
   val packageAddress: String,
   val usdcMetadataAddress: String,
   val chainId: UByte,
@@ -25,33 +18,18 @@ data class DecibelDeployment(
   val aptosFullnodeUrl: String,
 ) {
   companion object {
-    val Testnet =
-      DecibelDeployment(
-        network = DecibelNetwork.TESTNET,
-        packageAddress = "0xd368b820fdfbfe004679cdb0facef4b920c4fc0c2c80bd2fecf3843a93427bd1",
-        usdcMetadataAddress = "0x6bedd9a12fbb6c80711bbedc037944e5b57e32fc9da7c78bbe834fdd8ffd5f5e",
-        chainId = 2u,
-        upstreamRestUrl = "https://api.testnet.aptoslabs.com/decibel",
-        upstreamWebSocketUrl = "wss://api.testnet.aptoslabs.com/decibel/ws",
-        aptosFullnodeUrl = "https://api.testnet.aptoslabs.com/v1",
-      )
-
+    /** Decibel on Aptos mainnet. Flare trades nothing else. */
     val Mainnet =
       DecibelDeployment(
-        network = DecibelNetwork.MAINNET,
         packageAddress = "0x50ead22afd6ffd9769e3b3d6e0e64a2a350d68e8b102c4e72e33d0b8cfdfdb06",
+        // Circle's native USDC, an asset Decibel does not own, so it is not derived from the
+        // package the way a package-minted collateral token would be.
         usdcMetadataAddress = "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b",
         chainId = 1u,
         upstreamRestUrl = "https://api.mainnet.aptoslabs.com/decibel",
         upstreamWebSocketUrl = "wss://api.mainnet.aptoslabs.com/decibel/ws",
         aptosFullnodeUrl = "https://api.mainnet.aptoslabs.com/v1",
       )
-
-    fun forNetwork(network: DecibelNetwork): DecibelDeployment =
-      when (network) {
-        DecibelNetwork.TESTNET -> Testnet
-        DecibelNetwork.MAINNET -> Mainnet
-      }
   }
 }
 
@@ -60,7 +38,7 @@ data class DecibelDeployment(
  * applications point these at the Flare Worker so upstream credentials never ship in the app.
  */
 data class DecibelConfig(
-  val deployment: DecibelDeployment = DecibelDeployment.Testnet,
+  val deployment: DecibelDeployment = DecibelDeployment.Mainnet,
   val restBaseUrl: String = deployment.upstreamRestUrl,
   val webSocketUrl: String = deployment.upstreamWebSocketUrl,
   val origin: String = "flare://mobile",

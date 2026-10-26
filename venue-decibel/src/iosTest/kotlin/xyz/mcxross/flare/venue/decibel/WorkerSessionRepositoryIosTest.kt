@@ -43,7 +43,7 @@ class WorkerSessionRepositoryIosTest {
     val challenge =
       listOf(
           "FLARE_AUTH_V1",
-          "network=testnet",
+          "network=mainnet",
           "origin=flare://mobile",
           "wallet_address=$address",
           "subaccount=",
@@ -88,7 +88,7 @@ class WorkerSessionRepositoryIosTest {
     val repository =
       WorkerSessionRepository(
         client = client,
-        runtime = FlareRuntimeConfig(Network.TESTNET),
+        runtime = FlareRuntimeConfig(Network.MAINNET),
         decibelConfig = DecibelRuntimeConfig("http://127.0.0.1:8787"),
         preferences = preferences,
         wallets = wallets,

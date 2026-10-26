@@ -17,7 +17,7 @@ fun MainViewController(infoPlist: Map<String, String>) = run {
   val walletVault = IosWalletVault()
   val venue =
     DecibelVenue(
-      DecibelRuntimeConfig(workerBaseUrl = infoPlist["FlareWorkerURL"] ?: LOCAL_WORKER_URL)
+      DecibelRuntimeConfig(workerBaseUrl = infoPlist["FlareWorkerURL"] ?: MAINNET_WORKER_URL)
     )
   ComposeUIViewController {
     App(
@@ -29,5 +29,5 @@ fun MainViewController(infoPlist: Map<String, String>) = run {
   }
 }
 
-/** The development Worker on the Mac running the simulator. */
-private const val LOCAL_WORKER_URL = "http://127.0.0.1:8787"
+/** Decibel is mainnet-only, so a build with no configured Worker still reaches the real one. */
+private const val MAINNET_WORKER_URL = "https://api.mcxross.xyz"

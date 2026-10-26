@@ -90,11 +90,11 @@ class SubaccountServiceTest {
     val aptos =
       Aptos(
         AptosConfig(
-          network = Network.TESTNET,
+          network = Network.MAINNET,
           endpoints = AptosEndpoints(fullNode = "https://test.invalid/v1"),
           transport = http.asAptosTransport(),
         )
       )
-    return DefaultSubaccountService(aptos, DecibelDeployment.Testnet)
+    return DefaultSubaccountService(aptos, DecibelDeployment.Mainnet)
   }
 }

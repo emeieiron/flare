@@ -41,15 +41,12 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
  * Decibel, on Aptos, reached through the Flare Worker: it holds the node and gas credentials and
  * authenticates the app's session.
  */
-class DecibelVenue(
-  private val config: DecibelRuntimeConfig = DecibelRuntimeConfig(),
-  network: Network = Network.TESTNET,
-) : Venue {
+class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConfig()) : Venue {
   override val descriptor: VenueDescriptor =
     VenueDescriptor(
       id = "decibel",
       displayName = "Decibel",
-      network = network,
+      network = Network.MAINNET,
       chain =
         VenueChain(
           name = "Aptos",
@@ -63,8 +60,7 @@ class DecibelVenue(
         VenueExplorer(
           name = "Aptos Explorer",
           transactionUrlTemplate =
-            "https://explorer.aptoslabs.com/txn/${VenueExplorer.REFERENCE}" +
-              "?network=${network.name.lowercase()}",
+            "https://explorer.aptoslabs.com/txn/${VenueExplorer.REFERENCE}?network=mainnet",
         ),
       proxyUrl = config.workerBaseUrl,
       builderAddress = config.defaultBuilderAddress,
@@ -153,7 +149,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
       aptosClient = get(),
       config =
         DecibelConfig(
-          deployment = DecibelDeployment.forNetwork(runtime.network.toDecibelNetwork()),
+          deployment = DecibelDeployment.Mainnet,
           restBaseUrl = config.decibelRestUrl,
           webSocketUrl = config.decibelWebSocketUrl,
           accessToken = { sessionRepository.accessToken() },

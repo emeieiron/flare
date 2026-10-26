@@ -156,7 +156,7 @@ private class Fixture(
   private val aptos =
     Aptos(
       AptosConfig(
-        network = Network.TESTNET,
+        network = Network.MAINNET,
         endpoints = AptosEndpoints(fullNode = "https://fullnode.invalid/v1"),
         transport = http.asAptosTransport(),
       )
@@ -285,7 +285,7 @@ private val COMMANDS: List<Pair<DecibelCommand, String>> =
     DecibelCommand.CancelPositionTpSl("0x11", "0x22", "1") to TRADING,
   )
 
-private val PACKAGE = DecibelDeployment.Testnet.packageAddress
+private val PACKAGE = DecibelDeployment.Mainnet.packageAddress
 private const val OBJECT = "0x1::object::Object"
 private val SUBACCOUNT = "$OBJECT<$PACKAGE::dex_accounts::Subaccount>"
 private val PERP = "$OBJECT<$PACKAGE::perp_market::PerpMarket>"
