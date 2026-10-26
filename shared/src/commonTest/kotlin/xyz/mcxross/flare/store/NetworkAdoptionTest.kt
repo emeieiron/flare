@@ -1,5 +1,7 @@
 package xyz.mcxross.flare.store
 
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -11,9 +13,12 @@ import xyz.mcxross.flare.testing.MemoryPreferences
 import xyz.mcxross.flare.venue.Network
 
 class NetworkAdoptionTest {
+  /** Installations from before the marker, and those that marked testnet, were testnet builds. */
   @Test
-  fun anInstallationWithNoMarkerCountsAsTestnet() = runTest {
-    assertEquals(Network.TESTNET, AppPreferences(MemoryPreferences()).storedNetwork())
+  fun stateFromTestnetBelongsToNoNetworkFlareTrades() = runTest {
+    assertNull(AppPreferences(MemoryPreferences()).storedNetwork())
+    val testnet = MemoryPreferences(preferencesOf(stringPreferencesKey("network") to "TESTNET"))
+    assertNull(AppPreferences(testnet).storedNetwork())
   }
 
   @Test
@@ -58,7 +63,7 @@ class NetworkAdoptionTest {
   @Test
   fun adoptingRecordsTheNetworkSoItOnlyHappensOnce() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    assertEquals(Network.TESTNET, preferences.storedNetwork())
+    assertNull(preferences.storedNetwork())
 
     preferences.adoptNetwork(Network.MAINNET)
 

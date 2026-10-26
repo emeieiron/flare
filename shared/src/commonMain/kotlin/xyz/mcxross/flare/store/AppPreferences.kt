@@ -78,7 +78,6 @@ val AccountProfile.setupPending: Boolean
 data class FlarePreferences(
   val activeProfileId: String = "legacy",
   val profiles: List<AccountProfile> = emptyList(),
-  val network: Network = Network.TESTNET,
   val chartRange: String = "FIVE_MINUTES",
   val chartStyle: String = "LINE",
   val showRsi: Boolean = false,
@@ -120,10 +119,6 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
       FlarePreferences(
         activeProfileId = active?.id ?: LEGACY_PROFILE_ID,
         profiles = profiles,
-        network =
-          preferences[NetworkKey]?.let { value ->
-            Network.entries.firstOrNull { it.name == value }
-          } ?: Network.TESTNET,
         chartRange = preferences[ChartRangeKey] ?: "FIVE_MINUTES",
         chartStyle = preferences[ChartStyleKey] ?: "LINE",
         showRsi = preferences[ShowRsiKey] ?: false,
@@ -158,19 +153,13 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   val favoriteMarkets: Flow<Set<String>> = values.map { it.favoriteMarkets }
   val spotWatchlistSeeded: Flow<Boolean> = values.map { it.spotWatchlistSeeded }
 
-  suspend fun setNetwork(network: Network) {
-    dataStore.edit { it[NetworkKey] = network.name }
-  }
-
   /**
-   * The network this installation's stored state belongs to. Installations that predate the marker
-   * were testnet, which is why an absent value reads as [Network.TESTNET].
+   * The network this installation's stored state belongs to, or null when it belongs to none Flare
+   * trades: installations that predate the marker, and those that marked a network Flare has
+   * since dropped, were testnet builds.
    */
-  suspend fun storedNetwork(): Network =
-    dataStore.data.first().let { preferences ->
-      preferences[NetworkKey]?.let { value -> Network.entries.firstOrNull { it.name == value } }
-        ?: Network.TESTNET
-    }
+  suspend fun storedNetwork(): Network? =
+    dataStore.data.first()[NetworkKey]?.let { value -> Network.entries.firstOrNull { it.name == value } }
 
   /**
    * Drops the state that only means something on the network it was written for: the trading
