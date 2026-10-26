@@ -11,7 +11,7 @@ import xyz.mcxross.flare.strategies.StrategyMarketKey
 
 class HyperliquidStrategyMarketFeedTest {
   private val now = 12_000_000L
-  private val key = StrategyMarketKey("hyperliquid", "testnet", "BTC", 60_000)
+  private val key = StrategyMarketKey("hyperliquid", "mainnet", "BTC", 60_000)
 
   @Test
   fun independentRequestBindsCoinIntervalTimeBoundsAndSourceBookTime() = runTest {
@@ -48,7 +48,7 @@ class HyperliquidStrategyMarketFeedTest {
       "candleSnapshot" to "[]",
     ))
     val feed = HyperliquidStrategyMarketFeed(client, HyperliquidVenue().descriptor, { now })
-    assertFailsWith<IllegalArgumentException> { feed.snapshot(key.copy(network = "mainnet")) }
+    assertFailsWith<IllegalArgumentException> { feed.snapshot(key.copy(network = "testnet")) }
     assertFailsWith<IllegalArgumentException> { feed.snapshot(key.copy(venueId = "decibel")) }
     assertFailsWith<IllegalStateException> { feed.snapshot(key.copy(timeframeMs = 7)) }
     assertNull(feed.snapshot(key).book)

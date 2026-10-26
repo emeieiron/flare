@@ -31,7 +31,6 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.createPreferencesDataStore
-import xyz.mcxross.flare.venue.Network
 
 /** Runs FastKrypto natively, which Android host tests can't load. */
 class HyperliquidWalletIosTest {
@@ -173,7 +172,7 @@ class HyperliquidWalletIosTest {
       )
     val nonces = HyperliquidNonces(preferences)
     val actions =
-      HyperliquidActions(MemoryJournal(), preferences, wallets, client, ClientSubmitter(client), nonces, Network.TESTNET)
+      HyperliquidActions(MemoryJournal(), preferences, wallets, client, ClientSubmitter(client), nonces)
     val setup = HyperliquidSetup(client, preferences, wallets, actions, nonces, verificationDelayMs = 0)
 
     setup.enableTrading(prompt)
