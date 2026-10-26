@@ -113,6 +113,7 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.adoptNetwork
 import xyz.mcxross.flare.store.FlareDatabase
 import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.Venue
@@ -173,6 +174,15 @@ private fun FlareAppFlow() {
   val vault: ForegroundWalletVault = koinInject()
   val jevCredentials: JevCredentials = koinInject()
   val autoTrading: AutoTradingRuntime = koinInject()
+  val runtime: FlareRuntimeConfig = koinInject()
+  val database: FlareDatabase = koinInject()
+  // Nothing may authenticate until state from another network is gone, or the venue rejects the
+  // subaccount it is sent and setup never runs again.
+  var networkAdopted by remember { mutableStateOf(false) }
+  LaunchedEffect(runtime.network) {
+    adoptNetwork(runtime.network, appPreferences, database)
+    networkAdopted = true
+  }
   LaunchedEffect(appPreferences) { appPreferences.recoverRealAutoTrading() }
   val accounts: AccountRepository = koinInject()
   val unlocked by vault.unlocked.collectAsStateWithLifecycle()
@@ -218,8 +228,8 @@ private fun FlareAppFlow() {
   }
   // Staying current is the app's job: a failed restore retries on its own until the account is
   // live again, so nobody has to notice staleness or press refresh.
-  LaunchedEffect(unlocked, persisted?.activeProfileId, persisted?.selectedSubaccount) {
-    if (!unlocked) return@LaunchedEffect
+  LaunchedEffect(unlocked, networkAdopted, persisted?.activeProfileId, persisted?.selectedSubaccount) {
+    if (!unlocked || !networkAdopted) return@LaunchedEffect
     var backoffMs = RECONNECT_BASE_DELAY_MS
     while (true) {
       val restored =

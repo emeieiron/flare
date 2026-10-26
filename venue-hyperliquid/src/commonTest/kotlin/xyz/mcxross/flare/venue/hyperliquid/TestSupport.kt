@@ -105,6 +105,10 @@ internal class MemoryMarketCache : MarketCacheDao {
   override suspend fun selectMarket(market: SelectedMarketEntity) {}
 
   override fun observeSelectedMarket(): Flow<SelectedMarketEntity?> = flowOf(null)
+
+  override suspend fun clearCandles() = candles.clear()
+
+  override suspend fun clearSelectedMarkets() {}
 }
 
 /** A client whose `/info` answers come from [answer], given the request's `type` and body. */
@@ -140,6 +144,9 @@ internal class MemoryJournal : TransactionJournalDao {
   }
 
   override suspend fun remove(hash: String) = entries.update { it - hash }
+
+  override suspend fun deleteOtherNetworks(network: String) =
+    entries.update { all -> all.filterValues { it.network == network } }
 }
 
 /** Host tests can't load FastKrypto, so these signers only carry an address. */

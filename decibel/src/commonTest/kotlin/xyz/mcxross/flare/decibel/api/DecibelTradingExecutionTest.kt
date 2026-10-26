@@ -424,12 +424,12 @@ private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
   val aptos =
     Aptos(
       AptosConfig(
-        network = Network.TESTNET,
+        network = Network.MAINNET,
         endpoints = AptosEndpoints(fullNode = "https://test.invalid/v1"),
         transport = http.asAptosTransport(),
       )
     )
-  val service = DefaultDecibelTradingService(aptos, DecibelDeployment.Testnet)
+  val service = DefaultDecibelTradingService(aptos, DecibelDeployment.Mainnet)
   // Deterministic external signer: tests the transaction protocol, not native key storage.
   val signer =
     object : TransactionSigner {

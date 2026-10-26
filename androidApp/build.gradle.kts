@@ -6,9 +6,10 @@ import java.util.Properties
 val flareWorkerUrl =
   providers
     .gradleProperty("flareWorkerUrl")
-    // Android Emulator routes 10.0.2.2 to the development host. Using
-    // 127.0.0.1 here would address the emulator itself.
-    .orElse("http://10.0.2.2:8787")
+    // Decibel is mainnet-only, so an unqualified build is a real one. For a local Worker pass
+    // -PflareWorkerUrl=http://10.0.2.2:8787; the Android Emulator routes 10.0.2.2 to the
+    // development host, where 127.0.0.1 would address the emulator itself.
+    .orElse("https://api.mcxross.xyz")
 
 val flareBuilderAddress =
   providers

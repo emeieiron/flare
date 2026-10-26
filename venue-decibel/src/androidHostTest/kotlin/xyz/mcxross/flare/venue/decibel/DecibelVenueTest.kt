@@ -91,7 +91,7 @@ class DecibelVenueTest {
 
   @Test
   fun descriptorReflectsWhatTheAppDoesOnDecibel() {
-    val descriptor = DecibelVenue(network = Network.MAINNET).descriptor
+    val descriptor = DecibelVenue().descriptor
 
     assertEquals("decibel", descriptor.id)
     assertEquals(Network.MAINNET, descriptor.network)
@@ -104,15 +104,14 @@ class DecibelVenueTest {
   }
 
   @Test
-  fun explorerLinksOpenTheAptosExplorerOnTheVenuesNetwork() {
-    Network.entries.forEach { network ->
-      val explorer = TransactionExplorer(DecibelVenue(network = network).descriptor.explorer)
-      assertEquals("View on Aptos Explorer", explorer.label)
-      assertEquals(
-        "https://explorer.aptoslabs.com/txn/0xabc?network=${network.name.lowercase()}",
-        explorer.url("0xabc"),
-      )
-    }
+  fun explorerLinksOpenTheAptosExplorerOnMainnet() {
+    val explorer = TransactionExplorer(DecibelVenue().descriptor.explorer)
+
+    assertEquals("View on Aptos Explorer", explorer.label)
+    assertEquals(
+      "https://explorer.aptoslabs.com/txn/0xabc?network=mainnet",
+      explorer.url("0xabc"),
+    )
   }
 
   @Test
@@ -180,4 +179,6 @@ private object EmptyJournal : TransactionJournalDao {
   ): Int = 0
 
   override suspend fun remove(hash: String) = Unit
+
+  override suspend fun deleteOtherNetworks(network: String) = Unit
 }

@@ -7,12 +7,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.decibel.DecibelClient
-import xyz.mcxross.flare.decibel.DecibelNetwork
 import xyz.mcxross.flare.decibel.api.MarketDepthUpdate
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.CandleInterval
 import xyz.mcxross.flare.decibel.model.MarketPrecision
-import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
@@ -27,14 +25,6 @@ import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 
 class DecibelMarketMappersTest {
   private val json = DecibelClient.DefaultJson
-
-  @Test
-  fun networksKeepTheirNames() {
-    Network.entries.forEach { network ->
-      assertEquals(network.name, network.toDecibelNetwork().name)
-    }
-    assertEquals(DecibelNetwork.entries.size, Network.entries.size)
-  }
 
   @Test
   fun assetTypesBecomeMarketKinds() {

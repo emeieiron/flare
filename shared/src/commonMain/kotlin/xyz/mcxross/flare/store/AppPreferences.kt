@@ -162,6 +162,46 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     dataStore.edit { it[NetworkKey] = network.name }
   }
 
+  /**
+   * The network this installation's stored state belongs to. Installations that predate the marker
+   * were testnet, which is why an absent value reads as [Network.TESTNET].
+   */
+  suspend fun storedNetwork(): Network =
+    dataStore.data.first().let { preferences ->
+      preferences[NetworkKey]?.let { value -> Network.entries.firstOrNull { it.name == value } }
+        ?: Network.TESTNET
+    }
+
+  /**
+   * Drops the state that only means something on the network it was written for: the trading
+   * account and its approvals, and the market the person was last looking at. The wallet itself
+   * survives, so the owner keeps their address and backup, and the device trading key keeps its
+   * slot in the vault; both only need a fresh delegation on the new network.
+   */
+  suspend fun adoptNetwork(network: Network) {
+    dataStore.edit { preferences ->
+      val profiles = preferences.profiles()
+      preferences.writeProfiles(
+        profiles.map { profile ->
+          profile.copy(
+            withdrawal = null,
+            creationReference = null,
+            selectedSubaccount = null,
+            onboardingComplete = false,
+            setupDeferred = false,
+            tradingAccountOpened = false,
+            builderApproved = false,
+            spotBuilderApproved = false,
+          )
+        }
+      )
+      preferences.remove(SelectedMarketKey)
+      preferences.remove(FavoriteMarketsKey)
+      preferences.remove(SpotWatchlistSeededKey)
+      preferences[NetworkKey] = network.name
+    }
+  }
+
   suspend fun setChartRange(rangeName: String) {
     dataStore.edit { it[ChartRangeKey] = rangeName }
   }
