@@ -36,6 +36,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -73,6 +75,8 @@ import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
+import xyz.mcxross.flare.store.tradingAccountDisplayName
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.store.opensApp
 import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.model.ActionState
@@ -122,6 +126,13 @@ fun AccountScreen(
   onReceiveOpened: () -> Unit = {},
 ) {
   var showWallets by remember { mutableStateOf(false) }
+  var returnToWallets by remember { mutableStateOf(false) }
+  LaunchedEffect(state.nameEditor != null) {
+    if (state.nameEditor == null && returnToWallets) {
+      returnToWallets = false
+      showWallets = true
+    }
+  }
   var showAddWallet by remember { mutableStateOf(false) }
   var showDeposit by remember { mutableStateOf(false) }
   LaunchedEffect(openReceive) {
@@ -137,7 +148,7 @@ fun AccountScreen(
   val clipboard = LocalClipboardManager.current
   val profiles = state.preferences.profiles
   val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
-  val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+  val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
   val walletAddress = (active?.ownerAddress ?: active?.apiWalletAddress).orEmpty()
   val subaccounts = active?.ownerAddress?.let { state.subaccountsByOwner[it] }.orEmpty()
     .ifEmpty {
@@ -163,11 +174,12 @@ fun AccountScreen(
       Text("Your wallet", style = MaterialTheme.typography.headlineLarge)
       FlareButton("Add wallet", { showAddWallet = true }, Modifier.fillMaxWidth().padding(top = 24.dp))
     } else {
-      ActionRow(walletLabel,
+      WalletNameRow(walletLabel,
         subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
           else shortAddress(walletAddress),
         icon = FlareIcons.Wallet,
-        onClick = { showWallets = true }, enabled = !state.busy)
+        onClick = { showWallets = true }, enabled = !state.busy,
+        onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) })
       val need = state.setupNeed
       if (active.setupPending && need != null) {
         UnavailableNotice(need.reason, need)
@@ -194,8 +206,12 @@ fun AccountScreen(
           onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
         }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
           Column(Modifier.weight(1f)) {
-            Text(account.label?.takeIf { it.isNotBlank() } ?: "Trading account ${index + 1}",
-              style = MaterialTheme.typography.bodyLarge)
+            EditableAccountName(
+              name = active.tradingAccountDisplayName(account.address, account.label, index),
+              description = "Rename trading account",
+              enabled = !state.busy,
+              onRename = { onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address)) },
+            )
             Text(shortAddress(account.address), style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary)
           }
@@ -222,10 +238,16 @@ fun AccountScreen(
   if (showWallets) FlareSheet("Wallets", { showWallets = false }) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
       profiles.forEachIndexed { index, profile ->
-        ActionRow("Wallet ${index + 1}${if (profile.id == active?.id) " · Selected" else ""}",
+        WalletNameRow(profile.walletDisplayName(index),
           subtitle = if (!profile.onboardingComplete) "Finish setup" else
             shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
           enabled = !state.busy,
+          selected = profile.id == active?.id,
+          onRename = {
+            showWallets = false
+            returnToWallets = true
+            onIntent(SettingsIntent.RenameWallet(profile.id))
+          },
           onClick = {
             showWallets = false
             if (profile.opensApp) onIntent(SettingsIntent.SelectProfile(profile.id))
@@ -239,6 +261,7 @@ fun AccountScreen(
       ActionRow("Add wallet", icon = FlareIcons.Add, onClick = { showWallets = false; showAddWallet = true })
     }
   }
+  state.nameEditor?.let { AccountNameSheet(it, onIntent) }
   if (showAddWallet) FlareSheet("Add wallet", { showAddWallet = false }) {
     ActionRow("Create wallet", subtitle = "Get a new recovery phrase", icon = FlareIcons.Key,
       onClick = { showAddWallet = false; onCreateAccount() })
@@ -259,6 +282,48 @@ fun AccountScreen(
   }, { showDeposit = false })
   if (showWithdraw && active?.selectedSubaccount != null) WithdrawSheet(state,
     onIntent, { if (!state.withdrawing) { showWithdraw = false; onIntent(SettingsIntent.DismissWithdraw) } })
+}
+
+@Composable
+private fun EditableAccountName(
+  name: String,
+  description: String,
+  enabled: Boolean,
+  onRename: () -> Unit,
+) {
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    Text(name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge,
+      maxLines = 1, overflow = TextOverflow.Ellipsis)
+    IconButton(onClick = onRename, enabled = enabled, modifier = Modifier.size(48.dp)) {
+      Icon(FlareIcons.Edit, "$description $name", tint = FlareColors.TextSecondary,
+        modifier = Modifier.size(18.dp))
+    }
+  }
+}
+
+@Composable
+private fun WalletNameRow(
+  name: String,
+  subtitle: String,
+  enabled: Boolean,
+  onRename: () -> Unit,
+  onClick: () -> Unit,
+  icon: ImageVector? = null,
+  selected: Boolean = false,
+) {
+  Row(Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+    .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    icon?.let { Icon(it, null, tint = FlareColors.TextSecondary, modifier = Modifier.size(22.dp)) }
+    Column(Modifier.weight(1f)) {
+      EditableAccountName(name, "Rename wallet", enabled, onRename)
+      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    }
+    if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
+      modifier = Modifier.size(20.dp))
+    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+  }
+  HorizontalDivider(color = FlareColors.BorderSubtle)
 }
 
 @Composable

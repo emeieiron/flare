@@ -30,6 +30,10 @@ import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.store.accountNameError
+import xyz.mcxross.flare.store.tradingAccountDisplayName
+import xyz.mcxross.flare.store.tradingAccountNickname
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.ActionState
@@ -70,6 +74,7 @@ data class SettingsUiState(
   /** A withdrawal that was interrupted part-way and must be finished before another starts. */
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val busy: Boolean = false,
+  val nameEditor: AccountNameEditor? = null,
   /** The product whose builder approval is being written on-chain. */
   val builderPending: MarketKind? = null,
   /** A builder change Flare couldn't sponsor, which the wallet can pay for once the person agrees. */
@@ -79,6 +84,24 @@ data class SettingsUiState(
 
 /** [basisPoints] is the rate being approved, or null for a revocation. */
 data class BuilderSelfPay(val product: MarketKind, val basisPoints: Int?, val estimate: ULong)
+
+/** The target is captured when editing begins, independently of the currently selected wallet. */
+data class AccountNameEditor(
+  val profileId: String,
+  val address: String,
+  val tradingAccount: Boolean,
+  val originalName: String,
+  val defaultName: String,
+  val hasCustomName: Boolean,
+  val name: String = originalName,
+  val useDefault: Boolean = false,
+  val saving: Boolean = false,
+  val error: String? = null,
+) {
+  val canSave: Boolean
+    get() = !saving && (if (useDefault) hasCustomName
+      else accountNameError(name) == null && name.trim() != originalName)
+}
 
 sealed interface SettingsIntent {
   data object LoadDelegations : SettingsIntent
@@ -90,6 +113,18 @@ sealed interface SettingsIntent {
   data class SelectProfile(val id: String) : SettingsIntent
 
   data class SelectSubaccount(val profileId: String, val subaccountAddress: String) : SettingsIntent
+
+  data class RenameWallet(val profileId: String) : SettingsIntent
+
+  data class RenameTradingAccount(val profileId: String, val address: String) : SettingsIntent
+
+  data class ChangeAccountName(val name: String) : SettingsIntent
+
+  data object SaveAccountName : SettingsIntent
+
+  data object UseDefaultAccountName : SettingsIntent
+
+  data object DismissAccountName : SettingsIntent
 
   data object CreateSubaccountForActiveProfile : SettingsIntent
 
@@ -199,6 +234,25 @@ class SettingsViewModel(
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      is SettingsIntent.RenameWallet -> openNameEditor(intent.profileId)
+      is SettingsIntent.RenameTradingAccount -> openNameEditor(intent.profileId, intent.address)
+      is SettingsIntent.ChangeAccountName -> local.update { state ->
+        state.copy(nameEditor = state.nameEditor?.let {
+          if (it.saving) it else it.copy(name = intent.name,
+            useDefault = it.useDefault && intent.name == it.defaultName,
+            error = accountNameError(intent.name))
+        })
+      }
+      SettingsIntent.UseDefaultAccountName -> local.update { state ->
+        state.copy(nameEditor = state.nameEditor?.let {
+          if (it.saving || !it.hasCustomName) it
+          else it.copy(name = it.defaultName, useDefault = true, error = null)
+        })
+      }
+      SettingsIntent.SaveAccountName -> saveAccountName()
+      SettingsIntent.DismissAccountName -> local.update {
+        if (it.nameEditor?.saving == true) it else it.copy(nameEditor = null)
+      }
       SettingsIntent.LoadSubaccounts -> loadSubaccounts()
       is SettingsIntent.ChangeReferralCode ->
         local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
@@ -535,6 +589,53 @@ class SettingsViewModel(
           }
       } finally {
         local.update { it.copy(busy = false) }
+      }
+    }
+  }
+
+  private fun openNameEditor(profileId: String, address: String? = null) {
+    if (local.value.nameEditor?.saving == true) return
+    viewModelScope.launch {
+      val profiles = preferences.values.first().profiles
+      val profile = profiles.firstOrNull { it.id == profileId } ?: return@launch
+      val subaccounts = profile.ownerAddress?.let { local.value.subaccountsByOwner[it] }.orEmpty()
+      val position = if (address == null) -1 else subaccounts.indexOfFirst { credentials.sameAddress(it.address, address) }
+      val label = if (address == null) profile.walletDisplayName(profiles.indexOf(profile))
+        else profile.tradingAccountDisplayName(address, subaccounts.getOrNull(position)?.label, position.coerceAtLeast(0))
+      val defaultName = if (address == null) "Wallet ${profiles.indexOf(profile) + 1}"
+        else subaccounts.getOrNull(position)?.label?.takeIf(String::isNotBlank)
+          ?: "Trading account ${position.coerceAtLeast(0) + 1}"
+      local.update {
+        it.copy(nameEditor = AccountNameEditor(
+          profileId = profileId,
+          address = address ?: (profile.ownerAddress ?: profile.apiWalletAddress).orEmpty(),
+          tradingAccount = address != null,
+          originalName = label,
+          defaultName = defaultName,
+          hasCustomName = if (address == null) profile.walletName != null
+            else profile.tradingAccountNickname(address) != null,
+        ))
+      }
+    }
+  }
+
+  private fun saveAccountName() {
+    val editor = local.value.nameEditor ?: return
+    if (!editor.canSave) return
+    local.update { it.copy(nameEditor = editor.copy(saving = true, error = null)) }
+    viewModelScope.launch {
+      runSuspendCatching {
+        if (editor.useDefault) {
+          if (editor.tradingAccount) preferences.resetTradingAccountName(editor.profileId, editor.address)
+          else preferences.resetWalletName(editor.profileId)
+        } else if (editor.tradingAccount) preferences.renameTradingAccount(editor.profileId, editor.address, editor.name)
+        else preferences.renameWallet(editor.profileId, editor.name)
+      }.onSuccess {
+        local.update { it.copy(nameEditor = null) }
+      }.onFailure {
+        local.update {
+          it.copy(nameEditor = editor.copy(error = "The name couldn’t be saved. Try again."))
+        }
       }
     }
   }

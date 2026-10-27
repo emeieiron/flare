@@ -74,9 +74,12 @@ class SettingsViewModelTest {
   private class MemoryPreferences(initial: Preferences = emptyPreferences()) :
     DataStore<Preferences> {
     override val data = MutableStateFlow(initial)
+    var failWrites = false
 
-    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
-      transform(data.value).also { data.value = it }
+    override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
+      check(!failWrites) { "Storage unavailable" }
+      return transform(data.value).also { data.value = it }
+    }
   }
 
   private class FakeWalletRepository : WalletRepository {
@@ -133,18 +136,21 @@ class SettingsViewModelTest {
     var lastWithdrawDestination: String? = null
     var rewardReads = 0
     var subaccountReads = 0
+    var selections = 0
+    var restores = 0
+    var tradingAccounts: List<TradingAccount> = emptyList()
 
     override suspend fun delegations(): List<TradingKey> = emptyList()
     override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
       ActionState.Committed("0x")
-    override suspend fun restoreTrading() {}
+    override suspend fun restoreTrading() { restores++ }
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
     override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> = emptyList()
     override suspend fun subaccounts(owner: String): List<TradingAccount> {
       subaccountReads++
-      return emptyList()
+      return tradingAccounts
     }
-    override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {}
+    override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) { selections++ }
     override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
       ActionState.Committed("0xsub")
     override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0xsub"
@@ -427,6 +433,99 @@ class SettingsViewModelTest {
       vm.uiState.value.error,
     )
     assertEquals(listOf(FeePayment.SPONSORED), accounts.approvals)
+  }
+
+  @Test
+  fun renamingUsesTheCapturedTargetAndNeverSwitchesOrRestoresAccounts() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    val accounts = FakeAccountRepository()
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+
+    vm.onIntent(SettingsIntent.RenameWallet("first"))
+    assertEquals("Wallet 1", vm.uiState.value.nameEditor?.name)
+    assertFalse(vm.uiState.value.nameEditor!!.canSave)
+    vm.onIntent(SettingsIntent.ChangeAccountName("Main wallet"))
+    vm.onIntent(SettingsIntent.SaveAccountName)
+    assertNull(vm.uiState.value.nameEditor)
+
+    vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
+    vm.onIntent(SettingsIntent.ChangeAccountName("BTC strategy"))
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x2", selectedSubaccount = "0x4"))
+    vm.onIntent(SettingsIntent.SaveAccountName)
+
+    val saved = preferences.values.first()
+    assertEquals("second", saved.activeProfileId)
+    assertEquals("0x4", saved.selectedSubaccount)
+    val first = saved.profiles.first { it.id == "first" }
+    assertEquals("Main wallet", first.walletName)
+    assertEquals("BTC strategy", first.tradingAccountNames["0x3"])
+    assertEquals(0, accounts.selections)
+    assertEquals(0, accounts.restores)
+    assertEquals(1, accounts.subaccountReads)
+    assertNull(vm.uiState.value.nameEditor)
+  }
+
+  @Test
+  fun cancellingAndInvalidNamesLeaveSavedNamesUntouched() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", walletName = "Main wallet"))
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(SettingsIntent.RenameWallet("first"))
+    vm.onIntent(SettingsIntent.ChangeAccountName(" "))
+    assertEquals("Enter a name", vm.uiState.value.nameEditor?.error)
+    vm.onIntent(SettingsIntent.SaveAccountName)
+    assertEquals("Main wallet", preferences.values.first().profiles.single().walletName)
+    vm.onIntent(SettingsIntent.ChangeAccountName("Unsaved name"))
+    vm.onIntent(SettingsIntent.DismissAccountName)
+    assertNull(vm.uiState.value.nameEditor)
+    assertEquals("Main wallet", preferences.values.first().profiles.single().walletName)
+  }
+
+  @Test
+  fun failedSaveKeepsTheDraftForRetry() = runTest {
+    val store = MemoryPreferences()
+    val preferences = AppPreferences(store)
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(SettingsIntent.RenameWallet("first"))
+    vm.onIntent(SettingsIntent.ChangeAccountName("Main wallet"))
+    store.failWrites = true
+    vm.onIntent(SettingsIntent.SaveAccountName)
+    assertEquals("Main wallet", vm.uiState.value.nameEditor?.name)
+    assertFalse(vm.uiState.value.nameEditor!!.saving)
+    assertEquals("The name couldn’t be saved. Try again.", vm.uiState.value.nameEditor?.error)
+    store.failWrites = false
+    vm.onIntent(SettingsIntent.SaveAccountName)
+    assertNull(vm.uiState.value.nameEditor)
+    assertEquals("Main wallet", preferences.values.first().profiles.single().walletName)
+  }
+
+  @Test
+  fun usingTheVenueNameOnlyClearsTheLocalNicknameAfterSave() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    preferences.renameTradingAccount("first", "0x3", "BTC strategy")
+    val accounts = FakeAccountRepository().apply {
+      tradingAccounts = listOf(TradingAccount("0x3", "0x1", label = "Primary account"))
+    }
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
+    assertEquals("BTC strategy", vm.uiState.value.nameEditor?.name)
+    vm.onIntent(SettingsIntent.UseDefaultAccountName)
+    assertEquals("Primary account", vm.uiState.value.nameEditor?.name)
+    vm.onIntent(SettingsIntent.DismissAccountName)
+    assertEquals("BTC strategy", preferences.values.first().profiles.single().tradingAccountNames["0x3"])
+    vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
+    vm.onIntent(SettingsIntent.UseDefaultAccountName)
+    vm.onIntent(SettingsIntent.SaveAccountName)
+    assertEquals(emptyMap(), preferences.values.first().profiles.single().tradingAccountNames)
+    assertEquals("0x3", preferences.values.first().selectedSubaccount)
+    assertEquals(0, accounts.selections)
   }
 
   private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =

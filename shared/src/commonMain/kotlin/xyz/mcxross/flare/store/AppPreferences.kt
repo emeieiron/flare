@@ -65,6 +65,9 @@ data class AccountProfile(
    * wallet opens the app, and actions wait until setup finishes.
    */
   val setupDeferred: Boolean = false,
+  /** Local display names; never submitted to the venue or used as wallet identifiers. */
+  val walletName: String? = null,
+  val tradingAccountNames: Map<String, String> = emptyMap(),
 )
 
 /** The wallet opens the app: its setup finished, or was left for later while it waits for funds. */
@@ -187,6 +190,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             withdrawal = null,
             creationReference = null,
             selectedSubaccount = null,
+            tradingAccountNames = emptyMap(),
             onboardingComplete = false,
             setupDeferred = false,
             tradingAccountOpened = false,
@@ -399,6 +403,32 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) =
     updateProfile(profileId) { it.copy(withdrawal = withdrawal) }
+
+  suspend fun renameWallet(profileId: String, name: String) =
+    renameAccount(profileId, null, name)
+
+  suspend fun renameTradingAccount(profileId: String, address: String, name: String) {
+    require(address.isNotBlank()) { "A trading account address is required" }
+    renameAccount(profileId, address, name)
+  }
+
+  suspend fun resetWalletName(profileId: String) = renameAccount(profileId, null, null)
+
+  suspend fun resetTradingAccountName(profileId: String, address: String) =
+    renameAccount(profileId, address, null)
+
+  private suspend fun renameAccount(profileId: String, address: String?, name: String?) {
+    if (name != null) require(accountNameError(name) == null) { accountNameError(name).orEmpty() }
+    dataStore.edit { preferences ->
+      val profiles = preferences.profiles()
+      val profile = profiles.firstOrNull { it.id == profileId }
+        ?: error("This wallet is no longer on this device")
+      val renamed = if (address == null) profile.copy(walletName = name?.trim())
+      else profile.copy(tradingAccountNames = if (name == null) profile.tradingAccountNames - accountNameKey(address)
+        else profile.tradingAccountNames + (accountNameKey(address) to name.trim()))
+      preferences.writeProfiles(profiles.replacing(renamed))
+    }
+  }
 
   /** Switching profiles only changes which stored profile is active; none of them are rewritten. */
   suspend fun activateProfile(id: String) {

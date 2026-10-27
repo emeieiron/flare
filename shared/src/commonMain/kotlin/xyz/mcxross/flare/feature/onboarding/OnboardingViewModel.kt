@@ -28,6 +28,7 @@ import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.store.tradingAccountNickname
 import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.model.ActionState
@@ -213,10 +214,14 @@ class OnboardingViewModel(
 
   val uiState: StateFlow<OnboardingUiState> =
     combine(local, wallets.profile, preferences.values) { state, profile, saved ->
+        val active = saved.profiles.firstOrNull { it.id == saved.activeProfileId }
         state.copy(
           profile = profile,
           profiles = saved.profiles,
           activeProfileId = saved.activeProfileId,
+          subaccounts = state.subaccounts.map { account ->
+            account.copy(label = active?.tradingAccountNickname(account.address) ?: account.label)
+          },
         )
       }
       .stateIn(

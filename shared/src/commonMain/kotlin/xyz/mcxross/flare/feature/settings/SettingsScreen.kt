@@ -52,6 +52,7 @@ import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
@@ -311,7 +312,7 @@ fun SettingsScreen(
   removal?.let { intent ->
     val profiles = state.preferences.profiles
     val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
-    val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+    val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
     val removed =
       if (intent == SettingsIntent.RemoveApi) {
         "$walletLabel’s trading key, ${shortAddress(state.profile.apiWalletAddress.orEmpty())}"

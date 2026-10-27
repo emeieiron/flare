@@ -31,6 +31,8 @@ class NetworkAdoptionTest {
         builderApproved = true,
         spotBuilderApproved = true,
         creationReference = "0xref",
+        walletName = "Main wallet",
+        tradingAccountNames = mapOf("0xsub" to "Testnet account"),
       )
     )
 
@@ -48,6 +50,8 @@ class NetworkAdoptionTest {
     assertEquals("0xowner", profile.ownerAddress)
     assertEquals("0xapi", profile.apiWalletAddress)
     assertTrue(profile.ownerBackupConfirmed)
+    assertEquals("Main wallet", profile.walletName)
+    assertTrue(profile.tradingAccountNames.isEmpty())
     assertEquals(Network.MAINNET, preferences.storedNetwork())
   }
 

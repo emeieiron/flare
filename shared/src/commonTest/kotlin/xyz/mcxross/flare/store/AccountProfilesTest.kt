@@ -13,6 +13,54 @@ import xyz.mcxross.flare.security.WalletSecretSlot
 
 class AccountProfilesTest {
   @Test
+  fun namesSurviveRestartWithoutChangingCredentialsOrTheActiveAccount() = runTest {
+    val store = MemoryPreferences()
+    val preferences = AppPreferences(store)
+    val first = AccountProfile("first", ownerAddress = "0x1", apiWalletAddress = "0x2",
+      selectedSubaccount = "0x3", onboardingComplete = true)
+    preferences.registerProfile(first)
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4"))
+
+    preferences.renameWallet("first", "  Main wallet  ")
+    preferences.renameTradingAccount("first", "0x03", "BTC strategy")
+    preferences.renameTradingAccount("second", "0x3", "Savings")
+
+    val saved = AppPreferences(store).values.first()
+    assertEquals("second", saved.activeProfileId)
+    val renamed = saved.profiles.first { it.id == "first" }
+    assertEquals(first.copy(walletName = "Main wallet", tradingAccountNames = mapOf("0x3" to "BTC strategy")), renamed)
+    assertEquals("BTC strategy", renamed.tradingAccountDisplayName("0X0003", "Venue name"))
+    assertEquals("Savings", saved.profiles.last().tradingAccountDisplayName("0x3"))
+    preferences.resetWalletName("first")
+    preferences.resetTradingAccountName("first", "0X0003")
+    assertEquals(first, preferences.values.first().profiles.first { it.id == "first" })
+    assertEquals("Savings", preferences.values.first().profiles.last().tradingAccountDisplayName("0x3"))
+  }
+
+  @Test
+  fun oldProfilesAndVenueNamesRemainValidFallbacks() = runTest {
+    val preferences = AppPreferences(MemoryPreferences(preferencesOf(
+      stringPreferencesKey("account_profiles_v1") to """[{"id":"first","ownerAddress":"0x1"}]""",
+    )))
+    val profile = preferences.values.first().profiles.single()
+    assertEquals("Wallet 1", profile.walletDisplayName(0))
+    assertEquals("Primary account", profile.tradingAccountDisplayName("0x3", "Primary account"))
+    assertEquals("Trading account 2", profile.tradingAccountDisplayName("0x4", position = 1))
+  }
+
+  @Test
+  fun invalidNamesAndRemovedWalletsCannotRewriteProfiles() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    val before = preferences.values.first()
+    for (name in listOf(" ", "x".repeat(ACCOUNT_NAME_MAX_LENGTH + 1), "First\nSecond")) {
+      assertFailsWith<IllegalArgumentException> { preferences.renameWallet("first", name) }
+    }
+    assertFailsWith<IllegalStateException> { preferences.renameWallet("removed", "Name") }
+    assertEquals(before, preferences.values.first())
+  }
+
+  @Test
   fun sequencesNeverRepeatAndSurviveARestart() = runTest {
     val store = MemoryPreferences(emptyPreferences())
     val first = AppPreferences(store)

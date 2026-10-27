@@ -123,6 +123,13 @@ object FlareIcons {
     }
   }
 
+  val Edit: ImageVector by lazy {
+    icon("Edit") {
+      stroke("M4.5 15 L15.5 4 A2.12 2.12 0 0 1 18.5 7 L7.5 18 L3.5 19 Z")
+      stroke("M13.5 6 L16.5 9")
+    }
+  }
+
   /** Opens something outside Flare, such as the block explorer. */
   val External: ImageVector by lazy {
     icon("External", autoMirror = true) {
