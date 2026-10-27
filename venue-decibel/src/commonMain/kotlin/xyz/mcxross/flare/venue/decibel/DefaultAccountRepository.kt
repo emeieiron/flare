@@ -680,7 +680,10 @@ class DefaultAccountRepository(
       }
       return@withLock
     }
-    mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
+    mutableSnapshot.update {
+      val current = if (it.account == account) it else AccountSnapshot(account = account)
+      current.copy(loading = current.overview == null, error = null)
+    }
     runSuspendCatching {
       sessions.bind(readSession, flow {
         emit(coroutineScope {
@@ -731,7 +734,10 @@ class DefaultAccountRepository(
       }
       return@withLock
     }
-    mutableHistory.update { it.copy(account = account, loading = true, error = null) }
+    mutableHistory.update {
+      val current = if (it.account == account) it else AccountHistorySnapshot(account = account)
+      current.copy(loading = current.stale, error = null)
+    }
     runSuspendCatching {
       sessions.bind(readSession, flow {
         emit(coroutineScope {
@@ -864,10 +870,21 @@ class DefaultAccountRepository(
     streamJob = scope.launch { collectAccountStream(account) }
   }
 
-  private suspend fun collectAccountStream(account: String) {
+  private suspend fun collectAccountStream(account: String) = coroutineScope {
     venuePositions = emptyList()
     var lastBackfillAtMs = 0L
     var lastHistoryBackfillAtMs = 0L
+    var lastConnectionBackfillAtMs = 0L
+    val streamConnected = MutableStateFlow(false)
+    launch {
+      while (true) {
+        delay(REST_FALLBACK_INTERVAL_MS)
+        if (!streamConnected.value) {
+          refresh()
+          refreshHistory()
+        }
+      }
+    }
     val userTrades = UserTrades(account)
     val topics: Set<DecibelStreamTopic> =
       setOf(
@@ -880,10 +897,15 @@ class DefaultAccountRepository(
     client.stream.subscribe(topics).collect { event ->
       when (event) {
         is StreamEvent.Connected -> {
-          refresh()
-          refreshHistory()
-          lastBackfillAtMs = Clock.System.now().toEpochMilliseconds()
-          lastHistoryBackfillAtMs = lastBackfillAtMs
+          streamConnected.value = true
+          val now = Clock.System.now().toEpochMilliseconds()
+          if (now - lastConnectionBackfillAtMs >= REST_FALLBACK_INTERVAL_MS) {
+            refresh()
+            refreshHistory()
+            lastBackfillAtMs = Clock.System.now().toEpochMilliseconds()
+            lastHistoryBackfillAtMs = lastBackfillAtMs
+            lastConnectionBackfillAtMs = lastBackfillAtMs
+          }
         }
         is StreamEvent.Message -> {
           val now = Clock.System.now().toEpochMilliseconds()
@@ -952,13 +974,15 @@ class DefaultAccountRepository(
           lastHistoryBackfillAtMs = lastBackfillAtMs
         }
         is StreamEvent.Rejected -> {
-          mutableSnapshot.update { it.copy(stale = true, error = event.reason) }
-          mutableHistory.update { it.copy(stale = true, error = event.reason) }
+          streamConnected.value = false
+          mutableSnapshot.update { it.afterStreamFailure(event.reason) }
+          mutableHistory.update { it.afterStreamFailure(event.reason) }
         }
         is StreamEvent.Disconnected ->
           (event.reason ?: "Account stream disconnected").let { reason ->
-            mutableSnapshot.update { it.copy(stale = true, error = reason) }
-            mutableHistory.update { it.copy(stale = true, error = reason) }
+            streamConnected.value = false
+            mutableSnapshot.update { it.afterStreamFailure(reason) }
+            mutableHistory.update { it.afterStreamFailure(reason) }
           }
       }
     }
@@ -1169,11 +1193,19 @@ class DefaultAccountRepository(
     /** One reviewed "create account and enable trading" may span its two transactions. */
     const val SETUP_APPROVAL_WINDOW_MS = 60_000L
     const val BACKFILL_INTERVAL_MS = 2_000L
+    const val REST_FALLBACK_INTERVAL_MS = 15_000L
     const val USDC_DECIMALS = 6
     const val SHARE_DECIMALS = 6
     const val HISTORY_PAGE_SIZE = 50
   }
 }
+
+// Losing a live transport does not invalidate a successful REST snapshot, including empty history.
+internal fun AccountSnapshot.afterStreamFailure(reason: String): AccountSnapshot =
+  if (overview != null) this else copy(stale = true, error = error ?: reason)
+
+internal fun AccountHistorySnapshot.afterStreamFailure(reason: String): AccountHistorySnapshot =
+  if (!stale) this else copy(error = error ?: reason)
 
 private sealed interface HistoryResult {
   data class Orders(val page: Page<Order>) : HistoryResult

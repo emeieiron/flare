@@ -27,7 +27,7 @@ data class AccountOverview(
   @SerialName("cross_available_to_trade") val availableToTrade: Double = 0.0,
   @SerialName("usdc_cross_balance") val crossUsdcBalance: Double? = null,
   @SerialName("free_vault_equity") val freeVaultEquity: Double? = null,
-  @SerialName("secondary_collateral") val secondaryCollateral: List<SecondaryCollateral> = emptyList(),
+  @SerialName("secondary_collateral") val secondaryCollateral: List<SecondaryCollateral>? = null,
   val spot: SpotOverview? = null,
 )
 

@@ -84,7 +84,7 @@ internal fun DecibelAccountOverview.toAccountOverview(): AccountOverview =
     availableToTrade = availableToTrade,
     withdrawable = crossWithdrawableBalance,
     vaultEquity = freeVaultEquity,
-    secondaryCollateral = secondaryCollateral.map { it.toCollateralAsset() },
+    secondaryCollateral = secondaryCollateral.orEmpty().map { it.toCollateralAsset() },
     balances = Balances(collateral = crossUsdcBalance, spot = spot?.toSpotBalances()),
   )
 

@@ -10,6 +10,8 @@ import io.ktor.websocket.readText
 import io.ktor.websocket.send
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -58,10 +60,11 @@ internal class DefaultDecibelStreamService(
     require(topics.isNotEmpty()) { "At least one Decibel topic is required" }
     require(topics.size <= 150) { "Decibel permits at most 150 topics per connection" }
     val topicByWireValue = topics.associateBy(DecibelStreamTopic::wireValue)
-    var reconnectAttempt = 0
+    val reconnectBackoff = StreamReconnectBackoff()
     val lastSequenceByTopic = mutableMapOf<String, ULong>()
 
     while (currentCoroutineContext().isActive) {
+      var connectedAt: TimeMark? = null
       try {
         val token = config.accessToken()
         client.webSocket(
@@ -74,13 +77,13 @@ internal class DefaultDecibelStreamService(
             }
           },
         ) {
+          connectedAt = TimeSource.Monotonic.markNow()
           // Connected repositories perform a REST backfill, establishing a new baseline.
           lastSequenceByTopic.clear()
           topics.forEach {
             send(json.encodeToString(Subscription("subscribe", it.wireValue)))
           }
           this@channelFlow.send(StreamEvent.Connected(topics))
-          reconnectAttempt = 0
           for (frame in incoming) {
             if (frame !is Frame.Text) continue
             val payload = json.parseToJsonElement(frame.readText()) as? JsonObject ?: continue
@@ -138,11 +141,20 @@ internal class DefaultDecibelStreamService(
         if (!currentCoroutineContext().isActive) throw error
         send(StreamEvent.Disconnected(error.message))
       }
-      val base = 500L shl reconnectAttempt.coerceAtMost(6)
-      val jitter = Random.nextLong(0L, (base / 2L).coerceAtLeast(1L))
-      delay((base + jitter).milliseconds)
-      reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(6)
+      delay(reconnectBackoff.nextDelay(connectedAt?.elapsedNow()?.inWholeMilliseconds ?: 0L).milliseconds)
     }
+  }
+}
+
+internal class StreamReconnectBackoff {
+  private var attempt = 0
+
+  fun nextDelay(connectedForMs: Long): Long {
+    // A proxy handshake can succeed even when its upstream immediately rejects the connection.
+    if (connectedForMs >= 30_000L) attempt = 0
+    val base = 500L shl attempt
+    attempt = (attempt + 1).coerceAtMost(6)
+    return base + Random.nextLong(0L, base / 2L)
   }
 }
 
