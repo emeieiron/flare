@@ -49,6 +49,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.AssetCatalogRepository
@@ -95,7 +96,10 @@ fun TradeRoute(
   LaunchedEffect(marketAddress) { viewModel.onIntent(TradeIntent.SelectMarket(marketAddress)) }
   val lifecycleOwner = LocalLifecycleOwner.current
   LaunchedEffect(lifecycleOwner, viewModel) {
-    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followLiveChart() }
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      launch { viewModel.followLiveChart() }
+      launch { viewModel.followMarketDetails() }
+    }
   }
   TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity,
     onOpenStrategies = { showStrategies = true })

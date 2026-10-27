@@ -154,7 +154,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
           webSocketUrl = config.decibelWebSocketUrl,
           accessToken = { sessionRepository.accessToken() },
         ),
-    )
+    ).also { it.stream.setEnabled(false) }
   }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
   single<StrategyMarketFeed> { DecibelStrategyMarketFeed(get(), get()) }

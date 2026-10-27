@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filter
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -69,6 +70,7 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
+import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.SetupNeed
@@ -185,21 +187,31 @@ private fun FlareAppFlow() {
   }
   LaunchedEffect(appPreferences) { appPreferences.recoverRealAutoTrading() }
   val accounts: AccountRepository = koinInject()
+  val markets: MarketsRepository = koinInject()
   val unlocked by vault.unlocked.collectAsStateWithLifecycle()
   var foreground by remember { mutableStateOf(true) }
   var retry by remember { mutableStateOf(0) }
   var unlockError by remember { mutableStateOf<String?>(null) }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     foreground = false
+    accounts.setForeground(false)
     autoTrading.pause("Paused in background")
     vault.lock()
   }
   LifecycleEventEffect(Lifecycle.Event.ON_START) { foreground = true }
+  // Quotes also serve Portfolio and Trade, so their feed belongs to the foreground visit.
+  LaunchedEffect(markets, foreground, networkAdopted) {
+    if (foreground && networkAdopted) markets.connectLive()
+  }
   val trading: TradingRepository = koinInject()
   val wallets: WalletRepository = koinInject()
   val persisted by appPreferences.values.collectAsStateWithLifecycle(initialValue = null)
   val walletProfile by wallets.profile.collectAsStateWithLifecycle(initialValue = null)
   val hasCredentials = persisted?.profiles?.isNotEmpty() == true
+  DisposableEffect(accounts, foreground, unlocked, hasCredentials, networkAdopted) {
+    accounts.setForeground(foreground && networkAdopted && (unlocked || !hasCredentials))
+    onDispose { accounts.setForeground(false) }
+  }
   LaunchedEffect(foreground, hasCredentials, retry) {
     if (foreground && hasCredentials && !vault.unlocked.value) {
       unlockError = null

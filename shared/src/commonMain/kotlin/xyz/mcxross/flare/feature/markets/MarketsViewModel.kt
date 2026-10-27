@@ -188,7 +188,6 @@ class MarketsViewModel(
     viewModelScope.launch { repository.refresh() }
     viewModelScope.launch { runCatching { assetCatalog.refresh() } }
     // The live stream owns freshness from here: it reconnects on its own and backfills on connect.
-    viewModelScope.launch { repository.connectLive() }
   }
 
   fun onIntent(intent: MarketsIntent) {

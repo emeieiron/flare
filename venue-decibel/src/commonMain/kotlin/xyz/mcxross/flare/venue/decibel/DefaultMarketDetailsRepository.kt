@@ -22,11 +22,12 @@ import xyz.mcxross.flare.decibel.api.StreamEvent
 class DefaultMarketDetailsRepository(private val client: DecibelClient) : MarketDetailsRepository {
   private val mutableDetails = MutableStateFlow(MarketDetails())
   private val refreshMutex = Mutex()
+  private var lastSnapshotAtMs = 0L
   override val details: StateFlow<MarketDetails> = mutableDetails.asStateFlow()
 
   override suspend fun refresh(market: String) = refreshMutex.withLock {
     mutableDetails.update { current ->
-      if (current.market == market) current.copy(loading = true, error = null)
+      if (current.market == market) current.copy(loading = current.orderBook == null, error = null)
       else MarketDetails(market = market, loading = true)
     }
     runSuspendCatching {
@@ -37,6 +38,7 @@ class DefaultMarketDetailsRepository(private val client: DecibelClient) : Market
       }
     }
       .onSuccess { (book, trades) ->
+        lastSnapshotAtMs = Clock.System.now().toEpochMilliseconds()
         mutableDetails.value =
           MarketDetails(
             market = market,
@@ -68,7 +70,10 @@ class DefaultMarketDetailsRepository(private val client: DecibelClient) : Market
       .collect { event ->
         when (event) {
           is StreamEvent.Connected -> {
-            refresh(market)
+            refreshMutex.withLock {}
+            if (mutableDetails.value.market != market ||
+              Clock.System.now().toEpochMilliseconds() - lastSnapshotAtMs >= 2_000L
+            ) refresh(market)
             lastRecoveryAtMs = Clock.System.now().toEpochMilliseconds()
           }
           is StreamEvent.Message -> {

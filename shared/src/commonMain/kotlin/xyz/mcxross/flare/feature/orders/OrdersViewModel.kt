@@ -2,9 +2,13 @@ package xyz.mcxross.flare.feature.orders
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -146,6 +150,20 @@ class OrdersViewModel(
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrdersUiState())
+
+  suspend fun followHistoryWhileVisible() {
+    local.map { it.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP) }
+      .distinctUntilChanged()
+      .collectLatest { visible ->
+        accounts.setHistoryVisible(visible)
+        try {
+          if (visible) accounts.refreshHistory()
+          awaitCancellation()
+        } finally {
+          accounts.setHistoryVisible(false)
+        }
+      }
+  }
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
