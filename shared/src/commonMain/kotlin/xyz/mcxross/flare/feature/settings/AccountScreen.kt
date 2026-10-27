@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,15 +43,27 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
+import xyz.mcxross.flare.data.AssetCatalogRepository
+import xyz.mcxross.flare.data.AssetMetadata
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
+import xyz.mcxross.flare.design.AssetIcon
+import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareAddressField
 import xyz.mcxross.flare.design.FlareAmountField
@@ -97,6 +110,12 @@ fun AccountRoute(
   viewModel: SettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val catalog: AssetCatalogRepository = koinInject()
+  val assetMetadata by catalog.assets.collectAsStateWithLifecycle()
+  val lifecycleOwner = LocalLifecycleOwner.current
+  LaunchedEffect(lifecycleOwner, viewModel) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followWalletBalances() }
+  }
   LaunchedEffect(Unit) {
     viewModel.onIntent(SettingsIntent.LoadSubaccounts)
   }
@@ -110,6 +129,7 @@ fun AccountRoute(
     modifier = modifier,
     openReceive = openReceive,
     onReceiveOpened = onReceiveOpened,
+    assetMetadata = assetMetadata,
   )
 }
 
@@ -124,6 +144,7 @@ fun AccountScreen(
   modifier: Modifier = Modifier,
   openReceive: Boolean = false,
   onReceiveOpened: () -> Unit = {},
+  assetMetadata: Map<String, AssetMetadata> = emptyMap(),
 ) {
   var showWallets by remember { mutableStateOf(false) }
   var returnToWallets by remember { mutableStateOf(false) }
@@ -179,7 +200,13 @@ fun AccountScreen(
           else shortAddress(walletAddress),
         icon = FlareIcons.Wallet,
         onClick = { showWallets = true }, enabled = !state.busy,
-        onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) })
+        onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) },
+        balances = state.walletBalances.takeIf {
+          state.walletBalanceProfileId == active.id && state.walletBalanceAddress == walletAddress
+        }.orEmpty(),
+        assetMetadata = assetMetadata,
+        onRefreshBalances = { onIntent(SettingsIntent.RefreshWalletBalances) },
+      )
       val need = state.setupNeed
       if (active.setupPending && need != null) {
         UnavailableNotice(need.reason, need)
@@ -310,20 +337,59 @@ private fun WalletNameRow(
   onClick: () -> Unit,
   icon: ImageVector? = null,
   selected: Boolean = false,
+  balances: List<WalletTokenBalance> = emptyList(),
+  assetMetadata: Map<String, AssetMetadata> = emptyMap(),
+  onRefreshBalances: () -> Unit = {},
 ) {
   Row(Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button, onClick = onClick)
     .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-    icon?.let { Icon(it, null, tint = FlareColors.TextSecondary, modifier = Modifier.size(22.dp)) }
+    icon?.let {
+      Icon(it, null, tint = FlareColors.TextSecondary, modifier =
+        (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 13.dp)).size(22.dp))
+    }
     Column(Modifier.weight(1f)) {
       EditableAccountName(name, "Rename wallet", enabled, onRename)
       Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      if (balances.isNotEmpty()) InlineWalletBalances(balances, assetMetadata, onRefreshBalances)
     }
     if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
       modifier = Modifier.size(20.dp))
-    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier =
+      (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 14.dp)).size(20.dp))
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
+}
+
+@Composable
+private fun InlineWalletBalances(
+  balances: List<WalletTokenBalance>,
+  assetMetadata: Map<String, AssetMetadata>,
+  onRefresh: () -> Unit,
+) {
+  FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp),
+    horizontalArrangement = Arrangement.spacedBy(24.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    balances.forEach { balance ->
+      Row(verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val metadata = assetMetadata[balance.symbol]
+        AssetIcon(resolveAssetIdentity(balance.symbol, balance.symbol, metadata), 24.dp)
+        Text(buildAnnotatedString {
+          append(balance.displayAmount)
+          withStyle(SpanStyle(color = FlareColors.TextSecondary)) { append(" ${balance.symbol}") }
+        }, style = MaterialTheme.typography.bodyLarge, color = FlareColors.TextPrimary)
+      }
+    }
+  }
+  if (balances.any { it.unavailable }) Row(
+    Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(if (balances.any { it.unavailable && it.amount == null }) "Some balances are unavailable"
+      else "Balances may be out of date", Modifier.weight(1f),
+      style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    TextButton(onClick = onRefresh) { Text("Retry", color = FlareColors.Positive) }
+  }
 }
 
 @Composable

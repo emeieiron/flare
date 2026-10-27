@@ -18,6 +18,7 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.WalletBalanceRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
@@ -157,6 +158,9 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     ).also { it.stream.setEnabled(false) }
   }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
+  single<WalletBalanceRepository> {
+    AptosWalletBalanceRepository(get(), get<DecibelClient>().config.deployment)
+  }
   single<StrategyMarketFeed> { DecibelStrategyMarketFeed(get(), get()) }
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }

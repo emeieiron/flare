@@ -9,6 +9,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +20,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -35,6 +40,8 @@ import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
+import xyz.mcxross.flare.data.WalletBalanceRepository
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
@@ -526,6 +533,126 @@ class SettingsViewModelTest {
     assertEquals(emptyMap(), preferences.values.first().profiles.single().tradingAccountNames)
     assertEquals("0x3", preferences.values.first().selectedSubaccount)
     assertEquals(0, accounts.selections)
+  }
+
+  private class FakeWalletBalances : WalletBalanceRepository {
+    override val symbols = listOf("APT", "USDC")
+    val reads = mutableListOf<Pair<String, String>>()
+    var read: suspend (String, String) -> String = { _, symbol -> if (symbol == "APT") "8.67285184" else "0" }
+    override suspend fun balance(address: String, symbol: String): String {
+      reads += address to symbol
+      return read(address, symbol)
+    }
+  }
+
+  private fun balanceViewModel(preferences: AppPreferences, balances: WalletBalanceRepository) =
+    SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null,
+      testVenue(), AddressCredentials, walletBalances = balances)
+
+  @Test
+  fun walletBalancesUseTheWalletAddressAndOnlyPollWhileTheAccountRouteIsVisible() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", apiWalletAddress = "0x2", selectedSubaccount = "0x3"))
+    val balances = FakeWalletBalances()
+    val vm = balanceViewModel(preferences, balances)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    assertEquals(0, balances.reads.size)
+    val visible = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
+    runCurrent()
+    assertEquals(listOf("0x1", "0x1"), balances.reads.map { it.first })
+    assertEquals("8.67285184", vm.uiState.value.walletBalances.first().amount)
+    assertEquals("0.00", vm.uiState.value.walletBalances.last().displayAmount)
+    preferences.renameWallet("first", "Main")
+    runCurrent()
+    assertEquals(2, balances.reads.size)
+    advanceTimeBy(15_001)
+    runCurrent()
+    assertEquals(4, balances.reads.size)
+    visible.cancel()
+    runCurrent()
+    advanceTimeBy(30_000)
+    runCurrent()
+    assertEquals(4, balances.reads.size)
+  }
+
+  @Test
+  fun aFailedTokenReadDoesNotHideAnotherTokenOrInventZeroAndCanRetry() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    val balances = FakeWalletBalances().apply {
+      read = { _, symbol -> if (symbol == "APT") "8.67285184" else error("Offline") }
+    }
+    val vm = balanceViewModel(preferences, balances)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
+    runCurrent()
+    assertEquals("8.67285184", vm.uiState.value.walletBalances.first().amount)
+    assertNull(vm.uiState.value.walletBalances.last().amount)
+    assertEquals("—", vm.uiState.value.walletBalances.last().displayAmount)
+    assertEquals(true, vm.uiState.value.walletBalances.last().unavailable)
+    balances.read = { _, symbol -> if (symbol == "APT") error("Offline") else "0" }
+    vm.onIntent(SettingsIntent.RefreshWalletBalances)
+    runCurrent()
+    assertEquals("8.67285184", vm.uiState.value.walletBalances.first().amount)
+    assertEquals(true, vm.uiState.value.walletBalances.first().unavailable)
+    assertEquals("0.00", vm.uiState.value.walletBalances.last().displayAmount)
+    assertFalse(vm.uiState.value.walletBalances.last().unavailable)
+  }
+
+  @Test
+  fun switchingWalletsDiscardsLateResponsesFromThePreviousWallet() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
+    val release = CompletableDeferred<Unit>()
+    val balances = FakeWalletBalances().apply {
+      read = { address, _ ->
+        if (address == "0x1") withContext(NonCancellable) { release.await(); "999" } else "2"
+      }
+    }
+    val vm = balanceViewModel(preferences, balances)
+    val observed = mutableListOf<SettingsUiState>()
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect { observed += it } }
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
+    runCurrent()
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4"))
+    runCurrent()
+    release.complete(Unit)
+    runCurrent()
+    assertEquals("0x4", vm.uiState.value.walletBalanceAddress)
+    assertEquals(listOf("2", "2"), vm.uiState.value.walletBalances.map { it.amount })
+    assertFalse(observed.any { state -> state.walletBalances.any { it.amount == "999" } })
+  }
+
+  @Test
+  fun anApiOnlyWalletUsesItsOwnAddressAndRemovingItClearsTheBalances() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("api", apiWalletAddress = "0x2", selectedSubaccount = "0x3"))
+    val balances = FakeWalletBalances()
+    val vm = balanceViewModel(preferences, balances)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
+    runCurrent()
+    assertEquals(listOf("0x2", "0x2"), balances.reads.map { it.first })
+    preferences.setApiWallet(null)
+    runCurrent()
+    assertNull(vm.uiState.value.walletBalanceAddress)
+    assertEquals(emptyList(), vm.uiState.value.walletBalances)
+    advanceTimeBy(30_000)
+    runCurrent()
+    assertEquals(2, balances.reads.size)
+  }
+
+  @Test
+  fun walletBalanceFormattingPreservesSmallAmountsAndTokenPrecision() {
+    assertEquals("<0.01", WalletTokenBalance("APT", "0.00000001").displayAmount)
+    assertEquals("8.67", WalletTokenBalance("APT", "8.67285184").displayAmount)
+    assertEquals("10.00", WalletTokenBalance("APT", "9.99999999").displayAmount)
+    assertEquals("0.01", WalletTokenBalance("APT", "0.01").displayAmount)
+    assertEquals("0.00", WalletTokenBalance("APT", "0").displayAmount)
+    assertEquals("184467440737.10", WalletTokenBalance("APT", "184467440737.09551615").displayAmount)
+    assertEquals("1.234567", WalletTokenBalance("USDC", "1.234567").displayAmount)
+    assertEquals("0.00", WalletTokenBalance("USDC", "0").displayAmount)
+    assertEquals("—", WalletTokenBalance("USDC").displayAmount)
   }
 
   private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =

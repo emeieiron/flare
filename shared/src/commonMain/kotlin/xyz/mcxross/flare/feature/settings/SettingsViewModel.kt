@@ -4,15 +4,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
@@ -24,6 +32,8 @@ import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.WalletBalanceRepository
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
@@ -49,6 +59,9 @@ data class SettingsUiState(
   val setupNeed: SetupNeed? = null,
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
+  val walletBalanceProfileId: String? = null,
+  val walletBalanceAddress: String? = null,
+  val walletBalances: List<WalletTokenBalance> = emptyList(),
   val proxyUrl: String = "",
   val defaultBuilderAddress: String = "",
   val revealedSecretLabel: String? = null,
@@ -107,6 +120,8 @@ sealed interface SettingsIntent {
   data object LoadDelegations : SettingsIntent
 
   data object LoadSubaccounts : SettingsIntent
+
+  data object RefreshWalletBalances : SettingsIntent
 
   data class RevokeDelegate(val address: String) : SettingsIntent
 
@@ -186,6 +201,7 @@ class SettingsViewModel(
   venue: VenueDescriptor,
   private val credentials: CredentialParser,
   private val setupGate: AccountSetupGate? = null,
+  private val walletBalances: WalletBalanceRepository? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chainName = venue.chain.name
@@ -200,6 +216,7 @@ class SettingsViewModel(
       )
     )
   private var secretClearJob: Job? = null
+  private val balanceRefreshRequests = Channel<Unit>(Channel.CONFLATED)
 
   init {
     setupGate?.let { gate ->
@@ -234,6 +251,7 @@ class SettingsViewModel(
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      SettingsIntent.RefreshWalletBalances -> balanceRefreshRequests.trySend(Unit).let { }
       is SettingsIntent.RenameWallet -> openNameEditor(intent.profileId)
       is SettingsIntent.RenameTradingAccount -> openNameEditor(intent.profileId, intent.address)
       is SettingsIntent.ChangeAccountName -> local.update { state ->
@@ -593,6 +611,45 @@ class SettingsViewModel(
     }
   }
 
+  /** Owned by AccountRoute's visible lifecycle, so hidden screens do not poll or retain old reads. */
+  suspend fun followWalletBalances() {
+    val repository = walletBalances ?: return
+    preferences.values
+      .map { it.activeProfileId to (it.ownerAddress ?: it.apiWalletAddress) }
+      .distinctUntilChanged()
+      .collectLatest { (profileId, address) ->
+        local.update { state ->
+          val sameWallet = state.walletBalanceProfileId == profileId && state.walletBalanceAddress == address
+          state.copy(
+            walletBalanceProfileId = profileId,
+            walletBalanceAddress = address,
+            walletBalances = if (address == null) emptyList()
+              else if (sameWallet) state.walletBalances
+              else repository.symbols.map { WalletTokenBalance(it) },
+          )
+        }
+        if (address == null) return@collectLatest
+        while (true) {
+          coroutineScope {
+            repository.symbols.forEach { symbol ->
+              launch {
+                val result = runSuspendCatching { repository.balance(address, symbol) }
+                currentCoroutineContext().ensureActive()
+                local.update { state ->
+                  if (state.walletBalanceProfileId != profileId || state.walletBalanceAddress != address) state
+                  else state.copy(walletBalances = state.walletBalances.map { balance ->
+                    if (balance.symbol != symbol) balance
+                    else balance.copy(amount = result.getOrNull() ?: balance.amount, unavailable = result.isFailure)
+                  })
+                }
+              }
+            }
+          }
+          withTimeoutOrNull(WALLET_BALANCE_REFRESH_MS) { balanceRefreshRequests.receive() }
+        }
+      }
+  }
+
   private fun openNameEditor(profileId: String, address: String? = null) {
     if (local.value.nameEditor?.saving == true) return
     viewModelScope.launch {
@@ -659,6 +716,7 @@ class SettingsViewModel(
   }
 
   private companion object {
+    const val WALLET_BALANCE_REFRESH_MS = 15_000L
     const val SECRET_REVEAL_MS = 60_000L
   }
 }

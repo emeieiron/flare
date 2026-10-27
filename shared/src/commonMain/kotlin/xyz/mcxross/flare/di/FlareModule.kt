@@ -133,6 +133,7 @@ fun flareModule(
       venue = get(),
       credentials = get(),
       setupGate = getOrNull(),
+      walletBalances = getOrNull(),
     )
   }
 }
