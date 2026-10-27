@@ -11,8 +11,7 @@ import xyz.mcxross.flare.hyperliquid.model.normalizeEvmAddress
  *    expiry part)`, where the vault part is `0x00` without a vault and
  *    `0x01 ‖ address (20 bytes)` with one, and the expiry part is empty without `expiresAfter`
  *    and `0x00 ‖ expiresAfter (8 bytes, big-endian)` with it;
- * 2. the phantom agent `Agent{source, connectionId}`, `source` being `"a"` on mainnet and `"b"`
- *    on testnet;
+ * 2. the phantom agent `Agent{source, connectionId}`, `source` being `"a"` on mainnet;
  * 3. EIP-712 under domain `Exchange`, version `1`, chain id 1337, the zero verifying contract.
  */
 object L1Signing {

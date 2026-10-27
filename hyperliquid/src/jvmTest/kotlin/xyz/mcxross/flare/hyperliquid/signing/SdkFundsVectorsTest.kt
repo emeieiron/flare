@@ -33,13 +33,13 @@ class SdkFundsVectorsTest {
   fun withdrawalsAndTransfersMatchTheSdk() {
     user(
       Withdraw(DESTINATION, "5.5".toHlDecimal()),
-      """{"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"5.5","time":1700000000000,"type":"withdraw3","signatureChainId":"0x66eee","hyperliquidChain":"Testnet"}""",
-      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6459dbbfca65612f0f379dfe45c426fddd2009046416131cbe5db6dbe223ea4c8",
+      """{"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"5.5","time":1700000000000,"type":"withdraw3","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet"}""",
+      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6d833b5c1db5f3a04a064b5774ad50237ebe7cb2e69dbdce477bf849713ed9769",
     )
     user(
       UsdSend(DESTINATION, "12.345678".toHlDecimal()),
-      """{"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"12.345678","time":1700000000000,"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Testnet"}""",
-      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6f612ba52554538eae8450a05643d2636147333f31fadde2cee4372cb9ac050a4",
+      """{"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"12.345678","time":1700000000000,"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet"}""",
+      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df65f9b4edcc80940945d1ae311632f0b07d172ed650d93d2a5ce93ad986f238ee9",
     )
   }
 
@@ -47,13 +47,13 @@ class SdkFundsVectorsTest {
   fun perpSpotMovesMatchTheSdkForTheAccountAndASubAccount() {
     user(
       UsdClassTransfer("3".toHlDecimal(), toPerp = false),
-      """{"type":"usdClassTransfer","amount":"3","toPerp":false,"nonce":1700000000000,"signatureChainId":"0x66eee","hyperliquidChain":"Testnet"}""",
-      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6fc4d87b47e9f9c43f9fa835dd36ee397137e16a584caee73dd351855c57c9306",
+      """{"type":"usdClassTransfer","amount":"3","toPerp":false,"nonce":1700000000000,"signatureChainId":"0x66eee","hyperliquidChain":"Mainnet"}""",
+      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6e41a9e1771a04ec3a69473794a1a1c9f32cb2605837bb6929048670b9c405703",
     )
     user(
       UsdClassTransfer("2.5".toHlDecimal(), toPerp = true, subAccount = VAULT),
-      """{"type":"usdClassTransfer","amount":"2.5 subaccount:0x1719884eb866cb12b2287399b15f7db5e7d775ea","toPerp":true,"nonce":1700000000000,"signatureChainId":"0x66eee","hyperliquidChain":"Testnet"}""",
-      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df636d3a0d46b67a94d35f5686203f0f9b8f2eaef8bea266e7b1f50d41e48fb499f",
+      """{"type":"usdClassTransfer","amount":"2.5 subaccount:0x1719884eb866cb12b2287399b15f7db5e7d775ea","toPerp":true,"nonce":1700000000000,"signatureChainId":"0x66eee","hyperliquidChain":"Mainnet"}""",
+      "0x1901feb1393ca4412a4ca577bd51d04f0a77033514c602f4d0a11490fb95f7428df6462873fa1b14f61211e7aa2c52ec9345e68309ed4e350e783a678a719d31dfa8",
     )
   }
 
@@ -62,11 +62,10 @@ class SdkFundsVectorsTest {
     l1(
       VaultTransfer.ofUsdc(HLP_VAULT, isDeposit = false, "2.5".toHlDecimal()),
       vault = null,
-      json = """{"type":"vaultTransfer","vaultAddress":"0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0","isDeposit":false,"usd":2500000}""",
-      msgpack = "84a474797065ad7661756c745472616e73666572ac7661756c7441646472657373d92a307861313530393961333062626632653638393432643666346334336437306430346661656162306130a969734465706f736974c2a3757364ce002625a0",
-      hash = "0x5343c71641e7d83814dc4de5aaad45902779a7bea0ace561e92a2be3f8e9fcdc",
-      mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa404078594f54f2d15b50b23f58bfbe22c62bba5600f2938cf14342a84c698be9e789",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040a24a249faf3e118238c158b9a87f6a018b294ec260bf4eaba8774977b48f4cc5",
+      json = """{"type":"vaultTransfer","vaultAddress":"0xdfc24b077bc1425ad1dea75bcb6f8158e10df303","isDeposit":false,"usd":2500000}""",
+      msgpack = "84a474797065ad7661756c745472616e73666572ac7661756c7441646472657373d92a307864666332346230373762633134323561643164656137356263623666383135386531306466333033a969734465706f736974c2a3757364ce002625a0",
+      hash = "0xcc1d82af64f6f17ba3f969f32230b2cf50e38d38b4bc1d2a380f95399acddb9e",
+      mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40404859cce5a63b9c783f4c29cd38e6a04e94334c2959d0d6bba22b9a2cd99f66f7",
     )
 
   @Test
@@ -78,7 +77,6 @@ class SdkFundsVectorsTest {
       msgpack = TWAP_MSGPACK,
       hash = "0xe31610b5e76ed9c72da4d773868099f10f7cdd1a8e4d5aa7027ee3194d5a21d0",
       mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040d5f61a7a8d9a35e280b3b1dc17f581dbb812bed360d35ed663e643ad33da5f2f",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040485eb9d3154abdaa95e088366ae7beca935b0ed11fcb46a172ff2f57f4f3aacc",
     )
     l1(
       TWAP,
@@ -87,7 +85,6 @@ class SdkFundsVectorsTest {
       msgpack = TWAP_MSGPACK,
       hash = "0xde55be6998cafd2698a72d2165d486bc034249aadcd99b02c186ff8ac60cfbf3",
       mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40409c6dd58c341782c2228fe31022cc6c346c221b049ef1f7e141eebd422dc96bea",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40401bed4f243e93458c4d7a9651ede5f6f339bb0d9d792f82eed2434ddc49d60d1b",
     )
   }
 
@@ -100,7 +97,6 @@ class SdkFundsVectorsTest {
       msgpack = "83a474797065aa7477617043616e63656ca16100a174ce04a23144",
       hash = "0x201babb7586390bbf6745e71caecac72ed2521b5441bcc213bdd265fa11d26d3",
       mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40405d85156ec03d0b292c61faaac156e78ded79a55a271773f8c7bf6dc7e6cb959d",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40406ab18ed596f37dfa885a473898dfd64bdc1ca27bbd5ab759bab98b9ba0d1ad88",
     )
     l1(
       CancelOrders(listOf(CancelRequest(0, 123_456L))),
@@ -109,7 +105,6 @@ class SdkFundsVectorsTest {
       msgpack = "82a474797065a663616e63656ca763616e63656c739182a16100a16fce0001e240",
       hash = "0xc17c79736246605486c0c8007ad835f58a397fd26c32871bb3b67d6bbf111704",
       mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa40401febf858eea82ec355abb1c1c21a8727c40dae7af1724510b131be08fb948f70",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040c4579ee4019c06594f82281260807aebdeaea51192032ad54e5d92edd50e5ebc",
     )
     l1(
       UpdateLeverage(0, isCross = false, leverage = 5),
@@ -118,15 +113,14 @@ class SdkFundsVectorsTest {
       msgpack = "84a474797065ae7570646174654c65766572616765a5617373657400a7697343726f7373c2a86c6576657261676505",
       hash = "0xb1eda7517d767c0bbfa6ec26e670660f66c4ef448260e733351996b9ac013ab9",
       mainnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040c2fdd8e61c9ea9bdd0708ca6ff7ce52acafe38c6cce5ea23e9afebcf85fe3a24",
-      testnet = "0x1901d79297fcdf2ffcd4ae223d01edaa2ba214ff8f401d7c9300d995d17c82aa4040ba20933b9c39902e20f40e804d280b7a1f936b7afb5f81c545e29c4305e5de03",
     )
   }
 
-  private fun user(action: UserSignedAction, sdkJson: String, testnet: String) {
-    val deployment = HyperliquidDeployment.Testnet
+  private fun user(action: UserSignedAction, sdkJson: String, mainnet: String) {
+    val deployment = HyperliquidDeployment.Mainnet
     assertEquals(Json.parseToJsonElement(sdkJson), action.toWire(deployment, NONCE), action.type)
     val input = UserSigning.signingInput(action.message(deployment, NONCE), deployment.signatureChainId)
-    assertEquals(testnet, input.toHex0x(), action.type)
+    assertEquals(mainnet, input.toHex0x(), action.type)
   }
 
   private fun l1(
@@ -136,20 +130,16 @@ class SdkFundsVectorsTest {
     msgpack: String,
     hash: String,
     mainnet: String,
-    testnet: String,
   ) {
     val wire = action.toWire()
     assertEquals(json, wire.toString())
     assertEquals(msgpack, MsgPack.encode(wire).toHexDigits())
     assertEquals(hash, L1Signing.actionHash(wire, NONCE, vault, EXPIRES_AFTER).toHex0x())
-    for ((deployment, expected) in
-      listOf(HyperliquidDeployment.Mainnet to mainnet, HyperliquidDeployment.Testnet to testnet)) {
-      assertEquals(
-        expected,
-        L1Signing.signingInput(wire, NONCE, deployment, vault, EXPIRES_AFTER).toHex0x(),
-        "${action.type} ${deployment.network}",
-      )
-    }
+    assertEquals(
+      mainnet,
+      L1Signing.signingInput(wire, NONCE, HyperliquidDeployment.Mainnet, vault, EXPIRES_AFTER).toHex0x(),
+      action.type,
+    )
   }
 
   private companion object {

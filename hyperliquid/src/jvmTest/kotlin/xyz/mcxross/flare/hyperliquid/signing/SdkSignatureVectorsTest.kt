@@ -21,30 +21,24 @@ class SdkSignatureVectorsTest {
   @Test
   fun l1SignaturesMatch() = runTest {
     for (case in VectorCases.l1) {
-      for ((deployment, expected) in
-        listOf(
-          HyperliquidDeployment.Mainnet to case.vector.mainnet,
-          HyperliquidDeployment.Testnet to case.vector.testnet,
-        )) {
-        val input =
-          L1Signing.signingInput(
-            case.action,
-            case.nonce,
-            deployment,
-            case.vaultAddress,
-            case.expiresAfter,
-          )
-        assertSignature(expected, signer.signTypedData(input), "${case.name} ${deployment.network}")
-      }
+      val input =
+        L1Signing.signingInput(
+          case.action,
+          case.nonce,
+          HyperliquidDeployment.Mainnet,
+          case.vaultAddress,
+          case.expiresAfter,
+        )
+      assertSignature(case.vector.mainnet, signer.signTypedData(input), case.name)
     }
   }
 
   @Test
   fun userSignedSignaturesMatch() = runTest {
-    val testnet = HyperliquidDeployment.Testnet
+    val mainnet = HyperliquidDeployment.Mainnet
     for (case in VectorCases.user) {
       val input =
-        UserSigning.signingInput(case.action.message(testnet, case.nonce), testnet.signatureChainId)
+        UserSigning.signingInput(case.action.message(mainnet, case.nonce), mainnet.signatureChainId)
       assertSignature(case.vector.signature, signer.signTypedData(input), case.name)
     }
   }
@@ -56,14 +50,10 @@ class SdkSignatureVectorsTest {
       "0x53749d5b30552aeb2fca34b530185976545bb22d0b3ce6f62e31be961a59298",
       SdkVectors.DUMMY.mainnet.r,
     )
-    assertEquals(28, SdkVectors.DUMMY.testnet.v)
+    assertEquals(27, SdkVectors.DUMMY.mainnet.v)
     assertEquals(
-      "0x637b37dd731507cdd24f46532ca8ba6eec616952c56218baeff04144e4a77073",
-      SdkVectors.USD_SEND.signature.r,
-    )
-    assertEquals(
-      "0x8363524c799e90ce9bc41022f7c39b4e9bdba786e5f9c72b20e43e1462c37cf9",
-      SdkVectors.WITHDRAW3.signature.r,
+      "0xe302c107c0048633293299b066317048f69f685aa4f536fe56c050efaf04996c",
+      SdkVectors.PHANTOM_AGENT.mainnet.r,
     )
   }
 

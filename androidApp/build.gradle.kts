@@ -16,9 +16,6 @@ val flareBuilderAddress =
     .gradleProperty("flareBuilderAddress")
     .orElse("0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b")
 
-// The hyperliquid flavor's network: testnet unless -PflareHyperliquidNetwork=mainnet.
-val flareHyperliquidNetwork = providers.gradleProperty("flareHyperliquidNetwork").orElse("testnet")
-
 // Flare's builder on Hyperliquid, which receives the optional builder fee; none unless set.
 val flareHyperliquidBuilderAddress =
   providers.gradleProperty("flareHyperliquidBuilderAddress").orElse("")
@@ -109,10 +106,6 @@ android {
     create("hyperliquid") {
       dimension = "venue"
       applicationId = "xyz.mcxross.flare.hyperliquid"
-      check(flareHyperliquidNetwork.get() in setOf("testnet", "mainnet")) {
-        "flareHyperliquidNetwork must be testnet or mainnet"
-      }
-      resValue("string", "flare_hyperliquid_network", flareHyperliquidNetwork.get())
       resValue("string", "flare_hyperliquid_builder_address", flareHyperliquidBuilderAddress.get())
     }
   }

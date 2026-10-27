@@ -25,7 +25,6 @@ import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
-import xyz.mcxross.flare.hyperliquid.HyperliquidNetwork
 import xyz.mcxross.flare.hyperliquid.api.StreamData
 import xyz.mcxross.flare.hyperliquid.api.StreamEvent
 import xyz.mcxross.flare.hyperliquid.api.Subscription
@@ -89,12 +88,6 @@ class HyperliquidAccountRepository(
   private var orderHistory: List<OrderHistoryEntry> = emptyList()
   /** How far back each time-paged history has been read. */
   private val oldestLoaded = mutableMapOf<AccountHistoryKind, Long>()
-
-  private val protocolVault: String =
-    when (client.config.deployment.network) {
-      HyperliquidNetwork.MAINNET -> MAINNET_HLP
-      HyperliquidNetwork.TESTNET -> TESTNET_HLP
-    }
 
   private suspend fun currentAccount(): String? =
     preferences.values.first().let { it.selectedSubaccount ?: it.ownerAddress }
@@ -487,7 +480,7 @@ class HyperliquidAccountRepository(
   override suspend fun vaults(limit: Int): List<VaultSummary> {
     val account = currentAccount()
     val staked = account?.let { client.info.userVaultEquities(it) }.orEmpty().map { it.vaultAddress }
-    return (listOf(protocolVault) + staked)
+    return (listOf(HLP) + staked)
       .distinctBy { it.lowercase() }
       .take(limit)
       .map { address -> vaultSummary(address) }
@@ -511,7 +504,7 @@ class HyperliquidAccountRepository(
     client.info.vaultDetails(address).let { it.toVaultSummary(it.isProtocolVault) }
 
   private val xyz.mcxross.flare.hyperliquid.model.VaultDetails.isProtocolVault: Boolean
-    get() = vaultAddress.equals(protocolVault, ignoreCase = true)
+    get() = vaultAddress.equals(HLP, ignoreCase = true)
 
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }
@@ -660,8 +653,8 @@ class HyperliquidAccountRepository(
     const val PRICE_REFRESH_MS = 60_000L
     const val RECOVERY_INTERVAL_MS = 30_000L
     const val TWAP_ACTIVE = "activated"
-    const val MAINNET_HLP = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303"
-    const val TESTNET_HLP = "0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0"
+    /** Hyperliquidity Provider, Hyperliquid's own vault. */
+    const val HLP = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303"
 
     fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
   }

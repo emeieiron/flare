@@ -40,7 +40,6 @@ import xyz.mcxross.flare.store.MarketEntity
 import xyz.mcxross.flare.store.PendingTransactionEntity
 import xyz.mcxross.flare.store.SelectedMarketEntity
 import xyz.mcxross.flare.store.TransactionJournalDao
-import xyz.mcxross.flare.venue.Network
 
 /** A client whose `/info` answers each request `type` from [responses]; anything else fails. */
 internal fun testClient(responses: Map<String, String>): HyperliquidClient {
@@ -279,7 +278,7 @@ internal class SetupHarness(answer: (type: String, body: JsonObject) -> String? 
   val client = dynamicClient { type, body -> this.answer(type, body) }
   val nonces = HyperliquidNonces(preferences) { now }
   val actions =
-    HyperliquidActions(journal, preferences, wallet, client, submitter, nonces, Network.TESTNET) { now }
+    HyperliquidActions(journal, preferences, wallet, client, submitter, nonces) { now }
   val setup = HyperliquidSetup(client, preferences, wallet, actions, nonces, { now }, verificationDelayMs = 0)
 
   suspend fun withOwner(owner: String = OWNER): SetupHarness = apply {
@@ -296,7 +295,7 @@ internal fun unusedSetup(client: HyperliquidClient, preferences: AppPreferences)
   val wallet = FakeSigningWallet(preferences)
   val nonces = HyperliquidNonces(preferences)
   val actions =
-    HyperliquidActions(MemoryJournal(), preferences, wallet, client, FakeSubmitter(), nonces, Network.TESTNET)
+    HyperliquidActions(MemoryJournal(), preferences, wallet, client, FakeSubmitter(), nonces)
   return HyperliquidSetup(client, preferences, wallet, actions, nonces)
 }
 
@@ -312,7 +311,7 @@ internal fun unusedFunds(client: HyperliquidClient, preferences: AppPreferences)
   val actions =
     HyperliquidActions(
       MemoryJournal(), preferences, FakeSigningWallet(preferences), client, FakeSubmitter(),
-      HyperliquidNonces(preferences), Network.TESTNET,
+      HyperliquidNonces(preferences),
     )
   return HyperliquidFunds(client, actions, preferences)
 }

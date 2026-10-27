@@ -265,7 +265,7 @@ class HyperliquidSetupTest {
     harness.journal.upsert(
       PendingTransactionEntity(
         hash = "0x0123456789abcdef0123456789abcdef",
-        network = "TESTNET",
+        network = "MAINNET",
         operation =
           journalOperation(
             JournaledAction.encode(JournaledAction.PlaceOrder(SetupHarness.OWNER, harness.now + 60_000)),

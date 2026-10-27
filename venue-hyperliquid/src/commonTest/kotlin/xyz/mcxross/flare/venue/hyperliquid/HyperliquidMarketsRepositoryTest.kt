@@ -8,7 +8,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import xyz.mcxross.flare.hyperliquid.HyperliquidNetwork
 import xyz.mcxross.flare.venue.model.MarketKind
 
 class HyperliquidMarketsRepositoryTest {
@@ -111,8 +110,8 @@ class HyperliquidMarketsRepositoryTest {
     repository.refresh()
 
     val spots = repository.catalog.value.quotes.filter { it.market.kind == MarketKind.SPOT }.associateBy { it.market.id }
-    // Testnet: PURR/TZERO is canonical but quoted in a test token, and JUNK barely traded.
-    assertEquals(setOf("PURR/USDC", "@1", "@3", "@6"), spots.keys)
+    // PURR/TZERO is canonical but not quoted in a stable, and JUNK and UETH trade too little.
+    assertEquals(setOf("PURR/USDC", "@1", "@3"), spots.keys)
     assertNull(spots.getValue("@1").market.quoteAsset)
     assertEquals("USDT0", spots.getValue("@3").market.quoteAsset)
     val favorites = preferences.favoriteMarkets.first()
@@ -121,12 +120,13 @@ class HyperliquidMarketsRepositoryTest {
   }
 
   @Test
-  fun mainnetAsksForMoreVolumeThanTestnet() = runTest {
+  fun aSpotPairNeedsAThousandUsdcOfDailyVolume() = runTest {
     val spots = testClient(mapOf("spotMetaAndAssetCtxs" to MixedSpots)).info.spotMetaAndContexts()
-    val mainnet = spots.toCachedMarkets(minSpotDayVolume(HyperliquidNetwork.MAINNET)).map { it.coin }.toSet()
-    val testnet = spots.toCachedMarkets(minSpotDayVolume(HyperliquidNetwork.TESTNET)).map { it.coin }.toSet()
-    assertEquals(setOf("PURR/USDC", "@1", "@3"), mainnet)
-    assertEquals(mainnet + "@6", testnet)
+    val listed = spots.toCachedMarkets(MIN_SPOT_DAY_VOLUME).map { it.coin }.toSet()
+    assertEquals(1_000.0, MIN_SPOT_DAY_VOLUME)
+    // @6 trades 500 USDC a day; canonical PURR/USDC is listed whatever it trades.
+    assertEquals(setOf("PURR/USDC", "@1", "@3"), listed)
+    assertEquals(listed + "@6", spots.toCachedMarkets(500.0).map { it.coin }.toSet())
   }
 
   private companion object {
