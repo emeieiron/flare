@@ -83,7 +83,7 @@ class ExchangeServiceTest {
   @Test
   fun signsWithVaultAddressAndExpiry() = runTest {
     val case = VectorCases.l1.single { it.name == "orderPositionTpslExpires" }
-    val harness = Harness(HyperliquidDeployment.Testnet, nonces = listOf(case.nonce))
+    val harness = Harness(HyperliquidDeployment.Mainnet, nonces = listOf(case.nonce))
     val action =
       PlaceOrders(
         listOf(
@@ -107,7 +107,7 @@ class ExchangeServiceTest {
         expiresAfter = case.expiresAfter,
       )
 
-    assertEquals(case.vector.testnetSigningInput, signer.inputs.single())
+    assertEquals(case.vector.mainnetSigningInput, signer.inputs.single())
     assertEquals(
       """"vaultAddress":"${VectorCases.VAULT}","expiresAfter":${case.expiresAfter}}""",
       signed.body().toString().substringAfter("\"v\":27},"),
@@ -121,7 +121,7 @@ class ExchangeServiceTest {
 
   @Test
   fun refusesAVaultAddressWhereTheSdkSignsWithout() = runTest {
-    val harness = Harness(HyperliquidDeployment.Testnet, nonces = listOf(1L))
+    val harness = Harness(HyperliquidDeployment.Mainnet, nonces = listOf(1L))
 
     assertFailsWith<IllegalArgumentException> {
       harness.exchange.sign(CreateSubAccount("x"), signer, vaultAddress = VectorCases.VAULT)
@@ -131,14 +131,14 @@ class ExchangeServiceTest {
 
   @Test
   fun signsAndPostsUserSignedActionsWithTheirNonce() = runTest {
-    // signing_test.py's test_sign_usd_transfer_action: testnet, time 1687816341423.
-    val harness = Harness(HyperliquidDeployment.Testnet, nonces = listOf(1_687_816_341_423L))
+    // signing_test.py's test_sign_usd_transfer_action, time 1687816341423, signed for mainnet.
+    val harness = Harness(HyperliquidDeployment.Mainnet, nonces = listOf(1_687_816_341_423L))
 
     harness.exchange.submit(UsdSend(VectorCases.DESTINATION, "1".toHlDecimal()), signer)
 
     assertEquals(SdkVectors.USD_SEND.signingInput, signer.inputs.single())
     assertEquals(
-      """{"action":{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"action":{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"1",""" +
         """"time":1687816341423},"nonce":1687816341423,"signature":{""" +
         """"r":"${RecordingSigner.R}","s":"${RecordingSigner.S}","v":27},"vaultAddress":null}""",
@@ -148,7 +148,7 @@ class ExchangeServiceTest {
 
   @Test
   fun takesANewNonceForEverySignature() = runTest {
-    val harness = Harness(HyperliquidDeployment.Testnet, nonces = listOf(10L, 11L))
+    val harness = Harness(HyperliquidDeployment.Mainnet, nonces = listOf(10L, 11L))
 
     val first = harness.exchange.sign(ApproveAgent(VectorCases.DESTINATION, "flare"), signer)
     val second = harness.exchange.sign(order, signer)
@@ -160,7 +160,7 @@ class ExchangeServiceTest {
   fun reportsStatusErrAsRejected() = runTest {
     val harness =
       Harness(
-        HyperliquidDeployment.Testnet,
+        HyperliquidDeployment.Mainnet,
         reply = Reply(body = """{"status":"err","response":"Bad nonce"}"""),
       )
 
@@ -171,7 +171,7 @@ class ExchangeServiceTest {
   fun reportsClientErrorsAsRejected() = runTest {
     val harness =
       Harness(
-        HyperliquidDeployment.Testnet,
+        HyperliquidDeployment.Mainnet,
         reply = Reply(HttpStatusCode.UnprocessableEntity, "Failed to deserialize the JSON body"),
       )
 
@@ -183,7 +183,7 @@ class ExchangeServiceTest {
   fun reportsServerErrorsAsUnknownWithoutRetrying() = runTest {
     val harness =
       Harness(
-        HyperliquidDeployment.Testnet,
+        HyperliquidDeployment.Mainnet,
         reply = Reply(HttpStatusCode.BadGateway, "bad gateway"),
       )
 
@@ -193,7 +193,7 @@ class ExchangeServiceTest {
 
   @Test
   fun reportsTransportFailuresAsUnknown() = runTest {
-    val harness = Harness(HyperliquidDeployment.Testnet, reply = null)
+    val harness = Harness(HyperliquidDeployment.Mainnet, reply = null)
 
     val outcome = harness.exchange.submit(order, signer)
 
@@ -204,7 +204,7 @@ class ExchangeServiceTest {
 
   @Test
   fun reportsNonJsonRepliesAsUnknown() = runTest {
-    val harness = Harness(HyperliquidDeployment.Testnet, reply = Reply(body = "<html>oops</html>"))
+    val harness = Harness(HyperliquidDeployment.Mainnet, reply = Reply(body = "<html>oops</html>"))
 
     assertIs<ExchangeOutcome.Unknown>(harness.exchange.submit(order, signer))
   }

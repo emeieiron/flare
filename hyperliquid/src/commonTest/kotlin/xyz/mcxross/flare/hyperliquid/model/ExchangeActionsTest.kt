@@ -11,7 +11,7 @@ import xyz.mcxross.flare.hyperliquid.signing.VectorCases
 
 /** Wire JSON: field names and order as the Python SDK sends them. */
 class ExchangeActionsTest {
-  private val testnet = HyperliquidDeployment.Testnet
+  private val mainnet = HyperliquidDeployment.Mainnet
 
   @Test
   fun writesOrdersWithEveryOptionalField() {
@@ -108,7 +108,7 @@ class ExchangeActionsTest {
     )
     assertEquals("""{"type":"twapCancel","a":3,"t":77738308}""", wire("twapCancel"))
     assertEquals(
-      """{"type":"vaultTransfer","vaultAddress":"0xa15099a30bbf2e68942d6f4c43d70d04faeab0a0",""" +
+      """{"type":"vaultTransfer","vaultAddress":"0xdfc24b077bc1425ad1dea75bcb6f8158e10df303",""" +
         """"isDeposit":true,"usd":5000000}""",
       wire("vaultTransfer"),
     )
@@ -127,37 +127,37 @@ class ExchangeActionsTest {
   @Test
   fun writesUserSignedActions() {
     assertEquals(
-      """{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"1",""" +
         """"time":1687816341423}""",
       userWire("usdSend"),
     )
     assertEquals(
-      """{"type":"withdraw3","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"withdraw3","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"1",""" +
         """"time":1687816341423}""",
       userWire("withdraw3"),
     )
     assertEquals(
-      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"agentAddress":"0x5e9ee1089755c3435139848e47e6635505d5a13a","agentName":"flare",""" +
         """"nonce":1700000000000}""",
       userWire("approveAgent"),
     )
     // Unnamed: signed with agentName "" but sent without the field, as the SDK does.
     assertEquals(
-      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"agentAddress":"0x5e9ee1089755c3435139848e47e6635505d5a13a","nonce":1700000000000}""",
       userWire("approveAgentUnnamed"),
     )
     assertEquals(
-      """{"type":"approveBuilderFee","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"approveBuilderFee","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"maxFeeRate":"0.001%","builder":"0x8c967e73e7b15087c42a10d344cff4c96d877f1d",""" +
         """"nonce":1700000000000}""",
       userWire("approveBuilderFee"),
     )
     assertEquals(
-      """{"type":"usdClassTransfer","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"usdClassTransfer","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"amount":"1 subaccount:0x1719884eb866cb12b2287399b15f7db5e7d775ea","toPerp":false,""" +
         """"nonce":1700000000000}""",
       userWire("usdClassTransferSubAccount"),
@@ -179,17 +179,17 @@ class ExchangeActionsTest {
 
   @Test
   fun revokesAnAgentByApprovingTheZeroAddressUnderItsName() {
-    val named = ApproveAgent.revoke("flare").toWire(testnet, 1_700_000_000_000L).toString()
-    val unnamed = ApproveAgent.revoke(null).toWire(testnet, 1_700_000_000_000L).toString()
+    val named = ApproveAgent.revoke("flare").toWire(mainnet, 1_700_000_000_000L).toString()
+    val unnamed = ApproveAgent.revoke(null).toWire(mainnet, 1_700_000_000_000L).toString()
 
     assertEquals(
-      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"agentAddress":"0x0000000000000000000000000000000000000000","agentName":"flare",""" +
         """"nonce":1700000000000}""",
       named,
     )
     assertEquals(
-      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"type":"approveAgent","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"agentAddress":"0x0000000000000000000000000000000000000000","nonce":1700000000000}""",
       unnamed,
     )
@@ -222,7 +222,7 @@ class ExchangeActionsTest {
 
   private fun userWire(name: String): String {
     val case = VectorCases.user.single { it.name == name }
-    val wire: JsonObject = case.action.toWire(testnet, case.nonce)
+    val wire: JsonObject = case.action.toWire(mainnet, case.nonce)
     return wire.toString()
   }
 }

@@ -4,8 +4,6 @@
 <dict>
 	<key>FlareHyperliquidBuilderAddress</key>
 	<string>$(FLARE_HYPERLIQUID_BUILDER_ADDRESS)</string>
-	<key>FlareHyperliquidNetwork</key>
-	<string>$(FLARE_HYPERLIQUID_NETWORK)</string>
 	<key>FlareWorkerURL</key>
 	<string>$(FLARE_WORKER_URL)</string>
 	<key>NSFaceIDUsageDescription</key>

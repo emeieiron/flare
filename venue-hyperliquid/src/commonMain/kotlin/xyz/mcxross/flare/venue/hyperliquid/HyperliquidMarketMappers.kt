@@ -2,7 +2,6 @@ package xyz.mcxross.flare.venue.hyperliquid
 
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.data.MarketQuote
-import xyz.mcxross.flare.hyperliquid.HyperliquidNetwork
 import xyz.mcxross.flare.hyperliquid.model.AssetDirectory
 import xyz.mcxross.flare.hyperliquid.model.CandleInterval
 import xyz.mcxross.flare.hyperliquid.model.L2Book
@@ -10,7 +9,6 @@ import xyz.mcxross.flare.hyperliquid.model.PerpMetaAndContexts
 import xyz.mcxross.flare.hyperliquid.model.Side
 import xyz.mcxross.flare.hyperliquid.model.SpotMetaAndContexts
 import xyz.mcxross.flare.store.CandleEntity
-import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
@@ -23,12 +21,6 @@ import xyz.mcxross.flare.hyperliquid.model.MarketTrade as HyperliquidTrade
 
 // Hyperliquid's market data as the app's exchange-neutral models. Market.id is the coin: `BTC`,
 // `PURR/USDC`, `@107`.
-
-fun Network.toHyperliquidNetwork(): HyperliquidNetwork =
-  when (this) {
-    Network.TESTNET -> HyperliquidNetwork.TESTNET
-    Network.MAINNET -> HyperliquidNetwork.MAINNET
-  }
 
 /**
  * A market as the cache stores it: what [Market] needs to be rebuilt, rules included, plus the
@@ -148,12 +140,8 @@ internal fun SpotMetaAndContexts.toCachedMarkets(minDayVolume: Double): List<Cac
   }
 }
 
-/** The least a spot pair trades in a day to be listed; testnet volumes are far smaller. */
-internal fun minSpotDayVolume(network: HyperliquidNetwork): Double =
-  when (network) {
-    HyperliquidNetwork.MAINNET -> 1_000.0
-    HyperliquidNetwork.TESTNET -> 100.0
-  }
+/** The least a spot pair trades in a day, in USDC, to be listed. */
+internal const val MIN_SPOT_DAY_VOLUME = 1_000.0
 
 private val StableQuotes = setOf(USDC, "USDT0", "USDH", "USDE")
 

@@ -19,7 +19,7 @@
 </p>
 
 > [!NOTE]
-> Flare is under active development. The Decibel app trades on **Aptos mainnet** with real funds, so start small and [share feedback](https://github.com/emeieiron/flare/issues). The Hyperliquid app is still a testnet build.
+> Flare is under active development. Both apps trade real funds on mainnet: Decibel on **Aptos mainnet** and Hyperliquid on **Hyperliquid mainnet**. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
 
 ## Contents
 
@@ -68,7 +68,8 @@ During a real run, **Confirm transactions** in Settings is off and locked. Its p
 **Android:** each exchange is its own app. Download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-decibel-android.apk) or [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-hyperliquid-android.apk) from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
 
 - **Decibel** runs on Aptos mainnet and trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover.
-- **Hyperliquid** runs on testnet. Send test USDC to your address from another Hyperliquid testnet account; Hyperliquid's own testnet faucet only serves addresses that have deposited on mainnet.
+- **Hyperliquid** runs on Hyperliquid mainnet and trades real funds. Fund it by sending USDC to your address on Hyperliquid from another Hyperliquid account. USDC sent to the same address on Arbitrum does not reach Hyperliquid: the Arbitrum bridge credits the wallet that bridged, and deposits under 5 USDC are lost. Withdrawals go to Arbitrum for Hyperliquid's 1 USDC fee.
+- **Already on the Hyperliquid testnet build?** The first mainnet launch clears the testnet trading state; your wallet carries over and setup runs again on mainnet.
 - **Already testing Decibel?** The Decibel app now installs as `xyz.mcxross.flare.decibel`, so it can't upgrade an earlier Flare in place. Install it alongside, then restore your wallet from its recovery phrase or re-import your trading key. Your wallet carries over; the trading account does not, so setup runs again on mainnet.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
@@ -138,7 +139,7 @@ cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
 ./gradlew :androidApp:installDecibelDebug -PflareWorkerUrl=http://10.0.2.2:8787
 ```
 
-Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet, shows live markets and the account, and trades perps and spot (market, limit and TWAP orders, TP/SL, cancels, leverage) with an agent key on the device, for the wallet's account or a sub-account it already has. It withdraws to Arbitrum, sends USDC to other Hyperliquid accounts and between perps and spot, deposits into and redeems from vaults such as HLP, and shows the fee tier and referral standing. It uses testnet unless built with `-PflareHyperliquidNetwork=mainnet`, and offers Flare's builder fee only when built with `-PflareHyperliquidBuilderAddress=0x…` (on iOS, `FLARE_HYPERLIQUID_BUILDER_ADDRESS` in `Hyperliquid.xcconfig`).
+Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet, shows live markets and the account, and trades perps and spot (market, limit and TWAP orders, TP/SL, cancels, leverage) with an agent key on the device, for the wallet's account or a sub-account it already has. It withdraws to Arbitrum, sends USDC to other Hyperliquid accounts and between perps and spot, deposits into and redeems from vaults such as HLP, and shows the fee tier and referral standing. It trades Hyperliquid mainnet, and offers Flare's builder fee only when built with `-PflareHyperliquidBuilderAddress=0x…` (on iOS, `FLARE_HYPERLIQUID_BUILDER_ADDRESS` in `Hyperliquid.xcconfig`).
 
 For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` or `Flare Hyperliquid` scheme.
 

@@ -59,18 +59,18 @@ class ExchangeServiceSigningTest {
 
   @Test
   fun postsTheSdkUsdSendBody() = runTest {
-    // signing_test.py's test_sign_usd_transfer_action: testnet, time 1687816341423.
+    // signing_test.py's test_sign_usd_transfer_action, time 1687816341423, signed for mainnet.
     val body =
-      post(HyperliquidDeployment.Testnet, nonce = 1_687_816_341_423L) {
+      post(HyperliquidDeployment.Mainnet, nonce = 1_687_816_341_423L) {
         submit(UsdSend(VectorCases.DESTINATION, "1".toHlDecimal()), signer)
       }
 
     assertEquals(
-      """{"action":{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Testnet",""" +
+      """{"action":{"type":"usdSend","signatureChainId":"0x66eee","hyperliquidChain":"Mainnet",""" +
         """"destination":"0x5e9ee1089755c3435139848e47e6635505d5a13a","amount":"1",""" +
         """"time":1687816341423},"nonce":1687816341423,"signature":{""" +
-        """"r":"0x637b37dd731507cdd24f46532ca8ba6eec616952c56218baeff04144e4a77073",""" +
-        """"s":"0x11a6a24900e6e314136d2592e2f8d502cd89b7c15b198e1bee043c9589f9fad7","v":27},""" +
+        """"r":"0x9adbd066e8ae671f06b5d18e51fd2ec11b5443d64b13718028c7ff06905c71fb",""" +
+        """"s":"0x1eba4172075f8a8037481400ae86ed56c5e5f672e3db084528a8e3b2daeff976","v":28},""" +
         """"vaultAddress":null}""",
       body,
     )
@@ -79,10 +79,10 @@ class ExchangeServiceSigningTest {
   @Test
   fun signsWithTheCallersNonceOverTheClients() = runTest {
     val action = UsdSend(VectorCases.DESTINATION, "1".toHlDecimal())
-    val fromSource = post(HyperliquidDeployment.Testnet, nonce = 1_687_816_341_423L) { submit(action, signer) }
+    val fromSource = post(HyperliquidDeployment.Mainnet, nonce = 1_687_816_341_423L) { submit(action, signer) }
 
     val explicit =
-      post(HyperliquidDeployment.Testnet, nonce = 1L) {
+      post(HyperliquidDeployment.Mainnet, nonce = 1L) {
         send(sign(action, signer, nonce = 1_687_816_341_423L))
       }
 

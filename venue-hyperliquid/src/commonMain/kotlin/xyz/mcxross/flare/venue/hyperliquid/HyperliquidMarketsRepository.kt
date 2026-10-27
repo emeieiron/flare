@@ -61,8 +61,8 @@ class HyperliquidMarketsRepository(
         val spots = async {
           runSuspendCatching { client.info.spotMetaAndContexts() }.getOrNull()
         }
-        val minSpotVolume = minSpotDayVolume(client.config.deployment.network)
-        perps.await().toCachedMarkets() + spots.await()?.toCachedMarkets(minSpotVolume).orEmpty()
+        perps.await().toCachedMarkets() +
+          spots.await()?.toCachedMarkets(MIN_SPOT_DAY_VOLUME).orEmpty()
       }
     }
       .onSuccess { markets ->

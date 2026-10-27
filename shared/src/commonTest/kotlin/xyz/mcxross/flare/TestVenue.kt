@@ -16,7 +16,7 @@ fun testVenue(
   VenueDescriptor(
     id = "test",
     displayName = "Test",
-    network = Network.TESTNET,
+    network = Network.MAINNET,
     chain = VenueChain("Aptos", "APT", 8, minimumFeeTopUp = 1_000_000uL),
     capabilities = capabilities,
     explorer = VenueExplorer("Test Explorer", "https://explorer.test/${VenueExplorer.REFERENCE}"),

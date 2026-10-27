@@ -5,7 +5,7 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.domain.TradingIndicators
 
 class StrategyEngineTest {
-  private val key = StrategyMarketKey("test", "testnet", "BTC", 1000)
+  private val key = StrategyMarketKey("test", "mainnet", "BTC", 1000)
   private val engine = StrategyEngine()
 
   private fun candles(closes: List<Double>) =

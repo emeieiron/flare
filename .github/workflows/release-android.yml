@@ -30,9 +30,8 @@ jobs:
       # the HTTPS Worker the app talks to, and the address that receives Flare's builder fee.
       FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL }}
       FLARE_BUILDER_ADDRESS: ${{ vars.FLARE_BUILDER_ADDRESS }}
-      # Hyperliquid still ships on testnet; Decibel is mainnet-only. Its builder is optional:
-      # unset, the app offers no builder fee.
-      FLARE_HYPERLIQUID_NETWORK: testnet
+      # Both apps are mainnet-only. Hyperliquid's builder is optional: unset, the app offers no
+      # builder fee.
       FLARE_HYPERLIQUID_BUILDER_ADDRESS: ${{ vars.FLARE_HYPERLIQUID_BUILDER_ADDRESS }}
     permissions:
       contents: write        # create the GitHub Release
@@ -74,7 +73,7 @@ jobs:
           fi
           echo "Worker: $FLARE_WORKER_URL"
           echo "Builder: $FLARE_BUILDER_ADDRESS"
-          echo "Hyperliquid: $FLARE_HYPERLIQUID_NETWORK, builder ${FLARE_HYPERLIQUID_BUILDER_ADDRESS:-none}"
+          echo "Hyperliquid builder: ${FLARE_HYPERLIQUID_BUILDER_ADDRESS:-none}"
 
       - uses: actions/setup-java@v4
         with:
@@ -109,7 +108,6 @@ jobs:
             -PflareKeystoreFile="$keystore" \
             -PflareWorkerUrl="$FLARE_WORKER_URL" \
             -PflareBuilderAddress="$FLARE_BUILDER_ADDRESS" \
-            -PflareHyperliquidNetwork="$FLARE_HYPERLIQUID_NETWORK" \
             -PflareHyperliquidBuilderAddress="$FLARE_HYPERLIQUID_BUILDER_ADDRESS"
           rm -f "$keystore"
 
@@ -147,8 +145,12 @@ jobs:
           has_string "$decibel" flare_builder_address "$FLARE_BUILDER_ADDRESS" \
             || { echo "::error::The Decibel APK does not carry builder $FLARE_BUILDER_ADDRESS"; exit 1; }
           hyperliquid=dist/flare-hyperliquid-android.apk
-          has_string "$hyperliquid" flare_hyperliquid_network "$FLARE_HYPERLIQUID_NETWORK" \
-            || { echo "::error::The Hyperliquid APK is not on $FLARE_HYPERLIQUID_NETWORK"; exit 1; }
+          # Mainnet is compiled in; a testnet host anywhere in the code means a wrong build.
+          if unzip -p "$hyperliquid" 'classes*.dex' | grep -aq 'hyperliquid-testnet'; then
+            echo "::error::Hyperliquid is mainnet-only; the APK still names a testnet host"; exit 1
+          fi
+          unzip -p "$hyperliquid" 'classes*.dex' | grep -aq 'https://api.hyperliquid.xyz' \
+            || { echo "::error::The Hyperliquid APK does not point at api.hyperliquid.xyz"; exit 1; }
           has_string "$hyperliquid" flare_hyperliquid_builder_address "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" \
             || { echo "::error::The Hyperliquid APK does not carry builder '$FLARE_HYPERLIQUID_BUILDER_ADDRESS'"; exit 1; }
           cd dist
@@ -179,7 +181,7 @@ jobs:
           Each exchange is its own app. Download the one you trade on below and open it on your phone. Android asks once to allow installs from your browser.
 
           - Decibel: \`flare-decibel-android.apk\`
-          - Hyperliquid (${FLARE_HYPERLIQUID_NETWORK}): \`flare-hyperliquid-android.apk\`
+          - Hyperliquid: \`flare-hyperliquid-android.apk\`
 
           Build: \`${GITHUB_SHA}\` ([CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
 

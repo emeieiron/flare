@@ -37,11 +37,7 @@ import xyz.mcxross.flare.venue.WithdrawalTerms
  * approved by the owner, plus Flare's builder fee at [builderAddress] if the person opts in (none
  * when it's blank).
  */
-class HyperliquidVenue(
-  private val network: Network = Network.TESTNET,
-  builderAddress: String = "",
-) : Venue {
-  private val deployment = HyperliquidDeployment.forNetwork(network.toHyperliquidNetwork())
+class HyperliquidVenue(builderAddress: String = "") : Venue {
   private val builder: String? =
     builderAddress.trim().takeIf(String::isNotEmpty)?.also {
       require(HyperliquidCredentialParser.isAddress(it)) { "The builder address must be an EVM address" }
@@ -51,11 +47,11 @@ class HyperliquidVenue(
     VenueDescriptor(
       id = "hyperliquid",
       displayName = "Hyperliquid",
-      network = network,
+      network = Network.MAINNET,
       // HyperCore charges no gas; USDC arrives from another Hyperliquid address.
       chain = VenueChain(name = "Hyperliquid", feeToken = "HYPE", feeTokenDecimals = 8),
       capabilities = Capabilities,
-      explorer = explorer(network),
+      explorer = Explorer,
       builderAddress = builder,
       builderFeeBps = if (builder != null) BUILDER_FEE_BPS else 0,
       maxBuilderFeeBps = 10,
@@ -92,7 +88,7 @@ class HyperliquidVenue(
       perpCategories = listOf("crypto"),
     )
 
-  override fun module(): Module = hyperliquidModule(deployment, network, builder)
+  override fun module(): Module = hyperliquidModule(builder)
 
   companion object {
     /** The builder fee setup turns on when the person opts in: 0.05%, under the 0.1% approved. */
@@ -119,37 +115,35 @@ class HyperliquidVenue(
         referralCodes = false,
       )
 
-    /** USDC arrives from another Hyperliquid account or through the official bridge, never a chain. */
+    /**
+     * USDC arrives as a transfer on Hyperliquid itself. The Arbitrum bridge credits whichever
+     * address sent the deposit, so USDC sent to this address on Arbitrum never reaches the account.
+     */
     val Receive =
       ReceiveInstructions(
         summary =
-          "Deposit USDC to this address on Hyperliquid: send it from another Hyperliquid account, " +
-            "or bridge it in through Hyperliquid’s official app.",
+          "Send USDC to this address on Hyperliquid, from another Hyperliquid account. USDC " +
+            "bridged in from Arbitrum lands in the account of the wallet that bridged it, so " +
+            "bridge with that wallet first, then send the USDC here.",
         warning =
-          "Never send from an exchange or network that doesn’t support Hyperliquid deposits. " +
-            "Funds sent that way can be lost for good.",
+          "USDC sent to this address on Arbitrum or any other chain doesn’t reach your " +
+            "Hyperliquid account. Bridge deposits under 5 USDC are never credited and are lost.",
       )
 
-    fun explorer(network: Network): VenueExplorer =
+    val Explorer =
       VenueExplorer(
         name = "Hyperliquid Explorer",
-        transactionUrlTemplate =
-          when (network) {
-            Network.MAINNET -> "https://app.hyperliquid.xyz/explorer/tx/"
-            Network.TESTNET -> "https://app.hyperliquid-testnet.xyz/explorer/tx/"
-          } + VenueExplorer.REFERENCE,
-        transactionReference = TRANSACTION_HASH,
+        transactionUrlTemplate = "https://app.hyperliquid.xyz/explorer/tx/${VenueExplorer.REFERENCE}",
+        // Only L1 transaction hashes have explorer pages; order ids and nonces don't.
+        transactionReference = Regex("0x[0-9a-fA-F]{64}"),
       )
-
-    /** Only L1 transaction hashes have explorer pages; order ids and nonces don't. */
-    private val TRANSACTION_HASH = Regex("0x[0-9a-fA-F]{64}")
   }
 }
 
 /** Hyperliquid's repositories, on the common bindings from `flareModule`. */
-private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Network, builder: String?) =
+private fun hyperliquidModule(builder: String?) =
   module {
-    single { HyperliquidClient(httpClient = get(), config = HyperliquidConfig(deployment)) }
+    single { HyperliquidClient(httpClient = get(), config = HyperliquidConfig(HyperliquidDeployment.Mainnet)) }
     single<CredentialParser> { HyperliquidCredentialParser }
     singleOf(::HyperliquidWalletRepository) {
       bind<WalletRepository>()
@@ -165,7 +159,6 @@ private fun hyperliquidModule(deployment: HyperliquidDeployment, network: Networ
         client = get(),
         submitter = get(),
         nonces = get(),
-        network = network,
       )
     }
     single { HyperliquidSetup(get(), get(), get(), get(), get()) }

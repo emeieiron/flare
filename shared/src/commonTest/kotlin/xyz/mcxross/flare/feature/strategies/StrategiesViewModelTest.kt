@@ -18,7 +18,7 @@ import xyz.mcxross.flare.venue.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StrategiesViewModelTest {
-  private val descriptor = VenueDescriptor("test", "Test", Network.TESTNET, VenueChain("Test", "TEST", 8), VenueCapabilities.All, VenueExplorer("Test", "https://example.test/tx/{reference}"))
+  private val descriptor = VenueDescriptor("test", "Test", Network.MAINNET, VenueChain("Test", "TEST", 8), VenueCapabilities.All, VenueExplorer("Test", "https://example.test/tx/{reference}"))
   private val now = 12_000_000L
 
   private fun snapshot(key: StrategyMarketKey) = StrategyMarketSnapshot(key, now,
