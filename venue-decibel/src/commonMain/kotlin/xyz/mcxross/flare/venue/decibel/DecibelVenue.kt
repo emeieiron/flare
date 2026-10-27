@@ -165,6 +165,18 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }
   singleOf(::WorkerGasSponsorshipRepository) { bind<GasSponsorshipRepository>() }
+  singleOf(::AptosSubmissionGate)
+  single { xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor(get()) }
+  single<xyz.mcxross.flare.aptos.swap.SwapProvider> {
+    val sessions = get<SessionRepository>()
+    xyz.mcxross.flare.aptos.swap.PanoraSwapProvider(
+      get(), get(), config.workerBaseUrl, { sessions.accessToken() },
+      get<FlareRuntimeConfig>().appOrigin,
+    )
+  }
+  single<xyz.mcxross.flare.data.SwapRepository> {
+    AptosSwapRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+  }
   singleOf(::DefaultTradingRepository) {
     bind<TradingRepository>()
     bind<DecibelTrading>()

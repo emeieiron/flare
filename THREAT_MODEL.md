@@ -1,0 +1,21 @@
+**Swap execution trust boundaries**
+
+This document records the assumptions introduced by the independent swap infrastructure. It is scoped to APT → native USDC on Aptos mainnet and does not constitute an assessment of the entire application.
+
+The protected assets are owner signing authority, wallet balances, server credentials and the integrity of transaction outcomes. The device vault owns private keys. The worker owns provider and gas credentials. Neither a quote provider nor the worker receives the owner's private key.
+
+Provider responses are untrusted transaction proposals. The application and worker independently check asset identity, router identity, argument shape, recipient, input/output bounds, slippage and the supported zero-fee multiplier. Both encode the same payload and compare its hash. Provider-supplied raw transactions and signing messages are ignored. Unknown layouts and unsupported routes fail closed.
+
+The integration trusts the reviewed deployment of Panora's router to enforce its declared limits and the Aptos node to report simulation and committed execution accurately. Matching an ABI does not establish that an upgraded contract retains the same semantics. Deployment or fee-policy changes therefore require new review and fixtures. Simulated net APT and USDC movements are checked before owner authorization; simulation does not guarantee execution against future chain state.
+
+Owner authorization is scoped to an immutable quote, its wallet and profile, its expiry and the current foreground visit. A biometric prompt grants no general background signing capability. Profile and foreground state are rechecked after authorization and before submission. The shared submission gate prevents simultaneous authorization by the swap, Decibel and fee-top-up paths. Delegated trading keys cannot execute owner swaps.
+
+The worker signs a separate, domain-separated quote authorization bound to the wallet, payload hash and expiry. Sponsorship accepts that exact payload only on the owner route, with bounded gas and transaction expiry. Durable quote-use reservation prevents one authorization from sponsoring different signed transactions. Existing fingerprint records correlate retries and status reads with the original submission. The session-signing secret remains a trusted server credential; rotation invalidates outstanding quote authorizations.
+
+The signed reference is persisted before broadcast. A separate operation record retains final outcomes after pending-journal cleanup and links sponsorship fingerprints to confirmed hashes. Lost responses remain unresolved and are never automatically retried or converted into self-payment. A known rejection before submission permits a separately authorized self-paid attempt. Database or operation-history corruption fails closed rather than discarding potentially submitted operations. History pruning retains every unresolved operation.
+
+Recovery depends on access to the worker's sponsorship record or the transaction hash on Aptos. An unresolvable fingerprint remains pending; elapsed quote expiry alone is insufficient evidence that the transaction did not commit. A future recovery mechanism must establish non-execution before releasing that operation for replacement.
+
+Quote service availability is bounded by authenticated owner and IP rate limits, provider deadlines, response-size limits and per-isolate transport backoff. Provider failures affect swap availability without introducing a fallback route after authorization. Exact arithmetic and conservative gas reserves prevent display rounding or sponsorship loss from exhausting the approved spend budget.
+
+Swaps are disabled in worker configuration until credentials and the upstream Gas Station policy are provisioned. No mainnet transaction or worker deployment was performed for this implementation. Funded execution, provider commercial terms and operational monitoring remain release checks before exposing the feature in a product flow.

@@ -32,6 +32,15 @@ class WorkerGasSponsorshipRepository(
   override suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,
+  ): AptosResult<String> = submitAuthorized(request, ownerOnly, null)
+
+  override suspend fun submitSwap(request: ExternalFeePayerRequest, authorization: String): AptosResult<String> =
+    submitAuthorized(request, ownerOnly = true, authorization)
+
+  private suspend fun submitAuthorized(
+    request: ExternalFeePayerRequest,
+    ownerOnly: Boolean,
+    swapAuthorization: String?,
   ): AptosResult<String> =
     try {
       val route = if (ownerOnly) "owner" else "trading"
@@ -48,6 +57,7 @@ class WorkerGasSponsorshipRepository(
                 request.additionalSignersAuthenticatorBytes
                   .takeIf { it.isNotEmpty() }
                   ?.map(ByteArray::toUnsignedInts),
+              swapAuthorization = swapAuthorization,
             )
           )
         }
@@ -136,6 +146,7 @@ private data class GasStationRequest(
   val transactionBytes: List<Int>,
   val senderAuth: List<Int>,
   val additionalSignersAuth: List<List<Int>>? = null,
+  val swapAuthorization: String? = null,
 )
 
 @Serializable private data class GasStationResponse(val transactionHash: String)

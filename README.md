@@ -96,6 +96,8 @@ flare/
 ├── venue-hyperliquid/ # Hyperliquid behind Flare's venue seam
 ├── shared/            # Screens, ViewModels, storage and the neutral venue interfaces
 ├── decibel/           # Headless Decibel protocol SDK
+├── aptos-swap/        # Headless APT → USDC quotes and route validation
+├── aptos-transaction/ # Transaction execution shared by Aptos integrations
 ├── hyperliquid/       # Headless Hyperliquid protocol SDK
 ├── baselineprofile/   # Startup and journey baseline profiles
 └── skills/            # Agent skills distilled from Flare
@@ -116,6 +118,8 @@ androidApp (hyperliquid flavor)    iosApp ("Flare Hyperliquid" scheme, via :ios-
 ```
 
 Each build links one exchange. A `:venue-*` module implements `:shared`'s neutral interfaces with its exchange's SDK; `:shared` never depends on an exchange SDK.
+
+The Decibel build also binds independent [swap infrastructure](aptos-swap/README.md), with owner signing, payload validation and durable recovery. Funding screens do not invoke it yet; the companion worker keeps swaps disabled until configured.
 
 ## Agent skills
 

@@ -13,6 +13,12 @@ interface GasSponsorshipRepository {
   ): AptosResult<String>
 
   suspend fun resolve(fingerprint: String): AptosResult<String?>
+
+  suspend fun submitSwap(
+    request: ExternalFeePayerRequest,
+    authorization: String,
+  ): AptosResult<String> =
+    AptosResult.Failure(xyz.mcxross.kaptos.model.AptosError.Validation("Swap sponsorship is unavailable"))
 }
 
 /** Every Decibel command is sponsored by default, on the Worker route of the key that signs it. */

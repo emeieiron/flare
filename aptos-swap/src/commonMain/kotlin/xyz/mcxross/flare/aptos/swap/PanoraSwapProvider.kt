@@ -29,7 +29,7 @@ class PanoraSwapProvider(
   private val now: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : SwapProvider {
   private val endpoint = workerBaseUrl.trimEnd('/') + "/swap/quote"
-  private val json = Json { ignoreUnknownKeys = true }
+  private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
   init {
     require(workerBaseUrl.startsWith("https://") ||

@@ -66,6 +66,7 @@ class DecibelVenueTest {
         MarketDetailsRepository::class,
         GasSponsorshipRepository::class,
         TradingRepository::class,
+        xyz.mcxross.flare.data.SwapRepository::class,
         AccountRepository::class,
       )
       .forEach { type -> assertTrue(type.isInstance(koin.get<Any>(type)), "$type") }
@@ -138,6 +139,10 @@ class DecibelVenueTest {
       single { http }
       single<FlareDatabase> { UnopenedDatabase() }
       single { get<FlareDatabase>().marketCacheDao() }
+      single { get<FlareDatabase>().transactionJournalDao() }
+      single<xyz.mcxross.flare.store.SwapOperationStore> {
+        xyz.mcxross.flare.store.PreferencesSwapOperationStore(preferences)
+      }
       single { AppPreferences(preferences) }
       single { ForegroundWalletVault(UnavailableWalletVault()) }
     }

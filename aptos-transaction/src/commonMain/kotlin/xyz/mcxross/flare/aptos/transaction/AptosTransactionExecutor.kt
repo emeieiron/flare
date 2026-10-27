@@ -9,6 +9,7 @@ import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 import xyz.mcxross.kaptos.model.TransactionPayload
+import xyz.mcxross.kaptos.model.TransactionOptions
 import xyz.mcxross.kaptos.model.UnsignedTransaction
 import xyz.mcxross.kaptos.model.UserTransactionResponse
 import xyz.mcxross.kaptos.model.WaitForTransactionOptions
@@ -52,6 +53,7 @@ class AptosTransactionExecutor(private val aptos: Aptos) {
     onPrepared: suspend (hash: String) -> Unit = {},
     beforeSign: suspend () -> Unit = {},
     validateSimulation: suspend (UserTransactionResponse) -> Unit = {},
+    options: TransactionOptions? = null,
   ): Flow<AptosTransactionState> = flow {
     if (feePayer != null && externalFeePayer != null) {
       emit(AptosTransactionState.Failed("Choose either a local fee payer or an external Gas Station"))
@@ -71,12 +73,13 @@ class AptosTransactionExecutor(private val aptos: Aptos) {
       when (
         val result =
           if (feePayer == null && externalFeePayer == null) {
-            aptos.transactions.build(signer.accountAddress, payload)
+            aptos.transactions.build(signer.accountAddress, payload, options)
           } else {
             aptos.transactions.buildFeePayer(
               sender = signer.accountAddress,
               payload = payload,
               feePayer = feePayer?.accountAddress,
+              options = options,
             )
           }
       ) {

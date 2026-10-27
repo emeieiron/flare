@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.ExactAssetBalance
@@ -81,9 +80,10 @@ class DefaultTradingRepository(
   private val gasSponsorship: GasSponsorshipRepository,
   private val runtime: FlareRuntimeConfig,
   private val preferences: AppPreferences,
+  submissionGate: AptosSubmissionGate,
 ) : DecibelTrading {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
-  private val submissionMutex = Mutex()
+  private val submissionMutex = submissionGate.mutex
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
     journal
@@ -231,7 +231,7 @@ class DefaultTradingRepository(
           activeSession,
           flow {
             reconcilePending()
-            check(pendingTransactions.first().none { it.operation == command.journalName() }) {
+            check(pendingTransactions.first().none { it.operation == command.journalName() || it.operation == "SWAP" }) {
               "An earlier transaction is pending. Check Activity before trying again."
             }
             withSigner(signer, prompt.copy(requireFreshAuthorization = false)) { account ->

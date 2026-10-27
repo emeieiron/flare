@@ -6,6 +6,7 @@ import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
+import io.ktor.http.content.TextContent
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.coroutineContext
 import kotlin.test.Test
@@ -26,6 +27,17 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
 class PanoraSwapProviderTest {
   private val request = AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000")
+
+  @Test
+  fun exactInputRetainsTheSpecifiedSpendAndMinimumReceipt() = runTest {
+    val inputRequest = request.copy(kind = SwapKind.EXACT_INPUT, amount = "100000000")
+    fixture(swapRequest = inputRequest, response = EXACT_INPUT_RESPONSE, payloadHash = EXACT_INPUT_HASH) { provider ->
+      val plan = provider.quote(inputRequest)
+      assertEquals(EXACT_INPUT_HASH, plan.payloadHash)
+      assertEquals(100_000_000uL, plan.maximumInput)
+      assertEquals(680_325uL, plan.minimumOutput)
+    }
+  }
 
   @Test
   fun capturedMainnetRouteMatchesTheWorkerPayloadHash() = runTest {
@@ -100,12 +112,15 @@ class PanoraSwapProviderTest {
 
   private suspend fun fixture(
     mutate: (MutableMap<String, JsonElement>) -> Unit = {},
+    swapRequest: AptosSwapRequest = request,
+    response: String = FIXTURE_RESPONSE,
+    payloadHash: String = FIXTURE_HASH,
     block: suspend (PanoraSwapProvider) -> Unit,
   ) {
     val envelope = mutableMapOf<String, JsonElement>(
       "id" to JsonPrimitive("fixture"), "expiresAtMs" to JsonPrimitive(31_000),
-      "payloadHash" to JsonPrimitive(FIXTURE_HASH), "authorization" to JsonPrimitive("signed-quote"),
-      "request" to Json.encodeToJsonElement(request), "response" to Json.parseToJsonElement(FIXTURE_RESPONSE),
+      "payloadHash" to JsonPrimitive(payloadHash), "authorization" to JsonPrimitive("signed-quote"),
+      "request" to Json.encodeToJsonElement(swapRequest), "response" to Json.parseToJsonElement(response),
     )
     mutate(envelope)
     val dispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
@@ -114,6 +129,9 @@ class PanoraSwapProviderTest {
       addHandler { call ->
         assertEquals("/swap/quote", call.url.encodedPath)
         assertEquals("Bearer session", call.headers["Authorization"])
+        val sent = Json.parseToJsonElement((call.body as TextContent).text).jsonObject
+        assertEquals(swapRequest.slippageBps, sent.getValue("slippageBps").jsonPrimitive.int)
+        assertEquals(swapRequest.amount, sent.getValue("amount").jsonPrimitive.content)
         respond(JsonObject(envelope).toString(), headers = headersOf(HttpHeaders.ContentType, "application/json"))
       }
     }))

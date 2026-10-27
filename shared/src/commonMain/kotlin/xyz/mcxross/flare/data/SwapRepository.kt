@@ -63,6 +63,7 @@ data class SwapOperation(
   val reference: String,
   val updatedAtMs: Long,
   val message: String? = null,
+  val preparedReference: String = reference,
 )
 
 /** A swap ends at the owner wallet. Funding and trading are separate consumers of this contract. */

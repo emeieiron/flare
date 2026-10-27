@@ -27,6 +27,7 @@ kotlin {
   }
 
   sourceSets {
+    commonTest.get().kotlin.srcDir("src/commonTestFixtures/kotlin")
     commonMain.dependencies {
       api(libs.kaptos)
       api(libs.kotlinx.coroutines.core)
