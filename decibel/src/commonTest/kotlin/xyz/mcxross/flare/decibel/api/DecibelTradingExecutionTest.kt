@@ -29,6 +29,22 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 /** Runs the real Kaptos build, BCS, hash, submit and polling paths against controlled HTTP. */
 class DecibelTradingExecutionTest {
   @Test
+  fun simulationPolicyCanRejectEffectsBeforeAnySignature() = runTest {
+    fixture { f ->
+      assertFailsWith<IllegalStateException> {
+        xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor(f.aptos)
+          .execute(
+            signer = f.signer,
+            payload = { f.service.payload(DecibelCommand.CreateSubaccount) },
+            validateSimulation = { error("Unexpected asset movement") },
+          )
+          .toList()
+      }
+      assertEquals(listOf("simulate"), f.events)
+    }
+  }
+
+  @Test
   fun directSubmissionJournalsBeforeWriteAndConfirms() = runTest {
     fixture { f ->
       val states = f.execute()

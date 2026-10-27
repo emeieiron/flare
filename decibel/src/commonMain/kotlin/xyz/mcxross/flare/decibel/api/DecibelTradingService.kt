@@ -1,8 +1,9 @@
 package xyz.mcxross.flare.decibel.api
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor
+import xyz.mcxross.flare.aptos.transaction.AptosTransactionState
 import xyz.mcxross.flare.decibel.DecibelDeployment
 import xyz.mcxross.flare.decibel.model.MarginMode
 import xyz.mcxross.flare.decibel.model.ValidatedOrder
@@ -13,9 +14,6 @@ import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 import xyz.mcxross.kaptos.model.TransactionPayload
-import xyz.mcxross.kaptos.model.UnsignedTransaction
-import xyz.mcxross.kaptos.model.UserTransactionResponse
-import xyz.mcxross.kaptos.model.WaitForTransactionOptions
 import xyz.mcxross.kaptos.move.MoveArgument
 
 sealed interface DecibelCommand {
@@ -508,246 +506,29 @@ internal class DefaultDecibelTradingService(
     externalFeePayer: ExternalFeePayerSubmitter?,
     onPrepared: suspend (hash: String) -> Unit,
     beforeSign: suspend () -> Unit,
-  ): Flow<TransactionState> = flow {
-    if (feePayer != null && externalFeePayer != null) {
-      emit(TransactionState.Failed("Choose either a local fee payer or an external Gas Station"))
-      return@flow
-    }
-    emit(TransactionState.Simulating)
-    val payload =
-      when (val result = payload(command)) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(TransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-
-    val unsigned: UnsignedTransaction =
-      when (
-        val result =
-          if (feePayer == null && externalFeePayer == null) {
-            aptos.transactions.build(signer.accountAddress, payload)
-          } else {
-            aptos.transactions.buildFeePayer(
-              sender = signer.accountAddress,
-              payload = payload,
-              feePayer = feePayer?.accountAddress,
-            )
-          }
-      ) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(TransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-
-    val simulation =
-      aptos.transactions.simulate(
-        transaction = unsigned,
-        senderPublicKey = signer.publicKey,
-        feePayerPublicKey = feePayer?.publicKey,
-      )
-    var selfPayEstimateOctas: ULong? = null
-    when (simulation) {
-      is AptosResult.Failure -> {
-        emit(TransactionState.Failed(simulation.error.toString()))
-        return@flow
-      }
-      is AptosResult.Success -> {
-        if (simulation.value.size != 1) {
-          emit(TransactionState.Failed("Expected exactly one transaction simulation result"))
-          return@flow
-        }
-        val failed = simulation.value.firstOrNull { !it.success }
-        if (failed != null) {
-          println("SIMULATION_FAILED_VM_STATUS: ${failed.vmStatus}")
-          emit(TransactionState.Failed(failed.vmStatus))
-          return@flow
-        }
-        val estimate = simulation.value.firstOrNull()
-        val gasUsed = estimate?.gasUsed?.toULongOrNull()
-        val gasUnitPrice = estimate?.gasUnitPrice?.toULongOrNull()
-        selfPayEstimateOctas =
-          if (
-            gasUsed != null &&
-              gasUnitPrice != null &&
-              (gasUsed == 0uL || gasUnitPrice <= ULong.MAX_VALUE / gasUsed)
-          ) {
-            gasUsed * gasUnitPrice
-          } else {
-            null
-          }
-      }
-    }
-
-    emit(TransactionState.AwaitingAuthorization)
-    beforeSign()
-    val senderAuthenticator =
-      when (val result = aptos.transactions.sign(signer, unsigned)) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(TransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-    val feePayerAuthenticator = feePayer?.let {
-      when (val result = aptos.transactions.sign(it, unsigned)) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(TransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-    }
-    val preparedReference: String
-    val externalRequest =
-      if (externalFeePayer == null) {
-        null
-      } else {
-        val feePayerTransaction = unsigned as? UnsignedTransaction.FeePayer
-        if (feePayerTransaction == null) {
-          emit(TransactionState.Failed("External sponsorship requires a fee-payer transaction"))
-          return@flow
-        }
-        when (
-          val result =
-            aptos.transactions.externalFeePayerRequest(
-              transaction = feePayerTransaction,
-              senderAuthenticator = senderAuthenticator,
-            )
-        ) {
-          is AptosResult.Success -> result.value
-          is AptosResult.Failure -> {
-            emit(TransactionState.Failed(result.error.toString()))
-            return@flow
-          }
-        }
-      }
-    preparedReference =
-      if (externalRequest != null) {
-        "sponsor:${externalRequest.fingerprint}"
-      } else {
-        when (
-          val result =
-            aptos.transactions.userTransactionHash(
-              transaction = unsigned,
-              senderAuthenticator = senderAuthenticator,
-              feePayerAuthenticator = feePayerAuthenticator,
-            )
-        ) {
-          is AptosResult.Success -> result.value
-          is AptosResult.Failure -> {
-            emit(TransactionState.Failed(result.error.toString()))
-            return@flow
-          }
-        }
-      }
-    try {
-      onPrepared(preparedReference)
-    } catch (cancelled: CancellationException) {
-      throw cancelled
-    } catch (error: Throwable) {
-      emit(TransactionState.Failed(error.message ?: "Unable to journal signed transaction"))
-      return@flow
-    }
-
-    beforeSign()
-    emit(TransactionState.Submitting)
-    val submittedHash =
-      if (externalRequest != null) {
-        when (val result = externalFeePayer!!.submit(externalRequest)) {
-          is AptosResult.Success -> result.value
-          is AptosResult.Failure -> {
-            val safeForSelfPay = result.error.safeForSelfPay()
-            val raw = unsigned.rawTransaction
-            val reserve =
-              if (raw.gasUnitPrice == 0uL || raw.maxGasAmount <= ULong.MAX_VALUE / raw.gasUnitPrice) {
-                raw.maxGasAmount * raw.gasUnitPrice
-              } else {
-                null
-              }
-            emit(
-              TransactionState.Failed(
-                message = result.error.toString(),
-                hash = preparedReference,
-                selfPayEstimateOctas = selfPayEstimateOctas.takeIf { safeForSelfPay },
-                definitelyNotSubmitted = safeForSelfPay,
-                selfPayReserveOctas = reserve.takeIf { safeForSelfPay },
-              )
-            )
-            return@flow
-          }
-        }
-      } else {
-        val pending =
-          when (
-            val result =
-              aptos.transactions.submit(
-                transaction = unsigned,
-                senderAuthenticator = senderAuthenticator,
-                feePayerAuthenticator = feePayerAuthenticator,
-              )
-          ) {
-            is AptosResult.Success -> result.value
-            is AptosResult.Failure -> {
-              emit(TransactionState.Failed(result.error.toString(), hash = preparedReference))
-              return@flow
-            }
-          }
-        if (!pending.hash.equals(preparedReference, ignoreCase = true)) {
-          emit(
-            TransactionState.Failed(
-              "Aptos returned a transaction hash that does not match the signed bytes",
-              hash = preparedReference,
-            )
-          )
-          return@flow
-        }
-        pending.hash
-      }
-    if (!submittedHash.matches(Regex("^0x[0-9a-fA-F]{64}$"))) {
-      emit(
-        TransactionState.Failed(
-          "The transaction submitter returned an invalid hash",
-          hash = preparedReference,
+  ): Flow<TransactionState> =
+    AptosTransactionExecutor(aptos).execute(
+      signer = signer,
+      payload = { payload(command) },
+      feePayer = feePayer,
+      externalFeePayer = externalFeePayer?.let { submitter ->
+        xyz.mcxross.flare.aptos.transaction.ExternalFeePayerSubmitter(submitter::submit)
+      },
+      onPrepared = onPrepared,
+      beforeSign = beforeSign,
+    ).map { state ->
+      when (state) {
+        AptosTransactionState.Simulating -> TransactionState.Simulating
+        AptosTransactionState.AwaitingAuthorization -> TransactionState.AwaitingAuthorization
+        AptosTransactionState.Submitting -> TransactionState.Submitting
+        is AptosTransactionState.Pending -> TransactionState.Pending(state.hash)
+        is AptosTransactionState.Committed -> TransactionState.Committed(state.hash)
+        is AptosTransactionState.Failed -> TransactionState.Failed(
+          state.message, state.hash, state.committed, state.selfPayEstimateOctas,
+          state.definitelyNotSubmitted, state.selfPayReserveOctas,
         )
-      )
-      return@flow
-    }
-    emit(TransactionState.Pending(submittedHash))
-
-    when (
-      val committed =
-        aptos.transactions.waitForTransaction(
-          submittedHash,
-          WaitForTransactionOptions(checkSuccess = false),
-        )
-    ) {
-      is AptosResult.Failure ->
-        emit(TransactionState.Failed(committed.error.toString(), hash = submittedHash))
-      is AptosResult.Success -> {
-        val response = committed.value
-        if (
-          response !is UserTransactionResponse ||
-            !response.hash.equals(submittedHash, ignoreCase = true)
-        ) {
-          emit(TransactionState.Failed("Unexpected transaction confirmation", hash = submittedHash))
-        } else if (!response.success) {
-          emit(
-            TransactionState.Failed(
-              message = response.vmStatus,
-              hash = response.hash,
-              committed = true,
-            )
-          )
-        } else {
-          emit(TransactionState.Committed(response.hash))
-        }
       }
     }
-  }
 
   private fun address(value: String): MoveArgument.Address =
     MoveArgument.Address(AccountAddress.fromString(value))
@@ -763,18 +544,3 @@ internal class DefaultDecibelTradingService(
 
   private data class EntryFunctionCall(val function: String, val arguments: List<MoveArgument>)
 }
-
-private fun AptosError.safeForSelfPay(): Boolean =
-  this is AptosError.Api &&
-    errorCode in
-      setOf(
-        "gas_station_not_configured",
-        "gas_station_credentials_rejected",
-        "gas_station_transaction_not_allowed",
-        "gas_station_http_400",
-        "gas_station_http_401",
-        "gas_station_http_403",
-        "gas_station_http_404",
-        "gas_station_http_422",
-        "gas_station_http_429",
-      )
