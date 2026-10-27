@@ -56,3 +56,4 @@ include(":strategies")
 include(":jev")
 
 include(":aptos-transaction")
+include(":aptos-swap")
