@@ -45,6 +45,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
@@ -897,7 +898,7 @@ class PortfolioViewModel(
       fundingSwaps.observeCapacity(context, capacity)
       if (units > capacity.outputBalance) return
     } else require(amount <= available + 1e-9) {
-      "You can transfer up to ${formatQuantity(available, 2)} USDC."
+      "You can transfer up to ${formatTokenBalance(available)} USDC."
     }
     val prompt =
       VaultPrompt(
@@ -1149,7 +1150,7 @@ class PortfolioViewModel(
           it.copy(
             actionError =
               if (vaultTerms.stakeInUsdc) "You can redeem up to ${formatBalance(maxShares)}."
-              else "You cannot redeem more than your balance of ${formatQuantity(maxShares, 4)} shares."
+              else "You cannot redeem more than your balance of ${formatTokenBalance(maxShares)} shares."
           )
         }
         return
@@ -1161,7 +1162,7 @@ class PortfolioViewModel(
       local.update {
         it.copy(
           actionError =
-            "You can pledge up to ${formatQuantity(collateral.pledgeable, 4)} shares. " +
+            "You can pledge up to ${formatTokenBalance(collateral.pledgeable)} shares. " +
               "Shares still inside the vault's lockup cannot be used as margin."
         )
       }
@@ -1169,7 +1170,7 @@ class PortfolioViewModel(
     }
     if (mode == VaultActionMode.RELEASE && collateral != null && parsedAmount > collateral.pledged) {
       local.update {
-        it.copy(actionError = "You have ${formatQuantity(collateral.pledged, 4)} shares pledged.")
+        it.copy(actionError = "You have ${formatTokenBalance(collateral.pledged)} shares pledged.")
       }
       return
     }

@@ -3,7 +3,7 @@ package xyz.mcxross.flare.feature.trade
 import kotlin.math.abs
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderCheck
 import xyz.mcxross.flare.venue.model.OrderRequest
@@ -103,7 +103,7 @@ internal fun TradeUiState.balanceError(side: OrderSide): String? {
   val size = sizeInput.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return null
   if (market.kind == MarketKind.SPOT && side == OrderSide.SELL) {
     val held = baseBalance ?: return null
-    return if (exceeds(size, held)) "You have ${formatQuantity(held, 4)} ${market.symbol} to sell" else null
+    return if (exceeds(size, held)) "You have ${formatTokenBalance(held)} ${market.symbol} to sell" else null
   }
   val available = quoteBalance ?: return null
   val estimate = orderEstimate(side) ?: return null

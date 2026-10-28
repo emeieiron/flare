@@ -69,6 +69,7 @@ import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
@@ -258,7 +259,7 @@ fun PortfolioScreen(
               }
               items(ownedMatches, key = { "owned:${it.vault.address}" }) { position ->
                 VaultSummaryRow(position.vault.name, formatBalance(position.value),
-                  "${formatQuantity(position.shares, 4)} shares") {
+                  "${formatTokenBalance(position.shares)} shares") {
                   vaultAddress = position.vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
@@ -459,7 +460,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   position?.let {
     SectionLabel("Your stake")
     DetailRow("Value", formatBalance(it.value))
-    if (!stakeInUsdc) DetailRow("Shares", formatQuantity(it.shares, 4))
+    if (!stakeInUsdc) DetailRow("Shares", formatTokenBalance(it.shares))
     DetailRow("Return", signedPercent(it.returnPercent), valueColor = amountColor(it.returnPercent))
     it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
     it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
@@ -505,8 +506,8 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   }
   state.collateralFor(vault.address)?.let { collateral ->
     SectionLabel("As margin")
-    DetailRow("Pledged", "${formatQuantity(collateral.pledged, 4)} shares")
-    DetailRow("Free to pledge", "${formatQuantity(collateral.pledgeable, 4)} shares")
+    DetailRow("Pledged", "${formatTokenBalance(collateral.pledged)} shares")
+    DetailRow("Free to pledge", "${formatTokenBalance(collateral.pledgeable)} shares")
     collateral.creditPercent?.let { DetailRow("Counts at", "${formatQuantity(it, 2)}%") }
     Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       if (collateral.pledgeable > 0.0) FlareButton("Use as margin",
@@ -870,12 +871,12 @@ private fun HoldingRow(
         style = MaterialTheme.typography.labelLarge,
       )
       if (holding.reservedQuantity > 0) Text(
-        "${formatQuantity(holding.reservedQuantity)} reserved",
+        "${formatTokenBalance(holding.reservedQuantity)} reserved",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )
       Text(
-        "${formatQuantity(holding.quantity)} ${holding.symbol}",
+        "${formatTokenBalance(holding.quantity)} ${holding.symbol}",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )

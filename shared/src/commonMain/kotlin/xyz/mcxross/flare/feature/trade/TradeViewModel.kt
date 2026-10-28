@@ -33,6 +33,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.caughtUpWith
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.data.withLiveCandle
@@ -124,7 +125,7 @@ data class TradeUiState(
         quoteBalance?.let { formatBalance(it) }
       } else {
         val symbol = quote?.market?.symbol.orEmpty()
-        baseBalance?.let { "${formatQuantity(it, 4)} $symbol".trim() }
+        baseBalance?.let { "${formatTokenBalance(it)} $symbol".trim() }
       }
     } else {
       quoteBalance?.let { formatBalance(it) }

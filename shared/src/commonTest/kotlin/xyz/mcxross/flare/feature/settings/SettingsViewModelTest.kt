@@ -653,14 +653,14 @@ class SettingsViewModelTest {
   }
 
   @Test
-  fun walletBalanceFormattingPreservesSmallAmountsAndTokenPrecision() {
+  fun walletBalanceFormattingUsesTwoDecimalsWithoutHidingSmallAmounts() {
     assertEquals("<0.01", WalletTokenBalance("APT", "0.00000001").displayAmount)
     assertEquals("8.67", WalletTokenBalance("APT", "8.67285184").displayAmount)
     assertEquals("10.00", WalletTokenBalance("APT", "9.99999999").displayAmount)
     assertEquals("0.01", WalletTokenBalance("APT", "0.01").displayAmount)
     assertEquals("0.00", WalletTokenBalance("APT", "0").displayAmount)
     assertEquals("184467440737.10", WalletTokenBalance("APT", "184467440737.09551615").displayAmount)
-    assertEquals("1.234567", WalletTokenBalance("USDC", "1.234567").displayAmount)
+    assertEquals("1.23", WalletTokenBalance("USDC", "1.234567").displayAmount)
     assertEquals("0.00", WalletTokenBalance("USDC", "0").displayAmount)
     assertEquals("—", WalletTokenBalance("USDC").displayAmount)
   }

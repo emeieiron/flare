@@ -61,6 +61,7 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.AssetIcon
@@ -534,13 +535,13 @@ private fun WithdrawForm(
     onValueChange = { onIntent(SettingsIntent.ChangeWithdrawAmount(it)) },
     label = "Amount",
     unit = "USDC",
-    availableText = available?.let { "Available ${formatQuantity(it, 2)} USDC" },
+    availableText = available?.let { "Available ${formatTokenBalance(it)} USDC" },
     onMaxClick =
       available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max), immediate = true)) } },
     isError = exceeds || !coversFee,
     supportingText =
       when {
-        exceeds && available != null -> "You can withdraw up to ${formatQuantity(available, 2)} USDC."
+        exceeds && available != null -> "You can withdraw up to ${formatTokenBalance(available)} USDC."
         fee != null -> "${formatQuantity(fee, 6)} USDC of it pays the withdrawal fee."
         else -> null
       },

@@ -236,16 +236,16 @@ internal class FundingSwapController(
             if (!latest()) return@withTimeoutOrNull true
             observeCapacity(key, fresh)
             retryable = false
-            check(fresh.maximumInput > 0uL) { "Available to swap: 0 APT after fees." }
+            check(fresh.maximumInput > 0uL) { "Available to swap: 0.00 APT after fees." }
             check(kind != SwapAmountKind.EXACT_INPUT || units <= fresh.maximumInput) {
-              "Available to swap: ${fresh.maximumInput.toDecimalString(fresh.input.decimals)} APT after fees."
+              "Available to swap: ${formatTokenBalance(fresh.maximumInput.toDecimalString(fresh.input.decimals))} APT after fees."
             }
             retryable = true
             val quote = repository.quote(SwapRequest(key.owner, fresh.input, fresh.output, kind, units.toString()))
             if (!latest()) return@withTimeoutOrNull true
             retryable = false
             check(quote.maximumInput.toULong() <= fresh.maximumInput) {
-              "Requires ${quote.maximumInput.toULong().toDecimalString(fresh.input.decimals)} APT; ${fresh.maximumInput.toDecimalString(fresh.input.decimals)} APT available after fees."
+              "Requires ${quote.maximumInput.toULong().toDecimalString(fresh.input.decimals)} APT; ${formatTokenBalance(fresh.maximumInput.toDecimalString(fresh.input.decimals))} APT available after fees."
             }
             retryable = true
             check(quote.expiresAtMs > now()) { "Quote unavailable. Try again." }

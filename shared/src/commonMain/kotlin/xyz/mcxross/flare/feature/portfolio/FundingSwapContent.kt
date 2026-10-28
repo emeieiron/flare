@@ -21,6 +21,7 @@ import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.SwapAmountKind
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.*
 import xyz.mcxross.flare.venue.model.ActionState
 
@@ -59,11 +60,11 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
         value = pay,
         onValueChange = { onIntent(PortfolioIntent.ChangeSwapAmount(it, SwapAmountKind.EXACT_INPUT)) },
         label = "You pay", unit = "APT", placeholder = "0.00",
-        availableText = capacity?.let { "Available: ${it.maximumInput.toDecimalString(inputDecimals)} APT" } ?: "Available: —",
+        availableText = capacity?.let { "Available: ${formatTokenBalance(it.maximumInput.toDecimalString(inputDecimals))} APT" } ?: "Available: —",
         onMaxClick = if (state.canSwap) ({ onIntent(PortfolioIntent.UseMaximumSwap) }) else null,
         enabled = !state.working, isError = tooMuch || exactInput && invalid,
         supportingText = when {
-          tooMuch -> "Available to swap: ${capacity!!.maximumInput.toDecimalString(inputDecimals)} APT after fees."
+          tooMuch -> "Available to swap: ${formatTokenBalance(capacity!!.maximumInput.toDecimalString(inputDecimals))} APT after fees."
           exactInput && invalid -> "Use up to $inputDecimals decimal places."
           else -> null
         },

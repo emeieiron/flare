@@ -675,7 +675,7 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.ChangeVaultAmount("150.0"))
     vm.onIntent(PortfolioIntent.SubmitVaultAction)
     assertEquals(
-      "You cannot redeem more than your balance of 100 shares.",
+      "You cannot redeem more than your balance of 100.00 shares.",
       vm.uiState.first().actionError,
     )
 

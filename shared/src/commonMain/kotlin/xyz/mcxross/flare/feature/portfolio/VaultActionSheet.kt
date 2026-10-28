@@ -16,6 +16,7 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatCalendarDateTime
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareAmountField
@@ -114,7 +115,7 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
       } else if (mode == VaultActionMode.REDEEM) {
         DetailRow(
           "Shares held",
-          "${formatQuantity(availableShares, 4)} shares",
+          "${formatTokenBalance(availableShares)} shares",
         )
         DetailRow("Current value", formatBalance(userPerformance?.value ?: 0.0))
         Text("Redemption depends on unlocked shares. Locked or pledged shares may be unavailable.",
@@ -130,8 +131,8 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
 
       val collateral = state.collateralFor(vault.address)
       if (mode == VaultActionMode.PLEDGE || mode == VaultActionMode.RELEASE) {
-        DetailRow("Free to pledge", "${formatQuantity(collateral?.pledgeable ?: 0.0, 4)} shares")
-        DetailRow("Already margin", "${formatQuantity(collateral?.pledged ?: 0.0, 4)} shares")
+        DetailRow("Free to pledge", "${formatTokenBalance(collateral?.pledgeable ?: 0.0)} shares")
+        DetailRow("Already margin", "${formatTokenBalance(collateral?.pledged ?: 0.0)} shares")
         collateral?.creditPercent?.let {
           DetailRow("Counts toward margin at", "${formatQuantity(it, 2)}%")
         }
@@ -212,12 +213,12 @@ fun VaultActionSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Uni
         availableText =
           when {
             mode == VaultActionMode.PLEDGE ->
-              "Free: ${formatQuantity(collateral?.pledgeable ?: 0.0, 4)} shares"
+              "Free: ${formatTokenBalance(collateral?.pledgeable ?: 0.0)} shares"
             mode == VaultActionMode.RELEASE ->
-              "Pledged: ${formatQuantity(collateral?.pledged ?: 0.0, 4)} shares"
+              "Pledged: ${formatTokenBalance(collateral?.pledged ?: 0.0)} shares"
             mode == VaultActionMode.DEPOSIT -> "Available: ${formatBalance(state.collateralBalance)}"
             inUsdc -> "Held: ${formatBalance(availableShares)}"
-            else -> "Held: ${formatQuantity(availableShares, 4)} shares"
+            else -> "Held: ${formatTokenBalance(availableShares)} shares"
           },
         placeholder =
           when (mode) {
