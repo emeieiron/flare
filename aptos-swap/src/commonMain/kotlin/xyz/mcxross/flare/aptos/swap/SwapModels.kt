@@ -40,6 +40,8 @@ class ValidatedSwapPlan internal constructor(
   val expiresAtMs: Long,
   val sponsorshipAuthorization: String,
   payload: TransactionPayload.EntryFunction,
+  /** Local deadline for review/signing; [expiresAtMs] remains the worker's on-chain expiry. */
+  val localExpiresAtMs: Long = expiresAtMs,
 ) {
   private val bytes = payload.toBcs()
   val payloadHash: String = digest(bytes)
@@ -48,7 +50,7 @@ class ValidatedSwapPlan internal constructor(
     TransactionPayload.fromBcs(bytes.copyOf()) as TransactionPayload.EntryFunction
 
   fun requireCurrent(nowMs: Long, owner: String) {
-    require(nowMs < expiresAtMs) { "The swap quote expired. Request a fresh quote." }
+    require(nowMs < localExpiresAtMs) { "The swap quote expired. Request a fresh quote." }
     require(AccountAddress.fromString(owner) == AccountAddress.fromString(request.owner)) {
       "The swap quote belongs to another wallet"
     }

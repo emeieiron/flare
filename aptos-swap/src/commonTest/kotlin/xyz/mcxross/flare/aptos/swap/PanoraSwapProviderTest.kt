@@ -82,6 +82,33 @@ class PanoraSwapProviderTest {
   }
 
   @Test
+  fun clockSkewDoesNotChangeTheServerExpiryOrExtendTheLocalLifetime() = runTest {
+    for (offset in listOf(-60_000L, -750L, 750L, 60_000L)) {
+      fixture(mutate = {
+        it["issuedAtMs"] = JsonPrimitive(100_000L + offset)
+        it["expiresAtMs"] = JsonPrimitive(130_000L + offset)
+      }) { provider ->
+        val plan = provider.quote(request)
+        assertEquals(130_000L + offset, plan.expiresAtMs)
+        assertEquals(31_000L, plan.localExpiresAtMs)
+        plan.requireCurrent(30_999, request.owner)
+        assertFailsWith<IllegalArgumentException> { plan.requireCurrent(31_000, request.owner) }
+      }
+    }
+  }
+
+  @Test
+  fun serverLifetimeAndResponseDelayCannotExtendTheQuoteWindow() = runTest {
+    fixture(mutate = { it["expiresAtMs"] = JsonPrimitive(31_001) }) { provider ->
+      assertFailsWith<IllegalArgumentException> { provider.quote(request) }
+    }
+    var time = 1_000L
+    fixture(clock = { time }, onResponse = { time += 30_001 }) { provider ->
+      assertFailsWith<IllegalArgumentException> { provider.quote(request) }
+    }
+  }
+
+  @Test
   fun effectsRequireANetReceiptInTheOwnersStore() = runTest {
     fixture { provider ->
       val plan = provider.quote(request)
@@ -115,10 +142,12 @@ class PanoraSwapProviderTest {
     swapRequest: AptosSwapRequest = request,
     response: String = FIXTURE_RESPONSE,
     payloadHash: String = FIXTURE_HASH,
+    clock: () -> Long = { 1000 },
+    onResponse: () -> Unit = {},
     block: suspend (PanoraSwapProvider) -> Unit,
   ) {
     val envelope = mutableMapOf<String, JsonElement>(
-      "id" to JsonPrimitive("fixture"), "expiresAtMs" to JsonPrimitive(31_000),
+      "id" to JsonPrimitive("fixture"), "expiresAtMs" to JsonPrimitive(31_000), "issuedAtMs" to JsonPrimitive(1000),
       "payloadHash" to JsonPrimitive(payloadHash), "authorization" to JsonPrimitive("signed-quote"),
       "request" to Json.encodeToJsonElement(swapRequest), "response" to Json.parseToJsonElement(response),
     )
@@ -132,6 +161,7 @@ class PanoraSwapProviderTest {
         val sent = Json.parseToJsonElement((call.body as TextContent).text).jsonObject
         assertEquals(swapRequest.slippageBps, sent.getValue("slippageBps").jsonPrimitive.int)
         assertEquals(swapRequest.amount, sent.getValue("amount").jsonPrimitive.content)
+        onResponse()
         respond(JsonObject(envelope).toString(), headers = headersOf(HttpHeaders.ContentType, "application/json"))
       }
     }))
@@ -139,7 +169,7 @@ class PanoraSwapProviderTest {
       endpoints = AptosEndpoints(fullNode = "https://worker/aptos/v1"), transport = http.asAptosTransport()))
     try {
       assertIs<AptosResult.Success<Unit>>(aptos.transactions.preloadModuleAbis(Json.decodeFromString<MoveModuleBytecode>(FIXTURE_ABI)))
-      block(PanoraSwapProvider(http, aptos, "https://worker", { "session" }, now = { 1000 }))
+      block(PanoraSwapProvider(http, aptos, "https://worker", { "session" }, now = clock))
     } finally { aptos.close(); http.close() }
   }
 }

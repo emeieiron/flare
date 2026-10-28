@@ -37,6 +37,7 @@ class PanoraSwapProvider(
   }
 
   override suspend fun quote(request: AptosSwapRequest): ValidatedSwapPlan {
+    val requestedAt = now()
     val response = http.post(endpoint) {
       bearerAuth(accessToken())
       header("Origin", origin)
@@ -53,7 +54,12 @@ class PanoraSwapProvider(
       "Swap quote does not match the request"
     }
     val expiry = envelope.string("expiresAtMs").toLong()
-    require(expiry > now() && expiry <= now() + 30_000) { "Invalid swap quote expiry" }
+    val issuedAt = envelope.string("issuedAtMs").toLong()
+    require(issuedAt > 0 && expiry > issuedAt && expiry - issuedAt <= 30_000) { "Invalid swap quote lifetime" }
+    // The worker and device clocks need not agree. Subtract the entire request duration by
+    // counting the remaining server lifetime from the local request start, never receipt.
+    val localExpiry = requestedAt + (expiry - issuedAt)
+    require(now() >= requestedAt && now() < localExpiry) { "The swap quote expired" }
     val body = envelope.getValue("response").jsonObject
     val from = body.getValue("fromToken").jsonObject
     val to = body.getValue("toToken").jsonObject
@@ -96,6 +102,7 @@ class PanoraSwapProvider(
     return ValidatedSwapPlan(
       envelope.string("id"), request, input, output, maxInput, minOutput, fee, expiry,
       envelope.string("authorization"), payload,
+      localExpiresAtMs = localExpiry,
     ).also { it.requireCurrent(now(), request.owner) }
   }
 }

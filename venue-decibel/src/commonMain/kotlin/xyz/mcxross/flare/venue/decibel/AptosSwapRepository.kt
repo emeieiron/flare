@@ -104,7 +104,7 @@ class AptosSwapRepository(
         check(preferences.values.first().activeProfileId == selected.activeProfileId) { "The selected wallet changed" }
         plan.requireCurrent(now(), owner)
         plansMutex.withLock {
-          plans.entries.removeAll { it.value.second.expiresAtMs <= now() }
+          plans.entries.removeAll { it.value.second.localExpiresAtMs <= now() }
           check(plans.size < 32) { "Too many active swap quotes" }
           plans[plan.id] = selected.activeProfileId to plan
         }
@@ -299,7 +299,7 @@ private fun ValidatedSwapPlan.toQuote() = SwapQuote(id, "panora",
   SwapRequest(request.owner, AptosSwapRepository.APT, AptosSwapRepository.USDC,
     if (request.kind == SwapKind.EXACT_INPUT) SwapAmountKind.EXACT_INPUT else SwapAmountKind.EXACT_OUTPUT,
     request.amount, request.slippageBps), expectedInput.toString(), expectedOutput.toString(),
-  maximumInput.toString(), minimumOutput.toString(), emptyList(), expiresAtMs)
+  maximumInput.toString(), minimumOutput.toString(), emptyList(), localExpiresAtMs)
 
 private fun AptosTransactionState.toActionState(): ActionState = when (this) {
   AptosTransactionState.Simulating -> ActionState.Simulating

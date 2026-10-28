@@ -173,7 +173,7 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
         path == "/swap/quote" -> buildJsonObject {
           put("id", "fixture"); put("request", Json.encodeToJsonElement(AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000")))
           put("response", Json.parseToJsonElement(FIXTURE_RESPONSE)); put("payloadHash", FIXTURE_HASH)
-          put("expiresAtMs", now + 30000); put("authorization", "signed-quote")
+          put("expiresAtMs", now + 30000); put("issuedAtMs", now); put("authorization", "signed-quote")
         }.toString()
         path.endsWith("/estimate_gas_price") -> {
           check(!refuseGasProbe) { "An empty wallet must not require a fee probe" }
