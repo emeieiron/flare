@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
@@ -29,6 +30,18 @@ class WorkerGasSponsorshipRepository(
   private val decibelConfig: DecibelRuntimeConfig,
   private val sessions: SessionRepository,
 ) : GasSponsorshipRepository {
+  override suspend fun canSponsorSwap(): Boolean = try {
+    withTimeoutOrNull(3_000) {
+      val response = client.get("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/swap-availability") {
+        bearerAuth(sessions.accessToken())
+        header(HttpHeaders.Origin, runtime.appOrigin)
+      }
+      response.status.isSuccess() && response.body<SwapSponsorshipAvailability>().available
+    } ?: false
+  } catch (cancelled: CancellationException) {
+    throw cancelled
+  } catch (_: Exception) { false }
+
   override suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,
@@ -150,6 +163,8 @@ private data class GasStationRequest(
 )
 
 @Serializable private data class GasStationResponse(val transactionHash: String)
+
+@Serializable private data class SwapSponsorshipAvailability(val available: Boolean)
 
 @Serializable
 private data class GasStationStatusResponse(

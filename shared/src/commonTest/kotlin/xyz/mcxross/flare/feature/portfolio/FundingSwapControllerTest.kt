@@ -16,6 +16,18 @@ import xyz.mcxross.flare.venue.model.SelfPayOffer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FundingSwapControllerTest {
+  @Test fun aReviewedSelfPayFeeSkipsTheSponsorshipAttempt() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.networkFee = SwapNetworkFee(FeePayment.SELF_PAY, 10_000uL, 5_000_000uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("2"); advanceTimeBy(601); runCurrent()
+    assertEquals(f.repo.networkFee, f.controller.state.value.quote?.networkFee)
+    assertTrue(f.repo.executions.isEmpty())
+    f.controller.execute(); runCurrent()
+    assertEquals(listOf(FeePayment.SELF_PAY), f.repo.executions)
+    assertTrue(f.controller.state.value.completed)
+  }
+
   @Test fun aStalledQuoteReadTimesOutAndRecoversAutomatically() = runTest {
     val f = Fixture(backgroundScope)
     f.repo.quoteDelayMs = 60_000
@@ -315,6 +327,7 @@ private class FakeSwaps : SwapRepository {
   var quoteFailuresRemaining = 0
   var quoteDelayMs = 0L
   var executionGate: CompletableDeferred<Unit>? = null
+  var networkFee: SwapNetworkFee? = SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL)
   var result: ActionState = ActionState.Committed("hash")
   var reconciled: SwapOperationStatus? = null
   val requests = mutableListOf<SwapRequest>()
@@ -334,7 +347,7 @@ private class FakeSwaps : SwapRepository {
     val input = if (request.kind == SwapAmountKind.EXACT_INPUT) request.amount.toULong() else request.amount.toULong() * 10uL
     val output = if (request.kind == SwapAmountKind.EXACT_OUTPUT) request.amount.toULong() else request.amount.toULong() / 10uL
     return SwapQuote("quote-${requests.size}", "fake", request, input.toString(), output.toString(), input.toString(),
-      output.toString(), emptyList(), now + 30_000).also { quoted = it }
+      output.toString(), emptyList(), now + 30_000, networkFee).also { quoted = it }
   }
   override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
     executions += feePayment

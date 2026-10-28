@@ -7,6 +7,9 @@ import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 
 /** Pays an Aptos transaction's gas through Flare's Gas Station, behind `sponsoredFees`. */
 interface GasSponsorshipRepository {
+  /** A conservative deployment policy check. It never signs or submits a transaction. */
+  suspend fun canSponsorSwap(): Boolean = false
+
   suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,

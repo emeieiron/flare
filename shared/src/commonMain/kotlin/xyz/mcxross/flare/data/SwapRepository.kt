@@ -39,6 +39,9 @@ data class SwapRequest(
 data class SwapFee(val asset: SwapAsset, val amount: String)
 
 @Serializable
+data class SwapNetworkFee(val payment: FeePayment, val estimate: ULong, val maximum: ULong)
+
+@Serializable
 data class SwapQuote(
   val id: String,
   val provider: String,
@@ -49,6 +52,7 @@ data class SwapQuote(
   val minimumOutput: String,
   val fees: List<SwapFee>,
   val expiresAtMs: Long,
+  val networkFee: SwapNetworkFee? = null,
 )
 
 /** Exact wallet funds available to a funding consumer, with gas retained for both transactions. */
@@ -79,6 +83,7 @@ data class SwapOperation(
   val updatedAtMs: Long,
   val message: String? = null,
   val preparedReference: String = reference,
+  val feePayment: FeePayment? = null,
 )
 
 /** A swap ends at the owner wallet. Funding and trading are separate consumers of this contract. */

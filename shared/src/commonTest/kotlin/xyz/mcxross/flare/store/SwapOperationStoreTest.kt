@@ -39,9 +39,13 @@ class SwapOperationStoreTest {
   fun aDefiniteRejectionAllowsANewSignedReferenceForTheSameQuote() = runTest {
     val store = PreferencesSwapOperationStore(MemoryPreferences())
     val prepared = operation("swap")
-    store.write(prepared.copy(status = SwapOperationStatus.NOT_SUBMITTED))
-    store.write(prepared.copy(reference = "0xselfpaid", preparedReference = "0xselfpaid"))
+    store.write(prepared.copy(status = SwapOperationStatus.NOT_SUBMITTED, feePayment = FeePayment.SPONSORED))
+    store.write(prepared.copy(reference = "0xselfpaid", preparedReference = "0xselfpaid", feePayment = FeePayment.SELF_PAY))
     assertEquals("0xselfpaid", store.operations.first().single().reference)
+    assertEquals(FeePayment.SELF_PAY, store.operations.first().single().feePayment)
+    assertFailsWith<IllegalArgumentException> {
+      store.write(prepared.copy(reference = "0xselfpaid", preparedReference = "0xselfpaid", feePayment = FeePayment.SPONSORED))
+    }
   }
 
   @Test

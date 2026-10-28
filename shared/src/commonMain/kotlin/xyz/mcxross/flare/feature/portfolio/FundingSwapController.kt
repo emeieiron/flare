@@ -232,6 +232,7 @@ internal class FundingSwapController(
   fun execute(selfPay: Boolean = false) {
     if (!visible || state.value.quoting || selfPay && !state.value.selfPay) return
     val quote = state.value.quote ?: return
+    val networkFee = quote.networkFee ?: return
     cancelQuotes()
     work { key, version ->
       check(!state.value.quoteExpired && quote.expiresAtMs > now()) { "The quote expired. Get a fresh quote." }
@@ -241,7 +242,7 @@ internal class FundingSwapController(
         "Your available APT changed. Get a fresh quote for a smaller amount."
       }
       repository.execute(quote.id, VaultPrompt("Swap APT for USDC", "Confirm your identity"),
-        if (selfPay) FeePayment.SELF_PAY else FeePayment.SPONSORED).collect { transaction ->
+        if (selfPay) FeePayment.SELF_PAY else networkFee.payment).collect { transaction ->
         if (current(key, version)) mutable.update { it.copy(transaction = transaction,
           selfPayOffer = (transaction as? ActionState.Failed)?.takeIf { failure -> failure.definitelyNotSubmitted }?.selfPay
             ?: it.selfPayOffer) }

@@ -16,6 +16,7 @@ import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.SwapAmountKind
+import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.design.*
 import xyz.mcxross.flare.venue.model.ActionState
 
@@ -63,7 +64,10 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
         val fee = checkNotNull(state.selfPayOffer)
         DetailRow("Gas · paid by you", "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}")
       } else {
-        DetailRow("Gas", "Sponsored when available")
+        QuoteValueRow("Gas", quote?.networkFee?.let { fee ->
+          if (fee.payment == FeePayment.SPONSORED) "Covered by Flare"
+          else "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}"
+        } ?: "—", loading = state.quoting)
       }
     }
     state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
@@ -89,7 +93,7 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
     })
   }, Modifier.fillMaxWidth(),
     enabled = !state.working && (pending || capacity != null && state.balanceError == null &&
-      quote != null && !state.quoting && !state.quoteExpired && !tooMuch && !invalid),
+      quote?.networkFee != null && !state.quoting && !state.quoteExpired && !tooMuch && !invalid),
     working = state.working)
 }
 

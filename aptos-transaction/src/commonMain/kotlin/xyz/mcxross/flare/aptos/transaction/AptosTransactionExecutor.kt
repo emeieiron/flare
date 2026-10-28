@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import xyz.mcxross.kaptos.Aptos
 import xyz.mcxross.kaptos.account.TransactionSigner
+import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
@@ -43,8 +44,57 @@ fun interface ExternalFeePayerSubmitter {
   suspend fun submit(request: ExternalFeePayerRequest): AptosResult<String>
 }
 
+/** A successful unsigned simulation, retained so confirmation signs exactly the reviewed bytes. */
+class PreparedAptosTransaction internal constructor(
+  val transaction: UnsignedTransaction,
+  val simulation: UserTransactionResponse,
+  val estimatedGasCostOctas: ULong,
+  val maximumGasCostOctas: ULong,
+  internal val externalFeePayer: Boolean,
+  internal val localFeePayer: AccountAddress?,
+)
+
 /** Builds, simulates and submits one Aptos transaction; callers own authorization and durable storage. */
 class AptosTransactionExecutor(private val aptos: Aptos) {
+  /** Builds and simulates only. It never invokes a signer, authorization callback or submitter. */
+  suspend fun prepare(
+    signer: TransactionSigner,
+    payload: TransactionPayload.EntryFunction,
+    feePayer: TransactionSigner? = null,
+    externalFeePayer: Boolean = false,
+    options: TransactionOptions? = null,
+  ): AptosResult<PreparedAptosTransaction> {
+    if (feePayer != null && externalFeePayer)
+      return AptosResult.Failure(AptosError.Validation("Choose either a local fee payer or an external Gas Station"))
+    val built = if (feePayer == null && !externalFeePayer) {
+      aptos.transactions.build(signer.accountAddress, payload, options)
+    } else {
+      aptos.transactions.buildFeePayer(signer.accountAddress, payload,
+        feePayer = feePayer?.accountAddress, options = options)
+    }
+    val unsigned = when (built) {
+      is AptosResult.Success -> built.value
+      is AptosResult.Failure -> return built
+    }
+    val simulated = aptos.transactions.simulate(unsigned, signer.publicKey, feePayerPublicKey = feePayer?.publicKey)
+    val results = when (simulated) {
+      is AptosResult.Success -> simulated.value
+      is AptosResult.Failure -> return simulated
+    }
+    val simulation = results.singleOrNull()
+      ?: return AptosResult.Failure(AptosError.Validation("Expected exactly one transaction simulation result"))
+    if (!simulation.success) return AptosResult.Failure(AptosError.Validation(simulation.vmStatus))
+    val used = simulation.gasUsed.toULongOrNull()
+    val price = simulation.gasUnitPrice.toULongOrNull()
+    val limit = unsigned.rawTransaction.maxGasAmount
+    if (used == null || price == null || used > limit || price != unsigned.rawTransaction.gasUnitPrice ||
+      simulation.maxGasAmount.toULongOrNull() != limit ||
+      price > 0uL && limit > ULong.MAX_VALUE / price)
+      return AptosResult.Failure(AptosError.Validation("Invalid transaction gas estimate"))
+    return AptosResult.Success(PreparedAptosTransaction(unsigned, simulation, used * price,
+      limit * price, externalFeePayer, feePayer?.accountAddress))
+  }
+
   fun execute(
     signer: TransactionSigner,
     payload: suspend () -> AptosResult<TransactionPayload.EntryFunction>,
@@ -54,81 +104,34 @@ class AptosTransactionExecutor(private val aptos: Aptos) {
     beforeSign: suspend () -> Unit = {},
     validateSimulation: suspend (UserTransactionResponse) -> Unit = {},
     options: TransactionOptions? = null,
+    prepared: PreparedAptosTransaction? = null,
   ): Flow<AptosTransactionState> = flow {
     if (feePayer != null && externalFeePayer != null) {
       emit(AptosTransactionState.Failed("Choose either a local fee payer or an external Gas Station"))
       return@flow
     }
     emit(AptosTransactionState.Simulating)
-    val payload =
-      when (val result = payload()) {
+    val data = when (val result = payload()) {
+      is AptosResult.Success -> result.value
+      is AptosResult.Failure -> { emit(AptosTransactionState.Failed(result.error.toString())); return@flow }
+    }
+    val preparation = prepared ?: run {
+      when (val result = prepare(signer, data, feePayer, externalFeePayer != null, options)) {
         is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(AptosTransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-
-    val unsigned: UnsignedTransaction =
-      when (
-        val result =
-          if (feePayer == null && externalFeePayer == null) {
-            aptos.transactions.build(signer.accountAddress, payload, options)
-          } else {
-            aptos.transactions.buildFeePayer(
-              sender = signer.accountAddress,
-              payload = payload,
-              feePayer = feePayer?.accountAddress,
-              options = options,
-            )
-          }
-      ) {
-        is AptosResult.Success -> result.value
-        is AptosResult.Failure -> {
-          emit(AptosTransactionState.Failed(result.error.toString()))
-          return@flow
-        }
-      }
-
-    val simulation =
-      aptos.transactions.simulate(
-        transaction = unsigned,
-        senderPublicKey = signer.publicKey,
-        feePayerPublicKey = feePayer?.publicKey,
-      )
-    var selfPayEstimateOctas: ULong? = null
-    when (simulation) {
-      is AptosResult.Failure -> {
-        emit(AptosTransactionState.Failed(simulation.error.toString()))
-        return@flow
-      }
-      is AptosResult.Success -> {
-        if (simulation.value.size != 1) {
-          emit(AptosTransactionState.Failed("Expected exactly one transaction simulation result"))
-          return@flow
-        }
-        val failed = simulation.value.firstOrNull { !it.success }
-        if (failed != null) {
-          emit(AptosTransactionState.Failed(failed.vmStatus))
-          return@flow
-        }
-        val estimate = simulation.value.firstOrNull()
-        val gasUsed = estimate?.gasUsed?.toULongOrNull()
-        val gasUnitPrice = estimate?.gasUnitPrice?.toULongOrNull()
-        selfPayEstimateOctas =
-          if (
-            gasUsed != null &&
-              gasUnitPrice != null &&
-              (gasUsed == 0uL || gasUnitPrice <= ULong.MAX_VALUE / gasUsed)
-          ) {
-            gasUsed * gasUnitPrice
-          } else {
-            null
-          }
+        is AptosResult.Failure -> { emit(AptosTransactionState.Failed(result.error.toString())); return@flow }
       }
     }
-
-    validateSimulation(simulation.value.single())
+    val unsigned = preparation.transaction
+    if ((prepared != null && options != null) ||
+      !unsigned.rawTransaction.payload.toBcs().contentEquals(data.toBcs()) ||
+      unsigned.rawTransaction.sender != signer.accountAddress ||
+      preparation.externalFeePayer != (externalFeePayer != null) ||
+      preparation.localFeePayer != feePayer?.accountAddress) {
+      emit(AptosTransactionState.Failed("The reviewed transaction does not match this confirmation"))
+      return@flow
+    }
+    val selfPayEstimateOctas = preparation.estimatedGasCostOctas
+    validateSimulation(preparation.simulation)
     emit(AptosTransactionState.AwaitingAuthorization)
     beforeSign()
     val senderAuthenticator =

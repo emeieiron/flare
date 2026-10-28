@@ -8,6 +8,7 @@ import xyz.mcxross.flare.data.SwapFundingCapacity
 import xyz.mcxross.flare.data.SwapAsset
 import xyz.mcxross.flare.data.SwapRequest
 import xyz.mcxross.flare.data.SwapQuote
+import xyz.mcxross.flare.data.SwapNetworkFee
 import xyz.mcxross.flare.data.SwapOperation
 import xyz.mcxross.flare.data.AccountSetupGate
 import androidx.datastore.core.DataStore
@@ -735,7 +736,8 @@ class PortfolioViewModelTest {
       override suspend fun fundingCapacity(owner: String) =
         SwapFundingCapacity(owner, input, output, "APT", "USDC", 500_000_000uL, walletUsdc, 10_000_000uL)
       override suspend fun quote(request: SwapRequest) = SwapQuote("quote", "fake", request,
-        "100000000", "10000000", "101000000", "10000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000)
+        "100000000", "10000000", "101000000", "10000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000,
+        SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL))
       override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
         walletUsdc = 10_000_000uL
         return flowOf(ActionState.Committed("swap"))

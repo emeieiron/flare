@@ -38,6 +38,48 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
 /** Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot load its JNI library. */
 class AptosSwapRepositoryIosTest {
+  @Test
+  fun aPreparedTransactionCannotSignADifferentPayload() = runTest {
+    fixture { f ->
+      val plan = PanoraSwapProvider(f.http, f.aptos, "https://worker", { "session" }, now = { f.now })
+        .quote(AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000"))
+      f.wallets.withOwnerAccount(PROMPT) { account ->
+        val executor = AptosTransactionExecutor(f.aptos)
+        val prepared = assertIs<AptosResult.Success<xyz.mcxross.flare.aptos.transaction.PreparedAptosTransaction>>(
+          executor.prepare(account, plan.payload(), options = TransactionOptions(maxGasAmount = 50_000uL))).value
+        val changed = plan.payload().let { TransactionPayload.EntryFunction(it.call.copy(function = Identifier("other"))) }
+        val result = executor.execute(account, { AptosResult.Success(changed) }, prepared = prepared,
+          beforeSign = { fail("A changed payload must not request authorization") }).last()
+        assertIs<xyz.mcxross.flare.aptos.transaction.AptosTransactionState.Failed>(result)
+        assertEquals(listOf("simulate"), f.events)
+      }
+    }
+  }
+
+  @Test
+  fun selfPayFeeIsPreparedInTheBackgroundAndConfirmedWithOneSignature() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      val quote = f.repository.quote(REQUEST)
+      assertEquals(SwapNetworkFee(FeePayment.SELF_PAY, 10_000uL, 5_000_000uL), quote.networkFee)
+      assertEquals(listOf("simulate"), f.events)
+      assertTrue(f.store.operations.first().isEmpty())
+      assertIs<ActionState.Committed>(f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last())
+      assertEquals(listOf("simulate", "authorize", "sign", "submit", "confirm"), f.events)
+      assertEquals(FeePayment.SELF_PAY, f.store.operations.first().single().feePayment)
+    }
+  }
+
+  @Test
+  fun aReviewedSelfPaySwapCannotBeChangedToSponsorshipAtConfirmation() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      val quote = f.repository.quote(REQUEST)
+      assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last())
+      assertEquals(listOf("simulate"), f.events)
+    }
+  }
+
   @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
   @Test
   fun aCompletedQuoteDoesNotWaitIndefinitelyForTradingSessionRestoration() = runTest {
@@ -120,6 +162,7 @@ class AptosSwapRepositoryIosTest {
       assertIs<ActionState.Committed>(f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last())
       assertEquals(1, f.events.count { it == "sponsor" })
       assertEquals(1, f.events.count { it == "submit" })
+      assertEquals(FeePayment.SELF_PAY, f.store.operations.first().single().feePayment)
     }
   }
 
@@ -146,7 +189,7 @@ class AptosSwapRepositoryIosTest {
       f.gate.mutex.lock()
       try { assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last()) }
       finally { f.gate.mutex.unlock() }
-      assertTrue(f.events.isEmpty())
+      assertEquals(listOf("simulate"), f.events)
       f.wallets.onConfirm = { f.preferences.registerProfile(AccountProfile("other", ownerAddress = "0x2")) }
       assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last())
       assertFalse("sign" in f.events)
@@ -170,6 +213,7 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
   var refuseGasProbe = false
   var restoreDelayMs = 0L
   var sponsorFailure: AptosError? = null
+  var sponsorshipAvailable = true
   private val data = object : DataStore<Preferences> {
     override val data = MutableStateFlow(emptyPreferences())
     override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
@@ -226,6 +270,7 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
     override suspend fun invalidate() = Unit
   }
   private val gas = object : GasSponsorshipRepository {
+    override suspend fun canSponsorSwap() = sponsorshipAvailable
     override suspend fun submit(request: ExternalFeePayerRequest, ownerOnly: Boolean): AptosResult<String> = error("Not used")
     override suspend fun resolve(fingerprint: String): AptosResult<String?> = error("Not used")
     override suspend fun submitSwap(request: ExternalFeePayerRequest, authorization: String): AptosResult<String> {

@@ -27,6 +27,8 @@ class PreferencesSwapOperationStore(private val dataStore: DataStore<Preferences
       val existing = saved.firstOrNull { it.id == operation.id }
       if (existing != null) {
         require(existing.profileId == operation.profileId && existing.quote == operation.quote &&
+          (existing.feePayment == operation.feePayment ||
+            existing.status == SwapOperationStatus.NOT_SUBMITTED && operation.status == SwapOperationStatus.PREPARED) &&
           (existing.preparedReference == operation.preparedReference ||
             existing.status == SwapOperationStatus.NOT_SUBMITTED && operation.status == SwapOperationStatus.PREPARED)) {
           "Swap operation identity changed"

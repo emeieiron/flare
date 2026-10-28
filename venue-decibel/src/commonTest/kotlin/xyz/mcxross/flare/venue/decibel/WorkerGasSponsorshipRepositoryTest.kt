@@ -2,6 +2,7 @@ package xyz.mcxross.flare.venue.decibel
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.ContentType
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
@@ -24,6 +26,41 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.kaptos.model.AptosResult
 
 class WorkerGasSponsorshipRepositoryTest {
+  @Test
+  fun availabilityIsReadOnlyAndUnconfirmedSponsorshipSelectsSelfPay() = runTest {
+    for ((body, status, expected) in listOf(
+      Triple("""{"available":true}""", HttpStatusCode.OK, true),
+      Triple("""{"available":false}""", HttpStatusCode.OK, false),
+      Triple("{}", HttpStatusCode.OK, false),
+      Triple("unavailable", HttpStatusCode.ServiceUnavailable, false),
+    )) {
+      val client = HttpClient(MockEngine(MockEngineConfig().apply {
+        dispatcher = StandardTestDispatcher(testScheduler)
+        addHandler { request ->
+        assertEquals("GET", request.method.value)
+        assertEquals("/gas/sponsor/swap-availability", request.url.encodedPath)
+        assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+        respond(body, status, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        }
+      })) { install(ContentNegotiation) { json() } }
+      try {
+        val repository = WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), DecibelRuntimeConfig(), TestSessionRepository)
+        assertEquals(expected, repository.canSponsorSwap())
+      } finally { client.close() }
+    }
+  }
+
+  @Test
+  fun aStalledAvailabilityReadFallsBackBeforeAnySubmission() = runTest {
+    val client = HttpClient(MockEngine {
+      kotlinx.coroutines.delay(60_000)
+      respond("""{"available":true}""", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+    }) { install(ContentNegotiation) { json() } }
+    try {
+      assertEquals(false, WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), DecibelRuntimeConfig(), TestSessionRepository).canSponsorSwap())
+    } finally { client.close() }
+  }
+
   @Test
   fun onlyExplicitPreSubmissionCodesAreReportedAsDefinite() = runTest {
     val unavailable = HttpStatusCode.ServiceUnavailable

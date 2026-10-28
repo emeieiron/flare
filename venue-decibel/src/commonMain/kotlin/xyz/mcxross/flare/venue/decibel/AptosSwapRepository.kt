@@ -21,6 +21,7 @@ import xyz.mcxross.flare.aptos.swap.validateEffects
 import xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor
 import xyz.mcxross.flare.aptos.transaction.AptosTransactionState
 import xyz.mcxross.flare.aptos.transaction.ExternalFeePayerSubmitter
+import xyz.mcxross.flare.aptos.transaction.PreparedAptosTransaction
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.*
 import xyz.mcxross.flare.security.VaultPrompt
@@ -29,10 +30,12 @@ import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.kaptos.Aptos
+import xyz.mcxross.kaptos.account.Account
 import xyz.mcxross.kaptos.account.AccountAsset
 import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.TransactionOptions
+import xyz.mcxross.kaptos.model.UserTransactionResponse
 import xyz.mcxross.kaptos.util.APTOS_COIN
 
 /** Adapts headless swaps to Flare's owner authorization and durable transaction lifecycle. */
@@ -51,7 +54,12 @@ class AptosSwapRepository(
   private val runtime: FlareRuntimeConfig,
   private val now: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : SwapRepository {
-  private val plans = mutableMapOf<String, Pair<String, ValidatedSwapPlan>>()
+  private data class RetainedSwap(val profileId: String, val plan: ValidatedSwapPlan,
+    val prepared: PreparedAptosTransaction, val payment: FeePayment) {
+    fun quote() = plan.toQuote().copy(networkFee = SwapNetworkFee(payment,
+      prepared.estimatedGasCostOctas, prepared.maximumGasCostOctas))
+  }
+  private val plans = mutableMapOf<String, RetainedSwap>()
   private val plansMutex = Mutex()
 
   override val operations: Flow<List<SwapOperation>> = store.operations.combine(preferences.values) { saved, selected ->
@@ -101,15 +109,21 @@ class AptosSwapRepository(
         val plan = provider.quote(AptosSwapRequest(owner,
           if (request.kind == SwapAmountKind.EXACT_INPUT) SwapKind.EXACT_INPUT else SwapKind.EXACT_OUTPUT,
           request.amount, request.slippageBps))
+        val payment = if (gas.canSponsorSwap()) FeePayment.SPONSORED else FeePayment.SELF_PAY
+        val prepared = wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { account ->
+          check(account.accountAddress.toString().sameAptosAddress(owner))
+          prepare(plan, account, payment).also { validateSimulation(plan, account, it.simulation) }
+        }
+        val retained = RetainedSwap(selected.activeProfileId, plan, prepared, payment)
         wallets.requireAuthorization(generation)
         check(preferences.values.first().activeProfileId == selected.activeProfileId) { "The selected wallet changed" }
         plan.requireCurrent(now(), owner)
         plansMutex.withLock {
-          plans.entries.removeAll { it.value.second.localExpiresAtMs <= now() }
+          plans.entries.removeAll { it.value.plan.localExpiresAtMs <= now() }
           check(plans.size < 32) { "Too many active swap quotes" }
-          plans[plan.id] = selected.activeProfileId to plan
+          plans[plan.id] = retained
         }
-        emit(plan.toQuote())
+        emit(retained.quote())
       }).first()
     } finally {
       // Session restoration is optional; it must not hold a completed quote open indefinitely.
@@ -129,8 +143,11 @@ class AptosSwapRepository(
       val selected = preferences.values.first()
       val owner = checkNotNull(selected.ownerAddress) { "Use a device that holds the owner key" }
       val retained = plansMutex.withLock { plans[quoteId] } ?: error("Request a fresh swap quote")
-      require(retained.first == selected.activeProfileId) { "The quote belongs to another profile" }
-      val plan = retained.second
+      require(retained.profileId == selected.activeProfileId) { "The quote belongs to another profile" }
+      val plan = retained.plan
+      require(feePayment != FeePayment.SPONSORED || retained.payment == FeePayment.SPONSORED) {
+        "The reviewed swap uses your APT for gas. Review its network fee before continuing."
+      }
       plan.requireCurrent(now(), owner)
       reconcileLocked()
       check(store.operations.first().none { it.profileId == selected.activeProfileId && it.isUnresolved }) {
@@ -150,27 +167,15 @@ class AptosSwapRepository(
         wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { account ->
           check(account.accountAddress.toString().sameAptosAddress(owner) && session.walletAddress?.sameAptosAddress(owner) == true)
           var authorized = false
+          val prepared = if (feePayment == retained.payment) retained.prepared
+            else prepare(plan, account, feePayment, retained.prepared.transaction.rawTransaction.gasUnitPrice)
           executor.execute(
             signer = account,
             payload = { AptosResult.Success(plan.payload()) },
             externalFeePayer = if (feePayment == FeePayment.SPONSORED)
               ExternalFeePayerSubmitter { gas.submitSwap(it, plan.sponsorshipAuthorization) } else null,
-            options = TransactionOptions(maxGasAmount = 50_000uL,
-              expirationTimestampSecs = (plan.expiresAtMs / 1000).toULong()),
-            validateSimulation = { result ->
-              plan.validateEffects(result)
-              val price = result.gasUnitPrice.toULong()
-              val limit = result.maxGasAmount.toULong()
-              require(price in 1uL..1_000uL && limit == 50_000uL) { "Swap gas exceeds the supported limits" }
-              val reserve = price * limit
-              val balance = when (val read = aptos.accounts.getBalance(account.accountAddress, AccountAsset.coin(APTOS_COIN))) {
-                is AptosResult.Success -> read.value
-                is AptosResult.Failure -> error("Unable to verify the APT balance")
-              }
-              require(balance >= reserve && plan.maximumInput <= balance - reserve) {
-                "Keep enough APT to cover the swap and its maximum network fee"
-              }
-            },
+            prepared = prepared,
+            validateSimulation = { result -> validateSimulation(plan, account, result) },
             beforeSign = {
               wallets.requireAuthorization(generation)
               val current = preferences.values.first()
@@ -188,8 +193,8 @@ class AptosSwapRepository(
               plan.requireCurrent(now(), owner)
             },
             onPrepared = { reference ->
-              operation = SwapOperation(plan.id, selected.activeProfileId, plan.toQuote(),
-                SwapOperationStatus.PREPARED, reference, now())
+              operation = SwapOperation(plan.id, selected.activeProfileId, retained.quote(),
+                SwapOperationStatus.PREPARED, reference, now(), feePayment = feePayment)
               store.write(checkNotNull(operation))
               journal.upsert(PendingTransactionEntity(reference, runtime.network.name,
                 journalOperation("SWAP", selected.activeProfileId), "PREPARED", now(), now()))
@@ -239,6 +244,32 @@ class AptosSwapRepository(
         definitelyNotSubmitted = !submissionStarted))
     } finally {
       try { restoreTrading(prompt) } finally { gate.mutex.unlock() }
+    }
+  }
+
+  private suspend fun prepare(plan: ValidatedSwapPlan, account: Account,
+    payment: FeePayment, gasPrice: ULong? = null): PreparedAptosTransaction =
+    when (val result = executor.prepare(account, plan.payload(),
+      externalFeePayer = payment == FeePayment.SPONSORED,
+      options = TransactionOptions(maxGasAmount = 50_000uL, gasUnitPrice = gasPrice,
+        expirationTimestampSecs = (plan.expiresAtMs / 1000).toULong()))) {
+      is AptosResult.Success -> result.value
+      is AptosResult.Failure -> error("The swap couldn’t be simulated. Try another amount.")
+    }
+
+  private suspend fun validateSimulation(plan: ValidatedSwapPlan, account: Account,
+    result: UserTransactionResponse) {
+    plan.validateEffects(result)
+    val price = result.gasUnitPrice.toULong()
+    val limit = result.maxGasAmount.toULong()
+    require(price in 1uL..1_000uL && limit == 50_000uL) { "Swap gas exceeds the supported limits" }
+    val reserve = price * limit
+    val balance = when (val read = aptos.accounts.getBalance(account.accountAddress, AccountAsset.coin(APTOS_COIN))) {
+      is AptosResult.Success -> read.value
+      is AptosResult.Failure -> error("Unable to verify the APT balance")
+    }
+    require(balance >= reserve && plan.maximumInput <= balance - reserve) {
+      "Keep enough APT to cover the swap and its maximum network fee"
     }
   }
 
