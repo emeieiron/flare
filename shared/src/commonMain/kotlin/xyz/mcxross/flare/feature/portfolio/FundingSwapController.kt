@@ -19,6 +19,7 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.isUnresolved
 import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.SelfPayOffer
 
 internal data class FundingSwapContext(val profileId: String, val owner: String, val account: String?)
 
@@ -37,14 +38,13 @@ data class FundingSwapState(
   val amountKind: SwapAmountKind = SwapAmountKind.EXACT_INPUT,
   val working: Boolean = false,
   val transaction: ActionState? = null,
+  val selfPayOffer: SelfPayOffer? = null,
   val pending: SwapOperation? = null,
   val error: String? = null,
   val completed: Boolean = false,
 ) {
   val canSwap: Boolean get() = capacity?.maximumInput?.let { it > 0uL } == true && pending == null && step != FundingSwapStep.PENDING
-  val selfPay: Boolean get() = (transaction as? ActionState.Failed)?.let {
-    it.definitelyNotSubmitted && it.selfPay != null
-  } == true
+  val selfPay: Boolean get() = selfPayOffer != null
 
   /** A shortfall, never the full transfer amount when some USDC is already held. */
   fun shortfall(fundingAmount: String): ULong? {
@@ -112,7 +112,7 @@ internal class FundingSwapController(
     if (state.value.working || !state.value.canSwap) return
     requestedTransfer = fundingAmount
     val shortfall = state.value.shortfall(fundingAmount) ?: 0uL
-    mutable.update { it.copy(step = FundingSwapStep.SWAP, error = null, completed = false, transaction = null,
+    mutable.update { it.copy(step = FundingSwapStep.SWAP, error = null, completed = false, transaction = null, selfPayOffer = null,
       quote = null, amountKind = if (shortfall > 0uL) SwapAmountKind.EXACT_OUTPUT else SwapAmountKind.EXACT_INPUT,
       inputAmount = if (shortfall > 0uL) fundingAmount else "") }
     scheduleQuote()
@@ -122,7 +122,7 @@ internal class FundingSwapController(
     if (state.value.working || state.value.pending != null) return
     val amount = value.filter { it in '0'..'9' || it == '.' }
     mutable.update { it.copy(inputAmount = amount, quote = null, quoteExpired = false,
-      step = FundingSwapStep.SWAP, error = null, transaction = null) }
+      step = FundingSwapStep.SWAP, error = null, transaction = null, selfPayOffer = null) }
     if (state.value.amountKind == SwapAmountKind.EXACT_OUTPUT) requestedTransfer = amount
     scheduleQuote()
   }
@@ -145,7 +145,7 @@ internal class FundingSwapController(
   fun back() {
     if (state.value.working || state.value.pending != null) return
     cancelQuotes()
-    mutable.update { it.copy(step = null, quote = null, transaction = null, error = null) }
+    mutable.update { it.copy(step = null, quote = null, transaction = null, selfPayOffer = null, error = null) }
   }
 
   private fun cancelQuotes() {
@@ -242,7 +242,9 @@ internal class FundingSwapController(
       }
       repository.execute(quote.id, VaultPrompt("Swap APT for USDC", "Confirm your identity"),
         if (selfPay) FeePayment.SELF_PAY else FeePayment.SPONSORED).collect { transaction ->
-        if (current(key, version)) mutable.update { it.copy(transaction = transaction) }
+        if (current(key, version)) mutable.update { it.copy(transaction = transaction,
+          selfPayOffer = (transaction as? ActionState.Failed)?.takeIf { failure -> failure.definitelyNotSubmitted }?.selfPay
+            ?: it.selfPayOffer) }
       }
       if (!current(key, version)) return@work
       when (val result = state.value.transaction) {
@@ -285,7 +287,7 @@ internal class FundingSwapController(
     if (!current(key, version)) return
     val amount = requestedTransfer.takeIf { decimalUnits(it, "Transfer amount", quote.request.output.decimals).getOrNull()?.let { n -> n > 0uL } == true }
       ?: (capacity?.outputBalance ?: quote.minimumOutput.toULong()).toDecimalString(quote.request.output.decimals)
-    mutable.update { it.copy(capacity = capacity, pending = null, step = null, quote = null, transaction = null,
+    mutable.update { it.copy(capacity = capacity, pending = null, step = null, quote = null, transaction = null, selfPayOffer = null,
       completed = true, error = null, balanceError = if (capacity == null) "Swap confirmed. Refresh your wallet balance to continue." else null) }
     onReadyToTransfer(amount)
   }

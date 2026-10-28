@@ -229,6 +229,30 @@ class FundingSwapControllerTest {
     assertEquals(listOf("10"), f.ready)
   }
 
+  @Test fun automaticQuoteRenewalPreservesTheExplicitGasFallback() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Sponsor unavailable", definitelyNotSubmitted = true, selfPay = SelfPayOffer(100uL))
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("2"); advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    val rejectedQuote = f.controller.state.value.quote!!.id
+    f.repo.now += 27_001
+    advanceTimeBy(27_001); runCurrent()
+    assertTrue(f.controller.state.value.selfPay)
+    assertNotEquals(rejectedQuote, f.controller.state.value.quote!!.id)
+    assertEquals(listOf(FeePayment.SPONSORED), f.repo.executions)
+    f.repo.result = ActionState.Committed("hash")
+    f.repo.executionGate = CompletableDeferred()
+    f.controller.execute(selfPay = true); runCurrent()
+    assertTrue(f.controller.state.value.working)
+    assertTrue(f.controller.state.value.selfPay)
+    assertEquals(ActionState.Simulating, f.controller.state.value.transaction)
+    f.repo.executionGate!!.complete(Unit); runCurrent()
+    assertEquals(listOf(FeePayment.SPONSORED, FeePayment.SELF_PAY), f.repo.executions)
+    assertEquals(listOf(rejectedQuote, "quote-2"), f.repo.executedQuoteIds)
+    assertTrue(f.controller.state.value.completed)
+  }
+
   @Test fun uncertainSubmissionSurvivesClosingAndOnlyChecksStatusOnReturn() = runTest {
     val f = Fixture(backgroundScope)
     f.repo.result = ActionState.Failed("Response lost", reference = "pending")
@@ -290,10 +314,12 @@ private class FakeSwaps : SwapRepository {
   var quoteGate: CompletableDeferred<Unit>? = null
   var quoteFailuresRemaining = 0
   var quoteDelayMs = 0L
+  var executionGate: CompletableDeferred<Unit>? = null
   var result: ActionState = ActionState.Committed("hash")
   var reconciled: SwapOperationStatus? = null
   val requests = mutableListOf<SwapRequest>()
   val executions = mutableListOf<FeePayment>()
+  val executedQuoteIds = mutableListOf<String>()
   override val operations = MutableStateFlow<List<SwapOperation>>(emptyList())
   private lateinit var quoted: SwapQuote
   override suspend fun fundingCapacity(owner: String): SwapFundingCapacity {
@@ -312,6 +338,8 @@ private class FakeSwaps : SwapRepository {
   }
   override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
     executions += feePayment
+    executedQuoteIds += quoteId
+    executionGate?.let { emit(ActionState.Simulating); it.await() }
     if (result is ActionState.Committed) capacity = capacity.copy(outputBalance = capacity.outputBalance + quoted.minimumOutput.toULong())
     else if ((result as? ActionState.Failed)?.definitelyNotSubmitted == false) operations.value = listOf(
       SwapOperation(quoteId, CONTEXT.profileId, quoted, SwapOperationStatus.PENDING, "pending", now))

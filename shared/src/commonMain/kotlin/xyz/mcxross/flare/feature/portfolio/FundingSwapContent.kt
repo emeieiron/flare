@@ -60,7 +60,7 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
       } ?: "—", loading = state.quoting)
       DetailRow("Slippage", "${(quote?.request?.slippageBps ?: 50).toULong().toDecimalString(2)}%")
       if (state.selfPay) {
-        val fee = (state.transaction as ActionState.Failed).selfPay!!
+        val fee = checkNotNull(state.selfPayOffer)
         DetailRow("Gas · paid by you", "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}")
       } else {
         DetailRow("Gas", "Sponsored when available")
