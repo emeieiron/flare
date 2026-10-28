@@ -130,7 +130,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
             if (isDeposit && swap.capacity != null) swap.capacity.outputBalance.toDecimalString(swap.capacity.output.decimals)
             else if (availableUsdc % 1.0 == 0.0) availableUsdc.toLong().toString()
             else formatQuantity(availableUsdc, 6)
-          onIntent(PortfolioIntent.ChangeFundingAmount(maxStr))
+          onIntent(PortfolioIntent.ChangeFundingAmount(maxStr, immediate = true))
         }
       } else null
 
@@ -281,7 +281,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
           Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !state.busy && !swap.loadingBalance, style = FlareButtonStyle.OUTLINE)
       }
       swap.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
-      state.actionError?.let { error ->
+      (state.actionError ?: state.fundingFeeError)?.let { error ->
         ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
       }
       if (state.capabilities.sponsoredFees && !offerSwap && units != null && units > 0uL) {

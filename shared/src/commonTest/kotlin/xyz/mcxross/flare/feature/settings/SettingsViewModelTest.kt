@@ -49,6 +49,7 @@ import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.WithdrawalTerms
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
@@ -653,6 +654,36 @@ class SettingsViewModelTest {
     assertEquals("1.234567", WalletTokenBalance("USDC", "1.234567").displayAmount)
     assertEquals("0.00", WalletTokenBalance("USDC", "0").displayAmount)
     assertEquals("—", WalletTokenBalance("USDC").displayAmount)
+  }
+
+  @Test
+  fun withdrawalFeesResolveImmediatelyForMaxAndRejectOldAccountResults() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    val gate = CompletableDeferred<Unit>()
+    val reads = mutableListOf<String>()
+    val accounts = object : AccountRepository by FakeAccountRepository() {
+      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+        reads += amount
+        if (amount == "2") withContext(NonCancellable) { gate.await() }
+        return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+      }
+    }
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    runCurrent()
+    vm.onIntent(SettingsIntent.OpenWithdraw)
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1", immediate = true)); runCurrent()
+    assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.withdrawNetworkFee)
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1.0")); runCurrent()
+    assertEquals(listOf("1"), reads)
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("2")); advanceTimeBy(176); runCurrent()
+    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4", selectedSubaccount = "0x5")); runCurrent()
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("3", immediate = true)); runCurrent()
+    gate.complete(Unit); runCurrent()
+    assertEquals(NetworkFee(300uL, 5_000uL), vm.uiState.value.withdrawNetworkFee)
+    vm.onIntent(SettingsIntent.DismissWithdraw); runCurrent()
+    assertNull(vm.uiState.value.withdrawNetworkFee)
   }
 
   private fun settingsViewModel(wallets: WalletRepository, sessions: SessionRepository?) =

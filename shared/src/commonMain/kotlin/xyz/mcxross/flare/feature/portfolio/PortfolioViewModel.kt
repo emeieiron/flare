@@ -5,8 +5,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +20,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.runSuspendCatching
+import xyz.mcxross.flare.feature.funding.FeeResolver
+import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.data.SwapRepository
 import xyz.mcxross.flare.data.SwapAmountKind
@@ -130,6 +130,7 @@ data class PortfolioUiState(
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val fundingTransaction: ActionState? = null,
   val fundingNetworkFee: NetworkFee? = null,
+  val fundingFeeError: String? = null,
   val fundingSwap: FundingSwapState = FundingSwapState(),
   val managedPositionMarket: String? = null,
   val takeProfitInput: String = "",
@@ -262,7 +263,7 @@ sealed interface PortfolioIntent {
   /** Switches an open transfer between withdrawing and moving USDC between perps and spot. */
   data class SelectFundingMode(val mode: FundingMode) : PortfolioIntent
 
-  data class ChangeFundingAmount(val value: String) : PortfolioIntent
+  data class ChangeFundingAmount(val value: String, val immediate: Boolean = false) : PortfolioIntent
 
   data object SubmitFunding : PortfolioIntent
 
@@ -353,11 +354,15 @@ class PortfolioViewModel(
   private val balanceMutex = Mutex()
   private var lastPositionAction: TradeAction? = null
   private var fundingContext: FundingSwapContext? = null
-  private data class FundingFeeKey(val context: FundingSwapContext?, val mode: FundingMode, val amount: String)
-  private var fundingFeeJob: Job? = null
-  private var fundingFeeRevision = 0L
-  private var fundingFeeKey: FundingFeeKey? = null
-  private var fundingFeeUpdatedAt = 0L
+  private data class FundingFeeKey(val context: FundingSwapContext?, val mode: FundingMode, val units: ULong)
+  private val fundingFees = FeeResolver<FundingFeeKey>(viewModelScope,
+    read = { accounts.estimateFundingFee(it.units.toDecimalString(6), it.mode == FundingMode.WITHDRAW) },
+    publish = { key, fee, error ->
+      if (fundingContext == key.context && local.value.fundingMode == key.mode &&
+        decimalUnits(local.value.fundingAmount, "USDC amount", 6).getOrNull() == key.units && !local.value.busy)
+        local.update { it.copy(fundingNetworkFee = fee, fundingFeeError = error) }
+    },
+  )
   private val fundingSwaps = FundingSwapController(swaps, viewModelScope, onReadyToTransfer = { amount ->
     local.update { it.copy(fundingAmount = amount, fundingTransaction = null, actionError = null) }
     scheduleFundingFee()
@@ -601,7 +606,7 @@ class PortfolioViewModel(
       is PortfolioIntent.ChangeFundingAmount -> {
         if (!local.value.busy && !fundingSwaps.state.value.working && fundingSwaps.state.value.step == null) {
           local.update { it.copy(fundingAmount = decimalCharacters(intent.value), fundingTransaction = null, actionError = null) }
-          scheduleFundingFee()
+          scheduleFundingFee(immediate = intent.immediate)
         }
       }
       PortfolioIntent.SubmitFunding -> submitFunding(if (capabilities.sponsoredFees) FeePayment.AUTOMATIC else FeePayment.SPONSORED)
@@ -835,39 +840,22 @@ class PortfolioViewModel(
       ?: error("Select an open position")
 
   private fun clearFundingFee() {
-    fundingFeeRevision++
-    fundingFeeJob?.cancel()
-    fundingFeeKey = null
-    local.update { it.copy(fundingNetworkFee = null) }
+    fundingFees.cancel(clearCache = true)
+    local.update { it.copy(fundingNetworkFee = null, fundingFeeError = null) }
   }
 
-  private fun scheduleFundingFee(force: Boolean = false) {
+  private fun scheduleFundingFee(immediate: Boolean = false) {
     val state = local.value
     val mode = state.fundingMode ?: return
     if (!capabilities.sponsoredFees || state.busy || fundingSwaps.state.value.step != null ||
       mode !in setOf(FundingMode.DEPOSIT, FundingMode.WITHDRAW)) return
-    val key = FundingFeeKey(fundingContext, mode, state.fundingAmount)
-    if (!force && fundingFeeKey == key && (fundingFeeJob?.isActive == true ||
-      state.fundingNetworkFee != null && Clock.System.now().toEpochMilliseconds() - fundingFeeUpdatedAt < 30_000)) return
-    val changed = fundingFeeKey != key
-    fundingFeeRevision++
-    val version = fundingFeeRevision
-    fundingFeeJob?.cancel()
-    fundingFeeKey = key
-    if (changed) local.update { it.copy(fundingNetworkFee = null) }
-    val units = decimalUnits(key.amount, "USDC amount", 6).getOrNull() ?: return
-    if (units == 0uL) return
-    fundingFeeJob = viewModelScope.launch {
-      delay(600)
-      val fee = runSuspendCatching {
-        withTimeoutOrNull(15_000) { accounts.estimateFundingFee(key.amount, mode == FundingMode.WITHDRAW) }
-      }.getOrNull()
-      if (fundingFeeRevision == version && fundingContext == key.context &&
-        local.value.fundingMode == mode && local.value.fundingAmount == key.amount && !local.value.busy) {
-        fundingFeeUpdatedAt = Clock.System.now().toEpochMilliseconds()
-        local.update { it.copy(fundingNetworkFee = fee) }
-      }
+    val units = decimalUnits(state.fundingAmount, "USDC amount", 6).getOrNull()
+    if (units == null || units == 0uL) {
+      fundingFees.cancel()
+      local.update { it.copy(fundingNetworkFee = null, fundingFeeError = null) }
+      return
     }
+    fundingFees.request(FundingFeeKey(fundingContext, mode, units), immediate)
   }
 
   private fun submitFunding(feePayment: FeePayment) =
@@ -882,8 +870,7 @@ class PortfolioViewModel(
     }
 
   private suspend fun submitFundingInternal(feePayment: FeePayment) {
-    fundingFeeRevision++
-    fundingFeeJob?.cancel()
+    fundingFees.cancel(clearCache = true)
     val state = local.value
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
     check(fundingSwaps.state.value.step == null && fundingSwaps.state.value.pending == null) {
@@ -981,7 +968,7 @@ class PortfolioViewModel(
   /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
   suspend fun refreshWhileVisible() {
     fundingSwaps.setVisible(true)
-    scheduleFundingFee(force = true)
+    scheduleFundingFee(immediate = true)
     try {
       var waitMs = 2_000L
       while (currentCoroutineContext().isActive) {
@@ -1006,8 +993,7 @@ class PortfolioViewModel(
       }
     } finally {
       fundingSwaps.setVisible(false)
-      fundingFeeRevision++
-      fundingFeeJob?.cancel()
+      clearFundingFee()
     }
   }
 

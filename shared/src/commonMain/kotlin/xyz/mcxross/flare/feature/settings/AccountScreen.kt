@@ -540,7 +540,7 @@ private fun WithdrawForm(
     unit = "USDC",
     availableText = available?.let { "Available ${formatQuantity(it, 2)} USDC" },
     onMaxClick =
-      available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max))) } },
+      available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max), immediate = true)) } },
     isError = exceeds || !coversFee,
     supportingText =
       when {
@@ -622,7 +622,7 @@ private fun WithdrawReview(
     style = MaterialTheme.typography.bodySmall,
   )
   // Problems found before anything was sent stay here, next to what they're about.
-  state.withdrawError?.takeIf { state.withdrawTransaction == null }?.let {
+  (state.withdrawError ?: state.withdrawFeeError)?.takeIf { state.withdrawTransaction == null }?.let {
     ActionNotice(actionFailure(it, WITHDRAWAL_FAILED), Modifier.padding(top = 16.dp), NoticeTone.ALERT)
   }
   FlareButton(

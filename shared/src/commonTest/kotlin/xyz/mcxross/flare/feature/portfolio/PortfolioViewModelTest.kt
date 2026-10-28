@@ -743,7 +743,7 @@ class PortfolioViewModelTest {
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
       vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
       vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
-      advanceTimeBy(601); runCurrent()
+      advanceTimeBy(176); runCurrent()
       assertEquals(estimated, vm.uiState.value.fundingNetworkFee)
       assertTrue(payments.isEmpty())
       vm.onIntent(PortfolioIntent.SubmitFunding); runCurrent()
@@ -752,6 +752,26 @@ class PortfolioViewModelTest {
       assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
       assertNull(vm.uiState.value.actionError)
     }
+  }
+
+  @Test
+  fun maximumResolvesImmediatelyAndEquivalentAmountsReuseTheFee() = runTest {
+    val reads = mutableListOf<String>()
+    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+        reads += amount
+        return NetworkFee(100uL, 5_000uL)
+      }
+    }
+    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1", immediate = true)); runCurrent()
+    assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1.0")); runCurrent()
+    assertEquals(listOf("1"), reads)
+    assertEquals("1.0", vm.uiState.value.fundingAmount)
+    assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
   }
 
   @Test
@@ -768,8 +788,8 @@ class PortfolioViewModelTest {
     val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1")); advanceTimeBy(601); runCurrent()
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2")); advanceTimeBy(601); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1")); advanceTimeBy(176); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2")); advanceTimeBy(176); runCurrent()
     assertEquals(NetworkFee(200uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
     gate.complete(Unit); runCurrent()
     assertEquals(listOf("1", "2"), reads)

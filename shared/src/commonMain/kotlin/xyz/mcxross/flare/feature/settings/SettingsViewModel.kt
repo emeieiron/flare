@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.decimalUnits
+import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.feature.funding.FeeResolver
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
@@ -81,6 +84,7 @@ data class SettingsUiState(
   val withdrawAmount: String = "",
   val withdrawTransaction: ActionState? = null,
   val withdrawNetworkFee: NetworkFee? = null,
+  val withdrawFeeError: String? = null,
   val withdrawing: Boolean = false,
   /** Why the last withdrawal attempt failed, as reported; screens phrase it for people. */
   val withdrawError: String? = null,
@@ -147,7 +151,7 @@ sealed interface SettingsIntent {
 
   data class ChangeWithdrawDestination(val address: String) : SettingsIntent
 
-  data class ChangeWithdrawAmount(val amount: String) : SettingsIntent
+  data class ChangeWithdrawAmount(val amount: String, val immediate: Boolean = false) : SettingsIntent
 
   /** Whether the USDC goes to another account on the venue instead of leaving it. */
   data class SetWithdrawOnVenue(val onVenue: Boolean) : SettingsIntent
@@ -217,8 +221,17 @@ class SettingsViewModel(
       )
     )
   private var secretClearJob: Job? = null
-  private var withdrawFeeJob: Job? = null
-  private var withdrawFeeVersion = 0L
+  private data class WithdrawFeeKey(val context: Triple<String, String?, String?>, val units: ULong)
+  private var withdrawFeeContext: Triple<String, String?, String?>? = null
+  private var withdrawFeeVisible = false
+  private val withdrawFees = FeeResolver<WithdrawFeeKey>(viewModelScope,
+    read = { accounts.estimateFundingFee(it.units.toDecimalString(6), withdrawing = true) },
+    publish = { key, fee, error ->
+      if (withdrawFeeContext == key.context && withdrawFeeVisible && !local.value.withdrawOnVenue &&
+        decimalUnits(local.value.withdrawAmount, "USDC amount", 6).getOrNull() == key.units && !local.value.withdrawing)
+        local.update { it.copy(withdrawNetworkFee = fee, withdrawFeeError = error) }
+    },
+  )
   private val balanceRefreshRequests = Channel<Unit>(Channel.CONFLATED)
 
   init {
@@ -251,6 +264,18 @@ class SettingsViewModel(
         )
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
+
+  init {
+    viewModelScope.launch {
+      preferences.values.map { Triple(it.activeProfileId, it.ownerAddress, it.selectedSubaccount) }
+        .distinctUntilChanged().collect { context ->
+          withdrawFeeContext = context
+          withdrawFees.cancel(clearCache = true)
+          local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
+          if (withdrawFeeVisible) scheduleWithdrawFee()
+        }
+    }
+  }
 
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
@@ -376,9 +401,13 @@ class SettingsViewModel(
       }
       is SettingsIntent.ChangeWithdrawAmount -> {
         local.update { it.copy(withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' }, withdrawError = null) }
-        scheduleWithdrawFee()
+        scheduleWithdrawFee(immediate = intent.immediate)
       }
-      SettingsIntent.DismissWithdraw ->
+      SettingsIntent.DismissWithdraw -> {
+        if (!local.value.withdrawing) {
+          withdrawFeeVisible = false
+          withdrawFees.cancel(clearCache = true)
+        }
         local.update {
           if (it.withdrawing) it else it.copy(
             withdrawDestination = "",
@@ -387,9 +416,13 @@ class SettingsViewModel(
             withdrawTransaction = null,
             withdrawError = null,
             withdrawing = false,
+            withdrawNetworkFee = null,
+            withdrawFeeError = null,
           )
         }
+      }
       SettingsIntent.OpenWithdraw -> {
+        withdrawFeeVisible = true
         val pending = uiState.value.pendingWithdrawal
         local.update {
           it.copy(
@@ -549,24 +582,17 @@ class SettingsViewModel(
     }
   }
 
-  private fun scheduleWithdrawFee() {
-    withdrawFeeVersion++
-    val version = withdrawFeeVersion
-    withdrawFeeJob?.cancel()
-    local.update { it.copy(withdrawNetworkFee = null) }
+  private fun scheduleWithdrawFee(immediate: Boolean = false) {
     val current = local.value
-    if (!capabilities.sponsoredFees || current.withdrawing || current.withdrawOnVenue ||
-      current.withdrawAmount.toDoubleOrNull()?.let { it.isFinite() && it > 0.0 } != true) return
-    val profileId = uiState.value.preferences.activeProfileId
-    withdrawFeeJob = viewModelScope.launch {
-      delay(600)
-      val fee = runSuspendCatching {
-        withTimeoutOrNull(15_000) { accounts.estimateFundingFee(current.withdrawAmount, withdrawing = true) }
-      }.getOrNull()
-      if (withdrawFeeVersion == version && uiState.value.preferences.activeProfileId == profileId &&
-        local.value.withdrawOnVenue == current.withdrawOnVenue && !local.value.withdrawing)
-        local.update { it.copy(withdrawNetworkFee = fee) }
+    val context = withdrawFeeContext
+    val units = decimalUnits(current.withdrawAmount, "USDC amount", 6).getOrNull()
+    if (!withdrawFeeVisible || !capabilities.sponsoredFees || current.withdrawing || current.withdrawOnVenue ||
+      context == null || units == null || units == 0uL) {
+      withdrawFees.cancel()
+      local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
+      return
     }
+    withdrawFees.request(WithdrawFeeKey(context, units), immediate)
   }
 
   private fun submitWithdraw(feePayment: FeePayment) {
@@ -583,8 +609,7 @@ class SettingsViewModel(
       local.update { it.copy(withdrawError = "Enter an amount greater than zero.") }
       return
     }
-    withdrawFeeVersion++
-    withdrawFeeJob?.cancel()
+    withdrawFees.cancel(clearCache = true)
     viewModelScope.launch {
       local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }
       try {
