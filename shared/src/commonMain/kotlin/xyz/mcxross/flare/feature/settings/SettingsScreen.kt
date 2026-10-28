@@ -20,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +66,8 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.ActionKind
+import xyz.mcxross.flare.feature.referrals.ReferralCodeField
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 
 @Composable
 fun SettingsRoute(
@@ -72,6 +77,10 @@ fun SettingsRoute(
   jevViewModel: JevSettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val lifecycleOwner = LocalLifecycleOwner.current
+  LaunchedEffect(viewModel, lifecycleOwner) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followReferralsWhileVisible() }
+  }
   val autoRuntime: AutoTradingRuntime = koinInject()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
@@ -96,6 +105,10 @@ fun SettingsScreen(
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
   var showReferralSheet by remember { mutableStateOf(false) }
+  LaunchedEffect(state.profile) { showReferralSheet = false }
+  LaunchedEffect(state.referralManaged, state.referral.enabled, state.referral.pending) {
+    if (state.referralManaged && !state.referral.enabled && !state.referral.pending) showReferralSheet = false
+  }
   var revokeProduct by remember { mutableStateOf<MarketKind?>(null) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
@@ -168,7 +181,9 @@ fun SettingsScreen(
     )
 
     val offersBuilder = state.defaultBuilderAddress.isNotBlank()
-    if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.referralCodes)) {
+    val managedReferralVisible = state.referral.enabled || state.referral.pending
+    if (state.profile.ownerAddress != null &&
+      (offersBuilder || state.capabilities.referralCodes || state.referralManaged && managedReferralVisible)) {
       SectionLabel("Protocol & Rewards")
       if (offersBuilder) {
         ActionRow(
@@ -178,7 +193,18 @@ fun SettingsScreen(
           onClick = { showBuilderSheet = true },
         )
       }
-      if (state.capabilities.referralCodes) {
+      if (state.referralManaged && managedReferralVisible) {
+        ActionRow(
+          "Referral code",
+          when {
+            state.referral.pending -> "Confirmation pending"
+            state.referral.eligibility == ReferralEligibility.BOUND -> state.referral.appliedCode.orEmpty()
+            else -> "Enter a referral code"
+          },
+          FlareIcons.Gift,
+          onClick = { showReferralSheet = true },
+        )
+      } else if (!state.referralManaged && state.capabilities.referralCodes) {
         ActionRow(
           "Referral code",
           if (state.referralRedeemed) "Code active" else "Enter a referral code",
@@ -408,7 +434,26 @@ fun SettingsScreen(
   }
 
   if (showReferralSheet) {
-    FlareSheet("Referral code", { showReferralSheet = false }) {
+    if (state.referralManaged) {
+      FlareSheet("Referral code", { showReferralSheet = false }) {
+        ReferralCodeField(
+          state.referral,
+          { onIntent(SettingsIntent.ChangeReferralCode(it)) },
+          explainIneligible = true,
+        )
+        if (state.referral.eligibility != ReferralEligibility.INELIGIBLE && !state.referral.pending &&
+          state.referral.eligibility != ReferralEligibility.BOUND) {
+          Spacer(Modifier.height(20.dp))
+          FlareButton(
+            "Apply code",
+            { onIntent(SettingsIntent.RedeemReferralCode) },
+            Modifier.fillMaxWidth(),
+            enabled = state.referral.canApply,
+            working = state.referral.applying,
+          )
+        }
+      }
+    } else FlareSheet("Referral code", { showReferralSheet = false }) {
       Text(
         "Enter a ${venue.displayName} referral code to link your account and earn trading fee " +
           "discounts.",

@@ -156,7 +156,7 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
     preferences?.setSelectedSubaccount(subaccount)
   }
 
-  override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment) = error("Not used")
+  override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState = error("Not used")
 
   override suspend fun openTradingAccount(prompt: VaultPrompt): String {
     events += "open"

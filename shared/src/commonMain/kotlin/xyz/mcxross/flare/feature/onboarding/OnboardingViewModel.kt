@@ -1,5 +1,9 @@
 package xyz.mcxross.flare.feature.onboarding
 
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralController
+import xyz.mcxross.flare.feature.referrals.ReferralUiState
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlin.random.Random
@@ -125,6 +129,7 @@ data class OnboardingUiState(
   val selectedSubaccount: String? = null,
   /** A new wallet's trading account is open, whether or not trading is enabled yet. */
   val accountOpened: Boolean = false,
+  val referral: ReferralUiState = ReferralUiState(),
   val setupTransaction: ActionState? = null,
   val setupOperation: SetupOperation? = null,
   /** Set when Flare couldn't cover the current step's network fee. */
@@ -141,6 +146,7 @@ data class OnboardingUiState(
 )
 
 sealed interface OnboardingIntent {
+  data class ChangeReferralCode(val code: String) : OnboardingIntent
   data class SetBuilderOptIn(val enabled: Boolean) : OnboardingIntent
 
   data class ChangeTradingAccount(val value: String) : OnboardingIntent
@@ -208,6 +214,7 @@ class OnboardingViewModel(
   private val preferences: AppPreferences,
   venue: VenueDescriptor,
   private val trading: TradingRepository,
+  private val referrals: ReferralRepository? = null,
 ) : ViewModel() {
   private val setup = venue.setup
   private val builderAddress = venue.builderAddress.orEmpty()
@@ -223,14 +230,24 @@ class OnboardingViewModel(
   private var subflowMode: String? = null
   private var previousProfileId: String? = null
   private var createdProfileId: String? = null
+  private val referralController = ReferralController(referrals, viewModelScope)
+  init {
+    viewModelScope.launch {
+      preferences.values.collect { saved ->
+        referralController.context(saved.activeProfileId, saved.ownerAddress)
+      }
+    }
+  }
+
   private val setupPrompt = VaultPrompt("Continue setup", "Confirm your identity")
   val effects = effectChannel.receiveAsFlow()
 
   val uiState: StateFlow<OnboardingUiState> =
-    combine(local, wallets.profile, preferences.values) { state, profile, saved ->
+    combine(local, wallets.profile, preferences.values, referralController.state) { state, profile, saved, referral ->
         val active = saved.profiles.firstOrNull { it.id == saved.activeProfileId }
         state.copy(
           profile = profile,
+          referral = referral.takeIf { it.profileId == saved.activeProfileId && it.owner == saved.ownerAddress } ?: ReferralUiState(),
           profiles = saved.profiles,
           activeProfileId = saved.activeProfileId,
           subaccounts = state.subaccounts.map { account ->
@@ -246,6 +263,7 @@ class OnboardingViewModel(
 
   fun onIntent(intent: OnboardingIntent) {
     when (intent) {
+      is OnboardingIntent.ChangeReferralCode -> referralController.change(intent.code)
       is OnboardingIntent.InitializeMode -> {
         if (intent.mode.uppercase() == RESUME) {
           resume(intent.profileId)
@@ -312,10 +330,13 @@ class OnboardingViewModel(
         local.value = local.value.copy(step = OnboardingStep.CONFIRM_BACKUP)
       OnboardingIntent.ConfirmBackup -> confirmBackup()
       OnboardingIntent.DiscoverSubaccounts -> discoverSubaccounts()
-      OnboardingIntent.ResumeReads -> if (lookupRecoveryPending && local.value.step == OnboardingStep.SUBACCOUNT) {
-        viewModelScope.launch {
-          val saved = preferences.values.first()
-          recoverAccountLookup(saved.activeProfileId, saved.ownerAddress, wallets.authorizationGeneration)
+      OnboardingIntent.ResumeReads -> {
+        referralController.setVisible(true)
+        if (lookupRecoveryPending && local.value.step == OnboardingStep.SUBACCOUNT) {
+          viewModelScope.launch {
+            val saved = preferences.values.first()
+            recoverAccountLookup(saved.activeProfileId, saved.ownerAddress, wallets.authorizationGeneration)
+          }
         }
       }
       OnboardingIntent.CreateSubaccount -> createSubaccount()
@@ -333,6 +354,7 @@ class OnboardingViewModel(
           }
         }
       OnboardingIntent.ClearSensitiveState -> {
+        referralController.setVisible(false)
         lookupRevision++
         lookupJob?.cancel()
         actionJob?.cancel()
@@ -615,6 +637,20 @@ class OnboardingViewModel(
       check(local.value.subaccountsLoaded && local.value.subaccounts.isEmpty()) {
         "Check for existing accounts before creating one."
       }
+      val form = referralController.state.value
+      val owner = preferences.values.first().ownerAddress
+      val hasReferralIntent = owner != null && referrals?.pendingCode(owner) != null
+      if (referrals != null && (hasReferralIntent || form.pending || activeProfile()?.tradingAccountOpened == true ||
+          form.enabled && form.input.isNotBlank() && form.eligibility == ReferralEligibility.ELIGIBLE)) {
+        accounts.confirmedSetup(VaultPrompt("Create trading account", "Confirm your identity")) {
+          val referredAccount = checkNotNull(prepareReferralAccount(form, withinConfirmedSetup = true)) { "Your trading account isn’t available yet" }
+          wallets.createApiWallet(setupPrompt)
+          accounts.selectTradingAccount(referredAccount, setupPrompt)
+          local.value = local.value.copy(accountOpened = true, selectedSubaccount = referredAccount, step = OnboardingStep.ENABLE_TRADING)
+          delegateApiAndFinish()
+        }
+        return@launchAction
+      }
       val result =
         accounts.createSubaccount(
           VaultPrompt(title = "Create trading account", subtitle = "Confirm your identity"),
@@ -647,14 +683,46 @@ class OnboardingViewModel(
         )
       // One confirmation covers the whole action: the trading key is stored while it's fresh, and
       // opening the account, enabling trading and builder support sign without asking again.
+      val referralChoice = referralController.state.value
       accounts.confirmedSetup(OpenAccountPrompt) {
         wallets.createApiWallet(setupPrompt)
-        val subaccount = accounts.openTradingAccount(setupPrompt)
+        val subaccount = prepareReferralAccount(referralChoice, withinConfirmedSetup = true) ?: accounts.openTradingAccount(setupPrompt)
         accounts.selectTradingAccount(subaccount, setupPrompt)
         local.value = local.value.copy(accountOpened = true, selectedSubaccount = subaccount)
         delegateApiAndFinish(FeePayment.SPONSORED)
       }
     }
+
+  /** Referral redemption may create an account. Resolve it before using the normal creation path. */
+  private suspend fun prepareReferralAccount(form: ReferralUiState, withinConfirmedSetup: Boolean = false): String? {
+    val repository = referrals ?: return null
+    val saved = preferences.values.first()
+    val owner = saved.ownerAddress ?: return null
+    val pending = repository.pendingCode(owner)
+    var preferred: String? = null
+    if (activeProfile()?.tradingAccountOpened == true && pending == null) {
+      // Once an account exists, a hidden suggested code must never become a new user choice.
+    } else if (pending != null || form.pending) {
+      val status = repository.status(owner)
+      check(status.eligibility == ReferralEligibility.BOUND || status.tradingAccount != null) { "Referral confirmation pending" }
+      preferred = status.tradingAccount
+    } else if (form.enabled && form.input.isNotBlank() && form.eligibility == ReferralEligibility.ELIGIBLE) {
+      check(form.canApply) { "Check your referral code" }
+      check(referralController.state.value.input == form.input) { "The referral code changed" }
+      val status = referralController.apply(setupPrompt.copy(requireFreshAuthorization = !withinConfirmedSetup))
+      check(status.eligibility == ReferralEligibility.BOUND || status.tradingAccount != null) { "Referral confirmation pending" }
+      preferred = status.tradingAccount
+    } else if (form.enabled && form.input.isNotBlank() && form.eligibility == null) {
+      error("Referrals unavailable")
+    } else if (activeProfile()?.tradingAccountOpened != true) return null
+    val candidates = withTimeoutOrNull(10_000) { accounts.subaccounts(owner) }
+    val account = if (preferred != null) candidates?.firstOrNull { credentials.sameAddress(it.address, preferred) }
+      else candidates?.firstOrNull { it.primary } ?: candidates?.firstOrNull()
+    check(account != null) { "Your trading account isn’t available yet" }
+    check(preferences.values.first().activeProfileId == saved.activeProfileId) { "The selected wallet changed" }
+    preferences.setTradingAccountOpened(saved.activeProfileId)
+    return account.address
+  }
 
   private suspend fun activeProfile(): AccountProfile? {
     val saved = preferences.values.first()

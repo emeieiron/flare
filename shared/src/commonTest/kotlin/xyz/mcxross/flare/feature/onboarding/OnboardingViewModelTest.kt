@@ -24,6 +24,11 @@ import xyz.mcxross.flare.LaunchStage
 import xyz.mcxross.flare.launchStage
 import xyz.mcxross.flare.resumedSetup
 import xyz.mcxross.flare.shownWallet
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralProgram
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
+import xyz.mcxross.flare.feature.referrals.ReferralStatus
+import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SetupTransactionException
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
@@ -411,6 +416,132 @@ class OnboardingViewModelTest {
     assertTrue(accounts.events.isEmpty())
   }
 
+  @Test
+  fun referralAccountCreationNeverFallsThroughToNormalCreation() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    var redeemed = false
+    var normalCreates = 0
+    var applies = 0
+    val accounts = object : SetupAccounts(preferences) {
+      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = if (redeemed) listed.take(1) else emptyList()
+      override suspend fun subaccounts(owner: String) = if (redeemed) listed.take(1) else emptyList()
+      override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
+        normalCreates++
+        error("The referral endpoint already created the account")
+      }
+    }
+    val referrals = object : ReferralRepository {
+      override suspend fun program() = ReferralProgram(true, "OC9E6E")
+      override suspend fun status(owner: String) = ReferralStatus(owner, if (redeemed) ReferralEligibility.BOUND else ReferralEligibility.ELIGIBLE,
+        if (redeemed) "OC9E6E" else null, if (redeemed) "0xa1" else null)
+      override suspend fun validate(code: String) = true
+      override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
+        applies++
+        redeemed = true
+        return ReferralStatus(owner, ReferralEligibility.BOUND, code, "0xa1")
+      }
+    }
+    val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ResumeReads)
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    advanceTimeBy(301); runCurrent()
+    assertTrue(vm.uiState.value.referral.canApply)
+
+    vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+    assertEquals(1, applies)
+    assertEquals(0, normalCreates)
+    assertTrue(preferences.values.first().profiles.single().tradingAccountOpened)
+    assertTrue(accounts.events.contains("select 0xa1"))
+    assertTrue(accounts.events.contains("prepare"))
+    vm.onIntent(OnboardingIntent.ClearSensitiveState)
+  }
+
+  @Test
+  fun clearingTheReferralKeepsTheNormalAccountCreationPath() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    var normalCreates = 0
+    var applies = 0
+    val accounts = object : SetupAccounts(preferences) {
+      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = emptyList<TradingAccount>()
+      override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
+        normalCreates++
+        return ActionState.Failed("Normal creation requested", definitelyNotSubmitted = true)
+      }
+    }
+    val referrals = object : ReferralRepository {
+      override suspend fun program() = ReferralProgram(true, "OC9E6E")
+      override suspend fun status(owner: String) = ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
+      override suspend fun validate(code: String) = true
+      override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
+        applies++
+        error("A cleared code must never be applied")
+      }
+    }
+    val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ResumeReads)
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    advanceTimeBy(301); runCurrent()
+    vm.onIntent(OnboardingIntent.ChangeReferralCode(""))
+
+    vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+    assertEquals(0, applies)
+    assertEquals(1, normalCreates)
+    assertEquals("", vm.uiState.value.referral.input)
+    vm.onIntent(OnboardingIntent.ClearSensitiveState)
+  }
+
+  @Test
+  fun pendingReferralReusesOnlyItsVerifiedAccountWithoutResubmitting() = runTest {
+    for (preferred in listOf("0xa1", "0xf")) {
+      val preferences = AppPreferences(MemoryPreferences())
+      var creates = 0
+      var applies = 0
+      val accounts = object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = emptyList<TradingAccount>()
+        override suspend fun subaccounts(owner: String) = listed.take(1)
+        override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
+          creates++
+          error("An uncertain referral must not create another account")
+        }
+      }
+      val referrals = object : ReferralRepository {
+        override suspend fun program() = ReferralProgram(true, "OC9E6E")
+        override suspend fun status(owner: String) = ReferralStatus(owner, ReferralEligibility.PENDING, "OC9E6E", preferred)
+        override suspend fun pendingCode(owner: String) = "OC9E6E"
+        override suspend fun validate(code: String) = true
+        override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
+          applies++
+          error("Reconciliation only reads")
+        }
+      }
+      val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+      try {
+        vm.onIntent(OnboardingIntent.ResumeReads)
+        vm.onIntent(OnboardingIntent.ShowImport)
+        vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+        vm.onIntent(OnboardingIntent.ImportCredential)
+        vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+        assertEquals(0, creates)
+        assertEquals(0, applies)
+        assertEquals(preferred == "0xa1", accounts.events.contains("select 0xa1"))
+        assertEquals(preferred == "0xa1", accounts.events.contains("prepare"))
+        if (preferred == "0xf") assertEquals("Your trading account isn’t available yet", vm.uiState.value.error)
+      } finally {
+        vm.onIntent(OnboardingIntent.ClearSensitiveState)
+      }
+    }
+  }
+
   private fun createAndConfirmBackup(vm: OnboardingViewModel) {
     vm.onIntent(OnboardingIntent.CreateOwner)
     vm.onIntent(OnboardingIntent.ReviewBackup)
@@ -509,6 +640,7 @@ class OnboardingViewModelTest {
     setup: VenueSetup,
     preferences: AppPreferences = AppPreferences(MemoryPreferences()),
     wallets: SetupWallets = SetupWallets(),
+    referrals: ReferralRepository? = null,
   ) =
     OnboardingViewModel(
       wallets = wallets,
@@ -517,6 +649,7 @@ class OnboardingViewModelTest {
       preferences = preferences,
       venue = testVenue(setup = setup),
       trading = SetupTrading,
+      referrals = referrals,
     )
 
   private companion object {

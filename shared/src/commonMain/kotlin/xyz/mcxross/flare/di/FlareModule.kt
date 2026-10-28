@@ -107,7 +107,7 @@ fun flareModule(
   single { AccountSetupGate(get(), get()) }
   singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }
   viewModelOf(::MarketsViewModel)
-  viewModelOf(::OnboardingViewModel)
+  viewModel { OnboardingViewModel(get(), get(), get(), get(), get(), get(), getOrNull()) }
   // Only venues with vaults bind a VaultsRepository.
   viewModel {
     PortfolioViewModel(
@@ -139,6 +139,7 @@ fun flareModule(
       credentials = get(),
       setupGate = getOrNull(),
       walletBalances = getOrNull(),
+      referrals = getOrNull(),
     )
   }
 }

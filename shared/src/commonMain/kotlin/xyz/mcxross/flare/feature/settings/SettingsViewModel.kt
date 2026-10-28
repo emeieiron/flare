@@ -1,5 +1,9 @@
 package xyz.mcxross.flare.feature.settings
 
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralController
+import xyz.mcxross.flare.feature.referrals.ReferralUiState
+import kotlinx.coroutines.awaitCancellation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -78,6 +82,8 @@ data class SettingsUiState(
   val delegationsLoaded: Boolean = false,
   val subaccountsByOwner: Map<String, List<TradingAccount>> = emptyMap(),
   val creatingSubaccount: Boolean = false,
+  val referral: ReferralUiState = ReferralUiState(),
+  val referralManaged: Boolean = false,
   val referralCodeInput: String = "",
   val referralRedeemed: Boolean = false,
   val referralMessage: String? = null,
@@ -211,6 +217,7 @@ class SettingsViewModel(
   private val credentials: CredentialParser,
   private val setupGate: AccountSetupGate? = null,
   private val walletBalances: WalletBalanceRepository? = null,
+  private val referrals: ReferralRepository? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chainName = venue.chain.name
@@ -220,10 +227,23 @@ class SettingsViewModel(
     MutableStateFlow(
       SettingsUiState(
         capabilities = capabilities,
+        referralManaged = referrals != null,
         proxyUrl = venue.proxyUrl.orEmpty(),
         defaultBuilderAddress = venue.builderAddress.orEmpty(),
       )
     )
+  private val referralController = ReferralController(referrals, viewModelScope)
+  init {
+    viewModelScope.launch {
+      preferences.values.collect { saved -> referralController.context(saved.activeProfileId, saved.ownerAddress) }
+    }
+  }
+
+  suspend fun followReferralsWhileVisible() {
+    referralController.setVisible(true)
+    try { awaitCancellation() } finally { referralController.setVisible(false) }
+  }
+
   private var secretClearJob: Job? = null
   private data class WithdrawFeeKey(val context: Triple<String, String?, String?>, val units: ULong)
   private var withdrawFeeContext: Triple<String, String?, String?>? = null
@@ -259,10 +279,11 @@ class SettingsViewModel(
   }
 
   val uiState: StateFlow<SettingsUiState> =
-    combine(local, preferences.values, wallets.profile, accounts.snapshot) {
-        state, persisted, profile, snapshot ->
+    combine(local, preferences.values, wallets.profile, accounts.snapshot, referralController.state) {
+        state, persisted, profile, snapshot, referral ->
         state.copy(
           preferences = persisted,
+          referral = referral.takeIf { it.profileId == persisted.activeProfileId && it.owner == persisted.ownerAddress } ?: ReferralUiState(),
           profile = profile,
           withdrawable = snapshot.overview?.withdrawable,
           pendingWithdrawal =
@@ -309,9 +330,12 @@ class SettingsViewModel(
       }
       SettingsIntent.LoadSubaccounts -> loadSubaccounts()
       is SettingsIntent.ChangeReferralCode ->
-        local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
+        if (referrals != null) referralController.change(intent.code)
+        else local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
       SettingsIntent.RedeemReferralCode ->
-        launchAction("Redeeming referral code failed.") {
+        if (referrals != null) launchAction("Your referral code wasn’t applied.") {
+          referralController.apply(VaultPrompt("Apply referral code", "Confirm your identity", requireFreshAuthorization = true))
+        } else launchAction("Redeeming referral code failed.") {
           val code = local.value.referralCodeInput.trim()
           check(code.isNotBlank()) { "Enter a referral code" }
           val repository = checkNotNull(rewardsRepository) { "Referral codes aren’t available here" }

@@ -22,6 +22,8 @@ import xyz.mcxross.flare.feature.settings.*
 import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.feature.strategies.*
 import xyz.mcxross.flare.feature.auto.*
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
+import xyz.mcxross.flare.feature.referrals.ReferralUiState
 import xyz.mcxross.flare.strategies.*
 import xyz.mcxross.flare.security.JevCredentialMetadata
 import xyz.mcxross.flare.store.FlarePreferences
@@ -146,7 +148,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
         "splash" -> FlareSplashScreen()
         "welcome", "import", "import-phrase", "import-key", "backup", "backup-revealed", "confirm",
         "accounts", "create-account", "finding", "enable", "enable-working", "setup-error",
-        "fee-can-pay", "fee-needs-funds", "fee-unchecked", "open-account", "open-account-working",
+        "fee-can-pay", "fee-needs-funds", "fee-unchecked", "open-account", "referral-onboarding", "open-account-working",
         "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
           OnboardingScreen(onboarding, { onboarding = previewOnboardingIntent(onboarding, it) })
         "markets" ->
@@ -278,7 +280,8 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
             },
             { screen = "welcome" },
           )
-        "account", "account-owner", "settings-auto" ->
+        "account", "account-owner", "settings-auto", "referral-settings", "referral-bound",
+        "referral-ineligible", "referral-pending" ->
           SettingsScreen(
             settings,
             { intent ->
@@ -307,6 +310,19 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                         if (intent.product == MarketKind.PERP) prefs.copy(builderApproved = false)
                         else prefs.copy(spotBuilderApproved = false)
                     )
+                  is SettingsIntent.ChangeReferralCode ->
+                    settings.copy(referral = settings.referral.copy(
+                      input = intent.code,
+                      valid = intent.code.isNotBlank(),
+                      error = null,
+                    ))
+                  SettingsIntent.RedeemReferralCode ->
+                    settings.copy(referral = settings.referral.copy(
+                      eligibility = ReferralEligibility.BOUND,
+                      appliedCode = settings.referral.input,
+                      applying = false,
+                      error = null,
+                    ))
                   else -> settings
                 }
             },
@@ -320,6 +336,24 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
 /** "account-owner" signs in with an owner key, which unlocks the builder approvals. */
 private fun previewSettingsState(screen: String): SettingsUiState =
   if (screen == "settings-auto") SettingsUiState(preferences = FlarePreferences(autoTradingActive = true, confirmTransactions = false))
+  else if (screen in setOf("referral-settings", "referral-bound", "referral-ineligible", "referral-pending")) {
+    val referral = when (screen) {
+      "referral-bound" -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
+        eligibility = ReferralEligibility.BOUND, appliedCode = "OC9E6E")
+      "referral-ineligible" -> ReferralUiState(enabled = true,
+        eligibility = ReferralEligibility.INELIGIBLE)
+      "referral-pending" -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
+        eligibility = ReferralEligibility.PENDING, appliedCode = "OC9E6E",
+        tradingAccount = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48")
+      else -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
+        eligibility = ReferralEligibility.ELIGIBLE, valid = true)
+    }
+    SettingsUiState(
+      profile = WalletProfile(ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8"),
+      referral = referral,
+      referralManaged = true,
+    )
+  }
   else if (screen != "account-owner") SettingsUiState()
   else
     SettingsUiState(
@@ -622,7 +656,7 @@ private fun previewOnboardingState(screen: String): OnboardingUiState {
             else -> SetupFee.Unchecked(104_300uL)
           },
       )
-    "open-account", "open-account-working", "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
+    "open-account", "referral-onboarding", "open-account-working", "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
       OnboardingUiState(
         step = OnboardingStep.OPEN_ACCOUNT,
         profile = owner,
@@ -634,6 +668,13 @@ private fun previewOnboardingState(screen: String): OnboardingUiState {
         error =
           if (screen == "open-account-stalled") "Trading wasn’t enabled on this device. Flare couldn’t reach the network."
           else null,
+        referral = if (screen == "referral-onboarding") ReferralUiState(
+          enabled = true,
+          suggestedCode = "OC9E6E",
+          input = "OC9E6E",
+          eligibility = ReferralEligibility.ELIGIBLE,
+          valid = true,
+        ) else ReferralUiState(),
       )
     "setup-error" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, error = "Trading wasn’t enabled on this device. The network didn’t respond.")
     else -> OnboardingUiState()
@@ -648,6 +689,11 @@ private fun previewOnboardingIntent(state: OnboardingUiState, intent: Onboarding
     is OnboardingIntent.ChangeInput -> state.copy(input = intent.value)
     is OnboardingIntent.SetApiImport -> state.copy(apiImport = intent.enabled)
     is OnboardingIntent.ChangeTradingAccount -> state.copy(tradingAccountInput = intent.value)
+    is OnboardingIntent.ChangeReferralCode -> state.copy(referral = state.referral.copy(
+      input = intent.code,
+      valid = intent.code.isNotBlank(),
+      error = null,
+    ))
     OnboardingIntent.ImportCredential -> previewOnboardingState("accounts")
     OnboardingIntent.RevealBackup -> state.copy(backupRevealed = true)
     OnboardingIntent.ReviewBackup -> state.copy(step = OnboardingStep.CONFIRM_BACKUP)
