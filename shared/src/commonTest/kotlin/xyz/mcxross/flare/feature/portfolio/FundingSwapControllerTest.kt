@@ -2,6 +2,8 @@ package xyz.mcxross.flare.feature.portfolio
 
 import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -13,16 +15,63 @@ import xyz.mcxross.flare.venue.model.SelfPayOffer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FundingSwapControllerTest {
+  @Test fun typingDebouncesTheRequestAndKeepsTheEditorInPlace() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("")
+    f.controller.changeInput("1"); advanceTimeBy(300)
+    f.controller.changeInput("1.2"); advanceTimeBy(599); runCurrent()
+    assertTrue(f.repo.requests.isEmpty())
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+    advanceTimeBy(2); runCurrent()
+    assertEquals("120000000", f.repo.requests.single().amount)
+    assertEquals("1.2", f.controller.state.value.inputAmount)
+    assertEquals(FundingSwapStep.SWAP, f.controller.state.value.step)
+    assertNotNull(f.controller.state.value.quote)
+  }
+
+  @Test fun typingDuringAnInFlightRequestDiscardsTheOlderResponse() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.quoteGate = CompletableDeferred()
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("")
+    f.controller.changeInput("1"); advanceTimeBy(601); runCurrent()
+    assertTrue(f.controller.state.value.quoting)
+    assertFalse(f.controller.state.value.working)
+    f.controller.changeInput("2"); advanceTimeBy(601); runCurrent()
+    f.repo.quoteGate!!.complete(Unit); runCurrent()
+    assertEquals(listOf("100000000", "200000000"), f.repo.requests.map { it.amount })
+    assertEquals("200000000", f.controller.state.value.quote?.request?.amount)
+    assertEquals("2", f.controller.state.value.inputAmount)
+  }
+
+  @Test fun automaticQuotesPauseWhenHiddenAndResumeWithFreshInput() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("1")
+    f.controller.setVisible(false)
+    advanceTimeBy(1_000); runCurrent()
+    assertTrue(f.repo.requests.isEmpty())
+    f.controller.setVisible(true); runCurrent()
+    assertEquals(1, f.repo.requests.size)
+    f.controller.setVisible(false)
+    advanceTimeBy(30_001); runCurrent()
+    assertEquals(1, f.repo.requests.size)
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+  }
+
   @Test fun zeroUsdcOffersAnAmountChoiceAndMaximumLeavesFeesForBothSteps() = runTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
     assertTrue(f.controller.state.value.canSwap)
     f.controller.begin("")
-    assertEquals(FundingSwapStep.AMOUNT, f.controller.state.value.step)
+    assertEquals(FundingSwapStep.SWAP, f.controller.state.value.step)
     assertTrue(f.repo.requests.isEmpty())
     f.controller.useMaximum()
     assertEquals("9.9", f.controller.state.value.inputAmount)
-    f.controller.review(); runCurrent()
+    advanceTimeBy(601); runCurrent()
     assertEquals("990000000", f.repo.requests.single().amount)
     assertEquals(SwapAmountKind.EXACT_INPUT, f.repo.requests.single().kind)
   }
@@ -31,10 +80,10 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_001uL)
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10.000002"); runCurrent()
+    f.controller.begin("10.000002"); advanceTimeBy(601); runCurrent()
     assertEquals(SwapAmountKind.EXACT_OUTPUT, f.repo.requests.single().kind)
     assertEquals("8000001", f.repo.requests.single().amount)
-    assertEquals(FundingSwapStep.REVIEW, f.controller.state.value.step)
+    assertEquals(FundingSwapStep.SWAP, f.controller.state.value.step)
   }
 
   @Test fun aFailedBalanceReadAndGasOnlyFundsNeverPretendToBeSwappable() = runTest {
@@ -48,7 +97,7 @@ class FundingSwapControllerTest {
     f.repo.capacity = f.repo.capacity.copy(inputBalance = f.repo.capacity.networkFeeReserve)
     f.controller.refresh(); runCurrent()
     assertFalse(f.controller.state.value.canSwap)
-    f.controller.begin("10"); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     assertTrue(f.repo.requests.isEmpty())
   }
 
@@ -57,30 +106,44 @@ class FundingSwapControllerTest {
     f.controller.open(CONTEXT); runCurrent()
     f.controller.begin("")
     for (amount in listOf("10", "0.000000001", "1..2")) {
-      f.controller.changeInput(amount); f.controller.review(); runCurrent()
+      f.controller.changeInput(amount); advanceTimeBy(601); runCurrent()
       assertTrue(f.repo.requests.isEmpty())
-      assertNotNull(f.controller.state.value.error)
+      assertNull(f.controller.state.value.quote)
     }
   }
 
-  @Test fun expiredQuotesRequireAnExplicitRefreshAndCannotExecute() = runTest {
+  @Test fun quotesRefreshAutomaticallyBeforeExpiryWithoutExecuting() = runTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10"); runCurrent()
-    f.repo.now += 30_001
-    advanceTimeBy(30_001); runCurrent()
-    assertTrue(f.controller.state.value.quoteExpired)
-    f.controller.execute(); runCurrent()
-    assertTrue(f.repo.executions.isEmpty())
-    f.controller.refreshQuote(); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    val firstId = f.controller.state.value.quote?.id
+    f.repo.now += 27_001
+    advanceTimeBy(27_001); runCurrent()
     assertFalse(f.controller.state.value.quoteExpired)
     assertEquals(2, f.repo.requests.size)
+    assertNotEquals(firstId, f.controller.state.value.quote?.id)
+    assertTrue(f.repo.executions.isEmpty())
+  }
+
+  @Test fun anOldQuoteCannotExecuteWhileItsAutomaticReplacementIsLoading() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.repo.quoteGate = CompletableDeferred()
+    f.repo.now += 27_001
+    advanceTimeBy(27_001); runCurrent()
+    assertTrue(f.controller.state.value.quoting)
+    assertNotNull(f.controller.state.value.quote)
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+    f.repo.quoteGate!!.complete(Unit); runCurrent()
+    assertFalse(f.controller.state.value.quoting)
   }
 
   @Test fun aConfirmedSwapReturnsToTransferWithTheOriginalAmountAndNeverDeposits() = runTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10"); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     f.controller.execute(); runCurrent()
     assertEquals(listOf("10"), f.ready)
     assertNull(f.controller.state.value.step)
@@ -93,7 +156,7 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.repo.result = ActionState.Failed("Sponsor unavailable", definitelyNotSubmitted = true, selfPay = SelfPayOffer(100uL))
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10"); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     f.controller.execute(); runCurrent()
     assertTrue(f.controller.state.value.selfPay)
     assertEquals(listOf(FeePayment.SPONSORED), f.repo.executions)
@@ -108,12 +171,12 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.repo.result = ActionState.Failed("Response lost", reference = "pending")
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10"); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     f.controller.execute(); runCurrent()
     assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
     f.controller.close(); f.controller.open(CONTEXT); runCurrent()
     assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
-    f.controller.execute(selfPay = true); f.controller.begin("10"); runCurrent()
+    f.controller.execute(selfPay = true); f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     assertEquals(1, f.repo.executions.size)
     f.repo.reconciled = SwapOperationStatus.COMMITTED
     f.controller.reconcile(); runCurrent()
@@ -125,8 +188,9 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.repo.quoteGate = CompletableDeferred()
     f.controller.open(CONTEXT); runCurrent()
-    f.controller.begin("10"); runCurrent()
-    assertTrue(f.controller.state.value.working)
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    assertTrue(f.controller.state.value.quoting)
+    assertFalse(f.controller.state.value.working)
     f.controller.open(CONTEXT.copy(profileId = "other", owner = "other")); runCurrent()
     f.repo.quoteGate!!.complete(Unit); runCurrent()
     assertNull(f.controller.state.value.quote)
@@ -139,7 +203,7 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
     f.repo.capacity = f.repo.capacity.copy(outputBalance = 3_000_000uL)
-    f.controller.begin("10"); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     assertEquals("7000000", f.repo.requests.single().amount)
     f.repo.capacity = f.repo.capacity.copy(inputBalance = 0uL)
     f.controller.execute(); runCurrent()
@@ -174,7 +238,7 @@ private class FakeSwaps : SwapRepository {
   }
   override suspend fun quote(request: SwapRequest): SwapQuote {
     requests += request
-    quoteGate?.await()
+    quoteGate?.let { withContext(NonCancellable) { it.await() } }
     val input = if (request.kind == SwapAmountKind.EXACT_INPUT) request.amount.toULong() else request.amount.toULong() * 10uL
     val output = if (request.kind == SwapAmountKind.EXACT_OUTPUT) request.amount.toULong() else request.amount.toULong() / 10uL
     return SwapQuote("quote-${requests.size}", "fake", request, input.toString(), output.toString(), input.toString(),

@@ -21,7 +21,7 @@ import xyz.mcxross.flare.venue.model.ActionState
 
 internal data class FundingSwapContext(val profileId: String, val owner: String, val account: String?)
 
-enum class FundingSwapStep { AMOUNT, REVIEW, PENDING }
+enum class FundingSwapStep { SWAP, PENDING }
 
 data class FundingSwapState(
   val supported: Boolean = false,
@@ -32,6 +32,8 @@ data class FundingSwapState(
   val inputAmount: String = "",
   val quote: SwapQuote? = null,
   val quoteExpired: Boolean = false,
+  val quoting: Boolean = false,
+  val amountKind: SwapAmountKind = SwapAmountKind.EXACT_INPUT,
   val working: Boolean = false,
   val transaction: ActionState? = null,
   val pending: SwapOperation? = null,
@@ -65,7 +67,9 @@ internal class FundingSwapController(
   private var refreshJob: Job? = null
   private var expiryJob: Job? = null
   private var requestedTransfer = ""
-  private var lastRequest: SwapRequest? = null
+  private var quoteJob: Job? = null
+  private var quoteRevision = 0L
+  private var visible = true
 
   fun open(value: FundingSwapContext?) {
     close()
@@ -80,7 +84,7 @@ internal class FundingSwapController(
     context = null
     refreshJob?.cancel()
     expiryJob?.cancel()
-    lastRequest = null
+    cancelQuotes()
     requestedTransfer = ""
     mutable.value = FundingSwapState()
   }
@@ -106,78 +110,112 @@ internal class FundingSwapController(
   fun begin(fundingAmount: String) {
     if (state.value.working || !state.value.canSwap) return
     requestedTransfer = fundingAmount
-    mutable.update { it.copy(step = FundingSwapStep.AMOUNT, error = null, completed = false, transaction = null) }
     val shortfall = state.value.shortfall(fundingAmount) ?: 0uL
-    if (shortfall > 0uL) prepare(SwapAmountKind.EXACT_OUTPUT, shortfall.toString())
+    mutable.update { it.copy(step = FundingSwapStep.SWAP, error = null, completed = false, transaction = null,
+      quote = null, amountKind = if (shortfall > 0uL) SwapAmountKind.EXACT_OUTPUT else SwapAmountKind.EXACT_INPUT,
+      inputAmount = if (shortfall > 0uL) fundingAmount else "") }
+    scheduleQuote()
   }
 
   fun changeInput(value: String) {
     if (state.value.working || state.value.pending != null) return
     val amount = value.filter { it in '0'..'9' || it == '.' }
     mutable.update { it.copy(inputAmount = amount, quote = null, quoteExpired = false,
-      step = FundingSwapStep.AMOUNT, error = null, transaction = null) }
-    expiryJob?.cancel()
+      step = FundingSwapStep.SWAP, error = null, transaction = null) }
+    if (state.value.amountKind == SwapAmountKind.EXACT_OUTPUT) requestedTransfer = amount
+    scheduleQuote()
   }
 
   fun useMaximum() {
     val capacity = state.value.capacity ?: return
+    if (state.value.working) return
+    requestedTransfer = ""
+    mutable.update { it.copy(amountKind = SwapAmountKind.EXACT_INPUT) }
     changeInput(capacity.maximumInput.toDecimalString(capacity.input.decimals))
   }
 
-  fun review() {
-    val capacity = state.value.capacity ?: return
-    val amount = decimalUnits(state.value.inputAmount, "APT amount", capacity.input.decimals).getOrNull()
-    if (amount == null || amount == 0uL) {
-      mutable.update { it.copy(error = "Enter an APT amount to swap.") }
-      return
-    }
-    prepare(SwapAmountKind.EXACT_INPUT, amount.toString())
-  }
+  fun refreshQuote() = scheduleQuote(0)
 
-  fun refreshQuote() {
-    val request = lastRequest ?: return
-    prepare(request.kind, request.amount)
+  fun setVisible(value: Boolean) {
+    if (visible == value) return
+    visible = value
+    if (!value) cancelQuotes()
+    else if (state.value.step == FundingSwapStep.SWAP && !state.value.working) scheduleQuote(0)
   }
 
   fun back() {
     if (state.value.working || state.value.pending != null) return
-    expiryJob?.cancel()
-    lastRequest = null
+    cancelQuotes()
     mutable.update { it.copy(step = null, quote = null, transaction = null, error = null) }
   }
 
-  private fun prepare(kind: SwapAmountKind, amount: String) = work { key, version ->
-    val capacity = checkNotNull(repository).fundingCapacity(key.owner)
-    if (!current(key, version)) return@work
-    mutable.update { it.copy(capacity = capacity, balanceError = null) }
-    check(capacity.maximumInput > 0uL) { "Keep some APT for network fees before swapping." }
-    val requestedUnits = if (kind == SwapAmountKind.EXACT_OUTPUT) {
-      val transfer = decimalUnits(requestedTransfer, "Transfer amount", capacity.output.decimals).getOrThrow()
-      check(transfer > capacity.outputBalance) { "Your wallet already has enough USDC. Return to Transfer." }
-      transfer - capacity.outputBalance
-    } else amount.toULong()
-    if (kind == SwapAmountKind.EXACT_INPUT) check(requestedUnits <= capacity.maximumInput) {
-      "Try a smaller APT amount so network fees stay covered."
+  private fun cancelQuotes() {
+    quoteRevision++
+    quoteJob?.cancel()
+    expiryJob?.cancel()
+    mutable.update { it.copy(quoting = false) }
+  }
+
+  /** Typing stays enabled during requests; only the newest input may publish a quote. */
+  private fun scheduleQuote(debounceMs: Long = 600) {
+    cancelQuotes()
+    val key = context ?: return
+    if (!visible || state.value.working || state.value.step != FundingSwapStep.SWAP) return
+    val capacity = state.value.capacity ?: return
+    val kind = state.value.amountKind
+    val decimals = if (kind == SwapAmountKind.EXACT_INPUT) capacity.input.decimals else capacity.output.decimals
+    val units = decimalUnits(state.value.inputAmount, "Swap amount", decimals).getOrNull() ?: return
+    if (units == 0uL || kind == SwapAmountKind.EXACT_INPUT && units > capacity.maximumInput) return
+    val version = revision
+    val quoteVersion = quoteRevision
+    val target = requestedTransfer
+    fun latest() = current(key, version) && quoteRevision == quoteVersion
+    mutable.update { it.copy(quoting = true, error = null) }
+    quoteJob = scope.launch {
+      try {
+        delay(debounceMs)
+        runSuspendCatching {
+          val fresh = checkNotNull(repository).fundingCapacity(key.owner)
+          if (!latest()) return@runSuspendCatching
+          check(fresh.maximumInput > 0uL) { "Not enough APT after network fees." }
+          val requested = if (kind == SwapAmountKind.EXACT_OUTPUT) {
+            val transfer = decimalUnits(target, "Transfer amount", fresh.output.decimals).getOrThrow()
+            check(transfer > fresh.outputBalance) { "Your wallet has enough USDC. Return to Transfer." }
+            transfer - fresh.outputBalance
+          } else units
+          check(kind != SwapAmountKind.EXACT_INPUT || requested <= fresh.maximumInput) { "Not enough APT after network fees." }
+          val quote = repository.quote(SwapRequest(key.owner, fresh.input, fresh.output, kind, requested.toString()))
+          if (!latest()) return@runSuspendCatching
+          check(quote.maximumInput.toULong() <= fresh.maximumInput) { "Not enough APT for this amount." }
+          check(quote.expiresAtMs > now()) { "Quote unavailable. Try again." }
+          mutable.update { it.copy(capacity = fresh, quote = quote, quoteExpired = false, balanceError = null, transaction = null) }
+          watchExpiry(key, version, quoteVersion, quote)
+        }.onFailure { error ->
+          if (latest() && !error.isAuthorizationCancelled()) mutable.update {
+            it.copy(quote = null, error = actionFailure(error.message, "Quote unavailable. Try again."))
+          }
+        }
+      } finally {
+        if (latest()) mutable.update { it.copy(quoting = false) }
+      }
     }
-    val request = SwapRequest(key.owner, capacity.input, capacity.output, kind, requestedUnits.toString())
-    lastRequest = request
-    val quote = repository.quote(request)
-    if (!current(key, version)) return@work
-    check(quote.maximumInput.toULong() <= capacity.maximumInput) {
-      "There isn’t enough APT for this amount and network fees. Try a smaller amount."
-    }
-    check(quote.expiresAtMs > now()) { "The quote expired. Get a fresh quote." }
-    mutable.update { it.copy(quote = quote, quoteExpired = false, step = FundingSwapStep.REVIEW, transaction = null) }
+  }
+
+  private fun watchExpiry(key: FundingSwapContext, version: Long, quoteVersion: Long, quote: SwapQuote) {
     expiryJob?.cancel()
     expiryJob = scope.launch {
-      delay((quote.expiresAtMs - now()).coerceAtLeast(0))
-      if (current(key, version) && state.value.quote?.id == quote.id) mutable.update { it.copy(quoteExpired = true) }
+      delay((quote.expiresAtMs - now() - 3_000).coerceAtLeast(1_000))
+      if (current(key, version) && quoteRevision == quoteVersion && state.value.quote?.id == quote.id) {
+        if (!state.value.working && visible) scheduleQuote(0)
+        else mutable.update { it.copy(quoteExpired = true) }
+      }
     }
   }
 
   fun execute(selfPay: Boolean = false) {
-    if (selfPay && !state.value.selfPay) return
+    if (!visible || state.value.quoting || selfPay && !state.value.selfPay) return
     val quote = state.value.quote ?: return
+    cancelQuotes()
     work { key, version ->
       check(!state.value.quoteExpired && quote.expiresAtMs > now()) { "The quote expired. Get a fresh quote." }
       val capacity = checkNotNull(repository).fundingCapacity(key.owner)
@@ -196,13 +234,13 @@ internal class FundingSwapController(
           if (!result.definitelyNotSubmitted && !result.committed) {
             val pending = repository.operations.first().firstOrNull { it.id == quote.id }
             mutable.update { it.copy(pending = pending, step = FundingSwapStep.PENDING, quote = null,
-              error = "Your swap is still being checked. Check its status before starting another.") }
+              error = "Swap pending. Check its status.") }
           } else if (result.selfPay == null) {
             mutable.update { it.copy(error = actionFailure(result.message, "The swap didn’t go through. Try a fresh quote.")) }
           }
         }
         else -> mutable.update { it.copy(step = FundingSwapStep.PENDING, quote = null,
-          error = "Your swap is still being checked. Check its status before starting another.") }
+          error = "Swap pending. Check its status.") }
       }
     }
   }
@@ -221,7 +259,7 @@ internal class FundingSwapController(
         refresh()
       }
       else -> mutable.update { it.copy(pending = result ?: pending,
-        error = "The swap hasn’t confirmed yet. Check again in a moment.") }
+        error = "Still confirming. Check again shortly.") }
     }
   }
 
@@ -249,7 +287,14 @@ internal class FundingSwapController(
           }
         }
       } finally {
-        if (current(key, version)) mutable.update { it.copy(working = false) }
+        if (current(key, version)) {
+          mutable.update { it.copy(working = false) }
+          if (state.value.step == FundingSwapStep.SWAP) state.value.quote?.let { quote ->
+            if (quote.expiresAtMs - now() <= 3_000 || (state.value.transaction as? ActionState.Failed)?.committed == true)
+              scheduleQuote(0)
+            else if (visible) watchExpiry(key, version, quoteRevision, quote)
+          }
+        }
       }
     }
   }

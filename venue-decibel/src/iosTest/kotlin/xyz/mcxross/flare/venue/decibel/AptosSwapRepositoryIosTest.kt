@@ -38,6 +38,18 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 /** Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot load its JNI library. */
 class AptosSwapRepositoryIosTest {
   @Test
+  fun anEmptyWalletNeedsNoUnsignedBuildToShowThatNothingCanBeSwapped() = runTest {
+    fixture { f ->
+      f.balance = "0"
+      f.refuseGasProbe = true
+      val capacity = f.repository.fundingCapacity("0x1")
+      assertEquals(0uL, capacity.maximumInput)
+      assertEquals(0uL, capacity.outputBalance)
+      assertTrue(f.events.isEmpty())
+    }
+  }
+
+  @Test
   fun fundingCapacityReadsExactBalancesAndRetainsBothGasBudgetsWithoutSigning() = runTest {
     fixture { f ->
       val capacity = f.repository.fundingCapacity("0x1")
@@ -141,6 +153,7 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
   val events = mutableListOf<String>()
   var now = Clock.System.now().toEpochMilliseconds()
   var balance = "100000000000"
+  var refuseGasProbe = false
   var sponsorFailure: AptosError? = null
   private val data = object : DataStore<Preferences> {
     override val data = MutableStateFlow(emptyPreferences())
@@ -162,7 +175,10 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
           put("response", Json.parseToJsonElement(FIXTURE_RESPONSE)); put("payloadHash", FIXTURE_HASH)
           put("expiresAtMs", now + 30000); put("authorization", "signed-quote")
         }.toString()
-        path.endsWith("/estimate_gas_price") -> """{"gas_estimate":100}"""
+        path.endsWith("/estimate_gas_price") -> {
+          check(!refuseGasProbe) { "An empty wallet must not require a fee probe" }
+          """{"gas_estimate":100}"""
+        }
         path.contains("/balance/") -> "\"$balance\""
         path.contains("/accounts/") -> """{"sequence_number":"0","authentication_key":"0x1"}"""
         path.endsWith("/transactions/simulate") -> { events += "simulate"; "[${transaction(HASH)}]" }

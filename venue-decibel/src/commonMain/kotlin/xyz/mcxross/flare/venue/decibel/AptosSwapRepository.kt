@@ -64,6 +64,11 @@ class AptosSwapRepository(
       is AptosResult.Success -> read.value
       is AptosResult.Failure -> error("Your wallet balances couldn’t be refreshed. Try again.")
     }
+    val inputBalance = balance(AccountAsset.coin(APTOS_COIN))
+    val outputBalance = balance(AccountAsset.fungibleAsset(AccountAddress.fromString(USDC.address)))
+    // With no APT there is no swap budget to estimate. Wallet USDC can still be deposited
+    // with sponsorship, including when the wallet has no sequence-number resource yet.
+    if (inputBalance == 0uL) return SwapFundingCapacity(owner, APT, USDC, "APT", "USDC", 0uL, outputBalance, 0uL)
     // Kaptos resolves the current gas price while building. This unsigned self-transfer is only
     // a fee probe; it never reaches simulation, authorization, signing or submission.
     val probe = when (val build = aptos.coins.buildTransfer(address, address, 0uL,
@@ -75,7 +80,7 @@ class AptosSwapRepository(
     val depositGas = aptos.settings.transactionDefaults.maxGasAmount
     require(depositGas <= ULong.MAX_VALUE / probe.gasUnitPrice - 50_000uL)
     return SwapFundingCapacity(owner, APT, USDC, "APT", "USDC",
-      balance(AccountAsset.coin(APTOS_COIN)), balance(AccountAsset.fungibleAsset(AccountAddress.fromString(USDC.address))),
+      inputBalance, outputBalance,
       (50_000uL + depositGas) * probe.gasUnitPrice)
   }
 

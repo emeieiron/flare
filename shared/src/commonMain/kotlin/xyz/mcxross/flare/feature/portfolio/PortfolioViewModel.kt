@@ -268,7 +268,6 @@ sealed interface PortfolioIntent {
   data object BeginFundingSwap : PortfolioIntent
   data class ChangeSwapAmount(val value: String) : PortfolioIntent
   data object UseMaximumSwap : PortfolioIntent
-  data object ReviewSwap : PortfolioIntent
   data object ConfirmSwap : PortfolioIntent
   data object ConfirmSwapSelfPay : PortfolioIntent
   data object RefreshSwapQuote : PortfolioIntent
@@ -611,7 +610,6 @@ class PortfolioViewModel(
       PortfolioIntent.BeginFundingSwap -> fundingSwaps.begin(local.value.fundingAmount)
       is PortfolioIntent.ChangeSwapAmount -> fundingSwaps.changeInput(intent.value)
       PortfolioIntent.UseMaximumSwap -> fundingSwaps.useMaximum()
-      PortfolioIntent.ReviewSwap -> fundingSwaps.review()
       PortfolioIntent.ConfirmSwap -> fundingSwaps.execute()
       PortfolioIntent.ConfirmSwapSelfPay -> fundingSwaps.execute(selfPay = true)
       PortfolioIntent.RefreshSwapQuote -> fundingSwaps.refreshQuote()
@@ -926,26 +924,29 @@ class PortfolioViewModel(
 
   /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
   suspend fun refreshWhileVisible() {
-    var waitMs = 2_000L
-    while (currentCoroutineContext().isActive) {
-      delay(waitMs)
-      if (local.value.fundingMode == FundingMode.DEPOSIT && !fundingSwaps.state.value.working &&
-        fundingSwaps.state.value.step != FundingSwapStep.PENDING) fundingSwaps.refresh()
-      val snapshot = accounts.snapshot.value
-      val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
-        local.value.rewardsError || local.value.holdingsError != null ||
-        (local.value.historyVisible && local.value.chartError != null)
-      if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
-        runSuspendCatching { accounts.restoreTrading() }
+    fundingSwaps.setVisible(true)
+    try {
+      var waitMs = 2_000L
+      while (currentCoroutineContext().isActive) {
+        delay(waitMs)
+        if (local.value.fundingMode == FundingMode.DEPOSIT && !fundingSwaps.state.value.working &&
+          fundingSwaps.state.value.step != FundingSwapStep.PENDING) fundingSwaps.refresh()
+        val snapshot = accounts.snapshot.value
+        val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
+          local.value.rewardsError || local.value.holdingsError != null ||
+          (local.value.historyVisible && local.value.chartError != null)
+        if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
+          runSuspendCatching { accounts.restoreTrading() }
+        }
+        if (local.value.historyVisible && local.value.chartError != null && chartJob?.isActive != true) {
+          fetchPortfolioChart()
+        }
+        if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
+        if (local.value.rewardsError && rewardsJob?.isActive != true) fetchRewards()
+        if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
+        waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
       }
-      if (local.value.historyVisible && local.value.chartError != null && chartJob?.isActive != true) {
-        fetchPortfolioChart()
-      }
-      if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
-      if (local.value.rewardsError && rewardsJob?.isActive != true) fetchRewards()
-      if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
-      waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
-    }
+    } finally { fundingSwaps.setVisible(false) }
   }
 
   private fun fetchPortfolioChart() {

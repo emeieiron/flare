@@ -748,6 +748,7 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("10"))
     vm.onIntent(PortfolioIntent.BeginFundingSwap)
+    advanceTimeBy(601); runCurrent()
     vm.onIntent(PortfolioIntent.ConfirmSwap)
     assertEquals("10", vm.uiState.value.fundingAmount)
     assertTrue(vm.uiState.value.fundingSwap.completed)
