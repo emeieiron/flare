@@ -62,7 +62,6 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import com.valentinilk.shimmer.shimmer
 import kotlin.math.abs
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatCalendarDateTime
 import xyz.mcxross.flare.data.formatPercent
@@ -83,7 +82,6 @@ import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.rememberFlareShimmer
-import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.CampaignRewards
@@ -369,9 +367,6 @@ private fun PortfolioOverview(
     else if (state.profile.ownerAddress != null && state.capabilities.unavailableReason(ActionKind.FUNDS) == null) FlareButton("Transfer",
       { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
     FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
-  }
-  settlingNotice(state.pendingTransactions)?.let {
-    Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
   }
   val position = state.account.positions.maxByOrNull { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
   PortfolioDestination("Positions", state.account.positions.size.takeIf { overview != null }?.toString(),
@@ -898,14 +893,6 @@ private fun HoldingRow(
 
 /** Below this, a position's profit and loss rounds to nothing and reads as flat. */
 private const val FLAT_PNL = 0.005
-
-/** A single line for work the app is still confirming; the chain detail stays in the journal. */
-private fun settlingNotice(pending: List<PendingTransaction>): String? =
-  when {
-    pending.isEmpty() -> null
-    pending.size == 1 -> "Confirming your ${settlingActionName(pending.single().operation)}…"
-    else -> "Confirming ${pending.size} actions…"
-  }
 
 @Composable
 private fun PortfolioMetric(label: String, value: String, modifier: Modifier = Modifier) {
