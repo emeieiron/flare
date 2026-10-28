@@ -14,6 +14,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -35,6 +37,7 @@ import xyz.mcxross.flare.testing.SetupAccounts
 import xyz.mcxross.flare.testing.SetupCredentials
 import xyz.mcxross.flare.testing.SetupTrading
 import xyz.mcxross.flare.testing.SetupWallets
+import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.VenueSetup
@@ -320,6 +323,92 @@ class OnboardingViewModelTest {
     assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
     assertTrue(vm.uiState.value.showsWelcome(RESUME))
     assertTrue(preferences.values.first().profiles.isEmpty())
+  }
+
+  @Test
+  fun failedLookupRecoversWithoutSelectingOrDelegatingTheOnlyAccount() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    var reads = 0
+    val accounts = object : SetupAccounts(preferences) {
+      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+        reads++
+        if (reads < 3) error("Connection lost")
+        return listed.take(1)
+      }
+    }
+    val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    assertFalse(vm.uiState.value.busy)
+    assertFalse(vm.uiState.value.subaccountsLoaded)
+
+    advanceTimeBy(3_001); runCurrent()
+
+    assertEquals(3, reads)
+    assertTrue(vm.uiState.value.subaccountsLoaded)
+    assertEquals(accounts.listed.take(1), vm.uiState.value.subaccounts)
+    assertEquals(OnboardingStep.SUBACCOUNT, vm.uiState.value.step)
+    assertTrue(accounts.events.isEmpty())
+    assertNull(vm.uiState.value.accountLookupError)
+  }
+
+  @Test
+  fun lookupRecoveryStopsWhenHiddenAndResumesOnlyReads() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    var reads = 0
+    var available = false
+    val accounts = object : SetupAccounts(preferences) {
+      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+        reads++
+        check(available) { "Connection lost" }
+        return listed
+      }
+    }
+    val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    vm.onIntent(OnboardingIntent.ClearSensitiveState)
+    advanceTimeBy(31_000); runCurrent()
+    assertEquals(1, reads)
+
+    available = true
+    vm.onIntent(OnboardingIntent.ResumeReads)
+    advanceTimeBy(1_001); runCurrent()
+    assertEquals(2, reads)
+    assertTrue(vm.uiState.value.subaccountsLoaded)
+    assertTrue(accounts.events.isEmpty())
+    assertFalse(vm.uiState.value.busy)
+  }
+
+  @Test
+  fun backingOutDiscardsALateLookupResult() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    val response = CompletableDeferred<Unit>()
+    var reads = 0
+    val accounts = object : SetupAccounts(preferences) {
+      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+        reads++
+        if (reads == 1) error("Connection lost")
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { response.await() }
+        return listed.take(1)
+      }
+    }
+    val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    vm.onIntent(OnboardingIntent.ShowImport)
+    vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+    vm.onIntent(OnboardingIntent.ImportCredential)
+    advanceTimeBy(1_001); runCurrent()
+    vm.onIntent(OnboardingIntent.Back)
+    response.complete(Unit); runCurrent()
+
+    assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
+    assertFalse(vm.uiState.value.subaccountsLoaded)
+    assertTrue(accounts.events.isEmpty())
   }
 
   private fun createAndConfirmBackup(vm: OnboardingViewModel) {

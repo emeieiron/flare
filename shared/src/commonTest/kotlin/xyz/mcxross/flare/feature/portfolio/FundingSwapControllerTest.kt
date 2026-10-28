@@ -246,6 +246,8 @@ class FundingSwapControllerTest {
     f.repo.balanceFails = true
     f.controller.open(CONTEXT); runCurrent()
     assertNull(f.controller.state.value.capacity)
+    assertNull(f.controller.state.value.balanceError)
+    advanceTimeBy(3_001); runCurrent()
     assertNotNull(f.controller.state.value.balanceError)
     assertFalse(f.controller.state.value.canSwap)
     f.repo.balanceFails = false
@@ -390,6 +392,99 @@ class FundingSwapControllerTest {
     assertTrue(f.repo.executions.isEmpty())
   }
 
+  @Test fun failedBalancesRecoverWithoutManualRefreshAndStopWhenHidden() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.balanceFails = true
+    f.controller.open(CONTEXT); runCurrent()
+    assertFalse(f.controller.state.value.balanceCurrent)
+    f.repo.balanceFails = false
+    advanceTimeBy(1_001); runCurrent()
+    assertTrue(f.controller.state.value.balanceCurrent)
+    assertNull(f.controller.state.value.balanceError)
+    f.repo.balanceFails = true
+    f.controller.refresh(); runCurrent()
+    f.controller.setVisible(false)
+    val reads = f.repo.balanceReads
+    advanceTimeBy(31_000); runCurrent()
+    assertEquals(reads, f.repo.balanceReads)
+    assertFalse(f.controller.state.value.canSwap)
+  }
+
+  @Test fun pendingSwapsRecoverAutomaticallyWithoutHoldingTheSheetBusyOrExecutingAgain() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Response lost", reference = "pending")
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
+    assertFalse(f.controller.state.value.working)
+    assertNull(f.controller.state.value.error)
+    f.repo.reconciled = SwapOperationStatus.COMMITTED
+    advanceTimeBy(2_001); runCurrent()
+    assertTrue(f.controller.state.value.completed)
+    assertEquals(listOf("10"), f.ready)
+    assertEquals(1, f.repo.executions.size)
+  }
+
+  @Test fun hiddenPendingSwapsStopPollingAndResumeWithOnlyAStatusRead() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Response lost", reference = "pending")
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    f.controller.setVisible(false)
+    val reads = f.repo.reconciliationReads
+    advanceTimeBy(31_000); runCurrent()
+    assertEquals(reads, f.repo.reconciliationReads)
+    f.repo.reconciled = SwapOperationStatus.COMMITTED
+    f.controller.setVisible(true); runCurrent()
+    assertTrue(f.controller.state.value.completed)
+    assertEquals(1, f.repo.executions.size)
+  }
+
+  @Test fun aConfirmedSwapDoesNotWaitForItsWalletRefresh() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.repo.executionGate = CompletableDeferred()
+    f.controller.execute(); runCurrent()
+    f.repo.balanceGate = CompletableDeferred()
+    f.repo.executionGate!!.complete(Unit); runCurrent()
+    assertTrue(f.controller.state.value.completed)
+    assertFalse(f.controller.state.value.working)
+    assertFalse(f.controller.state.value.balanceCurrent)
+    assertEquals(listOf("10"), f.ready)
+    f.repo.balanceGate!!.complete(Unit); runCurrent()
+    assertTrue(f.controller.state.value.balanceCurrent)
+  }
+
+  @Test fun aHiddenFormCannotPublishALateBalanceRead() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.balanceGate = CompletableDeferred()
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.setVisible(false)
+    f.repo.balanceGate!!.complete(Unit); runCurrent()
+    assertNull(f.controller.state.value.capacity)
+    assertFalse(f.controller.state.value.balanceCurrent)
+    assertFalse(f.controller.state.value.canSwap)
+  }
+
+  @Test fun anUnrelatedCompletedSwapCannotResolveThePendingSwap() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Response lost", reference = "pending")
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    val pending = f.controller.state.value.pending!!
+    f.repo.operations.value = listOf(pending.copy(id = "another-swap", status = SwapOperationStatus.COMMITTED))
+    advanceTimeBy(2_001); runCurrent()
+    assertEquals(pending, f.controller.state.value.pending)
+    assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
+    assertFalse(f.controller.state.value.completed)
+    assertTrue(f.ready.isEmpty())
+    assertEquals(1, f.repo.executions.size)
+  }
+
   private class Fixture(scope: CoroutineScope) {
     val repo = FakeSwaps()
     val ready = mutableListOf<String>()
@@ -413,12 +508,16 @@ private class FakeSwaps : SwapRepository {
   var networkFee: SwapNetworkFee? = SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL)
   var result: ActionState = ActionState.Committed("hash")
   var reconciled: SwapOperationStatus? = null
+  var reconciliationReads = 0
+  var reconciliationGate: CompletableDeferred<Unit>? = null
+  var balanceReads = 0
   val requests = mutableListOf<SwapRequest>()
   val executions = mutableListOf<FeePayment>()
   val executedQuoteIds = mutableListOf<String>()
   override val operations = MutableStateFlow<List<SwapOperation>>(emptyList())
   private lateinit var quoted: SwapQuote
   override suspend fun fundingCapacity(owner: String): SwapFundingCapacity {
+    balanceReads++
     val snapshot = capacity.copy(owner = owner)
     balanceGate?.let { withContext(NonCancellable) { it.await() } }
     check(!balanceFails)
@@ -444,6 +543,8 @@ private class FakeSwaps : SwapRepository {
     emit(result)
   }
   override suspend fun reconcile(): List<SwapOperation> {
+    reconciliationReads++
+    reconciliationGate?.await()
     reconciled?.let { status -> operations.value = operations.value.map { it.copy(status = status) } }
     return operations.value
   }

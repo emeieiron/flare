@@ -277,8 +277,6 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       if (transferPending) ActionNotice("Transfer pending", Modifier.padding(top = 12.dp))
       swap.balanceError?.let {
         ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
-        FlareButton("Refresh wallet balance", { onIntent(PortfolioIntent.RefreshFundingWallet) },
-          Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !state.busy && !swap.loadingBalance, style = FlareButtonStyle.OUTLINE)
       }
       swap.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
       (state.actionError ?: state.fundingFeeError)?.let { error ->

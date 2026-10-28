@@ -178,7 +178,7 @@ class DefaultAccountRepository(
     val owner =
       wallets.profile.first().ownerAddress
         ?: error("An owner wallet is required to discover subaccounts")
-    sessions.authenticateOwner(subaccount = null, prompt = prompt)
+    sessions.ensureOwner(subaccount = null, prompt = prompt)
     return subaccounts(owner)
   }
 

@@ -5,6 +5,14 @@ import androidx.lifecycle.viewModelScope
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.readBackoffMs
+import xyz.mcxross.flare.core.isReadAccessFailure
+import xyz.mcxross.flare.core.readAccessMessage
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,6 +121,7 @@ data class OnboardingUiState(
   val confirmations: Map<Int, String> = emptyMap(),
   val subaccounts: List<TradingAccount> = emptyList(),
   val subaccountsLoaded: Boolean = false,
+  val accountLookupError: String? = null,
   val selectedSubaccount: String? = null,
   /** A new wallet's trading account is open, whether or not trading is enabled yet. */
   val accountOpened: Boolean = false,
@@ -158,6 +167,8 @@ sealed interface OnboardingIntent {
   data object ConfirmBackup : OnboardingIntent
 
   data object DiscoverSubaccounts : OnboardingIntent
+
+  data object ResumeReads : OnboardingIntent
 
   data object CreateSubaccount : OnboardingIntent
 
@@ -205,6 +216,9 @@ class OnboardingViewModel(
   private val local = MutableStateFlow(OnboardingUiState())
   private val effectChannel = Channel<OnboardingEffect>(Channel.BUFFERED)
   private var actionJob: Job? = null
+  private var lookupJob: Job? = null
+  private var lookupRevision = 0L
+  private var lookupRecoveryPending = false
   private var tradingAccountCheckJob: Job? = null
   private var subflowMode: String? = null
   private var previousProfileId: String? = null
@@ -298,6 +312,12 @@ class OnboardingViewModel(
         local.value = local.value.copy(step = OnboardingStep.CONFIRM_BACKUP)
       OnboardingIntent.ConfirmBackup -> confirmBackup()
       OnboardingIntent.DiscoverSubaccounts -> discoverSubaccounts()
+      OnboardingIntent.ResumeReads -> if (lookupRecoveryPending && local.value.step == OnboardingStep.SUBACCOUNT) {
+        viewModelScope.launch {
+          val saved = preferences.values.first()
+          recoverAccountLookup(saved.activeProfileId, saved.ownerAddress, wallets.authorizationGeneration)
+        }
+      }
       OnboardingIntent.CreateSubaccount -> createSubaccount()
       is OnboardingIntent.SelectSubaccount ->
         local.value = local.value.copy(selectedSubaccount = intent.address, input = intent.address)
@@ -313,11 +333,14 @@ class OnboardingViewModel(
           }
         }
       OnboardingIntent.ClearSensitiveState -> {
+        lookupRevision++
+        lookupJob?.cancel()
         actionJob?.cancel()
         actionJob = null
         clearSecrets()
       }
       OnboardingIntent.Back -> {
+        cancelAccountLookup()
         if (local.value.step == OnboardingStep.OPEN_ACCOUNT && local.value.accountOpened) {
           // The account exists on chain; the only way from here is forward.
         } else if (
@@ -500,10 +523,28 @@ class OnboardingViewModel(
     launchAction("Flare couldn’t check for your accounts.") { discoverSubaccountsInternal() }
 
   private suspend fun discoverSubaccountsInternal() {
-    val subaccounts =
-      accounts.discoverOwnerSubaccounts(
-        VaultPrompt(title = "Find your accounts", subtitle = "Confirm your identity")
-      )
+    cancelAccountLookup()
+    val lookupVersion = lookupRevision
+    lookupRecoveryPending = true
+    val saved = preferences.values.first()
+    val generation = wallets.authorizationGeneration
+    local.value = local.value.copy(step = OnboardingStep.SUBACCOUNT, accountLookupError = null)
+    val result = withTimeoutOrNull(8_000) { runSuspendCatching {
+      wallets.requireAuthorization(generation)
+      accounts.discoverOwnerSubaccounts(VaultPrompt("Find your accounts", "Confirm your identity"))
+    } }
+    val current = preferences.values.first()
+    if (lookupRevision != lookupVersion || current.activeProfileId != saved.activeProfileId || wallets.authorizationGeneration != generation) return
+    val subaccounts = result?.getOrNull()
+    if (subaccounts == null) {
+      ReadRecoveryDiagnostics.failed(ReadOperation.ACCOUNT_LOOKUP, 1, result?.exceptionOrNull(), result == null)
+      lookupRecoveryPending = true
+      local.value = local.value.copy(subaccountsLoaded = false)
+      recoverAccountLookup(saved.activeProfileId, saved.ownerAddress, generation)
+      return
+    }
+    lookupRecoveryPending = false
+    ReadRecoveryDiagnostics.recovered(ReadOperation.ACCOUNT_LOOKUP)
     val selected = subaccounts.firstOrNull()?.address
     local.value =
       local.value.copy(
@@ -520,6 +561,46 @@ class OnboardingViewModel(
     // here leaves the review step in place, so a retry reuses the same key.
     if (wallets.profile.first().apiWalletAddress != null) {
       runSuspendCatching { delegateApiAndFinish() }
+    }
+  }
+
+  private fun cancelAccountLookup() {
+    lookupRevision++
+    lookupJob?.cancel()
+    lookupRecoveryPending = false
+  }
+
+  /** Recovery publishes a list only; selection and delegation remain explicit actions. */
+  private fun recoverAccountLookup(profileId: String, owner: String?, generation: Long) {
+    if (owner == null || lookupJob?.isActive == true) return
+    val version = lookupRevision
+    lookupRecoveryPending = true
+    lookupJob = viewModelScope.launch {
+      var attempt = 1
+      while (currentCoroutineContext().isActive && lookupRecoveryPending && lookupRevision == version && local.value.step == OnboardingStep.SUBACCOUNT) {
+        delay(readBackoffMs(attempt))
+        val selected = preferences.values.first()
+        if (selected.activeProfileId != profileId || selected.ownerAddress != owner || wallets.authorizationGeneration != generation) return@launch
+        val result = withTimeoutOrNull(8_000) { runSuspendCatching {
+          wallets.requireAuthorization(generation)
+          accounts.discoverOwnerSubaccounts(VaultPrompt("Find your accounts", "Confirm your identity"))
+        } }
+        val latest = preferences.values.first()
+        if (lookupRevision != version || local.value.step != OnboardingStep.SUBACCOUNT ||
+          latest.activeProfileId != profileId || latest.ownerAddress != owner || wallets.authorizationGeneration != generation) return@launch
+        val found = result?.getOrNull()
+        if (found != null) {
+          lookupRecoveryPending = false
+          ReadRecoveryDiagnostics.recovered(ReadOperation.ACCOUNT_LOOKUP)
+          local.value = local.value.copy(subaccounts = found, subaccountsLoaded = true,
+            selectedSubaccount = found.firstOrNull()?.address, input = found.firstOrNull()?.address.orEmpty(), accountLookupError = null)
+          return@launch
+        }
+        attempt++
+        ReadRecoveryDiagnostics.failed(ReadOperation.ACCOUNT_LOOKUP, attempt, result?.exceptionOrNull(), result == null)
+        val access = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
+        if (attempt >= 3 || access != null) local.value = local.value.copy(accountLookupError = access?.readAccessMessage() ?: "Accounts unavailable")
+      }
     }
   }
 
@@ -767,6 +848,7 @@ class OnboardingViewModel(
   }
 
   private fun clearSensitiveState(step: OnboardingStep = OnboardingStep.WELCOME) {
+    cancelAccountLookup()
     local.value =
       OnboardingUiState(
         step = step,

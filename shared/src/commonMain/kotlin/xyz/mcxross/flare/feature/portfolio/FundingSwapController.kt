@@ -10,6 +10,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.yield
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.readBackoffMs
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.core.toDecimalString
@@ -69,6 +76,9 @@ internal class FundingSwapController(
   private var context: FundingSwapContext? = null
   private var revision = 0L
   private var refreshJob: Job? = null
+  private var balanceRetryJob: Job? = null
+  private var statusJob: Job? = null
+  private var balanceFailures = 0
   private var expiryJob: Job? = null
   private var requestedTransfer = ""
   private var quoteJob: Job? = null
@@ -88,6 +98,9 @@ internal class FundingSwapController(
     revision++
     context = null
     refreshJob?.cancel()
+    balanceRetryJob?.cancel()
+    statusJob?.cancel()
+    balanceFailures = 0
     expiryJob?.cancel()
     cancelQuotes()
     requestedTransfer = ""
@@ -96,23 +109,41 @@ internal class FundingSwapController(
 
   fun refresh() {
     val key = context ?: return
-    if (refreshJob?.isActive == true) return
+    if (!visible || state.value.working || refreshJob?.isActive == true) return
+    balanceRetryJob?.cancel()
     val version = revision
     val balanceVersion = ++balanceRevision
     refreshJob = scope.launch {
       mutable.update { it.copy(loadingBalance = true, balanceCurrent = it.balanceCurrent &&
-        it.balanceUpdatedAtMs?.let { checked -> now() - checked in 0L..30_000L } == true, balanceError = null) }
-      runSuspendCatching {
+        it.balanceUpdatedAtMs?.let { checked -> now() - checked in 0L..30_000L } == true) }
+      val read = withTimeoutOrNull(10_000) { runSuspendCatching {
         val source = checkNotNull(repository)
-        val capacity = withTimeoutOrNull(20_000) { source.fundingCapacity(key.owner) }
-          ?: error("Balance unavailable")
         val pending = source.operations.first().firstOrNull { it.profileId == key.profileId && it.isUnresolved }
-        if (current(key, version) && balanceRevision == balanceVersion) mutable.update { it.copy(capacity = capacity,
-          loadingBalance = false, balanceCurrent = true, balanceUpdatedAtMs = now(),
-          pending = pending, step = if (pending != null) FundingSwapStep.PENDING else it.step) }
-      }.onFailure {
-        if (current(key, version) && balanceRevision == balanceVersion) mutable.update { it.copy(capacity = null,
-          loadingBalance = false, balanceCurrent = false, balanceUpdatedAtMs = null, balanceError = "Wallet balance unavailable") }
+        currentCoroutineContext().ensureActive()
+        if (!visible || !current(key, version) || balanceRevision != balanceVersion) return@runSuspendCatching
+        if (pending != null) {
+          mutable.update { it.copy(loadingBalance = false, balanceCurrent = false, pending = pending, step = FundingSwapStep.PENDING) }
+          pollStatus(immediate = true)
+          return@runSuspendCatching
+        }
+        val capacity = source.fundingCapacity(key.owner)
+        currentCoroutineContext().ensureActive()
+        if (visible && current(key, version) && balanceRevision == balanceVersion) mutable.update { it.copy(capacity = capacity,
+          loadingBalance = false, balanceCurrent = true, balanceUpdatedAtMs = now(), balanceError = null) }
+      } }
+      if (!current(key, version) || balanceRevision != balanceVersion) return@launch
+      if (read != null && read.isSuccess) {
+        balanceFailures = 0
+        ReadRecoveryDiagnostics.recovered(ReadOperation.SWAP_BALANCE)
+      } else {
+        balanceFailures++
+        ReadRecoveryDiagnostics.failed(ReadOperation.SWAP_BALANCE, balanceFailures, read?.exceptionOrNull(), read == null)
+        mutable.update { it.copy(loadingBalance = false, balanceCurrent = false, balanceUpdatedAtMs = null,
+          balanceError = if (balanceFailures >= 3) "Wallet balance unavailable" else null) }
+        balanceRetryJob = scope.launch {
+          delay(readBackoffMs(balanceFailures))
+          if (visible && current(key, version)) refresh()
+        }
       }
     }
   }
@@ -121,6 +152,8 @@ internal class FundingSwapController(
     if (context != key || capacity.owner != key.owner) return
     balanceRevision++
     refreshJob?.cancel()
+    balanceRetryJob?.cancel()
+    balanceFailures = 0
     mutable.update { it.copy(capacity = capacity, loadingBalance = false, balanceCurrent = true,
       balanceUpdatedAtMs = now(), balanceError = null) }
   }
@@ -154,9 +187,13 @@ internal class FundingSwapController(
     if (visible == value) return
     visible = value
     if (!value) {
+      refreshJob?.cancel()
+      balanceRetryJob?.cancel()
+      statusJob?.cancel()
       cancelQuotes()
       mutable.update { it.copy(balanceCurrent = false) }
     }
+    else if (state.value.step == FundingSwapStep.PENDING) pollStatus(immediate = true)
     else if (state.value.step == FundingSwapStep.SWAP && !state.value.working) scheduleQuote(0)
     else if (context != null && !state.value.working) refresh()
   }
@@ -212,11 +249,13 @@ internal class FundingSwapController(
             }
             retryable = true
             check(quote.expiresAtMs > now()) { "Quote unavailable. Try again." }
+            ReadRecoveryDiagnostics.recovered(ReadOperation.SWAP_QUOTE)
             mutable.update { it.copy(quote = quote, quoteExpired = false, transaction = null) }
             watchExpiry(key, version, quoteVersion, quote)
             true
           } ?: error("Quote request timed out")
         }.onFailure { error ->
+          ReadRecoveryDiagnostics.failed(ReadOperation.SWAP_QUOTE, attempt + 1, error)
           if (latest() && !error.isAuthorizationCancelled()) {
             if (retryable && visible) {
               retryScheduled = true
@@ -273,42 +312,71 @@ internal class FundingSwapController(
           if (!result.definitelyNotSubmitted && !result.committed) {
             val pending = repository.operations.first().firstOrNull { it.id == quote.id }
             mutable.update { it.copy(pending = pending, step = FundingSwapStep.PENDING, quote = null,
-              error = "Swap pending. Check its status.") }
+              error = null) }
           } else if (result.selfPay == null) {
             mutable.update { it.copy(error = actionFailure(result.message, "The swap didn’t go through. Try a fresh quote.")) }
           }
         }
         else -> mutable.update { it.copy(step = FundingSwapStep.PENDING, quote = null,
-          error = "Swap pending. Check its status.") }
+          error = null) }
       }
     }
   }
 
-  fun reconcile() = work { key, version ->
-    val pending = state.value.pending
-    val operations = checkNotNull(repository).reconcile()
-    if (!current(key, version)) return@work
-    val result = operations.firstOrNull { it.id == pending?.id }
-      ?: operations.firstOrNull { it.profileId == key.profileId && it.isUnresolved }
-    when (result?.status) {
-      SwapOperationStatus.COMMITTED -> complete(key, version)
-      SwapOperationStatus.ABORTED, SwapOperationStatus.NOT_SUBMITTED -> {
-        mutable.update { it.copy(pending = null, step = null, transaction = null,
-          error = "The swap didn’t go through. You can try again.") }
-        refresh()
+  fun reconcile() { statusJob?.cancel(); pollStatus(immediate = true) }
+
+  /** Reconciliation only reads status; it never executes a quote or holds the sheet busy. */
+  private fun pollStatus(immediate: Boolean = false) {
+    val key = context ?: return
+    if (!visible || state.value.step != FundingSwapStep.PENDING || statusJob?.isActive == true) return
+    val version = revision
+    val expectedId = state.value.pending?.id
+    statusJob = scope.launch {
+      if (!immediate) delay(1_000)
+      var attempt = 0
+      var failures = 0
+      while (visible && current(key, version) && state.value.step == FundingSwapStep.PENDING && currentCoroutineContext().isActive) {
+        val read = withTimeoutOrNull(10_000) { runSuspendCatching { checkNotNull(repository).reconcile() } }
+        currentCoroutineContext().ensureActive()
+        if (!visible || !current(key, version) || state.value.step != FundingSwapStep.PENDING) return@launch
+        attempt++
+        if (read == null || read.isFailure) {
+          failures++
+          ReadRecoveryDiagnostics.failed(ReadOperation.SWAP_STATUS, failures, read?.exceptionOrNull(), read == null)
+          if (failures >= 3) mutable.update { it.copy(error = "Swap status unavailable") }
+        } else {
+          failures = 0
+          ReadRecoveryDiagnostics.recovered(ReadOperation.SWAP_STATUS)
+          val operations = read.getOrThrow()
+          val result = if (expectedId != null) operations.firstOrNull { it.id == expectedId && it.profileId == key.profileId }
+            else operations.firstOrNull { it.profileId == key.profileId && it.isUnresolved }
+          when (result?.status) {
+            SwapOperationStatus.COMMITTED -> { complete(key, version); return@launch }
+            SwapOperationStatus.ABORTED, SwapOperationStatus.NOT_SUBMITTED -> {
+              mutable.update { it.copy(pending = null, step = null, transaction = null,
+                error = "The swap didn’t go through. You can try again.") }
+              refresh()
+              return@launch
+            }
+            else -> mutable.update { it.copy(pending = result ?: it.pending, error = null) }
+          }
+        }
+        delay(readBackoffMs(attempt.coerceAtLeast(2)))
       }
-      else -> mutable.update { it.copy(pending = result ?: pending,
-        error = "Still confirming. Check again shortly.") }
     }
   }
 
-  private suspend fun complete(key: FundingSwapContext, version: Long) {
-    val capacity = runSuspendCatching { checkNotNull(repository).fundingCapacity(key.owner) }.getOrNull()
+  private fun complete(key: FundingSwapContext, version: Long) {
     if (!current(key, version)) return
-    mutable.update { it.copy(capacity = capacity, balanceCurrent = capacity != null, balanceUpdatedAtMs = if (capacity != null) now() else null,
+    mutable.update { it.copy(balanceCurrent = false, balanceUpdatedAtMs = null,
       pending = null, step = null, quote = null, transaction = null, selfPayOffer = null,
-      completed = true, error = null, balanceError = if (capacity == null) "Swap confirmed. Refresh your wallet balance to continue." else null) }
+      completed = true, error = null, balanceError = null) }
     onReadyToTransfer(requestedTransfer)
+    balanceRetryJob?.cancel()
+    balanceRetryJob = scope.launch {
+      yield()
+      if (visible && current(key, version)) refresh()
+    }
   }
 
   private fun work(block: suspend (FundingSwapContext, Long) -> Unit) {
@@ -317,6 +385,7 @@ internal class FundingSwapController(
     val version = revision
     balanceRevision++
     refreshJob?.cancel()
+    balanceRetryJob?.cancel()
     mutable.update { it.copy(working = true, loadingBalance = false, error = null) }
     scope.launch {
       try {
@@ -328,6 +397,7 @@ internal class FundingSwapController(
       } finally {
         if (current(key, version)) {
           mutable.update { it.copy(working = false) }
+          if (state.value.step == FundingSwapStep.PENDING) pollStatus(immediate = true)
           if (state.value.step == FundingSwapStep.SWAP) state.value.quote?.let { quote ->
             if (quote.expiresAtMs - now() <= 3_000 || (state.value.transaction as? ActionState.Failed)?.committed == true)
               scheduleQuote(0)

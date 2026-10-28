@@ -283,9 +283,8 @@ class AptosSwapRepository(
     val pending = store.operations.first().filter { it.profileId == selected.activeProfileId && it.isUnresolved }
     if (pending.isEmpty()) return operations.first()
     val prompt = VaultPrompt("Check swap status", "Confirm your identity")
-    val session = sessions.authenticateOwner(selected.selectedSubaccount, prompt)
-    try {
-      sessions.bind(session, flow {
+    val session = sessions.ensureOwner(selected.selectedSubaccount, prompt)
+    sessions.bind(session, flow {
         for (operation in pending) when (val status = trading.transactionStatus(operation.reference)) {
           is ActionState.Committed -> {
             update(operation, SwapOperationStatus.COMMITTED, status.reference)
@@ -298,8 +297,7 @@ class AptosSwapRepository(
           else -> Unit
         }
         emit(Unit)
-      }).first()
-    } finally { restoreTrading(prompt) }
+    }).first()
     return operations.first()
   }
 

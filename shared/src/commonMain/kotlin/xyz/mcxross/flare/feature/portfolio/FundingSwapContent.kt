@@ -1,5 +1,9 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,10 +41,19 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
   val invalid = state.inputAmount.isNotBlank() && units == null
   BackBar(if (pending) "Swap pending" else "Swap for USDC", {
     onIntent(if (pending) PortfolioIntent.CloseFunding else PortfolioIntent.BackFromSwap)
-  }, Modifier.padding(bottom = 12.dp), backEnabled = !state.working)
+  }, Modifier.padding(bottom = 12.dp).semantics {
+    if (pending) { stateDescription = "Swap pending"; liveRegion = LiveRegionMode.Polite }
+  }, backEnabled = !state.working)
   Column(Modifier.heightIn(max = 390.dp).verticalScroll(rememberScrollState())) {
     if (pending) {
-      ActionNotice("Swap pending")
+      state.pending?.reference?.let { reference ->
+        val explorer = xyz.mcxross.flare.design.LocalTransactionExplorer.current
+        val browser = androidx.compose.ui.platform.LocalUriHandler.current
+        explorer.url(reference)?.let { url ->
+          xyz.mcxross.flare.design.ActionRow(explorer.label, icon = xyz.mcxross.flare.design.FlareIcons.External,
+            onClick = { runCatching { browser.openUri(url) } })
+        }
+      }
     } else {
       FlareAmountField(
         value = pay,
@@ -85,6 +98,7 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
     }
     state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
   }
+  if (pending) return
   Spacer(Modifier.height(16.dp))
   val text = when {
     state.working -> when (state.transaction) {
@@ -94,13 +108,11 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
       is ActionState.Pending -> "Confirming…"
       else -> "Checking…"
     }
-    pending -> "Check status"
     state.selfPay -> "Pay fees and swap"
     else -> "Swap"
   }
   FlareButton(text, {
     onIntent(when {
-      pending -> PortfolioIntent.ReconcileSwap
       state.selfPay -> PortfolioIntent.ConfirmSwapSelfPay
       else -> PortfolioIntent.ConfirmSwap
     })

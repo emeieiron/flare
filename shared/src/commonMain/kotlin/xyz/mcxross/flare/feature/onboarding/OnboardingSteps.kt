@@ -748,10 +748,10 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
       ) {
         NetworkFeeLine("Network fees", covered = state.setupFee == null)
       }
-    state.busy ->
+    state.busy || state.accountLookupError == null ->
       StepLayout(
-        title = "Finding your account",
-        subtitle = "Looking for trading accounts that belong to this wallet.",
+        title = "Find your account",
+        subtitle = null,
         actions = {},
       ) {
         val shimmer = rememberFlareShimmer()
@@ -768,16 +768,8 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
     else ->
       StepLayout(
         title = "Find your account",
-        subtitle = "Flare couldn’t look up your trading accounts. Check your connection and try again.",
-        actions = {
-          SetupActions(state, onIntent) {
-            FlareButton(
-              "Try again",
-              { onIntent(OnboardingIntent.DiscoverSubaccounts) },
-              Modifier.fillMaxWidth(),
-            )
-          }
-        },
+        subtitle = state.accountLookupError,
+        actions = { SetupActions(state, onIntent) {} },
       )
   }
 }

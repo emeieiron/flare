@@ -96,6 +96,9 @@ fun OnboardingRoute(
       }
     }
   }
+  LifecycleEventEffect(Lifecycle.Event.ON_START) {
+    viewModel.onIntent(OnboardingIntent.ResumeReads)
+  }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     viewModel.onIntent(OnboardingIntent.ClearSensitiveState)
   }
