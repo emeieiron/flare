@@ -987,7 +987,7 @@ fun EmptyState(
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-    Text(
+    if (message.isNotBlank()) Text(
       message,
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,

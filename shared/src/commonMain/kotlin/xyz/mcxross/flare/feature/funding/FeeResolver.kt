@@ -3,6 +3,13 @@ package xyz.mcxross.flare.feature.funding
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.readBackoffMs
+import xyz.mcxross.flare.core.isReadAccessFailure
+import xyz.mcxross.flare.core.readAccessMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -21,6 +28,12 @@ internal class FeeResolver<K : Any>(
   private var key: K? = null
   private var revision = 0L
   private var job: Job? = null
+  private var visible = false
+
+  fun setVisible(value: Boolean) {
+    visible = value
+    if (!value) cancel(clearCache = true)
+  }
 
   fun request(value: K, immediate: Boolean = false) {
     val cached = cache[value]?.takeIf { now() - it.at < 30_000 }
@@ -37,20 +50,27 @@ internal class FeeResolver<K : Any>(
     val version = revision
     job = scope.launch {
       if (!immediate) delay(175)
-      val fee = withTimeoutOrNull(12_000) {
-        repeat(3) { attempt ->
-          if (attempt > 0) delay(if (attempt == 1) 250 else 750)
-          val result = runSuspendCatching { withTimeoutOrNull(3_500) { read(value) } }.getOrNull()
-          if (result != null) return@withTimeoutOrNull result
+      var attempt = 0
+      while (currentCoroutineContext().isActive) {
+        val result = withTimeoutOrNull(3_500) { runSuspendCatching { read(value) } }
+        if (revision != version || key != value) return@launch
+        val fee = result?.getOrNull()
+        if (fee != null) {
+          cache[value] = Cached(fee.copy(covered = false), now())
+          while (cache.size > 8) cache.remove(cache.keys.first())
+          ReadRecoveryDiagnostics.recovered(ReadOperation.FEES)
+          publish(value, fee, null)
+          return@launch
         }
-        null
+        attempt++
+        ReadRecoveryDiagnostics.failed(ReadOperation.FEES, attempt, result?.exceptionOrNull(), result == null)
+        val accessError = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
+        if (attempt >= 3 || accessError != null) {
+          publish(value, null, accessError?.readAccessMessage() ?: "Fees unavailable")
+          if (!visible) return@launch
+        }
+        delay(when (attempt) { 1 -> 250; 2 -> 750; else -> readBackoffMs(attempt - 1) })
       }
-      if (revision != version || key != value) return@launch
-      if (fee != null) {
-        cache[value] = Cached(fee.copy(covered = false), now())
-        while (cache.size > 8) cache.remove(cache.keys.first())
-      }
-      publish(value, fee, if (fee == null) "Fees unavailable. Check your connection." else null)
     }
   }
 

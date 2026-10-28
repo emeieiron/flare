@@ -990,6 +990,7 @@ class PortfolioViewModel(
   /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
   suspend fun refreshWhileVisible() {
     fundingSwaps.setVisible(true)
+    fundingFees.setVisible(true)
     scheduleFundingFee(immediate = true)
     try {
       var waitMs = 2_000L
@@ -1015,6 +1016,7 @@ class PortfolioViewModel(
       }
     } finally {
       fundingSwaps.setVisible(false)
+      fundingFees.setVisible(false)
       clearFundingFee()
     }
   }

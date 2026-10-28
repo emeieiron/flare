@@ -78,4 +78,26 @@ class FeeResolverTest {
     advanceTimeBy(1_001); runCurrent()
     assertEquals(4, calls); assertNotNull(error)
   }
+  @Test fun aVisibleFormRecoversAfterTheInitialRetryBudgetAndStopsWhenHidden() = runTest {
+    var attempts = 0
+    var value: NetworkFee? = null
+    var error: String? = null
+    val resolver = FeeResolver<Int>(backgroundScope, {
+      attempts++
+      if (attempts <= 3) error("server unavailable") else NetworkFee(12uL, 500uL)
+    }, { _, fee, message -> value = fee; error = message })
+    resolver.setVisible(true)
+    resolver.request(1, immediate = true); runCurrent()
+    advanceTimeBy(1_001); runCurrent()
+    assertEquals("Fees unavailable", error)
+    advanceTimeBy(2_001); runCurrent()
+    assertEquals(NetworkFee(12uL, 500uL), value)
+    assertNull(error)
+    resolver.request(2, immediate = true); runCurrent()
+    resolver.setVisible(false)
+    val prior = attempts
+    advanceTimeBy(31_000); runCurrent()
+    assertEquals(prior, attempts)
+  }
+
 }

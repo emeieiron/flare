@@ -3,6 +3,16 @@ package xyz.mcxross.flare.feature.orders
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.readBackoffMs
+import xyz.mcxross.flare.core.isReadAccessFailure
+import xyz.mcxross.flare.core.readAccessMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -63,6 +73,8 @@ data class OrdersUiState(
   val transaction: ActionState? = null,
   val busy: Boolean = false,
   val error: String? = null,
+  val readUnavailable: Boolean = false,
+  val readAccessError: String? = null,
   val lastCancelMarket: String? = null,
   val lastCancelOrderId: String? = null,
   val lastCancelIsTpSl: Boolean = false,
@@ -104,7 +116,7 @@ sealed interface OrdersIntent {
 
 class OrdersViewModel(
   private val accounts: AccountRepository,
-  wallets: WalletRepository,
+  private val wallets: WalletRepository,
   private val trading: TradingRepository,
   private val markets: MarketsRepository,
   venue: VenueDescriptor,
@@ -152,17 +164,54 @@ class OrdersViewModel(
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrdersUiState())
 
   suspend fun followHistoryWhileVisible() {
-    local.map { it.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP) }
-      .distinctUntilChanged()
-      .collectLatest { visible ->
-        accounts.setHistoryVisible(visible)
-        try {
-          if (visible) accounts.refreshHistory()
-          awaitCancellation()
-        } finally {
-          accounts.setHistoryVisible(false)
+    data class Context(val section: OrdersSection, val owner: String?, val api: String?, val account: String?)
+    combine(local.map { it.section }.distinctUntilChanged(), wallets.profile,
+      accounts.snapshot.map { it.account }.distinctUntilChanged()) { section, wallet, account ->
+      Context(section, wallet.ownerAddress, wallet.apiWalletAddress, account)
+    }.distinctUntilChanged().collectLatest { context ->
+      val history = context.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP)
+      accounts.setHistoryVisible(history)
+      local.update { it.copy(readUnavailable = false, readAccessError = null) }
+      try {
+        if (context.account == null || context.owner == null && context.api == null) awaitCancellation()
+        var failures = 0
+        var first = true
+        while (currentCoroutineContext().isActive) {
+          val snapshot = accounts.snapshot.value
+          val priorHistory = accounts.history.value
+          val needsRead = snapshot.stale || snapshot.error != null ||
+            history && (first || priorHistory.stale || priorHistory.error != null)
+          if (needsRead) {
+            val generation = wallets.authorizationGeneration
+            val result = withTimeoutOrNull(10_000) { runSuspendCatching {
+              wallets.requireAuthorization(generation)
+              if (snapshot.stale || snapshot.error != null) accounts.restoreTrading()
+              else if (history) accounts.refreshHistory()
+            } }
+            currentCoroutineContext().ensureActive()
+            if (wallets.authorizationGeneration != generation) awaitCancellation()
+            val current = accounts.snapshot.value
+            val currentHistory = accounts.history.value
+            val failed = result == null || result.isFailure || current.stale || current.error != null ||
+              history && (currentHistory.stale || currentHistory.error != null)
+            if (failed) {
+              failures++
+              ReadRecoveryDiagnostics.failed(ReadOperation.ACTIVITY, failures, result?.exceptionOrNull(), result == null)
+              val access = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
+              local.update { it.copy(readUnavailable = failures >= 3 || access != null, readAccessError = access?.readAccessMessage()) }
+            } else {
+              failures = 0
+              ReadRecoveryDiagnostics.recovered(ReadOperation.ACTIVITY)
+              local.update { it.copy(readUnavailable = false, readAccessError = null) }
+            }
+          }
+          first = false
+          delay(if (failures > 0) readBackoffMs(failures) else 15_000)
         }
+      } finally {
+        accounts.setHistoryVisible(false)
       }
+    }
   }
 
   fun onIntent(intent: OrdersIntent) {

@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.feature.orders
 
 import xyz.mcxross.flare.design.UnavailableNotice
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +33,11 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatRelativeTime
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
+import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.rememberFlareShimmer
+import com.valentinilk.shimmer.shimmer
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
@@ -81,11 +87,7 @@ fun OrdersScreen(
         .verticalScroll(rememberScrollState())
         .padding(horizontal = 24.dp)
   ) {
-    FlareTopBar("Activity", subtitle = when {
-      state.account.error != null -> "Account data unavailable"
-      state.account.stale -> "Connecting…"
-      else -> null
-    })
+    FlareTopBar("Activity")
     FlareSegmentedControl(
       listOf(false, true), historySelected,
       { history ->
@@ -103,12 +105,17 @@ fun OrdersScreen(
       onSelect = { onIntent(OrdersIntent.SelectSection(sections[it])) },
       modifier = Modifier.padding(bottom = 12.dp),
     )
-    val readError = if (historySelected) state.history.error else state.account.error
-    if (readError != null) {
-      ActionNotice("Account data couldn’t be loaded. Check your connection and account access.",
-        Modifier.padding(bottom = 8.dp), NoticeTone.ALERT)
-      androidx.compose.material3.TextButton({ onIntent(OrdersIntent.RetryAccount) }) { Text("Retry") }
+    val hasReadData = when (state.section) {
+      OrdersSection.OPEN -> state.account.openOrders.isNotEmpty()
+      OrdersSection.TWAP -> state.activeTwaps.isNotEmpty() || state.twapHistory.isNotEmpty()
+      OrdersSection.ORDERS -> state.history.orders.isNotEmpty()
+      OrdersSection.TRADES -> state.history.trades.isNotEmpty()
+      OrdersSection.FUNDING -> state.history.funding.isNotEmpty()
+      OrdersSection.TRANSFERS -> state.history.transfers.isNotEmpty()
     }
+    state.readAccessError?.let { ActionNotice(it, Modifier.padding(bottom = 8.dp), NoticeTone.ALERT) }
+    if (state.readUnavailable && hasReadData && state.readAccessError == null) Text("Last updated earlier",
+      Modifier.padding(bottom = 8.dp), color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
     val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
     val twapUnavailable = actionsUnavailable ?: state.capabilities.unavailableReason(ActionKind.TWAP)
@@ -148,6 +155,7 @@ fun OrdersScreen(
           )
         }
     }
+    if (state.readAccessError != null && !hasReadData) return@Column
     when (state.section) {
       OrdersSection.OPEN ->
         when {
@@ -209,20 +217,13 @@ fun OrdersScreen(
               HorizontalDivider(color = FlareColors.BorderSubtle)
             }
           }
-          state.profile.ownerAddress != null || state.profile.apiWalletAddress != null ->
-            EmptyState(
-              title = when {
-                state.account.error != null -> "Orders unavailable"
-                state.account.stale -> "Loading orders"
-                else -> "No open orders"
-              },
-              message =
-                if (state.account.stale) {
-                  "Your orders will appear when account access is restored."
-                } else {
-                  "Working orders will appear here after submission."
-                },
+          state.profile.ownerAddress != null || state.profile.apiWalletAddress != null -> {
+            if (state.account.stale && !state.readUnavailable) ActivitySkeleton()
+            else EmptyState(
+              title = if (state.account.stale || state.account.error != null) "Orders unavailable" else "No open orders",
+              message = if (state.account.stale || state.account.error != null) "" else "Working orders will appear here after submission.",
             )
+          }
           else ->
             EmptyState(
               title = "No account orders",
@@ -309,7 +310,7 @@ fun OrdersScreen(
         }
       OrdersSection.ORDERS -> {
         if (state.history.orders.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No order history")
+          HistoryEmpty(state.history.stale, state.readUnavailable, "No order history")
         } else {
           state.history.orders.forEach { entry ->
             val order = entry.order
@@ -356,7 +357,7 @@ fun OrdersScreen(
       }
       OrdersSection.TRADES -> {
         if (state.history.trades.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No trade history")
+          HistoryEmpty(state.history.stale, state.readUnavailable, "No trade history")
         } else {
           state.history.trades.forEach { trade ->
             val isSpot = trade.kind == MarketKind.SPOT || trade.marketId in state.spotMarkets
@@ -401,7 +402,7 @@ fun OrdersScreen(
       }
       OrdersSection.FUNDING -> {
         if (state.history.funding.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No funding history")
+          HistoryEmpty(state.history.stale, state.readUnavailable, "No funding history")
         } else {
           state.history.funding.forEach { payment ->
             Row(
@@ -436,7 +437,7 @@ fun OrdersScreen(
       }
       OrdersSection.TRANSFERS -> {
         if (state.history.transfers.isEmpty()) {
-          HistoryEmpty(state.history.stale, "No transfer history")
+          HistoryEmpty(state.history.stale, state.readUnavailable, "No transfer history")
         } else {
           state.history.transfers.forEach { transfer ->
             val incoming = transfer.kind.incoming
@@ -482,7 +483,8 @@ fun OrdersScreen(
       }
     if (canLoadMore) {
       FlareButton(
-        text = if (state.history.loadingMore) "Loading…" else "Load more",
+        text = "Load more",
+        working = state.history.loadingMore,
         onClick = { onIntent(OrdersIntent.LoadMore) },
         modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
         enabled = !state.busy && !state.history.loadingMore,
@@ -493,16 +495,20 @@ fun OrdersScreen(
 }
 
 @Composable
-private fun HistoryEmpty(stale: Boolean, title: String) {
-  EmptyState(
-    title = if (stale) "History is on its way" else title,
-    message =
-      if (stale) {
-        "It appears as soon as your account reconnects."
-      } else {
-        "Completed account activity will appear here."
-      },
+private fun HistoryEmpty(stale: Boolean, unavailable: Boolean, title: String) {
+  if (stale && !unavailable) ActivitySkeleton()
+  else EmptyState(
+    title = if (stale) "History unavailable" else title,
+    message = if (stale) "" else "Completed account activity will appear here.",
   )
+}
+
+@Composable
+private fun ActivitySkeleton() {
+  Column(Modifier.fillMaxWidth().shimmer(rememberFlareShimmer()).semantics { contentDescription = "Loading activity" },
+    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    repeat(3) { FlareSkeletonBox(Modifier.fillMaxWidth().height(48.dp)) }
+  }
 }
 
 /** An open order's side, size and prices, as its row reads: `Sell 0.01 · at market · trigger $35,000.00`. */

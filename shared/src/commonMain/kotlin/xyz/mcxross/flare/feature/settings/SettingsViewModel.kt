@@ -686,40 +686,49 @@ class SettingsViewModel(
   /** Owned by AccountRoute's visible lifecycle, so hidden screens do not poll or retain old reads. */
   suspend fun followWalletBalances() {
     val repository = walletBalances ?: return
-    preferences.values
-      .map { it.activeProfileId to (it.ownerAddress ?: it.apiWalletAddress) }
-      .distinctUntilChanged()
-      .collectLatest { (profileId, address) ->
-        local.update { state ->
-          val sameWallet = state.walletBalanceProfileId == profileId && state.walletBalanceAddress == address
-          state.copy(
-            walletBalanceProfileId = profileId,
-            walletBalanceAddress = address,
-            walletBalances = if (address == null) emptyList()
-              else if (sameWallet) state.walletBalances
-              else repository.symbols.map { WalletTokenBalance(it) },
-          )
-        }
-        if (address == null) return@collectLatest
-        while (true) {
-          coroutineScope {
-            repository.symbols.forEach { symbol ->
-              launch {
-                val result = runSuspendCatching { repository.balance(address, symbol) }
-                currentCoroutineContext().ensureActive()
-                local.update { state ->
-                  if (state.walletBalanceProfileId != profileId || state.walletBalanceAddress != address) state
-                  else state.copy(walletBalances = state.walletBalances.map { balance ->
-                    if (balance.symbol != symbol) balance
-                    else balance.copy(amount = result.getOrNull() ?: balance.amount, unavailable = result.isFailure)
-                  })
+    withdrawFees.setVisible(true)
+    if (withdrawFeeVisible) scheduleWithdrawFee(immediate = true)
+    try {
+      preferences.values
+        .map { it.activeProfileId to (it.ownerAddress ?: it.apiWalletAddress) }
+        .distinctUntilChanged()
+        .collectLatest { (profileId, address) ->
+          local.update { state ->
+            val sameWallet = state.walletBalanceProfileId == profileId && state.walletBalanceAddress == address
+            state.copy(
+              walletBalanceProfileId = profileId,
+              walletBalanceAddress = address,
+              walletBalances = if (address == null) emptyList()
+                else if (sameWallet) state.walletBalances
+                else repository.symbols.map { WalletTokenBalance(it) },
+            )
+          }
+          if (address == null) return@collectLatest
+          while (true) {
+            coroutineScope {
+              repository.symbols.forEach { symbol ->
+                launch {
+                  val result = runSuspendCatching { repository.balance(address, symbol) }
+                  currentCoroutineContext().ensureActive()
+                  if (result.isFailure) xyz.mcxross.flare.core.ReadRecoveryDiagnostics.failed(
+                    xyz.mcxross.flare.core.ReadOperation.WALLET_BALANCES, 1, result.exceptionOrNull())
+                  else xyz.mcxross.flare.core.ReadRecoveryDiagnostics.recovered(xyz.mcxross.flare.core.ReadOperation.WALLET_BALANCES)
+                  local.update { state ->
+                    if (state.walletBalanceProfileId != profileId || state.walletBalanceAddress != address) state
+                    else state.copy(walletBalances = state.walletBalances.map { balance ->
+                      if (balance.symbol != symbol) balance
+                      else balance.copy(amount = result.getOrNull() ?: balance.amount, unavailable = result.isFailure)
+                    })
+                  }
                 }
               }
             }
+            withTimeoutOrNull(WALLET_BALANCE_REFRESH_MS) { balanceRefreshRequests.receive() }
           }
-          withTimeoutOrNull(WALLET_BALANCE_REFRESH_MS) { balanceRefreshRequests.receive() }
         }
-      }
+    } finally {
+      withdrawFees.setVisible(false)
+    }
   }
 
   private fun openNameEditor(profileId: String, address: String? = null) {
