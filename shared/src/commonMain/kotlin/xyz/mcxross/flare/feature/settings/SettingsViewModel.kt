@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,6 +23,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.feature.funding.FeeResolver
@@ -705,14 +709,11 @@ class SettingsViewModel(
           }
           if (address == null) return@collectLatest
           while (true) {
-            coroutineScope {
-              repository.symbols.forEach { symbol ->
-                launch {
+            val failures = coroutineScope {
+              repository.symbols.map { symbol ->
+                async {
                   val result = runSuspendCatching { repository.balance(address, symbol) }
                   currentCoroutineContext().ensureActive()
-                  if (result.isFailure) xyz.mcxross.flare.core.ReadRecoveryDiagnostics.failed(
-                    xyz.mcxross.flare.core.ReadOperation.WALLET_BALANCES, 1, result.exceptionOrNull())
-                  else xyz.mcxross.flare.core.ReadRecoveryDiagnostics.recovered(xyz.mcxross.flare.core.ReadOperation.WALLET_BALANCES)
                   local.update { state ->
                     if (state.walletBalanceProfileId != profileId || state.walletBalanceAddress != address) state
                     else state.copy(walletBalances = state.walletBalances.map { balance ->
@@ -720,9 +721,12 @@ class SettingsViewModel(
                       else balance.copy(amount = result.getOrNull() ?: balance.amount, unavailable = result.isFailure)
                     })
                   }
+                  result.exceptionOrNull()
                 }
-              }
+              }.awaitAll().filterNotNull()
             }
+            if (failures.isEmpty()) ReadRecoveryDiagnostics.recovered(ReadOperation.WALLET_BALANCES)
+            else ReadRecoveryDiagnostics.failed(ReadOperation.WALLET_BALANCES, 1, failures.first())
             withTimeoutOrNull(WALLET_BALANCE_REFRESH_MS) { balanceRefreshRequests.receive() }
           }
         }

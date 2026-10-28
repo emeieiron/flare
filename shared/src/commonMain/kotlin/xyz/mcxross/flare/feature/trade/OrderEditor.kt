@@ -211,7 +211,7 @@ internal fun OrderEditor(
           ActionNotice(inputError, tone = NoticeTone.ALERT)
         }
         state.orderError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
-        if (!state.tradingEnabled) {
+        if (marketDataUnavailable(state)) {
           OrderConnectionNotice()
         }
       }
@@ -299,7 +299,7 @@ internal fun OrderReviewStatus(
     ReviewDetails(state, side)
     ReviewExits(state, side)
     ReviewFootnote(state, side)
-    if (!state.tradingEnabled) OrderConnectionNotice()
+    if (marketDataUnavailable(state)) OrderConnectionNotice()
   }
 }
 
@@ -353,7 +353,13 @@ private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean,
 private fun OrderConnectionNotice() {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     FlareSkeletonBox(Modifier.width(40.dp).height(3.dp).shimmer(rememberFlareShimmer()))
-    Text("Reconnecting to live prices. Trading resumes automatically.",
+    Text("Live prices unavailable",
       color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
   }
 }
+
+private fun marketDataUnavailable(state: TradeUiState): Boolean =
+  state.tradingKeyAddress != null &&
+    (state.marketDetails.stale ||
+      (state.orderType == OrderType.MARKET &&
+        (state.marketDetails.orderBook?.bestBid == null || state.marketDetails.orderBook?.bestAsk == null)))

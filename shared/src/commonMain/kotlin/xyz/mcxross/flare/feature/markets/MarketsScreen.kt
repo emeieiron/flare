@@ -245,19 +245,19 @@ private fun MarketPageContent(
   if (loading && quotes.isEmpty()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
       MarketSectionHeader(title, showPriceLabel = true)
-      MarketListSkeleton()
+      MarketListSkeleton(Modifier.semantics { contentDescription = "Loading markets" })
     }
   } else if (quotes.isEmpty()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
       EmptyState(
         title =
           when {
-            offline -> "Markets are offline"
+            offline -> "Market data unavailable"
             key.favoritesOnly -> "Your watchlist starts here"
             else -> "No markets here yet"
           },
         message =
-          if (offline) "Prices appear as soon as market data arrives."
+          if (offline) ""
           else if (key.favoritesOnly) "Tap the star beside a market to follow it here."
           else "Swipe to see other markets.",
       )
@@ -331,8 +331,10 @@ private fun MarketSearchResults(
   LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) keyboard?.hide() }
   val query = state.query.trim()
   if (results.isEmpty) {
-    if (state.loading && state.quotes.isEmpty()) {
-      MarketListSkeleton()
+    if (state.error != null && state.quotes.isEmpty()) {
+      EmptyState("Market data unavailable", "")
+    } else if (state.loading && state.quotes.isEmpty()) {
+      MarketListSkeleton(Modifier.semantics { contentDescription = "Loading markets" })
     } else {
       EmptyState(
         title = if (query.isEmpty()) "Search every market" else "No markets match “$query”",

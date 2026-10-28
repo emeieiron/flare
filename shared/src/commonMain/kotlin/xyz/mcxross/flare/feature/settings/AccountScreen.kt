@@ -207,7 +207,6 @@ fun AccountScreen(
           state.walletBalanceProfileId == active.id && state.walletBalanceAddress == walletAddress
         }.orEmpty(),
         assetMetadata = assetMetadata,
-        onRefreshBalances = { onIntent(SettingsIntent.RefreshWalletBalances) },
       )
       val need = state.setupNeed
       if (active.setupPending && need != null) {
@@ -328,7 +327,6 @@ private fun WalletNameRow(
   selected: Boolean = false,
   balances: List<WalletTokenBalance> = emptyList(),
   assetMetadata: Map<String, AssetMetadata> = emptyMap(),
-  onRefreshBalances: () -> Unit = {},
   onClickLabel: String = "Select wallet",
 ) {
   Row(Modifier.fillMaxWidth().combinedClickable(
@@ -344,7 +342,7 @@ private fun WalletNameRow(
     Column(Modifier.weight(1f)) {
       Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
       Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-      if (balances.isNotEmpty()) InlineWalletBalances(balances, assetMetadata, onRefreshBalances)
+      if (balances.isNotEmpty()) InlineWalletBalances(balances, assetMetadata)
     }
     if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
       modifier = Modifier.size(20.dp))
@@ -358,7 +356,6 @@ private fun WalletNameRow(
 private fun InlineWalletBalances(
   balances: List<WalletTokenBalance>,
   assetMetadata: Map<String, AssetMetadata>,
-  onRefresh: () -> Unit,
 ) {
   FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp),
     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -378,10 +375,9 @@ private fun InlineWalletBalances(
   if (balances.any { it.unavailable }) Row(
     Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text(if (balances.any { it.unavailable && it.amount == null }) "Some balances are unavailable"
-      else "Balances may be out of date", Modifier.weight(1f),
+    Text(if (balances.any { it.unavailable && it.amount == null }) "Balance unavailable"
+      else "Updated earlier", Modifier.weight(1f),
       style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-    TextButton(onClick = onRefresh) { Text("Retry", color = FlareColors.Positive) }
   }
 }
 

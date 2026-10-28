@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -30,6 +33,9 @@ import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.rememberFlareShimmer
+import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.strategies.JevConfluence
 import xyz.mcxross.flare.strategies.StrategyKind
@@ -76,10 +82,16 @@ fun StrategiesSheet(
         }
       }
       DetailRow(state.selected.label, state.signal?.direction?.label() ?: "Not evaluated")
-      DetailRow("Jev confluence", when {
+      if (state.useJev && state.working && state.baseline != null) {
+        Row(Modifier.fillMaxWidth().semantics { contentDescription = "Loading Jev confluence" },
+          horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Jev confluence", Modifier.weight(1f), color = FlareColors.TextSecondary,
+            style = MaterialTheme.typography.bodyMedium)
+          FlareSkeletonBox(Modifier.weight(1f).height(16.dp).shimmer(rememberFlareShimmer()))
+        }
+      } else DetailRow("Jev confluence", when {
         !state.useJev -> "Off"
         state.confluence != null -> "${state.confluence.direction.label()} · ${formatQuantity(state.confluence.confidence * 100, 1)}%"
-        state.working && state.baseline != null -> "Assessing…"
         state.baseline == null -> "Not evaluated"
         else -> "Unavailable"
       })
@@ -124,8 +136,9 @@ fun StrategiesSheet(
             }
             Text("Agreement requires matching direction and at least 60% confidence. Choice probabilities describe model output, not trade success rates.",
               color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
-          } ?: Text(state.confluenceError ?: if (state.working) "Assessing confluence…" else "Confluence unavailable. Strategy signals have no model approval.",
-            color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+          } ?: if (state.confluenceError != null || !state.working) Text(
+            state.confluenceError ?: "Confluence unavailable. Strategy signals have no model approval.",
+            color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall) else Unit
         } else {
           Text("Jev is off. These signals use deterministic indicators without a model or API key.",
             color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)

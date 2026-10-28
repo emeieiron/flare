@@ -49,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -247,8 +249,10 @@ fun PortfolioScreen(
                 if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(balance = true)
                 else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
                   Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
-                if (state.vaultsError != null) QuietPortfolioMessage(
-                  if (state.vaultsLoaded) "Updating · showing your last vault balances" else "Vaults unavailable. Reconnecting automatically.")
+                if (state.vaultsLoaded && state.vaultsError != null) {
+                  Text("Last updated earlier", Modifier.padding(top = 4.dp),
+                    color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
+                } else if (state.vaultsError != null) QuietPortfolioMessage("Vaults unavailable")
                 if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", FlareIcons.Search,
                   Modifier.padding(top = 20.dp))
                 if (ownedMatches.isNotEmpty()) SectionLabel("Your deposits")
@@ -292,9 +296,8 @@ fun PortfolioScreen(
               val rewards = state.rewards
               if (rewards != null && !rewards.isEmpty) {
                 Column { RewardsDetails(state) }
-                if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
-              else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable. Reconnecting automatically." else "No rewards yet")
+              else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable" else "No rewards yet")
             }
           }
         }
@@ -328,16 +331,14 @@ private fun PortfolioOverview(
         contentDescription = null, tint = FlareColors.TextSecondary)
     }
     if (overview == null && state.account.error == null) PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
-    else Text(if (overview != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalBalance) else "—",
+    else Text(if (!state.balanceIncomplete && (overview != null || state.spotHoldings.isNotEmpty())) formatBalance(state.totalBalance) else "—",
       style = MaterialTheme.typography.displayMedium)
   }
-  Text(when {
-    overview == null && state.account.error != null -> "Account unavailable. Reconnecting automatically."
-    overview == null -> "Loading your account"
-    state.account.stale -> "Updating · showing your last balance"
-    state.balanceIncomplete -> "Partial balance · updating"
-    else -> ""
-  }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
+  if (overview == null && state.account.error != null) QuietPortfolioMessage("Account unavailable")
+  else if (overview != null && (state.account.stale || state.balanceIncomplete)) {
+    Text("Last known data", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
+      color = FlareColors.TextTertiary)
+  }
   AnimatedVisibility(expanded) {
     Column(Modifier.padding(top = 12.dp)) {
       DetailRow("Trading equity", overview?.equity?.let(::formatBalance) ?: "—")
@@ -402,7 +403,7 @@ private fun PortfolioOverview(
     { onPage(PortfolioPage.VAULTS) }) {
     if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
     else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
-      if (state.vaultsError != null) "Updating automatically" else null)
+      if (state.vaultsLoaded && state.vaultsError != null) "Last updated earlier" else null)
   }
   if (state.rewardsAvailable && state.rewardPointsName == null) {
     // Without reward points, the card is the account's fee tier.
@@ -410,13 +411,13 @@ private fun PortfolioOverview(
     PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
       if (!state.rewardsLoaded && !state.rewardsError && feeTier == null) PortfolioShimmer(rows = 1)
       else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
-        if (state.rewardsError) "Updating automatically" else null)
+        null)
     }
   } else if (state.rewardsAvailable) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
     val points = state.rewards?.points
     if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
     else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
-      if (state.rewardsError) "Updating automatically" else null)
+      null)
   }
 }
 
@@ -710,7 +711,9 @@ private fun QuietPortfolioMessage(message: String) {
 
 @Composable
 private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = false, rows: Int = 2) {
-  Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+  Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer())
+    .semantics { contentDescription = "Loading portfolio data" },
+    verticalArrangement = Arrangement.spacedBy(12.dp)) {
     if (balance) FlareSkeletonBox(Modifier.width(200.dp).height(56.dp))
     else repeat(rows) {
       Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -723,14 +726,20 @@ private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = f
 
 @Composable
 private fun PositionsEmptyState(state: PortfolioUiState) {
-  if (state.account.overview == null && state.account.error == null) PortfolioShimmer(rows = 1)
-  else QuietPortfolioMessage(if (state.account.overview == null || state.account.stale) "Positions are updating" else "No open positions")
+  when {
+    state.account.error != null -> QuietPortfolioMessage("Positions unavailable")
+    state.account.stale || state.account.overview == null -> PortfolioShimmer(rows = 1)
+    else -> QuietPortfolioMessage("No open positions")
+  }
 }
 
 @Composable
 private fun HoldingsEmptyState(state: PortfolioUiState) {
-  if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
-  else QuietPortfolioMessage(if (state.holdingsError != null || state.account.overview == null || state.account.stale) "Holdings are updating" else "No assets held")
+  when {
+    state.holdingsError != null || state.account.error != null -> QuietPortfolioMessage("Holdings unavailable")
+    state.account.stale || state.account.overview == null -> PortfolioShimmer()
+    else -> QuietPortfolioMessage("No assets held")
+  }
 }
 
 /** The venue's own vault, set apart from the managers' list because it is a different product. */

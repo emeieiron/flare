@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -47,6 +48,8 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.WithdrawalTerms
 import xyz.mcxross.flare.venue.model.NetworkFee
@@ -598,6 +601,12 @@ class SettingsViewModelTest {
     assertEquals(true, vm.uiState.value.walletBalances.first().unavailable)
     assertEquals("0.00", vm.uiState.value.walletBalances.last().displayAmount)
     assertFalse(vm.uiState.value.walletBalances.last().unavailable)
+    assertFalse(ReadRecoveryDiagnostics.events.value.last { it.operation == ReadOperation.WALLET_BALANCES }.recovered)
+
+    balances.read = { _, _ -> "1" }
+    advanceTimeBy(15_001); runCurrent()
+    assertTrue(vm.uiState.value.walletBalances.none { it.unavailable })
+    assertTrue(ReadRecoveryDiagnostics.events.value.last { it.operation == ReadOperation.WALLET_BALANCES }.recovered)
   }
 
   @Test

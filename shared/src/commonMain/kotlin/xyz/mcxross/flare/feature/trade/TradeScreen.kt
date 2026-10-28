@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -211,8 +213,11 @@ fun TradeScreen(
       },
     )
     if (quote == null) {
-      if (state.error != null) EmptyState("Market offline", "Prices appear as soon as Flare reconnects.")
-      else TradeScreenSkeleton(chartStyle = state.chartStyle)
+      if (state.error != null) EmptyState("Market data unavailable", "")
+      else TradeScreenSkeleton(
+        modifier = Modifier.semantics { contentDescription = "Loading market data" },
+        chartStyle = state.chartStyle,
+      )
       return@Column
     }
     TradeSurfaceLayout(
@@ -413,8 +418,8 @@ private fun MarketInformation(state: TradeUiState, showBook: Boolean, onToggleBo
   }
   if (showBook) {
     Text(
-      if (state.marketDetails.stale) {
-        "Reconnecting to the order book…"
+      if (state.marketDetails.stale || state.marketDetails.orderBook == null) {
+        "Order book unavailable"
       } else {
         "Live order book · best bid ${state.marketDetails.orderBook?.bestBid?.toDoubleOrNull()?.let(::formatPrice) ?: "—"} · best ask ${state.marketDetails.orderBook?.bestAsk?.toDoubleOrNull()?.let(::formatPrice) ?: "—"}"
       },

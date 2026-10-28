@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +47,9 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.rememberFlareShimmer
+import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
@@ -223,12 +228,15 @@ fun SettingsScreen(
       if (state.delegationsLoaded && state.delegations.isEmpty()) {
         Text("Nothing can trade for this account yet.")
       }
-      if (!state.delegationsLoaded || state.busy) {
-        ActionNotice(
-          "Checking authorized keys…",
-          Modifier.padding(top = 12.dp),
-          NoticeTone.PROGRESS,
-        )
+      if (!state.delegationsLoaded && state.error == null) {
+        val shimmer = rememberFlareShimmer()
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp)
+          .semantics { contentDescription = "Loading authorized keys" },
+          verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          repeat(2) {
+            FlareSkeletonBox(Modifier.fillMaxWidth().height(52.dp).shimmer(shimmer))
+          }
+        }
       }
       state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
     }
