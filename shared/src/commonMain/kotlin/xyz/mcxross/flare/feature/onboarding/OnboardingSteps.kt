@@ -755,15 +755,18 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
           }
         },
       ) {
-        NetworkFeeLine("Network fees", covered = state.setupFee == null)
         if (referralActive) {
           ReferralCodeField(
             state.referral.copy(applying = state.busy || state.referral.applying),
             { onIntent(OnboardingIntent.ChangeReferralCode(it)) },
             optional = true,
-            modifier = Modifier.padding(top = 16.dp),
           )
         }
+        NetworkFeeLine(
+          "Network fees",
+          covered = state.setupFee == null,
+          modifier = Modifier.padding(top = if (referralActive) 24.dp else 0.dp),
+        )
       }
     }
     state.busy || state.accountLookupError == null ->
@@ -913,15 +916,19 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
         { if (!state.busy) onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
       )
     }
-    NetworkFeeLine("Network fees", covered = state.setupFee == null, Modifier.padding(top = 16.dp))
     if (referralActive) {
       ReferralCodeField(
         state.referral.copy(applying = state.busy || state.referral.applying),
         { onIntent(OnboardingIntent.ChangeReferralCode(it)) },
         optional = true,
-        modifier = Modifier.padding(top = 16.dp),
+        modifier = Modifier.padding(top = 24.dp),
       )
     }
+    NetworkFeeLine(
+      "Network fees",
+      covered = state.setupFee == null,
+      modifier = Modifier.padding(top = if (referralActive) 24.dp else 16.dp),
+    )
   }
 }
 
