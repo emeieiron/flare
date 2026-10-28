@@ -132,6 +132,7 @@ class AptosSwapRepository(
   }
 
   override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
+    require(feePayment != FeePayment.AUTOMATIC) { "Automatic sponsorship fallback is limited to transfers" }
     if (!gate.mutex.tryLock()) {
       emit(ActionState.Failed("Another transaction is already being authorized", definitelyNotSubmitted = true))
       return@flow
@@ -146,7 +147,7 @@ class AptosSwapRepository(
       require(retained.profileId == selected.activeProfileId) { "The quote belongs to another profile" }
       val plan = retained.plan
       require(feePayment != FeePayment.SPONSORED || retained.payment == FeePayment.SPONSORED) {
-        "The reviewed swap uses your APT for gas. Review its network fee before continuing."
+        "The reviewed swap uses your APT for fees. Review the fees before continuing."
       }
       plan.requireCurrent(now(), owner)
       reconcileLocked()
@@ -262,7 +263,7 @@ class AptosSwapRepository(
     plan.validateEffects(result)
     val price = result.gasUnitPrice.toULong()
     val limit = result.maxGasAmount.toULong()
-    require(price in 1uL..1_000uL && limit == 50_000uL) { "Swap gas exceeds the supported limits" }
+    require(price in 1uL..1_000uL && limit == 50_000uL) { "Swap fees exceed the supported limits" }
     val reserve = price * limit
     val balance = when (val read = aptos.accounts.getBalance(account.accountAddress, AccountAsset.coin(APTOS_COIN))) {
       is AptosResult.Success -> read.value

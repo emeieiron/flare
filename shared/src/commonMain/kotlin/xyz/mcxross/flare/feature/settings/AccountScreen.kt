@@ -456,18 +456,13 @@ fun WithdrawSheet(
   // Progress is saved as soon as any withdrawal starts; only one found on opening is being resumed.
   val resuming = rememberSaveable { state.pendingWithdrawal != null }
   val transaction = state.withdrawTransaction
-  // A fee Flare can't sponsor keeps the review open with the choice to pay it.
-  val feeEstimate =
-    (transaction as? ActionState.Failed)?.selfPay?.estimate
-      ?.takeIf { state.capabilities.sponsoredFees }
-  val stage =
-    when {
-      transaction is ActionState.Committed -> WithdrawStage.SENT
-      !state.withdrawing && feeEstimate == null && transaction != null &&
-        (transaction is ActionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
-      reviewing || state.withdrawing || feeEstimate != null -> WithdrawStage.REVIEW
-      else -> WithdrawStage.FORM
-    }
+  val stage = when {
+    transaction is ActionState.Committed -> WithdrawStage.SENT
+    !state.withdrawing && transaction != null &&
+      (transaction is ActionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
+    reviewing || state.withdrawing -> WithdrawStage.REVIEW
+    else -> WithdrawStage.FORM
+  }
   FlareSheet(
     title =
       when (stage) {
@@ -483,7 +478,7 @@ fun WithdrawSheet(
     Column(Modifier.fullBleed().animateContentSize().padding(horizontal = 24.dp)) {
       when (stage) {
         WithdrawStage.FORM -> WithdrawForm(state, onIntent) { reviewing = true }
-        WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, feeEstimate, resuming) { reviewing = false }
+        WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, resuming) { reviewing = false }
         WithdrawStage.SENT -> WithdrawSent(state, (transaction as ActionState.Committed).reference, onDismiss)
         WithdrawStage.FAILED ->
           WithdrawFailed(state, onIntent) {
@@ -565,7 +560,6 @@ private fun WithdrawForm(
 private fun WithdrawReview(
   state: SettingsUiState,
   onIntent: (SettingsIntent) -> Unit,
-  feeEstimate: ULong?,
   resuming: Boolean,
   onEdit: () -> Unit,
 ) {
@@ -612,8 +606,9 @@ private fun WithdrawReview(
       DetailRow("Recipient gets", "${formatQuantity((it - fee).coerceAtLeast(0.0), 6)} USDC")
     }
   }
-  if (feeEstimate != null) DetailRow("Network fee", "About ${chain.feeAmount(feeEstimate)}")
-  else if (state.capabilities.sponsoredFees) DetailRow("Network fee", "Sponsored by Flare")
+  if (state.capabilities.sponsoredFees) DetailRow("Fees", state.withdrawNetworkFee?.let { fee ->
+    if (fee.covered) "Covered by Flare" else "≈ ${chain.feeAmount(fee.estimate)}"
+  } ?: "—")
   if (state.withdrawOnVenue) Text(
     "${chain.name} may charge a one-time fee to activate an address that has never used it.",
     Modifier.padding(top = 12.dp),
@@ -626,9 +621,6 @@ private fun WithdrawReview(
     color = FlareColors.TextSecondary,
     style = MaterialTheme.typography.bodySmall,
   )
-  feeEstimate?.let {
-    ActionNotice("Flare can’t cover the network fee right now, so your wallet pays it.", Modifier.padding(top = 16.dp))
-  }
   // Problems found before anything was sent stay here, next to what they're about.
   state.withdrawError?.takeIf { state.withdrawTransaction == null }?.let {
     ActionNotice(actionFailure(it, WITHDRAWAL_FAILED), Modifier.padding(top = 16.dp), NoticeTone.ALERT)
@@ -638,15 +630,10 @@ private fun WithdrawReview(
       state.withdrawing && sendsOn && state.pendingWithdrawal?.withdrawalCommitted == true ->
         "Sending to recipient…"
       state.withdrawing -> "Withdrawing…"
-      feeEstimate != null -> "Pay the fee and withdraw"
       pending != null -> "Finish withdrawal"
       else -> "Confirm withdrawal"
     },
-    {
-      onIntent(
-        if (feeEstimate != null) SettingsIntent.ConfirmWithdrawSelfPay else SettingsIntent.SubmitWithdraw
-      )
-    },
+    { onIntent(SettingsIntent.SubmitWithdraw) },
     Modifier.fillMaxWidth().padding(top = 24.dp),
     working = state.withdrawing,
   )

@@ -11,6 +11,8 @@ import xyz.mcxross.flare.venue.model.TradeAction
 enum class FeePayment {
   SPONSORED,
   SELF_PAY,
+  /** Transfers may retry a definite sponsor rejection within the same authorization. */
+  AUTOMATIC,
 }
 
 data class PendingTransaction(

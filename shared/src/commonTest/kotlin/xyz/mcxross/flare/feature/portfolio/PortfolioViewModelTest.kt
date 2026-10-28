@@ -22,6 +22,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import xyz.mcxross.flare.venue.model.NetworkFee
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -716,6 +720,61 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.CloseFunding)
     val closedState = vm.uiState.first { it.fundingMode == null }
     kotlin.test.assertNull(closedState.fundingMode)
+  }
+
+  @Test
+  fun fundingUsesAutomaticGasAndDisplaysTheReportedPayerWithoutASecondAction() = runTest {
+    for (covered in listOf(false, true)) {
+      val payments = mutableListOf<FeePayment>()
+      val estimated = NetworkFee(400_000uL, 5_000_000uL)
+      val reported = estimated.copy(covered = covered)
+      val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+          assertEquals("1", amount); assertFalse(withdrawing)
+          return estimated
+        }
+        override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
+          payments += feePayment
+          return flowOf(ActionState.FeeEstimated(estimated), ActionState.Pending("transfer", reported),
+            ActionState.Committed("transfer", networkFee = reported))
+        }
+      }
+      val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+      vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+      vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
+      advanceTimeBy(601); runCurrent()
+      assertEquals(estimated, vm.uiState.value.fundingNetworkFee)
+      assertTrue(payments.isEmpty())
+      vm.onIntent(PortfolioIntent.SubmitFunding); runCurrent()
+      assertEquals(listOf(FeePayment.AUTOMATIC), payments)
+      assertEquals(reported, vm.uiState.value.fundingNetworkFee)
+      assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
+      assertNull(vm.uiState.value.actionError)
+    }
+  }
+
+  @Test
+  fun aLateFeeReadCannotReplaceTheEstimateForANewTransferAmount() = runTest {
+    val gate = CompletableDeferred<Unit>()
+    val reads = mutableListOf<String>()
+    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+        reads += amount
+        if (amount == "1") withContext(NonCancellable) { gate.await() }
+        return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+      }
+    }
+    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1")); advanceTimeBy(601); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2")); advanceTimeBy(601); runCurrent()
+    assertEquals(NetworkFee(200uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
+    gate.complete(Unit); runCurrent()
+    assertEquals(listOf("1", "2"), reads)
+    assertEquals("2", vm.uiState.value.fundingAmount)
+    assertEquals(NetworkFee(200uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
   }
 
   @Test

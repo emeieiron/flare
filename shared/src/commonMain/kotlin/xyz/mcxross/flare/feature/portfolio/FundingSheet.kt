@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareAmountField
 import xyz.mcxross.flare.design.FlareButton
@@ -64,6 +65,9 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       return@FlareSheet
     }
     if (committed != null) {
+      state.fundingNetworkFee?.let { fee ->
+        DetailRow("Fees", if (fee.covered) "Covered by Flare" else "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}")
+      }
       TransactionReceipt(
         when (mode) {
           FundingMode.DEPOSIT -> "Your USDC is now in your trading account."
@@ -115,7 +119,8 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
     val transferPending = state.fundingTransaction is ActionState.Pending || (state.fundingTransaction as? ActionState.Failed)?.let {
       it.reference != null && !it.committed && !it.definitelyNotSubmitted
     } == true
-    val canTransfer = units != null && units > 0uL && walletKnown && !exceedsAvailable && !belowFee && !transferPending
+    val canTransfer = units != null && units > 0uL && walletKnown && !exceedsAvailable && !belowFee && !transferPending &&
+      (!state.capabilities.sponsoredFees || state.fundingNetworkFee != null)
     val needsUsdc = isDeposit && (swap.capacity?.outputBalance == 0uL || (swap.shortfall(state.fundingAmount) ?: 0uL) > 0uL)
     val offerSwap = needsUsdc && walletKnown && swap.canSwap && !transferPending
     val maxClick: (() -> Unit)? =
@@ -263,7 +268,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
           else "${swap.capacity!!.maximumInput.toDecimalString(swap.capacity.input.decimals)} APT available to swap",
           Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
       } else if (needsUsdc && walletKnown && swap.capacity != null && !swap.canSwap) {
-        ActionNotice("Available to swap: ${swap.capacity.maximumInput.toDecimalString(swap.capacity.input.decimals)} APT after gas.", Modifier.padding(top = 12.dp))
+        ActionNotice("Available to swap: ${swap.capacity.maximumInput.toDecimalString(swap.capacity.input.decimals)} APT after fees.", Modifier.padding(top = 12.dp))
       } else if (isDeposit && walletKnown && swap.canSwap && !transferPending) {
         Text("Swap APT for USDC", Modifier
           .clickable(enabled = !state.busy, role = Role.Button) { onIntent(PortfolioIntent.BeginFundingSwap) }
@@ -279,19 +284,10 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       state.actionError?.let { error ->
         ActionNotice(error, Modifier.padding(top = 12.dp), NoticeTone.ALERT)
       }
-      state.selfPayEstimate(state.fundingTransaction)?.let { estimate ->
-        ActionNotice(
-          "Flare can’t cover the network fee right now. Your wallet would pay about " +
-            "${LocalVenue.current.chain.feeAmount(estimate)}.",
-          Modifier.padding(top = 12.dp),
-        )
-        FlareButton(
-          "Pay the fee and continue",
-          { onIntent(PortfolioIntent.ConfirmSelfPay) },
-          Modifier.fillMaxWidth().padding(top = 8.dp),
-          enabled = !state.busy,
-          style = FlareButtonStyle.OUTLINE,
-        )
+      if (state.capabilities.sponsoredFees && !offerSwap && units != null && units > 0uL) {
+        DetailRow("Fees", state.fundingNetworkFee?.let { fee ->
+          if (fee.covered) "Covered by Flare" else "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}"
+        } ?: "—")
       }
       FlareButton(
         text =

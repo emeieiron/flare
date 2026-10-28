@@ -245,19 +245,24 @@ data class SelfPayOffer(
   val reserve: ULong? = null,
 )
 
+/** Gas exposure in the chain's smallest fee-token unit, or confirmed sponsor coverage. */
+data class NetworkFee(val estimate: ULong, val maximum: ULong, val covered: Boolean = false)
+
 /** Where an action stands, from the first check to its final outcome. */
 sealed interface ActionState {
   data object Simulating : ActionState
+
+  data class FeeEstimated(val fee: NetworkFee) : ActionState
 
   data object AwaitingAuthorization : ActionState
 
   data object Submitting : ActionState
 
   /** [reference] is the transaction hash, or the exchange's own action reference. */
-  data class Pending(val reference: String) : ActionState
+  data class Pending(val reference: String, val networkFee: NetworkFee? = null) : ActionState
 
   /** [detail] says what came of it, where the exchange tells, such as an order's fill. */
-  data class Committed(val reference: String, val detail: String? = null) : ActionState
+  data class Committed(val reference: String, val detail: String? = null, val networkFee: NetworkFee? = null) : ActionState
 
   data class Failed(
     val message: String,

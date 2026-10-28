@@ -129,6 +129,9 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<ActionState>
 
+  /** Read-only gas simulation for the funding form; never requests fresh authorization. */
+  suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? = null
+
   /** Withdraws to the owner wallet, or to [destination] through a reviewed follow-up transfer. */
   fun withdrawUsdc(
     amount: String,

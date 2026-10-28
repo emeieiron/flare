@@ -393,7 +393,7 @@ class SettingsViewModelTest {
     accounts.approveResult = { feePayment ->
       if (feePayment == FeePayment.SPONSORED)
         ActionState.Failed(
-          "Gas sponsorship is unavailable. You can choose to pay gas with APT.",
+          "Fee sponsorship is unavailable. You can choose to pay fees with APT.",
           reference = "sponsor:0x1",
           definitelyNotSubmitted = true,
           selfPay = SelfPayOffer(200uL, 2_000uL),

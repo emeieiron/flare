@@ -46,6 +46,7 @@ import xyz.mcxross.flare.store.tradingAccountNickname
 import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.Rewards
@@ -79,6 +80,7 @@ data class SettingsUiState(
   val withdrawOnVenue: Boolean = false,
   val withdrawAmount: String = "",
   val withdrawTransaction: ActionState? = null,
+  val withdrawNetworkFee: NetworkFee? = null,
   val withdrawing: Boolean = false,
   /** Why the last withdrawal attempt failed, as reported; screens phrase it for people. */
   val withdrawError: String? = null,
@@ -156,7 +158,6 @@ sealed interface SettingsIntent {
   data object SubmitWithdraw : SettingsIntent
 
   /** Retries a withdrawal Flare couldn't sponsor, with the wallet paying the network fee. */
-  data object ConfirmWithdrawSelfPay : SettingsIntent
 
   /** Leaves a failed attempt to change the recipient or amount. */
   data object EditWithdraw : SettingsIntent
@@ -216,6 +217,8 @@ class SettingsViewModel(
       )
     )
   private var secretClearJob: Job? = null
+  private var withdrawFeeJob: Job? = null
+  private var withdrawFeeVersion = 0L
   private val balanceRefreshRequests = Channel<Unit>(Channel.CONFLATED)
 
   init {
@@ -363,19 +366,18 @@ class SettingsViewModel(
             local.update { it.copy(creatingSubaccount = false) }
           }
         }
-      is SettingsIntent.ChangeWithdrawDestination ->
+      is SettingsIntent.ChangeWithdrawDestination -> {
         local.update { it.copy(withdrawDestination = intent.address, withdrawError = null) }
-      is SettingsIntent.SetWithdrawOnVenue ->
-        local.update {
-          if (it.withdrawing) it else it.copy(withdrawOnVenue = intent.onVenue, withdrawError = null)
-        }
-      is SettingsIntent.ChangeWithdrawAmount ->
-        local.update {
-          it.copy(
-            withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' },
-            withdrawError = null,
-          )
-        }
+        scheduleWithdrawFee()
+      }
+      is SettingsIntent.SetWithdrawOnVenue -> {
+        local.update { if (it.withdrawing) it else it.copy(withdrawOnVenue = intent.onVenue, withdrawError = null) }
+        scheduleWithdrawFee()
+      }
+      is SettingsIntent.ChangeWithdrawAmount -> {
+        local.update { it.copy(withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' }, withdrawError = null) }
+        scheduleWithdrawFee()
+      }
       SettingsIntent.DismissWithdraw ->
         local.update {
           if (it.withdrawing) it else it.copy(
@@ -399,9 +401,9 @@ class SettingsViewModel(
         }
         // The balance shown beside the amount should be the current one.
         viewModelScope.launch { runSuspendCatching { accounts.refresh() } }
+        scheduleWithdrawFee()
       }
-      SettingsIntent.SubmitWithdraw -> submitWithdraw(FeePayment.SPONSORED)
-      SettingsIntent.ConfirmWithdrawSelfPay -> submitWithdraw(FeePayment.SELF_PAY)
+      SettingsIntent.SubmitWithdraw -> submitWithdraw(if (capabilities.sponsoredFees) FeePayment.AUTOMATIC else FeePayment.SPONSORED)
       SettingsIntent.EditWithdraw ->
         local.update {
           if (it.withdrawing) it else it.copy(withdrawTransaction = null, withdrawError = null)
@@ -547,6 +549,26 @@ class SettingsViewModel(
     }
   }
 
+  private fun scheduleWithdrawFee() {
+    withdrawFeeVersion++
+    val version = withdrawFeeVersion
+    withdrawFeeJob?.cancel()
+    local.update { it.copy(withdrawNetworkFee = null) }
+    val current = local.value
+    if (!capabilities.sponsoredFees || current.withdrawing || current.withdrawOnVenue ||
+      current.withdrawAmount.toDoubleOrNull()?.let { it.isFinite() && it > 0.0 } != true) return
+    val profileId = uiState.value.preferences.activeProfileId
+    withdrawFeeJob = viewModelScope.launch {
+      delay(600)
+      val fee = runSuspendCatching {
+        withTimeoutOrNull(15_000) { accounts.estimateFundingFee(current.withdrawAmount, withdrawing = true) }
+      }.getOrNull()
+      if (withdrawFeeVersion == version && uiState.value.preferences.activeProfileId == profileId &&
+        local.value.withdrawOnVenue == current.withdrawOnVenue && !local.value.withdrawing)
+        local.update { it.copy(withdrawNetworkFee = fee) }
+    }
+  }
+
   private fun submitWithdraw(feePayment: FeePayment) {
     val current = local.value
     if (current.withdrawing || current.withdrawTransaction is ActionState.Committed) return
@@ -561,6 +583,8 @@ class SettingsViewModel(
       local.update { it.copy(withdrawError = "Enter an amount greater than zero.") }
       return
     }
+    withdrawFeeVersion++
+    withdrawFeeJob?.cancel()
     viewModelScope.launch {
       local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }
       try {
@@ -569,14 +593,21 @@ class SettingsViewModel(
           if (current.withdrawOnVenue) accounts.transferUsdc(amt, dest, VaultPrompt("Send USDC", "Confirm your identity"))
           else accounts.withdrawUsdc(amt, dest, prompt, feePayment)
         flow.collect { tx ->
-          local.update { it.copy(withdrawTransaction = tx) }
+          local.update {
+            val fee = when (tx) {
+              is ActionState.FeeEstimated -> tx.fee
+              is ActionState.Pending -> tx.networkFee
+              is ActionState.Committed -> tx.networkFee
+              else -> null
+            }
+            it.copy(withdrawTransaction = tx, withdrawNetworkFee = fee ?: it.withdrawNetworkFee)
+          }
         }
         when (val terminal = local.value.withdrawTransaction) {
           is ActionState.Committed -> {
             accounts.refresh()
             loadSubaccounts()
           }
-          // A fee Flare can't sponsor is a choice for the person, not a failure.
           is ActionState.Failed ->
             if (terminal.selfPay?.estimate == null) {
               local.update { it.copy(withdrawError = terminal.message) }

@@ -304,10 +304,11 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
   }
 }
 
-private class SwapTestWallet(private val events: MutableList<String>) : AptosSigningWallet {
+internal class SwapTestWallet(private val events: MutableList<String>) : AptosSigningWallet {
   var onConfirm: suspend () -> Unit = {}
-  override val authorizationGeneration = 0L
-  override fun requireAuthorization(generation: Long) { check(generation == 0L) }
+  var generation = 0L
+  override val authorizationGeneration get() = generation
+  override fun requireAuthorization(generation: Long) { check(generation == this.generation) }
   override val profile = flowOf(WalletProfile(ownerAddress = "0x1"))
   override suspend fun confirmIdentity(prompt: VaultPrompt) { events += "authorize"; onConfirm() }
   override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T = block(object : Account() {
@@ -348,7 +349,7 @@ private class SwapTestTrading : TradingRepository {
   override suspend fun reconcilePending() = ReconciliationResult(0, 0)
 }
 
-private class SwapTestJournal : TransactionJournalDao {
+internal class SwapTestJournal : TransactionJournalDao {
   private val rows = MutableStateFlow<List<PendingTransactionEntity>>(emptyList())
   override suspend fun upsert(transaction: PendingTransactionEntity) { rows.value = rows.value.filterNot { it.hash == transaction.hash } + transaction }
   override fun observePending(): Flow<List<PendingTransactionEntity>> = rows

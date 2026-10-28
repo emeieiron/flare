@@ -14,6 +14,8 @@ import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
 import xyz.mcxross.kaptos.model.TransactionPayload
+import xyz.mcxross.kaptos.model.TransactionOptions
+import xyz.mcxross.kaptos.model.UserTransactionResponse
 import xyz.mcxross.kaptos.move.MoveArgument
 
 sealed interface DecibelCommand {
@@ -171,6 +173,8 @@ interface DecibelTradingService {
     externalFeePayer: ExternalFeePayerSubmitter? = null,
     onPrepared: suspend (hash: String) -> Unit = {},
     beforeSign: suspend () -> Unit = {},
+    options: TransactionOptions? = null,
+    onSimulation: suspend (UserTransactionResponse) -> Unit = {},
   ): Flow<TransactionState>
 }
 
@@ -506,6 +510,8 @@ internal class DefaultDecibelTradingService(
     externalFeePayer: ExternalFeePayerSubmitter?,
     onPrepared: suspend (hash: String) -> Unit,
     beforeSign: suspend () -> Unit,
+    options: TransactionOptions?,
+    onSimulation: suspend (UserTransactionResponse) -> Unit,
   ): Flow<TransactionState> =
     AptosTransactionExecutor(aptos).execute(
       signer = signer,
@@ -516,6 +522,8 @@ internal class DefaultDecibelTradingService(
       },
       onPrepared = onPrepared,
       beforeSign = beforeSign,
+      options = options,
+      validateSimulation = onSimulation,
     ).map { state ->
       when (state) {
         AptosTransactionState.Simulating -> TransactionState.Simulating

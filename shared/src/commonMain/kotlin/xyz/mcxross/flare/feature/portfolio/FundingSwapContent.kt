@@ -50,7 +50,7 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
         onMaxClick = if (state.canSwap) ({ onIntent(PortfolioIntent.UseMaximumSwap) }) else null,
         enabled = !state.working, isError = tooMuch || exactInput && invalid,
         supportingText = when {
-          tooMuch -> "Available to swap: ${capacity!!.maximumInput.toDecimalString(inputDecimals)} APT after gas."
+          tooMuch -> "Available to swap: ${capacity!!.maximumInput.toDecimalString(inputDecimals)} APT after fees."
           exactInput && invalid -> "Use up to $inputDecimals decimal places."
           else -> null
         },
@@ -75,9 +75,9 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
       DetailRow("Slippage", "${(quote?.request?.slippageBps ?: 50).toULong().toDecimalString(2)}%")
       if (state.selfPay) {
         val fee = checkNotNull(state.selfPayOffer)
-        DetailRow("Gas · paid by you", "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}")
+        DetailRow("Fees · paid by you", "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}")
       } else {
-        QuoteValueRow("Gas", quote?.networkFee?.let { fee ->
+        QuoteValueRow("Fees", quote?.networkFee?.let { fee ->
           if (fee.payment == FeePayment.SPONSORED) "Covered by Flare"
           else "≈ ${LocalVenue.current.chain.feeAmount(fee.estimate)}"
         } ?: "—", loading = state.quoting)
@@ -95,7 +95,7 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
       else -> "Checking…"
     }
     pending -> "Check status"
-    state.selfPay -> "Pay gas and swap"
+    state.selfPay -> "Pay fees and swap"
     else -> "Swap"
   }
   FlareButton(text, {

@@ -437,6 +437,17 @@ class DefaultAccountRepository(
     return terminal
   }
 
+  override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? {
+    val subaccount = preferences.values.first().selectedSubaccount ?: return null
+    val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
+    if (units == 0uL) return null
+    val asset = client.config.deployment.usdcMetadataAddress
+    return try {
+      trading.estimateCommandFee(if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
+        else DecibelCommand.Deposit(subaccount, asset, units))
+    } finally { kotlinx.coroutines.withTimeoutOrNull(2_000) { runSuspendCatching { restoreTrading() } } }
+  }
+
   override fun depositUsdc(
     amount: String,
     prompt: VaultPrompt,

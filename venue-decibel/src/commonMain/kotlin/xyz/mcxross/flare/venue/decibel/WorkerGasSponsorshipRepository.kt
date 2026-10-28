@@ -91,8 +91,8 @@ class WorkerGasSponsorshipRepository(
           AptosError.Api(
             message =
               if (unavailable != null)
-                "Gas sponsorship is unavailable. You can choose to pay gas with APT."
-              else "Gas sponsorship was not accepted",
+                "Fee sponsorship is unavailable. You can choose to pay fees with APT."
+              else "Fee sponsorship was not accepted",
             errorCode = unavailable ?: "gas_station_http_${response.status.value}",
           )
         )
@@ -109,7 +109,7 @@ class WorkerGasSponsorshipRepository(
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Throwable) {
-      AptosResult.Failure(AptosError.Transport("Gas sponsorship request failed", error))
+      AptosResult.Failure(AptosError.Transport("Fee sponsorship request failed", error))
     }
 
   override suspend fun resolve(fingerprint: String): AptosResult<String?> =

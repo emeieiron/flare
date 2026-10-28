@@ -97,7 +97,7 @@ class WorkerGasSponsorshipRepositoryTest {
         val error = assertIs<xyz.mcxross.kaptos.model.AptosError.Api>(failure.error)
         assertEquals(expected, error.errorCode, body)
         if (!expected.startsWith("gas_station_http_")) {
-          assertEquals("Gas sponsorship is unavailable. You can choose to pay gas with APT.", error.message)
+          assertEquals("Fee sponsorship is unavailable. You can choose to pay fees with APT.", error.message)
         }
       } finally {
         client.close()
