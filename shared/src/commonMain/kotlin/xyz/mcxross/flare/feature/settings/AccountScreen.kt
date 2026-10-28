@@ -2,6 +2,7 @@ package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -200,6 +201,7 @@ fun AccountScreen(
           else shortAddress(walletAddress),
         icon = FlareIcons.Wallet,
         onClick = { showWallets = true }, enabled = !state.busy,
+        onClickLabel = "Open wallets",
         onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) },
         balances = state.walletBalances.takeIf {
           state.walletBalanceProfileId == active.id && state.walletBalanceAddress == walletAddress
@@ -229,16 +231,18 @@ fun AccountScreen(
       SectionLabel("Trading accounts")
       subaccounts.forEachIndexed { index, account ->
         val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
-        Row(Modifier.fillMaxWidth().selectable(selected = selected, enabled = !state.busy, role = Role.RadioButton) {
-          onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
-        }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().combinedClickable(
+          enabled = !state.busy,
+          role = Role.RadioButton,
+          onClickLabel = "Select trading account",
+          onClick = { onIntent(SettingsIntent.SelectSubaccount(active.id, account.address)) },
+          onLongClickLabel = "Rename trading account",
+          onLongClick = { onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address)) },
+        ).semantics { this.selected = selected }.padding(vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically) {
           Column(Modifier.weight(1f)) {
-            EditableAccountName(
-              name = active.tradingAccountDisplayName(account.address, account.label, index),
-              description = "Rename trading account",
-              enabled = !state.busy,
-              onRename = { onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address)) },
-            )
+            Text(active.tradingAccountDisplayName(account.address, account.label, index),
+              style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(shortAddress(account.address), style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary)
           }
@@ -259,6 +263,8 @@ fun AccountScreen(
           icon = FlareIcons.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })
       }
+      Text("Touch and hold a wallet or trading account to rename.", Modifier.padding(top = 16.dp),
+        style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
     }
     Spacer(Modifier.height(32.dp))
   }
@@ -312,23 +318,6 @@ fun AccountScreen(
 }
 
 @Composable
-private fun EditableAccountName(
-  name: String,
-  description: String,
-  enabled: Boolean,
-  onRename: () -> Unit,
-) {
-  Row(verticalAlignment = Alignment.CenterVertically) {
-    Text(name, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodyLarge,
-      maxLines = 1, overflow = TextOverflow.Ellipsis)
-    IconButton(onClick = onRename, enabled = enabled, modifier = Modifier.size(48.dp)) {
-      Icon(FlareIcons.Edit, "$description $name", tint = FlareColors.TextSecondary,
-        modifier = Modifier.size(18.dp))
-    }
-  }
-}
-
-@Composable
 private fun WalletNameRow(
   name: String,
   subtitle: String,
@@ -340,23 +329,27 @@ private fun WalletNameRow(
   balances: List<WalletTokenBalance> = emptyList(),
   assetMetadata: Map<String, AssetMetadata> = emptyMap(),
   onRefreshBalances: () -> Unit = {},
+  onClickLabel: String = "Select wallet",
 ) {
-  Row(Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+  Row(Modifier.fillMaxWidth().combinedClickable(
+    enabled = enabled, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick,
+    onLongClickLabel = "Rename wallet", onLongClick = onRename,
+  )
     .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
     icon?.let {
       Icon(it, null, tint = FlareColors.TextSecondary, modifier =
-        (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 13.dp)).size(22.dp))
+        (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 1.dp)).size(22.dp))
     }
     Column(Modifier.weight(1f)) {
-      EditableAccountName(name, "Rename wallet", enabled, onRename)
+      Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
       Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
       if (balances.isNotEmpty()) InlineWalletBalances(balances, assetMetadata, onRefreshBalances)
     }
     if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
       modifier = Modifier.size(20.dp))
     Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier =
-      (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 14.dp)).size(20.dp))
+      (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 2.dp)).size(20.dp))
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
 }
