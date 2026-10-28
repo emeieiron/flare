@@ -190,7 +190,7 @@ class DefaultTradingRepository(
     val owner = selected.ownerAddress ?: return null
     val generation = wallets.authorizationGeneration
     wallets.requireAuthorization(generation)
-    val session = sessions.authenticateOwner(command.subaccountAddress(), VaultPrompt("Transfer", "Confirm your identity"))
+    val session = sessions.ensureOwner(command.subaccountAddress(), VaultPrompt("Transfer", "Confirm your identity"))
     return sessions.bind(session, flow {
       val fee = wallets.withOwnerAccount(VaultPrompt("Transfer", "Confirm your identity")) { account ->
         check(account.accountAddress.toString().sameAptosAddress(owner))

@@ -442,10 +442,8 @@ class DefaultAccountRepository(
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
     if (units == 0uL) return null
     val asset = client.config.deployment.usdcMetadataAddress
-    return try {
-      trading.estimateCommandFee(if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
-        else DecibelCommand.Deposit(subaccount, asset, units))
-    } finally { kotlinx.coroutines.withTimeoutOrNull(2_000) { runSuspendCatching { restoreTrading() } } }
+    return trading.estimateCommandFee(if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
+      else DecibelCommand.Deposit(subaccount, asset, units))
   }
 
   override fun depositUsdc(
@@ -670,7 +668,7 @@ class DefaultAccountRepository(
       return@withLock current
     wallets.requireAuthorization(wallets.authorizationGeneration)
     val prompt = VaultPrompt("Open Flare", "Confirm your identity")
-    if (saved.ownerAddress != null) sessions.authenticateOwner(account, prompt)
+    if (saved.ownerAddress != null) sessions.ensureOwner(account, prompt)
     else sessions.ensureTrading(account, prompt)
   }
 

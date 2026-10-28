@@ -45,6 +45,8 @@ class WorkerSessionRepository(
 ) : AptosSessionRepository {
   private val mutex = Mutex()
   private var session: WorkerSession? = null
+  private var authenticatedGeneration: Long? = null
+  private var authenticatedProfileId: String? = null
   private val authenticatedSessions =
     MutableStateFlow<Map<SessionStatus, WorkerSession>>(emptyMap())
   private val mutableStatus = MutableStateFlow<SessionStatus?>(null)
@@ -117,6 +119,28 @@ class WorkerSessionRepository(
       }
     }
 
+  override suspend fun ensureOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus = mutex.withLock {
+    val generation = wallets.authorizationGeneration
+    wallets.requireAuthorization(generation)
+    val selected = preferences.values.first()
+    val owner = wallets.profile.first().ownerAddress ?: error("Use a device that holds the owner key")
+    val cached = authenticatedSessions.value.entries.lastOrNull { (status, _) ->
+      authenticatedGeneration == generation && authenticatedProfileId == selected.activeProfileId && !prompt.requireFreshAuthorization &&
+        status.role == SessionRole.OWNER && status.walletAddress?.sameAptosAddress(owner) == true &&
+        (if (subaccount == null) status.subaccount == null else status.subaccount?.sameAptosAddress(subaccount) == true) &&
+        status.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+    }
+    val result = cached?.let { (status, value) ->
+      session = value
+      mutableStatus.value = status
+      status
+    } ?: wallets.withOwnerAccount(prompt) { account -> authenticate(account, subaccount, SessionRole.OWNER) }
+    wallets.requireAuthorization(generation)
+    check(result.walletAddress?.sameAptosAddress(owner) == true) { "The selected wallet changed" }
+    check(preferences.values.first().activeProfileId == selected.activeProfileId) { "The selected wallet changed" }
+    result
+  }
+
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
     mutex.withLock {
       require(subaccount.isNotBlank()) { "A trading session must be bound to a trading account" }
@@ -159,6 +183,8 @@ class WorkerSessionRepository(
       } finally {
         session = null
         authenticatedSessions.value = emptyMap()
+        authenticatedGeneration = null
+        authenticatedProfileId = null
         mutableStatus.value = null
       }
     }
@@ -170,6 +196,7 @@ class WorkerSessionRepository(
     expectedRole: SessionRole,
   ): SessionStatus {
     val generation = wallets.authorizationGeneration
+    val profileId = preferences.values.first().activeProfileId
     val address = account.accountAddress.toString()
     val challenge =
       client
@@ -243,6 +270,11 @@ class WorkerSessionRepository(
     ) {
       "The Flare Worker session is bound to a different subaccount"
     }
+    wallets.requireAuthorization(generation)
+    check(preferences.values.first().activeProfileId == profileId) { "The selected wallet changed" }
+    if (authenticatedGeneration != generation || authenticatedProfileId != profileId) authenticatedSessions.value = emptyMap()
+    authenticatedGeneration = generation
+    authenticatedProfileId = profileId
     session = response
     val status = response.toStatus()
     authenticatedSessions.value =
