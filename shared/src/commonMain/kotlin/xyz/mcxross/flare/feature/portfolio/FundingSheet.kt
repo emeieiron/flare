@@ -265,7 +265,6 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
       } else if (needsUsdc && swap.capacity != null && !swap.canSwap) {
         ActionNotice("Not enough APT after gas.", Modifier.padding(top = 12.dp))
       }
-      if (swap.completed) ActionNotice("Swap complete", Modifier.padding(top = 12.dp))
       if (transferPending) ActionNotice("Transfer pending", Modifier.padding(top = 12.dp))
       if (swap.supported && swap.loadingBalance && swap.capacity == null) {
         Text("Checking wallet balances…", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
