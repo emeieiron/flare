@@ -114,6 +114,7 @@ class WithdrawalFlowTest {
       f.preferences.setApiWallet("0x9")
 
       f.accounts.withdrawUsdc("10", null, prompt).toList()
+      f.accounts.restoreTrading()
 
       assertTrue(f.sessions.tradingPrompts.isEmpty())
       // The loaded balance shows the owner could read the account. Staleness isn't checked: the

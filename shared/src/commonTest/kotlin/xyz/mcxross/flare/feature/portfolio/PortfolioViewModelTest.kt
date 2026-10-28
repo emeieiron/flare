@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -752,6 +753,39 @@ class PortfolioViewModelTest {
       assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
       assertNull(vm.uiState.value.actionError)
     }
+  }
+
+  @Test
+  fun aCompletedTransferCanBeDismissedWhileBalanceRefreshIsStillWaiting() = runTest {
+    val refreshGate = CompletableDeferred<Unit>()
+    var committed = false
+    var refreshStarted = false
+    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+      override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
+        committed = true
+        emit(ActionState.Committed("confirmed"))
+      }
+      override suspend fun restoreTrading() {
+        if (committed) { refreshStarted = true; refreshGate.await(); error("Refresh failed") }
+      }
+    }
+    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
+    vm.onIntent(PortfolioIntent.SubmitFunding); runCurrent()
+    assertTrue(refreshStarted)
+    assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
+    assertFalse(vm.uiState.value.busy)
+    vm.onIntent(PortfolioIntent.CloseFunding); runCurrent()
+    assertNull(vm.uiState.value.fundingMode)
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2"))
+    refreshGate.complete(Unit); runCurrent()
+    assertEquals("2", vm.uiState.value.fundingAmount)
+    assertNull(vm.uiState.value.fundingTransaction)
+    assertNull(vm.uiState.value.actionError)
+    assertFalse(vm.uiState.value.busy)
   }
 
   @Test

@@ -657,6 +657,32 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun withdrawalCompletionDoesNotWaitForRefreshOrBecomeAFailureIfRefreshFails() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    val gate = CompletableDeferred<Unit>()
+    var refreshStarted = false
+    val accounts = object : AccountRepository by FakeAccountRepository() {
+      override fun withdrawUsdc(amount: String, destination: String?, prompt: VaultPrompt, feePayment: FeePayment) =
+        flowOf(ActionState.Committed("confirmed"))
+      override suspend fun restoreTrading() { refreshStarted = true; gate.await(); error("Refresh failed") }
+    }
+    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    runCurrent()
+    vm.onIntent(SettingsIntent.OpenWithdraw)
+    vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0x1"))
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1"))
+    vm.onIntent(SettingsIntent.SubmitWithdraw); runCurrent()
+    kotlin.test.assertIs<ActionState.Committed>(vm.uiState.value.withdrawTransaction)
+    kotlin.test.assertTrue(refreshStarted)
+    assertFalse(vm.uiState.value.withdrawing)
+    gate.complete(Unit); runCurrent()
+    assertNull(vm.uiState.value.withdrawError)
+    kotlin.test.assertIs<ActionState.Committed>(vm.uiState.value.withdrawTransaction)
+  }
+
+  @Test
   fun withdrawalFeesResolveImmediatelyForMaxAndRejectOldAccountResults() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))

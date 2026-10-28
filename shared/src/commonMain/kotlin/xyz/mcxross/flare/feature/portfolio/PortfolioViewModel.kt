@@ -3,6 +3,7 @@ package xyz.mcxross.flare.feature.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -356,6 +357,7 @@ class PortfolioViewModel(
   private var lastPositionAction: TradeAction? = null
   private var fundingContext: FundingSwapContext? = null
   private var fundingWarmJob: Job? = null
+  private var fundingRefreshJob: Job? = null
   private data class FundingFeeKey(val context: FundingSwapContext?, val mode: FundingMode, val units: ULong)
   private val fundingFees = FeeResolver<FundingFeeKey>(viewModelScope,
     read = { accounts.estimateFundingFee(it.units.toDecimalString(6), it.mode == FundingMode.WITHDRAW) },
@@ -390,6 +392,7 @@ class PortfolioViewModel(
         .collect { context ->
           if (fundingContext != context) {
             fundingContext = context
+            fundingRefreshJob?.cancel()
             fundingSwaps.close()
             clearFundingFee()
             local.update { it.copy(fundingMode = null, fundingAmount = "", fundingTransaction = null) }
@@ -878,6 +881,7 @@ class PortfolioViewModel(
     fundingWarmJob?.cancel()
     fundingFees.cancel(clearCache = true)
     val state = local.value
+    val context = fundingContext
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
     check(fundingSwaps.state.value.step == null && fundingSwaps.state.value.pending == null) {
       "Check your swap status before transferring."
@@ -930,16 +934,28 @@ class PortfolioViewModel(
     } }
     when (val terminal = local.value.fundingTransaction) {
       is ActionState.Committed -> {
-        accounts.refresh()
-        uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
         local.update { it.copy(fundingAmount = "") }
-        fundingSwaps.refresh()
+        refreshAfterFunding(context)
       }
       is ActionState.Failed -> {
         if (!terminal.definitelyNotSubmitted && !terminal.committed && terminal.reference != null) return
         if (terminal.selfPay?.estimate == null) error(terminal.message)
       }
       else -> Unit
+    }
+  }
+
+  private fun refreshAfterFunding(context: FundingSwapContext?) {
+    fundingRefreshJob?.cancel()
+    fundingRefreshJob = viewModelScope.launch {
+      if (fundingContext != context) return@launch
+      supervisorScope {
+        launch { withTimeoutOrNull(10_000) { runSuspendCatching { accounts.restoreTrading() } } }
+        context?.owner?.let { owner ->
+          launch { withTimeoutOrNull(10_000) { fetchPrimaryUsdcBalance(owner) } }
+        }
+        fundingSwaps.refresh()
+      }
     }
   }
 

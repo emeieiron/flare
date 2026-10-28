@@ -225,6 +225,7 @@ class SettingsViewModel(
   private var withdrawFeeContext: Triple<String, String?, String?>? = null
   private var withdrawFeeVisible = false
   private var withdrawWarmJob: Job? = null
+  private var withdrawRefreshJob: Job? = null
   private val withdrawFees = FeeResolver<WithdrawFeeKey>(viewModelScope,
     read = { accounts.estimateFundingFee(it.units.toDecimalString(6), withdrawing = true) },
     publish = { key, fee, error ->
@@ -271,6 +272,7 @@ class SettingsViewModel(
       preferences.values.map { Triple(it.activeProfileId, it.ownerAddress, it.selectedSubaccount) }
         .distinctUntilChanged().collect { context ->
           withdrawFeeContext = context
+          withdrawRefreshJob?.cancel()
           withdrawWarmJob?.cancel()
           withdrawFees.cancel(clearCache = true)
           local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
@@ -605,6 +607,7 @@ class SettingsViewModel(
   private fun submitWithdraw(feePayment: FeePayment) {
     val current = local.value
     if (current.withdrawing || current.withdrawTransaction is ActionState.Committed) return
+    val context = withdrawFeeContext
     val dest = current.withdrawDestination.trim()
     val amt = current.withdrawAmount.trim()
     if (!credentials.isAddress(dest)) {
@@ -638,8 +641,13 @@ class SettingsViewModel(
         }
         when (val terminal = local.value.withdrawTransaction) {
           is ActionState.Committed -> {
-            accounts.refresh()
-            loadSubaccounts()
+            withdrawRefreshJob?.cancel()
+            withdrawRefreshJob = viewModelScope.launch {
+              if (withdrawFeeContext == context) {
+                withTimeoutOrNull(10_000) { runSuspendCatching { accounts.restoreTrading() } }
+                if (withdrawFeeContext == context) loadSubaccounts()
+              }
+            }
           }
           is ActionState.Failed ->
             if (terminal.selfPay?.estimate == null) {

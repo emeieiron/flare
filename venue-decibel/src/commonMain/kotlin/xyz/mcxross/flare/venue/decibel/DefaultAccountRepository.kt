@@ -453,8 +453,8 @@ class DefaultAccountRepository(
     prompt: VaultPrompt,
     feePayment: FeePayment,
   ): Flow<ActionState> = flow {
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val saved = preferences.values.first()
+    val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
     require(units > 0uL) { "Enter an amount greater than zero" }
     try {
@@ -471,7 +471,7 @@ class DefaultAccountRepository(
         )
       )
     } finally {
-      runSuspendCatching { restoreTrading() }
+      invalidateFundingBalances(saved.activeProfileId, subaccount)
     }
   }
 
@@ -631,9 +631,16 @@ class DefaultAccountRepository(
         }
         throw error
       } finally {
-        runSuspendCatching { restoreTrading() }
+        invalidateFundingBalances(saved.activeProfileId, subaccount)
       }
     }
+  }
+
+  private suspend fun invalidateFundingBalances(profileId: String, subaccount: String) {
+    val selected = preferences.values.first()
+    if (selected.activeProfileId != profileId || selected.selectedSubaccount != subaccount) return
+    mutableSnapshot.update { if (it.account == subaccount) it.copy(stale = true) else it }
+    mutableHistory.update { if (it.account == subaccount) it.copy(stale = true) else it }
   }
 
   private suspend fun ownerTransactionStatus(

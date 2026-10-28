@@ -475,8 +475,8 @@ class DefaultTradingRepository(
         )
       )
     } finally {
-      if (command.requiredSigner() == TradingSigner.OWNER) {
-        // An owner action interrupts trading; hand the session back without another prompt.
+      if (command.requiredSigner() == TradingSigner.OWNER && !command.isFundingTransfer()) {
+        // Funding commands release their gate immediately; the next action obtains its own session.
         try {
           wallets.requireAuthorization(wallets.authorizationGeneration)
           val saved = preferences.values.first()

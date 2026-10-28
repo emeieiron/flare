@@ -161,6 +161,16 @@ class AutomaticTransferIosTest {
     }
   }
 
+  @Test fun aConfirmedFundingCommandDoesNotWaitForTradingSessionRestoration() = runTest {
+    fixture { f ->
+      f.preferences.setApiWallet("0x3")
+      f.sessionRestoreDelayMs = 60_000
+      assertIs<ActionState.Committed>(withTimeout(1_000) { f.run() }.last())
+      assertEquals(0, f.sessionRestores)
+      assertTrue(f.journal.pending().isEmpty())
+    }
+  }
+
   private suspend fun fixture(block: suspend (TransferFixture) -> Unit) {
     val f = TransferFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try { f.initialize(); block(f) } finally { f.aptos.close(); f.http.close() }
@@ -184,6 +194,8 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
   val sequenceStarted = CompletableDeferred<Unit>()
   var sponsorError: AptosError? = AptosError.Api("not accepted", errorCode = "gas_station_http_404")
   var onSponsor: suspend () -> Unit = {}
+  var sessionRestoreDelayMs = 0L
+  var sessionRestores = 0
   private val data = object : DataStore<Preferences> {
     override val data = MutableStateFlow(emptyPreferences())
     override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
@@ -234,7 +246,11 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
       return SessionStatus(SessionRole.OWNER, "0x1", subaccount, Long.MAX_VALUE).also { status.value = it }
     }
     override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus = error("Owner only")
-    override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus = error("Owner only")
+    override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+      sessionRestores++
+      delay(sessionRestoreDelayMs)
+      return SessionStatus(SessionRole.API, "0x3", subaccount, Long.MAX_VALUE)
+    }
     override suspend fun useAnonymous(): SessionStatus = error("Not used")
     override suspend fun invalidate() = Unit
   }
