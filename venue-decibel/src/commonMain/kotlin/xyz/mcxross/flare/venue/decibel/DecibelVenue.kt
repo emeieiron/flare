@@ -126,7 +126,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     val sessionRepository = get<SessionRepository>()
     Aptos(
       AptosConfig(
-        network = AptosNetwork.CUSTOM,
+        network = AptosNetwork.MAINNET,
         transactionDefaults = config.transactionDefaults,
         endpoints = AptosEndpoints(fullNode = config.aptosFullnodeUrl),
         fullNode =
@@ -157,6 +157,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
         ),
     ).also { it.stream.setEnabled(false) }
   }
+  single { FundingFeeMetadata(get()) }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
   single<WalletBalanceRepository> {
     AptosWalletBalanceRepository(get(), get<DecibelClient>().config.deployment)
@@ -175,7 +176,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     )
   }
   single<xyz.mcxross.flare.data.SwapRepository> {
-    AptosSwapRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get())
+    AptosSwapRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), feeMetadata = get())
   }
   singleOf(::DefaultTradingRepository) {
     bind<TradingRepository>()

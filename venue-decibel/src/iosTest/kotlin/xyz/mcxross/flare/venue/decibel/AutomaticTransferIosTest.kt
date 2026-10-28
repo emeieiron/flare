@@ -11,6 +11,9 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.coroutineContext
 import kotlin.test.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
@@ -26,6 +29,7 @@ import xyz.mcxross.kaptos.*
 import xyz.mcxross.kaptos.model.*
 import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AutomaticTransferIosTest {
   @Test fun definiteRejectionFallsBackOnceWithOneAuthorizationAndTheSameGasBudget() = runTest {
     fixture { f ->
@@ -105,6 +109,58 @@ class AutomaticTransferIosTest {
     }
   }
 
+  @Test fun warmedFeeReadsReusePublicIdentityAndPriceWhileRefreshingSequenceAndSimulation() = runTest {
+    fixture { f ->
+      f.trading.warmFundingFees()
+      assertTrue(f.events.isEmpty())
+      assertEquals(1, f.wallets.ownerReads)
+      assertEquals(NetworkFee(200uL, 5_000_000uL), f.trading.estimateCommandFee(COMMAND))
+      assertEquals(NetworkFee(200uL, 5_000_000uL), f.trading.estimateCommandFee(COMMAND.copy(amount = 2_000_000uL)))
+      assertEquals(1, f.wallets.ownerReads)
+      assertEquals(1, f.gasReads)
+      assertEquals(2, f.sequenceReads)
+      assertEquals(listOf("simulate", "simulate"), f.events)
+      f.wallets.generation++
+      assertEquals(NetworkFee(200uL, 5_000_000uL), f.trading.estimateCommandFee(COMMAND))
+      assertEquals(2, f.wallets.ownerReads)
+      assertEquals(3, f.sequenceReads)
+      assertTrue(f.journal.pending().isEmpty())
+    }
+  }
+
+  @Test fun signingFetchesFreshMetadataAfterABackgroundFeeRead() = runTest {
+    fixture { f ->
+      assertIs<NetworkFee>(f.trading.estimateCommandFee(COMMAND))
+      // The mock price jumps on the next read; its old simulation must be rejected before signing.
+      assertIs<ActionState.Failed>(f.run().last())
+      assertEquals(2, f.gasReads)
+      assertEquals(listOf("simulate", "simulate"), f.events)
+      assertTrue(f.journal.pending().isEmpty())
+    }
+  }
+
+  @Test fun coldMetadataReadsOverlapAndOnlyTheFeePriceIsCached() = runTest {
+    fixture { f ->
+      var now = 0L
+      f.checkParallelMetadata = true
+      f.metadataDelayMs = 400
+      val metadata = FundingFeeMetadata(f.aptos, now = { now })
+      val started = testScheduler.currentTime
+      val first = withTimeout(1_000) { metadata.options(AccountAddress.ONE) }
+      assertEquals(400L, testScheduler.currentTime - started)
+      assertEquals(100uL, first.gasUnitPrice)
+      metadata.options(AccountAddress.ONE)
+      assertEquals(1, f.gasReads)
+      assertEquals(2, f.sequenceReads)
+      now = 10_000
+      assertEquals(900uL, metadata.options(AccountAddress.ONE).gasUnitPrice)
+      assertEquals(2, f.gasReads)
+      assertEquals(3, f.sequenceReads)
+      assertEquals(0, f.wallets.ownerReads)
+      assertTrue(f.events.isEmpty())
+    }
+  }
+
   private suspend fun fixture(block: suspend (TransferFixture) -> Unit) {
     val f = TransferFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try { f.initialize(); block(f) } finally { f.aptos.close(); f.http.close() }
@@ -121,6 +177,11 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
   val journal = SwapTestJournal()
   var balance = "100000000"
   var gasReads = 0
+  var sequenceReads = 0
+  var checkParallelMetadata = false
+  var metadataDelayMs = 0L
+  val gasStarted = CompletableDeferred<Unit>()
+  val sequenceStarted = CompletableDeferred<Unit>()
   var sponsorError: AptosError? = AptosError.Api("not accepted", errorCode = "gas_station_http_404")
   var onSponsor: suspend () -> Unit = {}
   private val data = object : DataStore<Preferences> {
@@ -133,9 +194,20 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
     addHandler { request ->
       val path = request.url.encodedPath
       val body = when {
-        path.endsWith("/estimate_gas_price") -> """{"gas_estimate":${if (++gasReads == 1) 100 else 900}}"""
+        path.endsWith("/estimate_gas_price") -> {
+          gasStarted.complete(Unit)
+          if (checkParallelMetadata) sequenceStarted.await()
+          delay(metadataDelayMs)
+          """{"gas_estimate":${if (++gasReads == 1) 100 else 900}}"""
+        }
         path.contains("/balance/") -> "\"$balance\""
-        path.contains("/accounts/") -> """{"sequence_number":"0","authentication_key":"0x1"}"""
+        path.contains("/accounts/") -> {
+          sequenceReads++
+          sequenceStarted.complete(Unit)
+          if (checkParallelMetadata) gasStarted.await()
+          delay(metadataDelayMs)
+          """{"sequence_number":"0","authentication_key":"0x1"}"""
+        }
         path.endsWith("/transactions/simulate") -> { events += "simulate"; "[${response(HASH)}]" }
         path.endsWith("/transactions") && request.method == HttpMethod.Post -> {
           events += "submit"

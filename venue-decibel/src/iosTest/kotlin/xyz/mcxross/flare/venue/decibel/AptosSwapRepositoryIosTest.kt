@@ -307,11 +307,14 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
 internal class SwapTestWallet(private val events: MutableList<String>) : AptosSigningWallet {
   var onConfirm: suspend () -> Unit = {}
   var generation = 0L
+  var ownerReads = 0
   override val authorizationGeneration get() = generation
   override fun requireAuthorization(generation: Long) { check(generation == this.generation) }
   override val profile = flowOf(WalletProfile(ownerAddress = "0x1"))
   override suspend fun confirmIdentity(prompt: VaultPrompt) { events += "authorize"; onConfirm() }
-  override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T = block(object : Account() {
+  override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T {
+    ownerReads++
+    return block(object : Account() {
     override val publicKey = Ed25519PublicKey(ByteArray(32) { 0x11 })
     override val accountAddress = AccountAddress.ONE
     override val signingScheme = SigningScheme.Ed25519
@@ -324,7 +327,8 @@ internal class SwapTestWallet(private val events: MutableList<String>) : AptosSi
       events += "sign"
       return AccountAuthenticator.Ed25519(publicKey, Ed25519Signature(ByteArray(64) { 0x22 }))
     }
-  })
+    })
+  }
   override suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T = error("Owner only")
   override suspend fun importAptosApiWallet(key: String, prompt: VaultPrompt, verify: suspend (Account) -> Unit): String = error("Not used")
   override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup = error("Not used")

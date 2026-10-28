@@ -224,6 +224,7 @@ class SettingsViewModel(
   private data class WithdrawFeeKey(val context: Triple<String, String?, String?>, val units: ULong)
   private var withdrawFeeContext: Triple<String, String?, String?>? = null
   private var withdrawFeeVisible = false
+  private var withdrawWarmJob: Job? = null
   private val withdrawFees = FeeResolver<WithdrawFeeKey>(viewModelScope,
     read = { accounts.estimateFundingFee(it.units.toDecimalString(6), withdrawing = true) },
     publish = { key, fee, error ->
@@ -270,6 +271,7 @@ class SettingsViewModel(
       preferences.values.map { Triple(it.activeProfileId, it.ownerAddress, it.selectedSubaccount) }
         .distinctUntilChanged().collect { context ->
           withdrawFeeContext = context
+          withdrawWarmJob?.cancel()
           withdrawFees.cancel(clearCache = true)
           local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
           if (withdrawFeeVisible) scheduleWithdrawFee()
@@ -406,6 +408,7 @@ class SettingsViewModel(
       SettingsIntent.DismissWithdraw -> {
         if (!local.value.withdrawing) {
           withdrawFeeVisible = false
+          withdrawWarmJob?.cancel()
           withdrawFees.cancel(clearCache = true)
         }
         local.update {
@@ -423,6 +426,10 @@ class SettingsViewModel(
       }
       SettingsIntent.OpenWithdraw -> {
         withdrawFeeVisible = true
+        withdrawWarmJob?.cancel()
+        if (capabilities.sponsoredFees) withdrawWarmJob = viewModelScope.launch {
+          withTimeoutOrNull(5_000) { runSuspendCatching { accounts.warmFundingFees() } }
+        }
         val pending = uiState.value.pendingWithdrawal
         local.update {
           it.copy(
@@ -609,6 +616,7 @@ class SettingsViewModel(
       local.update { it.copy(withdrawError = "Enter an amount greater than zero.") }
       return
     }
+    withdrawWarmJob?.cancel()
     withdrawFees.cancel(clearCache = true)
     viewModelScope.launch {
       local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }

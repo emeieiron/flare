@@ -37,6 +37,11 @@ import xyz.mcxross.flare.store.journalOperation
 import xyz.mcxross.flare.store.operationName
 import xyz.mcxross.flare.store.profileId
 import xyz.mcxross.flare.venue.model.NetworkFee
+import xyz.mcxross.flare.aptos.transaction.AptosSimulationIdentity
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor
 import xyz.mcxross.kaptos.model.TransactionOptions
 import xyz.mcxross.flare.venue.model.ActionState
@@ -61,6 +66,8 @@ internal enum class TradingSigner {
 
 /** Decibel's trading, which the account repository also drives with Decibel's own commands. */
 interface DecibelTrading : TradingRepository {
+  suspend fun warmFundingFees() = Unit
+
   suspend fun estimateCommandFee(command: DecibelCommand): NetworkFee? = null
 
   fun executeCommand(
@@ -86,9 +93,46 @@ class DefaultTradingRepository(
   private val runtime: FlareRuntimeConfig,
   private val preferences: AppPreferences,
   submissionGate: AptosSubmissionGate,
+  private val feeMetadata: FundingFeeMetadata = FundingFeeMetadata(aptos),
 ) : DecibelTrading {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = submissionGate.mutex
+  private data class FeeContext(val profileId: String, val owner: String, val account: String?, val generation: Long)
+  private val feeIdentityMutex = Mutex()
+  private var feeIdentity: Pair<FeeContext, AptosSimulationIdentity>? = null
+  private val feeExecutor = AptosTransactionExecutor(aptos)
+
+  private suspend fun simulationIdentity(context: FeeContext): AptosSimulationIdentity = feeIdentityMutex.withLock {
+    wallets.requireAuthorization(context.generation)
+    feeIdentity?.takeIf { it.first == context }?.second ?: wallets.withOwnerAccount(
+      VaultPrompt("Transfer", "Confirm your identity"),
+    ) { account ->
+      check(account.accountAddress.toString().sameAptosAddress(context.owner))
+      AptosSimulationIdentity(account.accountAddress, account.publicKey).also { feeIdentity = context to it }
+    }
+  }
+
+  override suspend fun warmFundingFees() {
+    val selected = preferences.values.first()
+    val owner = selected.ownerAddress ?: return
+    val account = selected.selectedSubaccount ?: return
+    val context = FeeContext(selected.activeProfileId, owner, account, wallets.authorizationGeneration)
+    wallets.requireAuthorization(context.generation)
+    val session = sessions.ensureOwner(account, VaultPrompt("Transfer", "Confirm your identity"))
+    sessions.bind(session, flow {
+      coroutineScope {
+        val identity = async { simulationIdentity(context) }
+        val payload = async { client.trading.payload(DecibelCommand.Deposit(account, client.config.deployment.usdcMetadataAddress, 1uL)) }
+        val price = async { feeMetadata.price(xyz.mcxross.kaptos.model.AccountAddress.fromString(owner)) }
+        identity.await()
+        payload.await()
+        price.await()
+      }
+      wallets.requireAuthorization(context.generation)
+      emit(Unit)
+    }).first()
+  }
+
 
   override val pendingTransactions: Flow<List<PendingTransaction>> =
     journal
@@ -191,20 +235,24 @@ class DefaultTradingRepository(
     val generation = wallets.authorizationGeneration
     wallets.requireAuthorization(generation)
     val session = sessions.ensureOwner(command.subaccountAddress(), VaultPrompt("Transfer", "Confirm your identity"))
+    val context = FeeContext(selected.activeProfileId, owner, selected.selectedSubaccount, generation)
     return sessions.bind(session, flow {
-      val fee = wallets.withOwnerAccount(VaultPrompt("Transfer", "Confirm your identity")) { account ->
-        check(account.accountAddress.toString().sameAptosAddress(owner))
-        val payload = when (val result = client.trading.payload(command)) {
+      val fee = coroutineScope {
+        val identity = async { simulationIdentity(context) }
+        val payload = async { client.trading.payload(command) }
+        val options = async { feeMetadata.options(xyz.mcxross.kaptos.model.AccountAddress.fromString(owner)) }
+        val data = when (val result = payload.await()) {
           is AptosResult.Success -> result.value
-          is AptosResult.Failure -> return@withOwnerAccount null
+          is AptosResult.Failure -> return@coroutineScope null
         }
-        when (val result = AptosTransactionExecutor(aptos).prepare(account, payload, externalFeePayer = true)) {
+        when (val result = feeExecutor.prepare(identity.await(), data, externalFeePayer = true, options = options.await())) {
           is AptosResult.Success -> NetworkFee(result.value.estimatedGasCostOctas, result.value.maximumGasCostOctas)
           is AptosResult.Failure -> null
         }
       }
       wallets.requireAuthorization(generation)
-      check(preferences.values.first().activeProfileId == selected.activeProfileId)
+      val current = preferences.values.first()
+      check(current.activeProfileId == selected.activeProfileId && current.selectedSubaccount == selected.selectedSubaccount)
       emit(fee)
     }).first()
   }

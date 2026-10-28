@@ -437,6 +437,8 @@ class DefaultAccountRepository(
     return terminal
   }
 
+  override suspend fun warmFundingFees() = trading.warmFundingFees()
+
   override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? {
     val subaccount = preferences.values.first().selectedSubaccount ?: return null
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()

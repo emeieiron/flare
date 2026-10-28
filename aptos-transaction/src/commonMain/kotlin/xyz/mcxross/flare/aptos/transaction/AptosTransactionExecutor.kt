@@ -54,6 +54,9 @@ class PreparedAptosTransaction internal constructor(
   internal val localFeePayer: AccountAddress?,
 )
 
+/** Public data sufficient for unsigned simulation; contains no private signing material. */
+data class AptosSimulationIdentity(val address: AccountAddress, val publicKey: xyz.mcxross.kaptos.core.crypto.PublicKey)
+
 /** Builds, simulates and submits one Aptos transaction; callers own authorization and durable storage. */
 class AptosTransactionExecutor(private val aptos: Aptos) {
   /** Builds and simulates only. It never invokes a signer, authorization callback or submitter. */
@@ -63,20 +66,29 @@ class AptosTransactionExecutor(private val aptos: Aptos) {
     feePayer: TransactionSigner? = null,
     externalFeePayer: Boolean = false,
     options: TransactionOptions? = null,
+  ): AptosResult<PreparedAptosTransaction> = prepare(
+    AptosSimulationIdentity(signer.accountAddress, signer.publicKey), payload, feePayer, externalFeePayer, options)
+
+  suspend fun prepare(
+    identity: AptosSimulationIdentity,
+    payload: TransactionPayload.EntryFunction,
+    feePayer: TransactionSigner? = null,
+    externalFeePayer: Boolean = false,
+    options: TransactionOptions? = null,
   ): AptosResult<PreparedAptosTransaction> {
     if (feePayer != null && externalFeePayer)
       return AptosResult.Failure(AptosError.Validation("Choose either a local fee payer or an external Gas Station"))
     val built = if (feePayer == null && !externalFeePayer) {
-      aptos.transactions.build(signer.accountAddress, payload, options)
+      aptos.transactions.build(identity.address, payload, options)
     } else {
-      aptos.transactions.buildFeePayer(signer.accountAddress, payload,
+      aptos.transactions.buildFeePayer(identity.address, payload,
         feePayer = feePayer?.accountAddress, options = options)
     }
     val unsigned = when (built) {
       is AptosResult.Success -> built.value
       is AptosResult.Failure -> return built
     }
-    val simulated = aptos.transactions.simulate(unsigned, signer.publicKey, feePayerPublicKey = feePayer?.publicKey)
+    val simulated = aptos.transactions.simulate(unsigned, identity.publicKey, feePayerPublicKey = feePayer?.publicKey)
     val results = when (simulated) {
       is AptosResult.Success -> simulated.value
       is AptosResult.Failure -> return simulated

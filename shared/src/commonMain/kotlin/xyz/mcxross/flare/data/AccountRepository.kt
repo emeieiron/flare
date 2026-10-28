@@ -129,6 +129,9 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<ActionState>
 
+  /** Warms reusable read dependencies without signing or submitting a transaction. */
+  suspend fun warmFundingFees() = Unit
+
   /** Read-only gas simulation for the funding form; never requests fresh authorization. */
   suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? = null
 

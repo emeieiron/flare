@@ -2,6 +2,7 @@ package xyz.mcxross.flare.feature.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -354,6 +355,7 @@ class PortfolioViewModel(
   private val balanceMutex = Mutex()
   private var lastPositionAction: TradeAction? = null
   private var fundingContext: FundingSwapContext? = null
+  private var fundingWarmJob: Job? = null
   private data class FundingFeeKey(val context: FundingSwapContext?, val mode: FundingMode, val units: ULong)
   private val fundingFees = FeeResolver<FundingFeeKey>(viewModelScope,
     read = { accounts.estimateFundingFee(it.units.toDecimalString(6), it.mode == FundingMode.WITHDRAW) },
@@ -591,8 +593,10 @@ class PortfolioViewModel(
         uiState.value.profile.ownerAddress?.let { owner ->
           viewModelScope.launch { fetchPrimaryUsdcBalance(owner) }
         }
-        viewModelScope.launch { runSuspendCatching { accounts.restoreTrading() } }
         clearFundingFee()
+        if (capabilities.sponsoredFees) fundingWarmJob = viewModelScope.launch {
+          withTimeoutOrNull(5_000) { runSuspendCatching { accounts.warmFundingFees() } }
+        }
         scheduleFundingFee()
       }
       is PortfolioIntent.SelectFundingMode ->
@@ -840,6 +844,7 @@ class PortfolioViewModel(
       ?: error("Select an open position")
 
   private fun clearFundingFee() {
+    fundingWarmJob?.cancel()
     fundingFees.cancel(clearCache = true)
     local.update { it.copy(fundingNetworkFee = null, fundingFeeError = null) }
   }
@@ -870,6 +875,7 @@ class PortfolioViewModel(
     }
 
   private suspend fun submitFundingInternal(feePayment: FeePayment) {
+    fundingWarmJob?.cancel()
     fundingFees.cancel(clearCache = true)
     val state = local.value
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
