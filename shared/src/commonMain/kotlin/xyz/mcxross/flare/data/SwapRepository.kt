@@ -51,6 +51,21 @@ data class SwapQuote(
   val expiresAtMs: Long,
 )
 
+/** Exact wallet funds available to a funding consumer, with gas retained for both transactions. */
+data class SwapFundingCapacity(
+  val owner: String,
+  val input: SwapAsset,
+  val output: SwapAsset,
+  val inputSymbol: String,
+  val outputSymbol: String,
+  val inputBalance: ULong,
+  val outputBalance: ULong,
+  val networkFeeReserve: ULong,
+) {
+  val maximumInput: ULong
+    get() = if (inputBalance > networkFeeReserve) inputBalance - networkFeeReserve else 0uL
+}
+
 @Serializable
 enum class SwapOperationStatus { PREPARED, SUBMITTING, PENDING, COMMITTED, ABORTED, NOT_SUBMITTED }
 
@@ -69,6 +84,9 @@ data class SwapOperation(
 /** A swap ends at the owner wallet. Funding and trading are separate consumers of this contract. */
 interface SwapRepository {
   val operations: Flow<List<SwapOperation>>
+
+  /** Reads balances and the current fee budget without unlocking or signing with the owner key. */
+  suspend fun fundingCapacity(owner: String): SwapFundingCapacity
 
   suspend fun quote(request: SwapRequest): SwapQuote
 

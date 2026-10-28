@@ -38,6 +38,18 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 /** Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot load its JNI library. */
 class AptosSwapRepositoryIosTest {
   @Test
+  fun fundingCapacityReadsExactBalancesAndRetainsBothGasBudgetsWithoutSigning() = runTest {
+    fixture { f ->
+      val capacity = f.repository.fundingCapacity("0x1")
+      assertEquals(f.balance.toULong(), capacity.inputBalance)
+      assertEquals(f.balance.toULong(), capacity.outputBalance)
+      assertEquals((50_000uL + f.aptos.settings.transactionDefaults.maxGasAmount) * 100uL, capacity.networkFeeReserve)
+      assertEquals(capacity.inputBalance - capacity.networkFeeReserve, capacity.maximumInput)
+      assertTrue(f.events.isEmpty())
+    }
+  }
+
+  @Test
   fun sponsoredSwapJournalsBeforeSubmissionAndCannotExecuteTwice() = runTest {
     fixture { f ->
       val quote = f.repository.quote(REQUEST)

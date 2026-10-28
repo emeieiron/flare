@@ -122,6 +122,7 @@ fun flareModule(
       rewardsRepository = getOrNull(),
       assetCatalog = getOrNull(),
       setupGate = getOrNull(),
+      swaps = getOrNull(),
     )
   }
   viewModelOf(::OrdersViewModel)

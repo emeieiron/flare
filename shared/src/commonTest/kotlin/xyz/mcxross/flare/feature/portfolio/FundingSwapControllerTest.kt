@@ -1,0 +1,194 @@
+package xyz.mcxross.flare.feature.portfolio
+
+import kotlin.test.*
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.test.*
+import xyz.mcxross.flare.data.*
+import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.SelfPayOffer
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class FundingSwapControllerTest {
+  @Test fun zeroUsdcOffersAnAmountChoiceAndMaximumLeavesFeesForBothSteps() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    assertTrue(f.controller.state.value.canSwap)
+    f.controller.begin("")
+    assertEquals(FundingSwapStep.AMOUNT, f.controller.state.value.step)
+    assertTrue(f.repo.requests.isEmpty())
+    f.controller.useMaximum()
+    assertEquals("9.9", f.controller.state.value.inputAmount)
+    f.controller.review(); runCurrent()
+    assertEquals("990000000", f.repo.requests.single().amount)
+    assertEquals(SwapAmountKind.EXACT_INPUT, f.repo.requests.single().kind)
+  }
+
+  @Test fun partialUsdcQuotesOnlyTheExactShortfall() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_001uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10.000002"); runCurrent()
+    assertEquals(SwapAmountKind.EXACT_OUTPUT, f.repo.requests.single().kind)
+    assertEquals("8000001", f.repo.requests.single().amount)
+    assertEquals(FundingSwapStep.REVIEW, f.controller.state.value.step)
+  }
+
+  @Test fun aFailedBalanceReadAndGasOnlyFundsNeverPretendToBeSwappable() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.balanceFails = true
+    f.controller.open(CONTEXT); runCurrent()
+    assertNull(f.controller.state.value.capacity)
+    assertNotNull(f.controller.state.value.balanceError)
+    assertFalse(f.controller.state.value.canSwap)
+    f.repo.balanceFails = false
+    f.repo.capacity = f.repo.capacity.copy(inputBalance = f.repo.capacity.networkFeeReserve)
+    f.controller.refresh(); runCurrent()
+    assertFalse(f.controller.state.value.canSwap)
+    f.controller.begin("10"); runCurrent()
+    assertTrue(f.repo.requests.isEmpty())
+  }
+
+  @Test fun overBudgetAndOverPrecisionAmountsNeverReachTheProvider() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("")
+    for (amount in listOf("10", "0.000000001", "1..2")) {
+      f.controller.changeInput(amount); f.controller.review(); runCurrent()
+      assertTrue(f.repo.requests.isEmpty())
+      assertNotNull(f.controller.state.value.error)
+    }
+  }
+
+  @Test fun expiredQuotesRequireAnExplicitRefreshAndCannotExecute() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); runCurrent()
+    f.repo.now += 30_001
+    advanceTimeBy(30_001); runCurrent()
+    assertTrue(f.controller.state.value.quoteExpired)
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+    f.controller.refreshQuote(); runCurrent()
+    assertFalse(f.controller.state.value.quoteExpired)
+    assertEquals(2, f.repo.requests.size)
+  }
+
+  @Test fun aConfirmedSwapReturnsToTransferWithTheOriginalAmountAndNeverDeposits() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertEquals(listOf("10"), f.ready)
+    assertNull(f.controller.state.value.step)
+    assertTrue(f.controller.state.value.completed)
+    assertEquals(10_000_000uL, f.controller.state.value.capacity?.outputBalance)
+    assertEquals(listOf(FeePayment.SPONSORED), f.repo.executions)
+  }
+
+  @Test fun sponsorRejectionWaitsForExplicitSelfPay() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Sponsor unavailable", definitelyNotSubmitted = true, selfPay = SelfPayOffer(100uL))
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertTrue(f.controller.state.value.selfPay)
+    assertEquals(listOf(FeePayment.SPONSORED), f.repo.executions)
+    assertTrue(f.ready.isEmpty())
+    f.repo.result = ActionState.Committed("hash")
+    f.controller.execute(selfPay = true); runCurrent()
+    assertEquals(listOf(FeePayment.SPONSORED, FeePayment.SELF_PAY), f.repo.executions)
+    assertEquals(listOf("10"), f.ready)
+  }
+
+  @Test fun uncertainSubmissionSurvivesClosingAndOnlyChecksStatusOnReturn() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.result = ActionState.Failed("Response lost", reference = "pending")
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
+    f.controller.close(); f.controller.open(CONTEXT); runCurrent()
+    assertEquals(FundingSwapStep.PENDING, f.controller.state.value.step)
+    f.controller.execute(selfPay = true); f.controller.begin("10"); runCurrent()
+    assertEquals(1, f.repo.executions.size)
+    f.repo.reconciled = SwapOperationStatus.COMMITTED
+    f.controller.reconcile(); runCurrent()
+    assertTrue(f.controller.state.value.completed)
+    assertEquals(1, f.repo.executions.size)
+  }
+
+  @Test fun aQuoteFromThePreviousProfileNeverAppearsOrExecutes() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.quoteGate = CompletableDeferred()
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); runCurrent()
+    assertTrue(f.controller.state.value.working)
+    f.controller.open(CONTEXT.copy(profileId = "other", owner = "other")); runCurrent()
+    f.repo.quoteGate!!.complete(Unit); runCurrent()
+    assertNull(f.controller.state.value.quote)
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+    assertTrue(f.ready.isEmpty())
+  }
+
+  @Test fun walletChangesAreRecheckedBeforeQuotingAndBeforeSigning() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 3_000_000uL)
+    f.controller.begin("10"); runCurrent()
+    assertEquals("7000000", f.repo.requests.single().amount)
+    f.repo.capacity = f.repo.capacity.copy(inputBalance = 0uL)
+    f.controller.execute(); runCurrent()
+    assertTrue(f.repo.executions.isEmpty())
+  }
+
+  private class Fixture(scope: CoroutineScope) {
+    val repo = FakeSwaps()
+    val ready = mutableListOf<String>()
+    val controller = FundingSwapController(repo, scope, { ready += it }, now = { repo.now })
+  }
+}
+
+private val CONTEXT = FundingSwapContext("profile", "owner", "account")
+private val INPUT = SwapAsset("chain", "apt", 8)
+private val OUTPUT = SwapAsset("chain", "usdc", 6)
+
+private class FakeSwaps : SwapRepository {
+  var now = 100_000L
+  var capacity = SwapFundingCapacity("owner", INPUT, OUTPUT, "APT", "USDC", 1_000_000_000uL, 0uL, 10_000_000uL)
+  var balanceFails = false
+  var quoteGate: CompletableDeferred<Unit>? = null
+  var result: ActionState = ActionState.Committed("hash")
+  var reconciled: SwapOperationStatus? = null
+  val requests = mutableListOf<SwapRequest>()
+  val executions = mutableListOf<FeePayment>()
+  override val operations = MutableStateFlow<List<SwapOperation>>(emptyList())
+  private lateinit var quoted: SwapQuote
+  override suspend fun fundingCapacity(owner: String): SwapFundingCapacity {
+    check(!balanceFails)
+    return capacity.copy(owner = owner)
+  }
+  override suspend fun quote(request: SwapRequest): SwapQuote {
+    requests += request
+    quoteGate?.await()
+    val input = if (request.kind == SwapAmountKind.EXACT_INPUT) request.amount.toULong() else request.amount.toULong() * 10uL
+    val output = if (request.kind == SwapAmountKind.EXACT_OUTPUT) request.amount.toULong() else request.amount.toULong() / 10uL
+    return SwapQuote("quote-${requests.size}", "fake", request, input.toString(), output.toString(), input.toString(),
+      output.toString(), emptyList(), now + 30_000).also { quoted = it }
+  }
+  override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
+    executions += feePayment
+    if (result is ActionState.Committed) capacity = capacity.copy(outputBalance = capacity.outputBalance + quoted.minimumOutput.toULong())
+    else if ((result as? ActionState.Failed)?.definitelyNotSubmitted == false) operations.value = listOf(
+      SwapOperation(quoteId, CONTEXT.profileId, quoted, SwapOperationStatus.PENDING, "pending", now))
+    emit(result)
+  }
+  override suspend fun reconcile(): List<SwapOperation> {
+    reconciled?.let { status -> operations.value = operations.value.map { it.copy(status = status) } }
+    return operations.value
+  }
+}

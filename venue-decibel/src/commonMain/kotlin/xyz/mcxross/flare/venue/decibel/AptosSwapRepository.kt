@@ -57,6 +57,28 @@ class AptosSwapRepository(
     saved.filter { it.profileId == selected.activeProfileId }
   }
 
+  override suspend fun fundingCapacity(owner: String): SwapFundingCapacity {
+    require(runtime.network == Network.MAINNET)
+    val address = AccountAddress.fromString(owner)
+    suspend fun balance(asset: AccountAsset): ULong = when (val read = aptos.accounts.getBalance(address, asset)) {
+      is AptosResult.Success -> read.value
+      is AptosResult.Failure -> error("Your wallet balances couldn’t be refreshed. Try again.")
+    }
+    // Kaptos resolves the current gas price while building. This unsigned self-transfer is only
+    // a fee probe; it never reaches simulation, authorization, signing or submission.
+    val probe = when (val build = aptos.coins.buildTransfer(address, address, 0uL,
+      options = TransactionOptions(maxGasAmount = 50_000uL))) {
+      is AptosResult.Success -> build.value.rawTransaction
+      is AptosResult.Failure -> error("Network fees couldn’t be checked. Try again.")
+    }
+    require(probe.gasUnitPrice in 1uL..1_000uL) { "Network fees are unusually high. Try again later." }
+    val depositGas = aptos.settings.transactionDefaults.maxGasAmount
+    require(depositGas <= ULong.MAX_VALUE / probe.gasUnitPrice - 50_000uL)
+    return SwapFundingCapacity(owner, APT, USDC, "APT", "USDC",
+      balance(AccountAsset.coin(APTOS_COIN)), balance(AccountAsset.fungibleAsset(AccountAddress.fromString(USDC.address))),
+      (50_000uL + depositGas) * probe.gasUnitPrice)
+  }
+
   override suspend fun quote(request: SwapRequest): SwapQuote {
     require(runtime.network == Network.MAINNET && request.input == APT && request.output == USDC) {
       "Only Aptos-mainnet APT to native USDC is supported"

@@ -3,6 +3,12 @@ package xyz.mcxross.flare.feature.portfolio
 import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.SwapRepository
+import xyz.mcxross.flare.data.SwapFundingCapacity
+import xyz.mcxross.flare.data.SwapAsset
+import xyz.mcxross.flare.data.SwapRequest
+import xyz.mcxross.flare.data.SwapQuote
+import xyz.mcxross.flare.data.SwapOperation
 import xyz.mcxross.flare.data.AccountSetupGate
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -709,6 +715,48 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.CloseFunding)
     val closedState = vm.uiState.first { it.fundingMode == null }
     kotlin.test.assertNull(closedState.fundingMode)
+  }
+
+  @Test
+  fun fundingKeepsTheTransferAmountAfterSwappingAndWaitsForSeparateDepositConfirmation() = runTest {
+    val input = SwapAsset("aptos:1", "apt", 8)
+    val output = SwapAsset("aptos:1", "usdc", 6)
+    var walletUsdc = 0uL
+    var deposits = 0
+    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+      override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
+        assertEquals("10", amount)
+        deposits++
+        return flowOf(ActionState.Committed("deposit"))
+      }
+    }
+    val swaps = object : SwapRepository {
+      override val operations = flowOf(emptyList<SwapOperation>())
+      override suspend fun fundingCapacity(owner: String) =
+        SwapFundingCapacity(owner, input, output, "APT", "USDC", 500_000_000uL, walletUsdc, 10_000_000uL)
+      override suspend fun quote(request: SwapRequest) = SwapQuote("quote", "fake", request,
+        "100000000", "10000000", "101000000", "10000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000)
+      override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
+        walletUsdc = 10_000_000uL
+        return flowOf(ActionState.Committed("swap"))
+      }
+      override suspend fun reconcile() = emptyList<SwapOperation>()
+    }
+    val vm = PortfolioViewModel(accounts, FakeWalletRepository(), AppPreferences(MemoryPreferences()),
+      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository(), testVenue(), swaps = swaps)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("10"))
+    vm.onIntent(PortfolioIntent.BeginFundingSwap)
+    vm.onIntent(PortfolioIntent.ConfirmSwap)
+    assertEquals("10", vm.uiState.value.fundingAmount)
+    assertTrue(vm.uiState.value.fundingSwap.completed)
+    assertNull(vm.uiState.value.fundingTransaction)
+    assertEquals(10.0, vm.uiState.value.primaryUsdcBalance)
+    assertEquals(0, deposits)
+    vm.onIntent(PortfolioIntent.SubmitFunding)
+    assertEquals(1, deposits)
+    assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
   }
 
   private fun portfolio(
