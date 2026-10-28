@@ -27,7 +27,11 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
   val quote = state.quote
   val pending = state.step == FundingSwapStep.PENDING
   val exactInput = state.amountKind == SwapAmountKind.EXACT_INPUT
-  val decimals = if (exactInput) capacity?.input?.decimals ?: 8 else capacity?.output?.decimals ?: 6
+  val inputDecimals = capacity?.input?.decimals ?: 8
+  val outputDecimals = capacity?.output?.decimals ?: 6
+  val decimals = if (exactInput) inputDecimals else outputDecimals
+  val pay = if (exactInput) state.inputAmount else quote?.expectedInput?.toULong()?.toDecimalString(inputDecimals).orEmpty()
+  val receive = if (!exactInput) state.inputAmount else quote?.expectedOutput?.toULong()?.toDecimalString(outputDecimals).orEmpty()
   val units = decimalUnits(state.inputAmount, "Amount", decimals).getOrNull()
   val tooMuch = exactInput && capacity != null && units != null && units > capacity.maximumInput
   val invalid = state.inputAmount.isNotBlank() && units == null
@@ -39,25 +43,34 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
       ActionNotice("Swap pending")
     } else {
       FlareAmountField(
-        value = state.inputAmount,
-        onValueChange = { onIntent(PortfolioIntent.ChangeSwapAmount(it)) },
-        label = if (exactInput) "You pay" else "Transfer amount",
-        unit = if (exactInput) "APT" else "USDC", placeholder = "0.00",
-        availableText = capacity?.let { "Available: ${it.maximumInput.toDecimalString(it.input.decimals)} APT" } ?: "Available: —",
-        onMaxClick = if (exactInput && state.canSwap) ({ onIntent(PortfolioIntent.UseMaximumSwap) }) else null,
-        enabled = !state.working, isError = tooMuch || invalid,
+        value = pay,
+        onValueChange = { onIntent(PortfolioIntent.ChangeSwapAmount(it, SwapAmountKind.EXACT_INPUT)) },
+        label = "You pay", unit = "APT", placeholder = "0.00",
+        availableText = capacity?.let { "Available: ${it.maximumInput.toDecimalString(inputDecimals)} APT" } ?: "Available: —",
+        onMaxClick = if (state.canSwap) ({ onIntent(PortfolioIntent.UseMaximumSwap) }) else null,
+        enabled = !state.working, isError = tooMuch || exactInput && invalid,
         supportingText = when {
-          tooMuch -> "Not enough APT after gas."
-          invalid -> "Use up to $decimals decimal places."
+          tooMuch -> "Available to swap: ${capacity!!.maximumInput.toDecimalString(inputDecimals)} APT after gas."
+          exactInput && invalid -> "Use up to $inputDecimals decimal places."
           else -> null
         },
+        loading = !exactInput && state.quoting,
       )
       Spacer(Modifier.height(8.dp))
-      QuoteValueRow("Receive at least", quote?.let {
-        "${it.minimumOutput.toULong().toDecimalString(it.request.output.decimals)} USDC"
+      FlareAmountField(
+        value = receive,
+        onValueChange = { onIntent(PortfolioIntent.ChangeSwapAmount(it, SwapAmountKind.EXACT_OUTPUT)) },
+        label = "You receive", unit = "USDC", placeholder = "0.00",
+        enabled = !state.working, isError = !exactInput && invalid,
+        supportingText = if (!exactInput && invalid) "Use up to $outputDecimals decimal places." else null,
+        loading = exactInput && state.quoting,
+      )
+      Spacer(Modifier.height(8.dp))
+      if (exactInput) QuoteValueRow("Receive at least", quote?.let {
+        "${it.minimumOutput.toULong().toDecimalString(outputDecimals)} USDC"
       } ?: "—", loading = state.quoting)
-      if (!exactInput) QuoteValueRow("Pay up to", quote?.let {
-        "${it.maximumInput.toULong().toDecimalString(it.request.input.decimals)} APT"
+      else QuoteValueRow("Pay up to", quote?.let {
+        "${it.maximumInput.toULong().toDecimalString(inputDecimals)} APT"
       } ?: "—", loading = state.quoting)
       DetailRow("Slippage", "${(quote?.request?.slippageBps ?: 50).toULong().toDecimalString(2)}%")
       if (state.selfPay) {

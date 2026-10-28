@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
@@ -223,6 +224,7 @@ fun FlareAmountField(
   valueHint: String? = null,
   compact: Boolean = false,
   interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+  loading: Boolean = false,
 ) {
   val focused by interactionSource.collectIsFocusedAsState()
   val labelColor by animateColorAsState(
@@ -285,10 +287,15 @@ fun FlareAmountField(
           }
           Row(modifier = Modifier.fillMaxWidth()) {
             Box(modifier = Modifier.weight(1f).alignByBaseline()) {
-              if (value.isEmpty()) {
+              if (value.isEmpty() && !loading) {
                 Text(text = placeholder, style = valueStyle, color = FlareColors.TextDisabled)
               }
-              innerTextField()
+              Box(Modifier.alpha(if (loading) 0f else 1f)) { innerTextField() }
+              if (loading) {
+                FlareSkeletonBox(Modifier.width(100.dp).height(if (compact) 24.dp else 32.dp)
+                  .then(if (rememberReducedMotion()) Modifier else Modifier.shimmer(rememberFlareShimmer()))
+                  .semantics { contentDescription = "Loading amount" })
+              }
             }
             if (onMaxClick != null) {
               Box(

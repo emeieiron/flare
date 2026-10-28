@@ -16,6 +16,86 @@ import xyz.mcxross.flare.venue.model.SelfPayOffer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FundingSwapControllerTest {
+  @Test fun aBlankTransferIsNotReplacedByTheWalletBalanceAfterSwapping() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_000uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("1", SwapAmountKind.EXACT_OUTPUT)
+    advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertEquals(3_000_000uL, f.controller.state.value.capacity?.outputBalance)
+    assertEquals(listOf(""), f.ready)
+  }
+
+  @Test fun usersMaySwapEvenWhenTheirUsdcCoversTheTransfer() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_000uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("1")
+    assertEquals(FundingSwapStep.SWAP, f.controller.state.value.step)
+    f.controller.changeInput("1", SwapAmountKind.EXACT_OUTPUT); advanceTimeBy(601); runCurrent()
+    assertEquals("1000000", f.repo.requests.single().amount)
+    assertNotNull(f.controller.state.value.quote)
+    assertNull(f.controller.state.value.error)
+    f.controller.execute(); runCurrent()
+    assertEquals(listOf("1"), f.ready)
+  }
+
+  @Test fun eitherSwapSideIsEditableWithoutChangingTheTransferTarget() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_001uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10.000002"); advanceTimeBy(601); runCurrent()
+    assertEquals("8.000001", f.controller.state.value.inputAmount)
+    f.controller.changeInput("1", SwapAmountKind.EXACT_OUTPUT); advanceTimeBy(601); runCurrent()
+    assertEquals("1000000", f.repo.requests.last().amount)
+    assertEquals(SwapAmountKind.EXACT_OUTPUT, f.repo.requests.last().kind)
+    assertNull(f.controller.state.value.error)
+    f.controller.changeInput("2", SwapAmountKind.EXACT_INPUT); advanceTimeBy(601); runCurrent()
+    assertEquals("200000000", f.repo.requests.last().amount)
+    assertEquals(SwapAmountKind.EXACT_INPUT, f.repo.requests.last().kind)
+    f.controller.execute(); runCurrent()
+    assertEquals(listOf("10.000002"), f.ready)
+  }
+
+  @Test fun maximumIsAnExplicitSwapChoiceAndPreservesTheTransferAmount() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); f.controller.useMaximum(); advanceTimeBy(601); runCurrent()
+    f.controller.execute(); runCurrent()
+    assertEquals(listOf("10"), f.ready)
+  }
+
+  @Test fun anAutomaticRenewalNeverChangesTheChosenSwapOutputForANewWalletBalance() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 2_000_000uL)
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin("10"); advanceTimeBy(601); runCurrent()
+    f.repo.capacity = f.repo.capacity.copy(outputBalance = 12_000_000uL)
+    f.repo.now += 27_001; advanceTimeBy(27_001); runCurrent()
+    assertEquals(listOf("8000000", "8000000"), f.repo.requests.map { it.amount })
+    assertEquals("8", f.controller.state.value.inputAmount)
+    assertNull(f.controller.state.value.error)
+    assertNotNull(f.controller.state.value.quote)
+  }
+
+  @Test fun aLateRefreshCannotReplaceTheBalanceObservedBeforeConfirmation() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.repo.balanceGate = CompletableDeferred()
+    f.repo.now += 30_001
+    f.controller.refresh(); runCurrent()
+    assertTrue(f.controller.state.value.loadingBalance)
+    assertFalse(f.controller.state.value.balanceCurrent)
+    assertFalse(f.controller.state.value.canSwap)
+    val fresh = f.repo.capacity.copy(outputBalance = 3_000_000uL)
+    f.controller.observeCapacity(CONTEXT, fresh)
+    f.repo.balanceGate!!.complete(Unit); runCurrent()
+    assertEquals(fresh, f.controller.state.value.capacity)
+    assertTrue(f.controller.state.value.balanceCurrent)
+    assertTrue(f.controller.state.value.canSwap)
+  }
+
   @Test fun aReviewedSelfPayFeeSkipsTheSponsorshipAttempt() = runTest {
     val f = Fixture(backgroundScope)
     f.repo.networkFee = SwapNetworkFee(FeePayment.SELF_PAY, 10_000uL, 5_000_000uL)
@@ -157,6 +237,7 @@ class FundingSwapControllerTest {
     f.controller.begin("10.000002"); advanceTimeBy(601); runCurrent()
     assertEquals(SwapAmountKind.EXACT_OUTPUT, f.repo.requests.single().kind)
     assertEquals("8000001", f.repo.requests.single().amount)
+    assertEquals("8.000001", f.controller.state.value.inputAmount)
     assertEquals(FundingSwapStep.SWAP, f.controller.state.value.step)
   }
 
@@ -301,6 +382,7 @@ class FundingSwapControllerTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
     f.repo.capacity = f.repo.capacity.copy(outputBalance = 3_000_000uL)
+    f.controller.refresh(); runCurrent()
     f.controller.begin("10"); advanceTimeBy(601); runCurrent()
     assertEquals("7000000", f.repo.requests.single().amount)
     f.repo.capacity = f.repo.capacity.copy(inputBalance = 0uL)
@@ -323,6 +405,7 @@ private class FakeSwaps : SwapRepository {
   var now = 100_000L
   var capacity = SwapFundingCapacity("owner", INPUT, OUTPUT, "APT", "USDC", 1_000_000_000uL, 0uL, 10_000_000uL)
   var balanceFails = false
+  var balanceGate: CompletableDeferred<Unit>? = null
   var quoteGate: CompletableDeferred<Unit>? = null
   var quoteFailuresRemaining = 0
   var quoteDelayMs = 0L
@@ -336,8 +419,10 @@ private class FakeSwaps : SwapRepository {
   override val operations = MutableStateFlow<List<SwapOperation>>(emptyList())
   private lateinit var quoted: SwapQuote
   override suspend fun fundingCapacity(owner: String): SwapFundingCapacity {
+    val snapshot = capacity.copy(owner = owner)
+    balanceGate?.let { withContext(NonCancellable) { it.await() } }
     check(!balanceFails)
-    return capacity.copy(owner = owner)
+    return snapshot
   }
   override suspend fun quote(request: SwapRequest): SwapQuote {
     requests += request

@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.data.SwapRepository
+import xyz.mcxross.flare.data.SwapAmountKind
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.SetupNeed
@@ -266,7 +267,7 @@ sealed interface PortfolioIntent {
   data object CloseFunding : PortfolioIntent
 
   data object BeginFundingSwap : PortfolioIntent
-  data class ChangeSwapAmount(val value: String) : PortfolioIntent
+  data class ChangeSwapAmount(val value: String, val kind: SwapAmountKind? = null) : PortfolioIntent
   data object UseMaximumSwap : PortfolioIntent
   data object ConfirmSwap : PortfolioIntent
   data object ConfirmSwapSelfPay : PortfolioIntent
@@ -607,7 +608,7 @@ class PortfolioViewModel(
         }
       }
       PortfolioIntent.BeginFundingSwap -> fundingSwaps.begin(local.value.fundingAmount)
-      is PortfolioIntent.ChangeSwapAmount -> fundingSwaps.changeInput(intent.value)
+      is PortfolioIntent.ChangeSwapAmount -> fundingSwaps.changeInput(intent.value, intent.kind)
       PortfolioIntent.UseMaximumSwap -> fundingSwaps.useMaximum()
       PortfolioIntent.ConfirmSwap -> fundingSwaps.execute()
       PortfolioIntent.ConfirmSwapSelfPay -> fundingSwaps.execute(selfPay = true)
@@ -848,7 +849,8 @@ class PortfolioViewModel(
       val context = checkNotNull(fundingContext) { "Use a device that holds the owner key." }
       val capacity = swaps.fundingCapacity(context.owner)
       check(fundingContext == context) { "The selected wallet changed. Review the transfer again." }
-      require(units <= capacity.outputBalance) { "There isn’t enough USDC. Swap APT or enter a smaller amount." }
+      fundingSwaps.observeCapacity(context, capacity)
+      if (units > capacity.outputBalance) return
     } else require(amount <= available + 1e-9) {
       "You can transfer up to ${formatQuantity(available, 2)} USDC."
     }

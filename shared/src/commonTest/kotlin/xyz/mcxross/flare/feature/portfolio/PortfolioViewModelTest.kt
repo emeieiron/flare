@@ -722,7 +722,7 @@ class PortfolioViewModelTest {
   fun fundingKeepsTheTransferAmountAfterSwappingAndWaitsForSeparateDepositConfirmation() = runTest {
     val input = SwapAsset("aptos:1", "apt", 8)
     val output = SwapAsset("aptos:1", "usdc", 6)
-    var walletUsdc = 0uL
+    var walletUsdc = 10_000_000uL
     var deposits = 0
     val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
       override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
@@ -736,7 +736,7 @@ class PortfolioViewModelTest {
       override suspend fun fundingCapacity(owner: String) =
         SwapFundingCapacity(owner, input, output, "APT", "USDC", 500_000_000uL, walletUsdc, 10_000_000uL)
       override suspend fun quote(request: SwapRequest) = SwapQuote("quote", "fake", request,
-        "100000000", "10000000", "101000000", "10000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000,
+        "80000000", "8000000", "81000000", "8000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000,
         SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL))
       override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
         walletUsdc = 10_000_000uL
@@ -749,8 +749,16 @@ class PortfolioViewModelTest {
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("10"))
+    walletUsdc = 2_000_000uL
+    vm.onIntent(PortfolioIntent.SubmitFunding)
+    assertEquals(0, deposits)
+    assertEquals("10", vm.uiState.value.fundingAmount)
+    assertEquals(8_000_000uL, vm.uiState.value.fundingSwap.shortfall("10"))
+    assertTrue(vm.uiState.value.fundingSwap.canSwap)
+    assertNull(vm.uiState.value.actionError)
     vm.onIntent(PortfolioIntent.BeginFundingSwap)
     advanceTimeBy(601); runCurrent()
+    assertEquals("8", vm.uiState.value.fundingSwap.inputAmount)
     vm.onIntent(PortfolioIntent.ConfirmSwap)
     assertEquals("10", vm.uiState.value.fundingAmount)
     assertTrue(vm.uiState.value.fundingSwap.completed)
