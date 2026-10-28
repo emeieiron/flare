@@ -256,13 +256,13 @@ data class ReferralCodeInfo(
 @Serializable
 data class ReferralRedemptionRequest(
   val account: String,
-  val code: String,
+  @SerialName("referral_code") val code: String,
 )
 
 @Serializable
 data class ReferralRedemptionResponse(
-  val success: Boolean = true,
-  val message: String? = null,
+  val account: String,
+  @SerialName("referral_code") val code: String,
 )
 
 @Serializable

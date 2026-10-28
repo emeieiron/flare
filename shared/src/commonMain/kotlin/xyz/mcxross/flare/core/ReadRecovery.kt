@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-enum class ReadOperation { FEES, ACTIVITY, WALLET_BALANCES, SWAP_BALANCE, SWAP_STATUS, SWAP_QUOTE, ACCOUNT_LOOKUP }
+enum class ReadOperation { FEES, ACTIVITY, WALLET_BALANCES, SWAP_BALANCE, SWAP_STATUS, SWAP_QUOTE, ACCOUNT_LOOKUP, REFERRALS }
 
 data class ReadRecoveryEvent(
   val operation: ReadOperation,

@@ -62,6 +62,8 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
@@ -90,6 +92,7 @@ class DefaultAccountRepository(
   private val trading: DecibelTrading,
   private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
+  private val referrals: ReferralRepository? = null,
 ) : AccountRepository, VaultsRepository, RewardsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
@@ -1099,8 +1102,10 @@ class DefaultAccountRepository(
     readOwner { decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it)) }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
-    val account = preferences.values.first().selectedSubaccount ?: return false
-    return runCatching { client.accounts.redeemReferralCode(account, code).success }.getOrDefault(false)
+    val owner = preferences.values.first().ownerAddress ?: return false
+    val repository = referrals ?: return false
+    return repository.apply(owner, code, VaultPrompt("Apply referral code", "Confirm your identity", requireFreshAuthorization = true))
+      .eligibility == ReferralEligibility.BOUND
   }
 
   override suspend fun activeTwaps(): List<TwapOrder> {

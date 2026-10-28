@@ -99,7 +99,7 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
         networkFeeTopUp = true,
         inAppDeposit = true,
         perpSpotTransfer = false,
-        referralCodes = true,
+        referralCodes = false, // The optional referral module owns entry points and eligibility.
       )
   }
 }
@@ -110,6 +110,7 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
  * the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
+  includes(decibelReferralsModule())
   single { config }
   single<CredentialParser> { DecibelCredentialParser }
   // One wallet and one session, each seen through the neutral and the Decibel interface.
@@ -182,9 +183,8 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     bind<TradingRepository>()
     bind<DecibelTrading>()
   }
-  singleOf(::DefaultAccountRepository) {
-    bind<AccountRepository>()
-    bind<VaultsRepository>()
-    bind<RewardsRepository>()
-  }
+  single { DefaultAccountRepository(get(), get(), get(), get(), get(), getOrNull()) }
+  single<AccountRepository> { get<DefaultAccountRepository>() }
+  single<VaultsRepository> { get<DefaultAccountRepository>() }
+  single<RewardsRepository> { get<DefaultAccountRepository>() }
 }

@@ -6,6 +6,9 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.serialization.json.Json
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionRequest
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionResponse
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -184,6 +187,17 @@ class ServiceContractTest {
     val amps = ampsService.amps("0xowner")
     assertEquals(1500.0, amps.totalAmps)
     assertEquals(42, amps.rank)
+  }
+
+  @Test
+  fun referralRedemptionUsesTheDocumentedWalletAndCodeContract() {
+    val json = Json
+    assertEquals("""{"account":"0x1","referral_code":"OC9E6E"}""",
+      json.encodeToString(ReferralRedemptionRequest("0x1", "OC9E6E")))
+    val receipt = json.decodeFromString<ReferralRedemptionResponse>("""{"account":"0x1","referral_code":"OC9E6E"}""")
+    assertEquals("0x1", receipt.account)
+    assertEquals("OC9E6E", receipt.code)
+    assertFailsWith<kotlinx.serialization.SerializationException> { json.decodeFromString<ReferralRedemptionResponse>("{}") }
   }
 
   @Test
