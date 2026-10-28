@@ -16,6 +16,7 @@ import kotlin.coroutines.coroutineContext
 import kotlin.test.*
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -37,6 +38,19 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
 /** Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot load its JNI library. */
 class AptosSwapRepositoryIosTest {
+  @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+  @Test
+  fun aCompletedQuoteDoesNotWaitIndefinitelyForTradingSessionRestoration() = runTest {
+    fixture { f ->
+      f.preferences.setApiWallet("0x2")
+      f.preferences.setSelectedSubaccount("0x3")
+      f.restoreDelayMs = 60_000
+      val started = testScheduler.currentTime
+      assertEquals("fixture", f.repository.quote(REQUEST).id)
+      assertEquals(2_000L, testScheduler.currentTime - started)
+    }
+  }
+
   @Test
   fun anEmptyWalletNeedsNoUnsignedBuildToShowThatNothingCanBeSwapped() = runTest {
     fixture { f ->
@@ -154,6 +168,7 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
   var now = Clock.System.now().toEpochMilliseconds()
   var balance = "100000000000"
   var refuseGasProbe = false
+  var restoreDelayMs = 0L
   var sponsorFailure: AptosError? = null
   private val data = object : DataStore<Preferences> {
     override val data = MutableStateFlow(emptyPreferences())
@@ -203,7 +218,10 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
     override suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt) =
       SessionStatus(SessionRole.OWNER, "0x1", subaccount, now + 60000).also { status.value = it }
     override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus = error("Not used")
-    override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus = error("Not used")
+    override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+      delay(restoreDelayMs)
+      return SessionStatus(SessionRole.API, "0x2", subaccount, now + 60000)
+    }
     override suspend fun useAnonymous(): SessionStatus = error("Not used")
     override suspend fun invalidate() = Unit
   }

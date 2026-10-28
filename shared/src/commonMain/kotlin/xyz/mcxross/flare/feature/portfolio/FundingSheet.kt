@@ -52,8 +52,7 @@ fun FundingSheet(state: PortfolioUiState, onIntent: (PortfolioIntent) -> Unit) {
   val swap = state.fundingSwap
   FlareSheet(
     title = when {
-      swap.step == FundingSwapStep.PENDING -> "Swap in progress"
-      swap.step != null -> "Swap for USDC"
+      swap.step != null -> null
       committed != null -> "Transfer complete"
       else -> "Transfer"
     },

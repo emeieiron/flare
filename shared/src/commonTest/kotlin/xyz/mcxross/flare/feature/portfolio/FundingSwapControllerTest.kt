@@ -2,6 +2,7 @@ package xyz.mcxross.flare.feature.portfolio
 
 import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +16,67 @@ import xyz.mcxross.flare.venue.model.SelfPayOffer
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FundingSwapControllerTest {
+  @Test fun aStalledQuoteReadTimesOutAndRecoversAutomatically() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.quoteDelayMs = 60_000
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("1")
+    advanceTimeBy(20_601); runCurrent()
+    assertEquals(1, f.repo.requests.size)
+    f.repo.quoteDelayMs = 0
+    advanceTimeBy(2_001); runCurrent()
+    assertEquals(2, f.repo.requests.size)
+    assertNotNull(f.controller.state.value.quote)
+    assertFalse(f.controller.state.value.quoting)
+  }
+
+  @Test fun quoteFailuresRecoverAutomaticallyWithoutExposingProviderErrors() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.quoteFailuresRemaining = 2
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("1")
+    advanceTimeBy(601); runCurrent()
+    assertEquals(1, f.repo.requests.size)
+    assertTrue(f.controller.state.value.quoting)
+    assertNull(f.controller.state.value.error)
+    advanceTimeBy(2_001); runCurrent()
+    assertEquals(2, f.repo.requests.size)
+    advanceTimeBy(4_001); runCurrent()
+    assertEquals(3, f.repo.requests.size)
+    assertNotNull(f.controller.state.value.quote)
+    assertFalse(f.controller.state.value.quoting)
+    assertTrue(f.repo.executions.isEmpty())
+  }
+
+  @Test fun editingOrHidingTheFormCancelsAScheduledRetry() = runTest {
+    val f = Fixture(backgroundScope)
+    f.repo.quoteFailuresRemaining = 1
+    f.controller.open(CONTEXT); runCurrent()
+    f.controller.begin(""); f.controller.changeInput("1")
+    advanceTimeBy(601); runCurrent()
+    f.controller.changeInput("2")
+    advanceTimeBy(601); runCurrent()
+    advanceTimeBy(2_001); runCurrent()
+    assertEquals(listOf("100000000", "200000000"), f.repo.requests.map { it.amount })
+    f.repo.quoteFailuresRemaining = 1
+    f.controller.changeInput("3"); advanceTimeBy(601); runCurrent()
+    f.controller.setVisible(false)
+    advanceTimeBy(10_000); runCurrent()
+    assertEquals(3, f.repo.requests.size)
+    assertFalse(f.controller.state.value.quoting)
+  }
+
+  @Test fun insufficientFundsDoNotStartAnAutomaticQuoteRetryLoop() = runTest {
+    val f = Fixture(backgroundScope)
+    f.controller.open(CONTEXT); runCurrent()
+    f.repo.capacity = f.repo.capacity.copy(inputBalance = 0uL)
+    f.controller.begin(""); f.controller.changeInput("1")
+    advanceTimeBy(30_000); runCurrent()
+    assertFalse(f.controller.state.value.quoting)
+    assertNotNull(f.controller.state.value.error)
+    assertTrue(f.repo.requests.isEmpty())
+  }
+
   @Test fun typingDebouncesTheRequestAndKeepsTheEditorInPlace() = runTest {
     val f = Fixture(backgroundScope)
     f.controller.open(CONTEXT); runCurrent()
@@ -226,6 +288,8 @@ private class FakeSwaps : SwapRepository {
   var capacity = SwapFundingCapacity("owner", INPUT, OUTPUT, "APT", "USDC", 1_000_000_000uL, 0uL, 10_000_000uL)
   var balanceFails = false
   var quoteGate: CompletableDeferred<Unit>? = null
+  var quoteFailuresRemaining = 0
+  var quoteDelayMs = 0L
   var result: ActionState = ActionState.Committed("hash")
   var reconciled: SwapOperationStatus? = null
   val requests = mutableListOf<SwapRequest>()
@@ -238,6 +302,8 @@ private class FakeSwaps : SwapRepository {
   }
   override suspend fun quote(request: SwapRequest): SwapQuote {
     requests += request
+    delay(quoteDelayMs)
+    if (quoteFailuresRemaining > 0) { quoteFailuresRemaining--; error("Invalid swap quote expiry") }
     quoteGate?.let { withContext(NonCancellable) { it.await() } }
     val input = if (request.kind == SwapAmountKind.EXACT_INPUT) request.amount.toULong() else request.amount.toULong() * 10uL
     val output = if (request.kind == SwapAmountKind.EXACT_OUTPUT) request.amount.toULong() else request.amount.toULong() / 10uL

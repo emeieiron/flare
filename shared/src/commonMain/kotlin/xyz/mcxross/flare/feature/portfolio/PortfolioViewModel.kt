@@ -270,7 +270,6 @@ sealed interface PortfolioIntent {
   data object UseMaximumSwap : PortfolioIntent
   data object ConfirmSwap : PortfolioIntent
   data object ConfirmSwapSelfPay : PortfolioIntent
-  data object RefreshSwapQuote : PortfolioIntent
   data object BackFromSwap : PortfolioIntent
   data object RefreshFundingWallet : PortfolioIntent
   data object ReconcileSwap : PortfolioIntent
@@ -612,7 +611,6 @@ class PortfolioViewModel(
       PortfolioIntent.UseMaximumSwap -> fundingSwaps.useMaximum()
       PortfolioIntent.ConfirmSwap -> fundingSwaps.execute()
       PortfolioIntent.ConfirmSwapSelfPay -> fundingSwaps.execute(selfPay = true)
-      PortfolioIntent.RefreshSwapQuote -> fundingSwaps.refreshQuote()
       PortfolioIntent.BackFromSwap -> fundingSwaps.back()
       PortfolioIntent.RefreshFundingWallet -> fundingSwaps.refresh()
       PortfolioIntent.ReconcileSwap -> fundingSwaps.reconcile()

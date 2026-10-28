@@ -4,6 +4,7 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -110,7 +111,10 @@ class AptosSwapRepository(
         }
         emit(plan.toQuote())
       }).first()
-    } finally { restoreTrading(prompt) }
+    } finally {
+      // Session restoration is optional; it must not hold a completed quote open indefinitely.
+      withTimeoutOrNull(2_000) { restoreTrading(prompt) }
+    }
   }
 
   override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {

@@ -3,9 +3,16 @@ package xyz.mcxross.flare.feature.portfolio
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.SwapAmountKind
@@ -23,6 +30,9 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
   val units = decimalUnits(state.inputAmount, "Amount", decimals).getOrNull()
   val tooMuch = exactInput && capacity != null && units != null && units > capacity.maximumInput
   val invalid = state.inputAmount.isNotBlank() && units == null
+  BackBar(if (pending) "Swap pending" else "Swap for USDC", {
+    onIntent(if (pending) PortfolioIntent.CloseFunding else PortfolioIntent.BackFromSwap)
+  }, Modifier.padding(bottom = 12.dp), backEnabled = !state.working)
   Column(Modifier.heightIn(max = 390.dp).verticalScroll(rememberScrollState())) {
     if (pending) {
       ActionNotice("Swap pending")
@@ -42,15 +52,12 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
         },
       )
       Spacer(Modifier.height(8.dp))
-      val receive = when {
-        state.quoting -> "Fetching quote…"
-        quote != null -> "${quote.minimumOutput.toULong().toDecimalString(quote.request.output.decimals)} USDC"
-        else -> "—"
-      }
-      DetailRow("Receive at least", receive)
-      if (!exactInput) DetailRow("Pay up to", quote?.let {
+      QuoteValueRow("Receive at least", quote?.let {
+        "${it.minimumOutput.toULong().toDecimalString(it.request.output.decimals)} USDC"
+      } ?: "—", loading = state.quoting)
+      if (!exactInput) QuoteValueRow("Pay up to", quote?.let {
         "${it.maximumInput.toULong().toDecimalString(it.request.input.decimals)} APT"
-      } ?: "—")
+      } ?: "—", loading = state.quoting)
       DetailRow("Slippage", "${(quote?.request?.slippageBps ?: 50).toULong().toDecimalString(2)}%")
       if (state.selfPay) {
         val fee = (state.transaction as ActionState.Failed).selfPay!!
@@ -84,11 +91,19 @@ internal fun FundingSwapContent(state: FundingSwapState, onIntent: (PortfolioInt
     enabled = !state.working && (pending || capacity != null && state.balanceError == null &&
       quote != null && !state.quoting && !state.quoteExpired && !tooMuch && !invalid),
     working = state.working)
-  if (!pending) {
-    if (state.error != null && quote == null && !state.quoting) FlareButton("Retry quote",
-      { onIntent(PortfolioIntent.RefreshSwapQuote) }, Modifier.fillMaxWidth().padding(top = 8.dp),
-      enabled = !state.working, style = FlareButtonStyle.OUTLINE)
-    FlareButton("Back", { onIntent(PortfolioIntent.BackFromSwap) },
-      Modifier.fillMaxWidth().padding(top = 8.dp), enabled = !state.working, style = FlareButtonStyle.OUTLINE)
+}
+
+@Composable
+private fun QuoteValueRow(label: String, value: String, loading: Boolean) {
+  val shimmer = rememberFlareShimmer()
+  val reducedMotion = rememberReducedMotion()
+  Row(Modifier.fillMaxWidth().padding(vertical = 16.dp),
+    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
+    if (loading) FlareSkeletonBox(Modifier.width(120.dp).height(20.dp)
+      .then(if (reducedMotion) Modifier else Modifier.shimmer(shimmer))
+      .semantics { contentDescription = "Loading quote" })
+    else Text(value, style = MaterialTheme.typography.bodyMedium)
   }
+  HorizontalDivider(color = FlareColors.BorderSubtle)
 }

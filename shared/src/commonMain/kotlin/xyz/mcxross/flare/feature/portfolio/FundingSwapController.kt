@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.core.toDecimalString
@@ -134,8 +135,6 @@ internal class FundingSwapController(
     changeInput(capacity.maximumInput.toDecimalString(capacity.input.decimals))
   }
 
-  fun refreshQuote() = scheduleQuote(0)
-
   fun setVisible(value: Boolean) {
     if (visible == value) return
     visible = value
@@ -157,7 +156,7 @@ internal class FundingSwapController(
   }
 
   /** Typing stays enabled during requests; only the newest input may publish a quote. */
-  private fun scheduleQuote(debounceMs: Long = 600) {
+  private fun scheduleQuote(debounceMs: Long = 600, attempt: Int = 0) {
     cancelQuotes()
     val key = context ?: return
     if (!visible || state.value.working || state.value.step != FundingSwapStep.SWAP) return
@@ -172,31 +171,49 @@ internal class FundingSwapController(
     fun latest() = current(key, version) && quoteRevision == quoteVersion
     mutable.update { it.copy(quoting = true, error = null) }
     quoteJob = scope.launch {
+      var retryScheduled = false
+      var retryable = true
       try {
         delay(debounceMs)
         runSuspendCatching {
-          val fresh = checkNotNull(repository).fundingCapacity(key.owner)
-          if (!latest()) return@runSuspendCatching
-          check(fresh.maximumInput > 0uL) { "Not enough APT after network fees." }
-          val requested = if (kind == SwapAmountKind.EXACT_OUTPUT) {
-            val transfer = decimalUnits(target, "Transfer amount", fresh.output.decimals).getOrThrow()
-            check(transfer > fresh.outputBalance) { "Your wallet has enough USDC. Return to Transfer." }
-            transfer - fresh.outputBalance
-          } else units
-          check(kind != SwapAmountKind.EXACT_INPUT || requested <= fresh.maximumInput) { "Not enough APT after network fees." }
-          val quote = repository.quote(SwapRequest(key.owner, fresh.input, fresh.output, kind, requested.toString()))
-          if (!latest()) return@runSuspendCatching
-          check(quote.maximumInput.toULong() <= fresh.maximumInput) { "Not enough APT for this amount." }
-          check(quote.expiresAtMs > now()) { "Quote unavailable. Try again." }
-          mutable.update { it.copy(capacity = fresh, quote = quote, quoteExpired = false, balanceError = null, transaction = null) }
-          watchExpiry(key, version, quoteVersion, quote)
+          withTimeoutOrNull(20_000) {
+            val fresh = checkNotNull(repository).fundingCapacity(key.owner)
+            if (!latest()) return@withTimeoutOrNull true
+            retryable = false
+            check(fresh.maximumInput > 0uL) { "Not enough APT after network fees." }
+            val requested = if (kind == SwapAmountKind.EXACT_OUTPUT) {
+              val transfer = decimalUnits(target, "Transfer amount", fresh.output.decimals).getOrThrow()
+              check(transfer > fresh.outputBalance) { "Your wallet has enough USDC. Return to Transfer." }
+              transfer - fresh.outputBalance
+            } else units
+            check(kind != SwapAmountKind.EXACT_INPUT || requested <= fresh.maximumInput) { "Not enough APT after network fees." }
+            retryable = true
+            val quote = repository.quote(SwapRequest(key.owner, fresh.input, fresh.output, kind, requested.toString()))
+            if (!latest()) return@withTimeoutOrNull true
+            retryable = false
+            check(quote.maximumInput.toULong() <= fresh.maximumInput) { "Not enough APT for this amount." }
+            retryable = true
+            check(quote.expiresAtMs > now()) { "Quote unavailable. Try again." }
+            mutable.update { it.copy(capacity = fresh, quote = quote, quoteExpired = false, balanceError = null, transaction = null) }
+            watchExpiry(key, version, quoteVersion, quote)
+            true
+          } ?: error("Quote request timed out")
         }.onFailure { error ->
-          if (latest() && !error.isAuthorizationCancelled()) mutable.update {
-            it.copy(quote = null, error = actionFailure(error.message, "Quote unavailable. Try again."))
+          if (latest() && !error.isAuthorizationCancelled()) {
+            if (retryable && visible) {
+              retryScheduled = true
+              mutable.update { it.copy(quote = null, error = if (attempt >= 2) "Quotes unavailable" else null) }
+              expiryJob = scope.launch {
+                delay((2_000L shl attempt.coerceAtMost(4)).coerceAtMost(30_000L))
+                if (latest()) scheduleQuote(0, (attempt + 1).coerceAtMost(4))
+              }
+            } else mutable.update {
+              it.copy(quote = null, error = actionFailure(error.message, "Quote unavailable"))
+            }
           }
         }
       } finally {
-        if (latest()) mutable.update { it.copy(quoting = false) }
+        if (latest()) mutable.update { it.copy(quoting = retryScheduled) }
       }
     }
   }
