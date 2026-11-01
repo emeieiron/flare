@@ -1,6 +1,9 @@
 // The Hyperliquid build: configurations Debug-Hyperliquid and Release-Hyperliquid, scheme "Flare Hyperliquid".
 #include "Config.xcconfig"
 
+MARKETING_VERSION=$(FLARE_HYPERLIQUID_VERSION)
+CURRENT_PROJECT_VERSION=$(FLARE_HYPERLIQUID_VERSION)
+
 PRODUCT_NAME=flare-hyperliquid
 INFOPLIST_KEY_CFBundleDisplayName=Flare: Hyperliquid
 PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.hyperliquid$(TEAM_ID)

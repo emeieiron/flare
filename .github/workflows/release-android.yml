@@ -1,79 +1,101 @@
 name: Release Android
 
-# Push the tag v<FLARE_VERSION> (see version.properties) from main to build, sign and publish the Android APKs for direct download.
-# Each exchange is its own app (product flavor); this builds and ships both, decibel and hyperliquid.
-# Signing secrets live in the android-release environment, which only v* tags can use and which
-# waits for approval before each run.
-
+# Each venue owns its version and release tag. The protected environment permits
+# decibel-v* and hyperliquid-v* tags and requires approval before signing.
 on:
   push:
-    tags: ["v*"]
+    tags: ["decibel-v*", "hyperliquid-v*"]
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-android
+  group: release-android-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
-  # Every published APK must carry this signing certificate (SHA-256, lowercase hex).
   EXPECTED_CERT_SHA256: b05e699cc7f2967ff2fd27ff0966c32915367b09032dcf56f74296a97ba40090
 
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    environment: android-release
-    env:
-      # Both come from the android-release environment's variables, so they change without code:
-      # the HTTPS Worker the app talks to, and the address that receives Flare's builder fee.
-      FLARE_WORKER_URL: ${{ vars.FLARE_WORKER_URL }}
-      FLARE_BUILDER_ADDRESS: ${{ vars.FLARE_BUILDER_ADDRESS }}
-      # Both apps are mainnet-only. Hyperliquid's builder is optional: unset, the app offers no
-      # builder fee.
-      FLARE_HYPERLIQUID_BUILDER_ADDRESS: ${{ vars.FLARE_HYPERLIQUID_BUILDER_ADDRESS }}
-    permissions:
-      contents: write        # create the GitHub Release
-      id-token: write        # sign the build provenance
-      attestations: write
+    timeout-minutes: 5
+    outputs:
+      venue: ${{ steps.version.outputs.venue }}
+      version: ${{ steps.version.outputs.version }}
+      variant: ${{ steps.version.outputs.variant }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check the tag against version.properties
+      - name: Validate the venue tag and source
         id: version
+        shell: bash
         run: |
-          tag="${GITHUB_REF_NAME}"
-          version=$(sed -n 's/^FLARE_VERSION *= *//p' version.properties | tr -d '[:space:]')
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            decibel-v*) venue=decibel; variant=Decibel; key=FLARE_DECIBEL_VERSION ;;
+            hyperliquid-v*) venue=hyperliquid; variant=Hyperliquid; key=FLARE_HYPERLIQUID_VERSION ;;
+            *) echo "::error::Unsupported release tag"; exit 1 ;;
+          esac
+          version=$(sed -n "s/^${key} *= *//p" version.properties | tr -d '[:blank:]')
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
-            echo "::error::FLARE_VERSION in version.properties must look like 1.2.3 (minor and patch below 100), got '$version'"; exit 1
+            echo "::error::$key must contain one version like 1.2.3 (minor and patch below 100)"; exit 1
           fi
-          if [[ "$tag" != "v$version" ]]; then
-            echo "::error::Tag $tag does not match version.properties ($version); push v$version or change the file"; exit 1
+          if [[ "$GITHUB_REF_NAME" != "$venue-v$version" ]]; then
+            echo "::error::Tag does not match $key=$version"; exit 1
           fi
-          # Only release what is already on main.
           git fetch origin main --quiet
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$tag is not on main"; exit 1
-          fi
-          echo "name=$version" >> "$GITHUB_OUTPUT"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Release source must already be on main"; exit 1; }
+          {
+            echo "venue=$venue"
+            echo "version=$version"
+            echo "variant=$variant"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Check the release configuration
+  release:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: android-release
+    concurrency:
+      group: release-android-${{ needs.prepare.outputs.venue }}
+      cancel-in-progress: false
+    env:
+      VENUE: ${{ needs.prepare.outputs.venue }}
+      VERSION_NAME: ${{ needs.prepare.outputs.version }}
+      VARIANT: ${{ needs.prepare.outputs.variant }}
+      # This dedicated variable must never inherit the historical testnet Worker.
+      FLARE_DECIBEL_WORKER_URL: ${{ vars.FLARE_DECIBEL_WORKER_URL }}
+      FLARE_BUILDER_ADDRESS: ${{ vars.FLARE_BUILDER_ADDRESS }}
+      FLARE_HYPERLIQUID_BUILDER_ADDRESS: ${{ vars.FLARE_HYPERLIQUID_BUILDER_ADDRESS }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the selected venue's release configuration
+        shell: bash
         run: |
-          if [[ ! "$FLARE_WORKER_URL" =~ ^https://[^[:space:]]+$ ]]; then
-            echo "::error::Set FLARE_WORKER_URL (an https:// URL) in the android-release environment"; exit 1
-          fi
-          if [[ ! "$FLARE_BUILDER_ADDRESS" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
-            echo "::error::Set FLARE_BUILDER_ADDRESS (0x and 64 hex digits) in the android-release environment"; exit 1
-          fi
-          if [[ -n "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" && ! "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
-            echo "::error::FLARE_HYPERLIQUID_BUILDER_ADDRESS must be empty or 0x and 40 hex digits"; exit 1
-          fi
-          echo "Worker: $FLARE_WORKER_URL"
-          echo "Builder: $FLARE_BUILDER_ADDRESS"
-          echo "Hyperliquid builder: ${FLARE_HYPERLIQUID_BUILDER_ADDRESS:-none}"
+          set -euo pipefail
+          case "$VENUE" in
+            decibel)
+              if [[ ! "$FLARE_DECIBEL_WORKER_URL" =~ ^https://[^[:space:]]+$ || "${FLARE_DECIBEL_WORKER_URL,,}" == *testnet* ]]; then
+                echo "::error::Set FLARE_DECIBEL_WORKER_URL to the mainnet HTTPS Worker in android-release"; exit 1
+              fi
+              if [[ ! "$FLARE_BUILDER_ADDRESS" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+                echo "::error::Set FLARE_BUILDER_ADDRESS (0x and 64 hex digits) in android-release"; exit 1
+              fi
+              ;;
+            hyperliquid)
+              if [[ -n "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" && ! "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+                echo "::error::FLARE_HYPERLIQUID_BUILDER_ADDRESS must be empty or 0x and 40 hex digits"; exit 1
+              fi
+              ;;
+            *) echo "::error::Unsupported venue"; exit 1 ;;
+          esac
 
       - uses: actions/setup-java@v4
         with:
@@ -81,118 +103,138 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Test
-        run: >-
-          ./gradlew
-          :strategies:jvmTest
-          :jev:jvmTest
-          :decibel:jvmTest
-          :hyperliquid:jvmTest
-          :hyperliquid:testAndroidHostTest
-          :shared:testAndroidHostTest
-          :venue-decibel:testAndroidHostTest
-          :venue-hyperliquid:testAndroidHostTest
-          :androidApp:lintDecibelRelease
-          :androidApp:lintHyperliquidRelease
+      - name: Test shared code and the selected venue
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :strategies:jvmTest :jev:jvmTest :shared:testAndroidHostTest \
+            ":$VENUE:jvmTest" ":$VENUE:testAndroidHostTest" \
+            ":venue-$VENUE:testAndroidHostTest" ":androidApp:lint${VARIANT}Release"
 
-      - name: Build the signed APKs
+      - name: Build the selected signed APK
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           ORG_GRADLE_PROJECT_flareKeystorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_flareKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_flareKeyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
         run: |
+          set -euo pipefail
           keystore="$RUNNER_TEMP/flare-release.keystore"
-          echo "$KEYSTORE_B64" | base64 --decode > "$keystore"
-          ./gradlew :androidApp:assembleDecibelRelease :androidApp:assembleHyperliquidRelease \
-            -PflareKeystoreFile="$keystore" \
-            -PflareWorkerUrl="$FLARE_WORKER_URL" \
-            -PflareBuilderAddress="$FLARE_BUILDER_ADDRESS" \
-            -PflareHyperliquidBuilderAddress="$FLARE_HYPERLIQUID_BUILDER_ADDRESS"
-          rm -f "$keystore"
+          trap 'rm -f "$keystore"' EXIT
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$keystore"
+          args=("-PflareKeystoreFile=$keystore")
+          case "$VENUE" in
+            decibel)
+              args+=("-PflareWorkerUrl=$FLARE_DECIBEL_WORKER_URL" "-PflareBuilderAddress=$FLARE_BUILDER_ADDRESS")
+              ;;
+            hyperliquid)
+              args+=("-PflareHyperliquidBuilderAddress=$FLARE_HYPERLIQUID_BUILDER_ADDRESS")
+              ;;
+          esac
+          ./gradlew ":androidApp:assemble${VARIANT}Release" "${args[@]}"
 
-      - name: Check the APKs before they ship
-        env:
-          VERSION_NAME: ${{ steps.version.outputs.name }}
+      - name: Verify the selected APK before publication
+        shell: bash
         run: |
+          set -euo pipefail
           tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          apk="androidApp/build/outputs/apk/$VENUE/release/androidApp-$VENUE-release.apk"
+          "$tools/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/signers.txt"
+          cert=$(awk '/certificate SHA-256 digest/ { print $NF; exit }' "$RUNNER_TEMP/signers.txt")
+          [[ "$cert" == "$EXPECTED_CERT_SHA256" ]] \
+            || { echo "::error::Wrong signing certificate: $cert"; exit 1; }
+          "$tools/aapt2" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          grep -Fq "versionName='$VERSION_NAME'" "$RUNNER_TEMP/badging.txt" \
+            || { echo "::error::APK version mismatch"; exit 1; }
+          grep -Fq "package: name='xyz.mcxross.flare.$VENUE'" "$RUNNER_TEMP/badging.txt" \
+            || { echo "::error::APK application ID mismatch"; exit 1; }
+          "$tools/aapt2" dump resources "$apk" > "$RUNNER_TEMP/resources.txt"
           has_string() {
-            "$tools/aapt2" dump resources "$1" | grep -A1 "string/$2" | grep -q "\"$3\""
+            grep -F -A1 "string/$1" "$RUNNER_TEMP/resources.txt" | grep -F "\"$2\"" > /dev/null
           }
+          # Extract once: grep -q on an unzip pipe can hide errors or trigger SIGPIPE.
+          unzip -p "$apk" 'classes*.dex' > "$RUNNER_TEMP/release.dex"
+          case "$VENUE" in
+            decibel)
+              has_string flare_worker_url "$FLARE_DECIBEL_WORKER_URL" \
+                || { echo "::error::Decibel Worker resource mismatch"; exit 1; }
+              has_string flare_builder_address "$FLARE_BUILDER_ADDRESS" \
+                || { echo "::error::Decibel builder resource mismatch"; exit 1; }
+              grep -aFq 'https://api.mainnet.aptoslabs.com/decibel' "$RUNNER_TEMP/release.dex" \
+                || { echo "::error::Decibel mainnet endpoint missing"; exit 1; }
+              # SDK dependencies can retain generic testnet constants; reject a
+              # testnet Worker resource or Decibel upstream, not those unused constants.
+              if grep -aFq 'https://testnet.api.mcxross.xyz' "$RUNNER_TEMP/resources.txt" || grep -aFq 'https://api.testnet.aptoslabs.com/decibel' "$RUNNER_TEMP/release.dex"; then
+                echo "::error::Decibel APK still contains a testnet endpoint"; exit 1
+              fi
+              ;;
+            hyperliquid)
+              if grep -aq 'hyperliquid-testnet' "$RUNNER_TEMP/release.dex"; then
+                echo "::error::Hyperliquid APK still contains a testnet endpoint"; exit 1
+              fi
+              grep -aFq 'https://api.hyperliquid.xyz' "$RUNNER_TEMP/release.dex" \
+                || { echo "::error::Hyperliquid mainnet endpoint missing"; exit 1; }
+              has_string flare_hyperliquid_builder_address "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" \
+                || { echo "::error::Hyperliquid builder resource mismatch"; exit 1; }
+              ;;
+          esac
           mkdir dist
-          for flavor in decibel hyperliquid; do
-            apk="androidApp/build/outputs/apk/$flavor/release/androidApp-$flavor-release.apk"
-            "$tools/apksigner" verify --print-certs "$apk" > signers.txt
-            cert=$(grep -m1 "certificate SHA-256 digest" signers.txt | awk '{print $NF}')
-            if [[ "$cert" != "$EXPECTED_CERT_SHA256" ]]; then
-              echo "::error::$flavor is signed with $cert, expected $EXPECTED_CERT_SHA256"; exit 1
-            fi
-            "$tools/aapt2" dump badging "$apk" | grep -q "versionName='$VERSION_NAME'" \
-              || { echo "::error::$flavor version mismatch"; exit 1; }
-            "$tools/aapt2" dump badging "$apk" | grep -q "package: name='xyz.mcxross.flare.$flavor'" \
-              || { echo "::error::The $flavor APK has the wrong application ID"; exit 1; }
-            cp "$apk" "dist/flare-$flavor-$VERSION_NAME.apk"
-            # A stable name, so /releases/latest/download/flare-<flavor>-android.apk always serves the newest.
-            cp "$apk" "dist/flare-$flavor-android.apk"
-          done
-          decibel=dist/flare-decibel-android.apk
-          if [[ "$FLARE_WORKER_URL" == *testnet* ]]; then
-            echo "::error::Decibel is mainnet-only; FLARE_WORKER_URL still names a testnet host"
-            exit 1
-          fi
-          has_string "$decibel" flare_worker_url "$FLARE_WORKER_URL" \
-            || { echo "::error::The Decibel APK does not point at $FLARE_WORKER_URL"; exit 1; }
-          has_string "$decibel" flare_builder_address "$FLARE_BUILDER_ADDRESS" \
-            || { echo "::error::The Decibel APK does not carry builder $FLARE_BUILDER_ADDRESS"; exit 1; }
-          hyperliquid=dist/flare-hyperliquid-android.apk
-          # Mainnet is compiled in; a testnet host anywhere in the code means a wrong build.
-          if unzip -p "$hyperliquid" 'classes*.dex' | grep -aq 'hyperliquid-testnet'; then
-            echo "::error::Hyperliquid is mainnet-only; the APK still names a testnet host"; exit 1
-          fi
-          unzip -p "$hyperliquid" 'classes*.dex' | grep -aq 'https://api.hyperliquid.xyz' \
-            || { echo "::error::The Hyperliquid APK does not point at api.hyperliquid.xyz"; exit 1; }
-          has_string "$hyperliquid" flare_hyperliquid_builder_address "$FLARE_HYPERLIQUID_BUILDER_ADDRESS" \
-            || { echo "::error::The Hyperliquid APK does not carry builder '$FLARE_HYPERLIQUID_BUILDER_ADDRESS'"; exit 1; }
+          cp "$apk" "dist/flare-$VENUE-$VERSION_NAME.apk"
+          cp "$apk" "dist/flare-$VENUE-android.apk"
           cd dist
-          for apk in *.apk; do sha256sum "$apk" > "$apk.sha256"; done
+          for artifact in *.apk; do sha256sum "$artifact" > "$artifact.sha256"; done
           sha256sum *.apk > SHA256SUMS
           cat SHA256SUMS
 
       - name: Save the verified APKs
         uses: actions/upload-artifact@v4
         with:
-          name: flare-android-${{ steps.version.outputs.name }}
+          name: flare-${{ needs.prepare.outputs.venue }}-android-${{ needs.prepare.outputs.version }}
           path: dist/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
 
       - name: Attest where the APKs came from
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/*.apk
 
-      - name: Publish the GitHub Release
+      - name: Publish the selected venue's GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
           cat > notes.md <<EOF
           ## Install
 
-          Each exchange is its own app. Download the one you trade on below and open it on your phone. Android asks once to allow installs from your browser.
+          Download \`flare-$VENUE-android.apk\` below and open it on your phone. Android asks once to allow installs from your browser.
 
-          - Decibel: \`flare-decibel-android.apk\`
-          - Hyperliquid: \`flare-hyperliquid-android.apk\`
+          Venue: $VARIANT (mainnet). Version: $VERSION_NAME. This release contains only the $VARIANT app.
 
-          Build: \`${GITHUB_SHA}\` ([CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
+          Source tag: \`${GITHUB_REF_NAME}\`. Build: \`${GITHUB_SHA}\` ([source](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}), [CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
 
           ## Verify
 
           - SHA-256 checksums are in \`SHA256SUMS\` and next to each APK (\`.sha256\`).
           - Signing certificate SHA-256: \`${EXPECTED_CERT_SHA256}\`
-          - Build provenance: \`gh attestation verify flare-hyperliquid-android.apk --repo ${GITHUB_REPOSITORY}\` (likewise for Decibel)
+          - Build provenance: \`gh attestation verify flare-$VENUE-android.apk --repo ${GITHUB_REPOSITORY}\`
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Flare ${{ steps.version.outputs.name }}" \
-            --notes-file notes.md \
-            --generate-notes \
-            --verify-tag
+            --title "Flare $VARIANT $VERSION_NAME" \
+            --notes-file notes.md --verify-tag
+
+      - name: Verify the published downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          download="$RUNNER_TEMP/published-$VENUE"
+          mkdir "$download"
+          gh release download "$GITHUB_REF_NAME" --dir "$download"
+          diff -r dist "$download"
+          cd "$download"
+          sha256sum --check SHA256SUMS

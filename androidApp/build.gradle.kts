@@ -25,22 +25,32 @@ val flareHyperliquidBuilderAddress =
 val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
 val releaseSigned = releaseKeystore.isPresent
 
-// The app version lives in version.properties at the repository root, which iOS reads too.
-// 1.2.3 builds versionCode 10203.
-val flareVersionName: String =
+// Each exchange's version lives in version.properties at the repository root, which iOS reads too.
+val flareVersionProperties =
   providers
     .fileContents(rootProject.layout.projectDirectory.file("version.properties"))
     .asText
-    .map { Properties().apply { load(it.reader()) }.getProperty("FLARE_VERSION").orEmpty().trim() }
+    .map { Properties().apply { load(it.reader()) } }
     .get()
-val flareVersionCode: Int =
-  Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""").matchEntire(flareVersionName)?.destructured?.let {
-    (major, minor, patch) ->
-    major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
-  }
-    ?: error(
-      "FLARE_VERSION in version.properties must look like 1.2.3 with minor and patch below 100, got '$flareVersionName'",
-    )
+
+data class FlareVersion(val name: String, val code: Int)
+
+// 1.2.3 builds versionCode 10203. Missing or invalid versions fail the build.
+fun flareVersion(key: String): FlareVersion {
+  val name = flareVersionProperties.getProperty(key).orEmpty().trim()
+  val code =
+    Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""").matchEntire(name)?.destructured?.let {
+      (major, minor, patch) ->
+      major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+    }
+      ?: error(
+        "$key in version.properties must look like 1.2.3 with minor and patch below 100, got '$name'",
+      )
+  return FlareVersion(name, code)
+}
+
+val decibelVersion = flareVersion("FLARE_DECIBEL_VERSION")
+val hyperliquidVersion = flareVersion("FLARE_HYPERLIQUID_VERSION")
 
 plugins {
   alias(libs.plugins.androidApplication)
@@ -87,8 +97,6 @@ android {
     targetSdk {
       version = release(libs.versions.android.targetSdk.get().toInt())
     }
-    versionCode = flareVersionCode
-    versionName = flareVersionName
   }
   // One app per exchange: each flavor links its :venue-* module, provides VenueEntry from
   // src/<flavor>, and installs under its own application ID.
@@ -97,6 +105,8 @@ android {
     create("decibel") {
       dimension = "venue"
       applicationId = "xyz.mcxross.flare.decibel"
+      versionCode = decibelVersion.code
+      versionName = decibelVersion.name
       resValue("string", "flare_worker_url", flareWorkerUrl.get())
       resValue("string", "flare_builder_address", flareBuilderAddress.get())
       if (releaseSigned) {
@@ -109,6 +119,8 @@ android {
     create("hyperliquid") {
       dimension = "venue"
       applicationId = "xyz.mcxross.flare.hyperliquid"
+      versionCode = hyperliquidVersion.code
+      versionName = hyperliquidVersion.name
       resValue("string", "flare_hyperliquid_builder_address", flareHyperliquidBuilderAddress.get())
     }
   }

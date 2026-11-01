@@ -1,6 +1,9 @@
 // The Decibel build: configurations Debug-Decibel and Release-Decibel, scheme "Flare Decibel".
 #include "Config.xcconfig"
 
+MARKETING_VERSION=$(FLARE_DECIBEL_VERSION)
+CURRENT_PROJECT_VERSION=$(FLARE_DECIBEL_VERSION)
+
 PRODUCT_NAME=flare
 INFOPLIST_KEY_CFBundleDisplayName=Flare: Decibel
 PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.decibel$(TEAM_ID)

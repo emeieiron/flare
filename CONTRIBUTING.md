@@ -49,7 +49,7 @@ Do not commit absolute paths or use checkout paths as Gradle dependencies.
 - Run Android, iOS compilation, and Decibel tests before opening a pull request. Key derivation and signing call FastKrypto natively, whose Android artifact has device ABIs only, so those tests run in `:hyperliquid:jvmTest` or the iOS tests, never Android host tests. Changes spanning the proxy contract must also pass the separate mainnet-only `decibel-worker` repository's checks.
 - Explain any security-boundary change in the pull request and update [THREAT_MODEL.md](THREAT_MODEL.md) when an assumption changes.
 - Keep unrelated formatting and generated changes out of the patch.
-- The app version is `FLARE_VERSION` in [version.properties](version.properties); both Android flavors and both iOS schemes read it, and a release tag must be `v` plus that value.
+- Versions are independent per exchange in [version.properties](version.properties): `FLARE_DECIBEL_VERSION` and `FLARE_HYPERLIQUID_VERSION`. Each value is shared by that exchange's Android flavor and iOS scheme. Publishing one exchange does not bump or publish the other.
 
 Local gate:
 
@@ -73,6 +73,16 @@ xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Decibel" -configurati
 xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Hyperliquid" -configuration Debug-Hyperliquid \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' build
 ```
+
+## Android releases
+
+Release each exchange independently using [Release Android](.github/workflows/release-android.yml). A tag selects the exchange: `decibel-vX.Y.Z` must match `FLARE_DECIBEL_VERSION`, and `hyperliquid-vX.Y.Z` must match `FLARE_HYPERLIQUID_VERSION`. The workflow tests shared modules and the selected exchange, then signs and publishes only that exchange's APK. The apps retain separate package IDs, `xyz.mcxross.flare.decibel` and `xyz.mcxross.flare.hyperliquid`, so their releases and installed updates remain independent.
+
+1. Bump only the selected exchange's version in `version.properties`, update its release documentation, and merge the change to `main` after verification.
+2. Tag the verified commit on `main` with the matching exchange and version, then push that tag. For Decibel 0.2.0, the tag is `decibel-v0.2.0`; a Decibel-only release leaves Hyperliquid's version unchanged.
+3. Review and approve the run in the `android-release` environment. Its deployment tag policy must allow `decibel-v*` and `hyperliquid-v*`. For Decibel, set `FLARE_DECIBEL_WORKER_URL` to the intended HTTPS mainnet Worker before approval and verify the release's network configuration.
+
+Use exchange-specific release links in download documentation. GitHub's global `releases/latest` can point to either exchange and does not identify the newest APK for both. The historical `v0.1.0` Hyperliquid APK remains a testnet preview; it does not establish a mainnet release version.
 
 ## Protocol changes
 

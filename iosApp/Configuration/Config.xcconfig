@@ -2,7 +2,5 @@
 // file and names its own app.
 TEAM_ID=
 
-// The app version, shared with Android.
+// Exchange versions, shared with Android. Each exchange selects its own version.
 #include "../../version.properties"
-MARKETING_VERSION=$(FLARE_VERSION)
-CURRENT_PROJECT_VERSION=$(FLARE_VERSION)

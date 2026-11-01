@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/emeieiron/flare/releases/latest">Download</a>
+  <a href="https://github.com/emeieiron/flare/releases">Download</a>
   &nbsp;·&nbsp;
   <a href="https://flare.mcxross.xyz">Website</a>
   &nbsp;·&nbsp;
@@ -19,7 +19,7 @@
 </p>
 
 > [!NOTE]
-> Flare is under active development. Both apps trade real funds on mainnet: Decibel on **Aptos mainnet** and Hyperliquid on **Hyperliquid mainnet**. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
+> Flare is under active development. Decibel 0.2.0 trades real funds on **Aptos mainnet**. The published Hyperliquid v0.1.0 APK is an older **testnet preview**, not a stable mainnet release; current source builds target Hyperliquid mainnet. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
 
 ## Contents
 
@@ -65,11 +65,10 @@ During a real run, **Confirm transactions** in Settings is off and locked. Its p
 
 ## Get Flare
 
-**Android:** each exchange is its own app. Download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-decibel-android.apk) or [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/latest/download/flare-hyperliquid-android.apk) from the [latest release](https://github.com/emeieiron/flare/releases/latest). The release notes explain how to verify the checksum, signing certificate and build provenance.
+**Android:** each exchange is its own app, with independent versions and releases.
 
-- **Decibel** runs on Aptos mainnet and trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover.
-- **Hyperliquid** runs on Hyperliquid mainnet and trades real funds. Fund it by sending USDC to your address on Hyperliquid from another Hyperliquid account. USDC sent to the same address on Arbitrum does not reach Hyperliquid: the Arbitrum bridge credits the wallet that bridged, and deposits under 5 USDC are lost. Withdrawals go to Arbitrum for Hyperliquid's 1 USDC fee.
-- **Already on the Hyperliquid testnet build?** The first mainnet launch clears the testnet trading state; your wallet carries over and setup runs again on mainnet.
+- **Decibel 0.2.0 — Aptos mainnet:** download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/download/decibel-v0.2.0/flare-decibel-android.apk) from the [Decibel 0.2.0 release](https://github.com/emeieiron/flare/releases/tag/decibel-v0.2.0). It trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover. The release notes explain how to verify the checksum, signing certificate and build provenance.
+- **Hyperliquid v0.1.0 — historical testnet preview:** download [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/download/v0.1.0/flare-hyperliquid-android.apk) from the [historical v0.1.0 release](https://github.com/emeieiron/flare/releases/tag/v0.1.0). This APK uses testnet and is not a stable mainnet release. The Decibel release does not update Hyperliquid; [build the current source](#build-it-yourself) to use its mainnet implementation.
 - **Already testing Decibel?** The Decibel app now installs as `xyz.mcxross.flare.decibel`, so it can't upgrade an earlier Flare in place. Install it alongside, then restore your wallet from its recovery phrase or re-import your trading key. Your wallet carries over; the trading account does not, so setup runs again on mainnet.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
