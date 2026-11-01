@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.data.AssetCatalogRepository
+import xyz.mcxross.flare.data.AssetMetadata
+import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.assetKey
@@ -135,23 +137,33 @@ class MarketsViewModel(
   private val pageSequence =
     if (perpCategories == DefaultPerpCategories) MarketPageSequence else marketPageSequence(perpCategories)
 
+  // Only the single stateIn upstream collector accesses this cache, in its sequential transform.
+  // Keep one projection across filter changes; a new catalog or metadata instance invalidates it.
+  private var projectedCatalog: MarketCatalog? = null
+  private var projectedAssets: Map<String, AssetMetadata>? = null
+  private var projectedPages: Map<MarketPageKey, List<MarketQuote>> = emptyMap()
+
   val uiState: StateFlow<MarketsUiState> =
     combine(
         repository.catalog,
         assetCatalog.assets,
         filter,
       ) { catalog, assets, f ->
+        if (catalog !== projectedCatalog || assets !== projectedAssets) {
+          projectedPages = marketPageQuotes(catalog.quotes, assets, pageSequence)
+          projectedCatalog = catalog
+          projectedAssets = assets
+        }
+        val pageQuotes = projectedPages
         val pages =
           MarketInstrumentFilter.entries.associateWith { instrument ->
             val page = f.pages[instrument] ?: MarketPageFilter()
+            val key = MarketPageKey(instrument, page.favoritesOnly, page.category)
             MarketPage(
               favoritesOnly = page.favoritesOnly,
               category = page.category,
               categories = marketCategories(instrument, perpCategories),
-              quotes =
-                catalog.quotes.filter {
-                  it.matches(MarketPageKey(instrument, page.favoritesOnly, page.category), assets)
-                },
+              quotes = pageQuotes[key] ?: catalog.quotes.filter { it.matches(key, assets) },
             )
           }
         val selected = pages.getValue(f.instrument)
@@ -171,7 +183,7 @@ class MarketsViewModel(
             if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
           pages = pages,
           pageSequence = pageSequence,
-          pageQuotes = marketPageQuotes(catalog.quotes, assets, pageSequence),
+          pageQuotes = pageQuotes,
         )
       }
       .stateIn(
@@ -188,7 +200,6 @@ class MarketsViewModel(
     viewModelScope.launch { repository.refresh() }
     viewModelScope.launch { runCatching { assetCatalog.refresh() } }
     // The live stream owns freshness from here: it reconnects on its own and backfills on connect.
-    viewModelScope.launch { repository.connectLive() }
   }
 
   fun onIntent(intent: MarketsIntent) {

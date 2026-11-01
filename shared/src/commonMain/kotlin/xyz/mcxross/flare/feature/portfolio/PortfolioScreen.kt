@@ -49,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,7 +62,6 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import com.valentinilk.shimmer.shimmer
 import kotlin.math.abs
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatCalendarDateTime
 import xyz.mcxross.flare.data.formatPercent
@@ -68,6 +69,7 @@ import xyz.mcxross.flare.data.formatCount
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
@@ -81,7 +83,6 @@ import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.rememberFlareShimmer
-import xyz.mcxross.flare.design.settlingActionName
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.CampaignRewards
@@ -247,8 +248,10 @@ fun PortfolioScreen(
                 if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(balance = true)
                 else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
                   Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
-                if (state.vaultsError != null) QuietPortfolioMessage(
-                  if (state.vaultsLoaded) "Updating · showing your last vault balances" else "Vaults unavailable. Reconnecting automatically.")
+                if (state.vaultsLoaded && state.vaultsError != null) {
+                  Text("Last updated earlier", Modifier.padding(top = 4.dp),
+                    color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
+                } else if (state.vaultsError != null) QuietPortfolioMessage("Vaults unavailable")
                 if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", FlareIcons.Search,
                   Modifier.padding(top = 20.dp))
                 if (ownedMatches.isNotEmpty()) SectionLabel("Your deposits")
@@ -256,7 +259,7 @@ fun PortfolioScreen(
               }
               items(ownedMatches, key = { "owned:${it.vault.address}" }) { position ->
                 VaultSummaryRow(position.vault.name, formatBalance(position.value),
-                  "${formatQuantity(position.shares, 4)} shares") {
+                  "${formatTokenBalance(position.shares)} shares") {
                   vaultAddress = position.vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
@@ -292,9 +295,8 @@ fun PortfolioScreen(
               val rewards = state.rewards
               if (rewards != null && !rewards.isEmpty) {
                 Column { RewardsDetails(state) }
-                if (state.rewardsError) QuietPortfolioMessage("Updating · showing your last rewards")
               } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
-              else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable. Reconnecting automatically." else "No rewards yet")
+              else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable" else "No rewards yet")
             }
           }
         }
@@ -328,16 +330,14 @@ private fun PortfolioOverview(
         contentDescription = null, tint = FlareColors.TextSecondary)
     }
     if (overview == null && state.account.error == null) PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
-    else Text(if (overview != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalBalance) else "—",
+    else Text(if (!state.balanceIncomplete && (overview != null || state.spotHoldings.isNotEmpty())) formatBalance(state.totalBalance) else "—",
       style = MaterialTheme.typography.displayMedium)
   }
-  Text(when {
-    overview == null && state.account.error != null -> "Account unavailable. Reconnecting automatically."
-    overview == null -> "Loading your account"
-    state.account.stale -> "Updating · showing your last balance"
-    state.balanceIncomplete -> "Partial balance · updating"
-    else -> ""
-  }, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
+  if (overview == null && state.account.error != null) QuietPortfolioMessage("Account unavailable")
+  else if (overview != null && (state.account.stale || state.balanceIncomplete)) {
+    Text("Last known data", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
+      color = FlareColors.TextTertiary)
+  }
   AnimatedVisibility(expanded) {
     Column(Modifier.padding(top = 12.dp)) {
       DetailRow("Trading equity", overview?.equity?.let(::formatBalance) ?: "—")
@@ -369,9 +369,6 @@ private fun PortfolioOverview(
       { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
     FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
   }
-  settlingNotice(state.pendingTransactions)?.let {
-    Text(it, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-  }
   val position = state.account.positions.maxByOrNull { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
   PortfolioDestination("Positions", state.account.positions.size.takeIf { overview != null }?.toString(),
     { onPage(PortfolioPage.POSITIONS) }) {
@@ -402,7 +399,7 @@ private fun PortfolioOverview(
     { onPage(PortfolioPage.VAULTS) }) {
     if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
     else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
-      if (state.vaultsError != null) "Updating automatically" else null)
+      if (state.vaultsLoaded && state.vaultsError != null) "Last updated earlier" else null)
   }
   if (state.rewardsAvailable && state.rewardPointsName == null) {
     // Without reward points, the card is the account's fee tier.
@@ -410,13 +407,13 @@ private fun PortfolioOverview(
     PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
       if (!state.rewardsLoaded && !state.rewardsError && feeTier == null) PortfolioShimmer(rows = 1)
       else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
-        if (state.rewardsError) "Updating automatically" else null)
+        null)
     }
   } else if (state.rewardsAvailable) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
     val points = state.rewards?.points
     if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
     else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
-      if (state.rewardsError) "Updating automatically" else null)
+      null)
   }
 }
 
@@ -463,7 +460,7 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   position?.let {
     SectionLabel("Your stake")
     DetailRow("Value", formatBalance(it.value))
-    if (!stakeInUsdc) DetailRow("Shares", formatQuantity(it.shares, 4))
+    if (!stakeInUsdc) DetailRow("Shares", formatTokenBalance(it.shares))
     DetailRow("Return", signedPercent(it.returnPercent), valueColor = amountColor(it.returnPercent))
     it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
     it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
@@ -509,8 +506,8 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   }
   state.collateralFor(vault.address)?.let { collateral ->
     SectionLabel("As margin")
-    DetailRow("Pledged", "${formatQuantity(collateral.pledged, 4)} shares")
-    DetailRow("Free to pledge", "${formatQuantity(collateral.pledgeable, 4)} shares")
+    DetailRow("Pledged", "${formatTokenBalance(collateral.pledged)} shares")
+    DetailRow("Free to pledge", "${formatTokenBalance(collateral.pledgeable)} shares")
     collateral.creditPercent?.let { DetailRow("Counts at", "${formatQuantity(it, 2)}%") }
     Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       if (collateral.pledgeable > 0.0) FlareButton("Use as margin",
@@ -710,7 +707,9 @@ private fun QuietPortfolioMessage(message: String) {
 
 @Composable
 private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = false, rows: Int = 2) {
-  Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+  Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer())
+    .semantics { contentDescription = "Loading portfolio data" },
+    verticalArrangement = Arrangement.spacedBy(12.dp)) {
     if (balance) FlareSkeletonBox(Modifier.width(200.dp).height(56.dp))
     else repeat(rows) {
       Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -723,14 +722,20 @@ private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = f
 
 @Composable
 private fun PositionsEmptyState(state: PortfolioUiState) {
-  if (state.account.overview == null && state.account.error == null) PortfolioShimmer(rows = 1)
-  else QuietPortfolioMessage(if (state.account.overview == null || state.account.stale) "Positions are updating" else "No open positions")
+  when {
+    state.account.error != null -> QuietPortfolioMessage("Positions unavailable")
+    state.account.stale || state.account.overview == null -> PortfolioShimmer(rows = 1)
+    else -> QuietPortfolioMessage("No open positions")
+  }
 }
 
 @Composable
 private fun HoldingsEmptyState(state: PortfolioUiState) {
-  if (state.account.overview == null && state.account.error == null) PortfolioShimmer()
-  else QuietPortfolioMessage(if (state.holdingsError != null || state.account.overview == null || state.account.stale) "Holdings are updating" else "No assets held")
+  when {
+    state.holdingsError != null || state.account.error != null -> QuietPortfolioMessage("Holdings unavailable")
+    state.account.stale || state.account.overview == null -> PortfolioShimmer()
+    else -> QuietPortfolioMessage("No assets held")
+  }
 }
 
 /** The venue's own vault, set apart from the managers' list because it is a different product. */
@@ -866,12 +871,12 @@ private fun HoldingRow(
         style = MaterialTheme.typography.labelLarge,
       )
       if (holding.reservedQuantity > 0) Text(
-        "${formatQuantity(holding.reservedQuantity)} reserved",
+        "${formatTokenBalance(holding.reservedQuantity)} reserved",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )
       Text(
-        "${formatQuantity(holding.quantity)} ${holding.symbol}",
+        "${formatTokenBalance(holding.quantity)} ${holding.symbol}",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )
@@ -889,14 +894,6 @@ private fun HoldingRow(
 
 /** Below this, a position's profit and loss rounds to nothing and reads as flat. */
 private const val FLAT_PNL = 0.005
-
-/** A single line for work the app is still confirming; the chain detail stays in the journal. */
-private fun settlingNotice(pending: List<PendingTransaction>): String? =
-  when {
-    pending.isEmpty() -> null
-    pending.size == 1 -> "Confirming your ${settlingActionName(pending.single().operation)}…"
-    else -> "Confirming ${pending.size} actions…"
-  }
 
 @Composable
 private fun PortfolioMetric(label: String, value: String, modifier: Modifier = Modifier) {

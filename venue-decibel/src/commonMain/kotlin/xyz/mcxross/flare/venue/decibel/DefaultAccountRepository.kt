@@ -62,6 +62,8 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.ReferralSummary
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.TradingAccount
@@ -90,13 +92,17 @@ class DefaultAccountRepository(
   private val trading: DecibelTrading,
   private val wallets: AptosSigningWallet,
   private val preferences: AppPreferences,
+  private val referrals: ReferralRepository? = null,
 ) : AccountRepository, VaultsRepository, RewardsRepository {
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-  private val refreshMutex = Mutex()
+  private val accountRefresh = RefreshCoordinator<String>()
   private val readSessionMutex = Mutex()
   private val historyMutex = Mutex()
+  private val historyRefresh = RefreshCoordinator<Pair<String, Set<AccountHistoryKind>>>(historyMutex)
+  private val foreground = MutableStateFlow(true)
+  private val historyVisible = MutableStateFlow(false)
   // Scoped to the reviewed create-and-enable operation, never a general owner unlock.
   private var setupApproval: Triple<String, Long, Long>? = null
   private val withdrawalMutex = Mutex()
@@ -145,6 +151,7 @@ class DefaultAccountRepository(
     if (mutableSnapshot.value.account != subaccount) {
       streamJob?.cancel()
       streamingAccount = null
+      venuePositions = emptyList()
       mutableSnapshot.value = AccountSnapshot(account = subaccount)
       mutableHistory.value = AccountHistorySnapshot(account = subaccount)
     }
@@ -174,7 +181,7 @@ class DefaultAccountRepository(
     val owner =
       wallets.profile.first().ownerAddress
         ?: error("An owner wallet is required to discover subaccounts")
-    sessions.authenticateOwner(subaccount = null, prompt = prompt)
+    sessions.ensureOwner(subaccount = null, prompt = prompt)
     return subaccounts(owner)
   }
 
@@ -433,13 +440,24 @@ class DefaultAccountRepository(
     return terminal
   }
 
+  override suspend fun warmFundingFees() = trading.warmFundingFees()
+
+  override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? {
+    val subaccount = preferences.values.first().selectedSubaccount ?: return null
+    val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
+    if (units == 0uL) return null
+    val asset = client.config.deployment.usdcMetadataAddress
+    return trading.estimateCommandFee(if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
+      else DecibelCommand.Deposit(subaccount, asset, units))
+  }
+
   override fun depositUsdc(
     amount: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
   ): Flow<ActionState> = flow {
-    val subaccount =
-      preferences.values.first().selectedSubaccount ?: error("Select a trading account")
+    val saved = preferences.values.first()
+    val subaccount = saved.selectedSubaccount ?: error("Select a trading account")
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
     require(units > 0uL) { "Enter an amount greater than zero" }
     try {
@@ -456,7 +474,7 @@ class DefaultAccountRepository(
         )
       )
     } finally {
-      runSuspendCatching { restoreTrading() }
+      invalidateFundingBalances(saved.activeProfileId, subaccount)
     }
   }
 
@@ -616,9 +634,16 @@ class DefaultAccountRepository(
         }
         throw error
       } finally {
-        runSuspendCatching { restoreTrading() }
+        invalidateFundingBalances(saved.activeProfileId, subaccount)
       }
     }
+  }
+
+  private suspend fun invalidateFundingBalances(profileId: String, subaccount: String) {
+    val selected = preferences.values.first()
+    if (selected.activeProfileId != profileId || selected.selectedSubaccount != subaccount) return
+    mutableSnapshot.update { if (it.account == subaccount) it.copy(stale = true) else it }
+    mutableHistory.update { if (it.account == subaccount) it.copy(stale = true) else it }
   }
 
   private suspend fun ownerTransactionStatus(
@@ -655,7 +680,7 @@ class DefaultAccountRepository(
       return@withLock current
     wallets.requireAuthorization(wallets.authorizationGeneration)
     val prompt = VaultPrompt("Open Flare", "Confirm your identity")
-    if (saved.ownerAddress != null) sessions.authenticateOwner(account, prompt)
+    if (saved.ownerAddress != null) sessions.ensureOwner(account, prompt)
     else sessions.ensureTrading(account, prompt)
   }
 
@@ -664,119 +689,135 @@ class DefaultAccountRepository(
     return sessions.bind(session, flow { emit(request()) }).first()
   }
 
-  override suspend fun refresh() = refreshMutex.withLock {
+  override suspend fun refresh() { refreshAccount(shareInFlight = false) }
+
+  private suspend fun refreshAccount(maxAgeMs: Long = 0L, shareInFlight: Boolean = true) {
     val account = preferences.values.first().selectedSubaccount
     if (account == null) {
       mutableSnapshot.value = AccountSnapshot(error = "No trading account is selected")
-      return@withLock
+      return
     }
-    val readSession = runSuspendCatching { ensureReadSession(account) }.getOrNull()
-    if (readSession == null) {
-      mutableSnapshot.update {
-        (if (it.account == account) it else AccountSnapshot(account = account)).copy(
-          loading = false, stale = true,
-          error = "Account access is unavailable. Check the selected wallet and trading account.",
-        )
-      }
-      return@withLock
-    }
-    mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
-    runSuspendCatching {
-      sessions.bind(readSession, flow {
-        emit(coroutineScope {
-          val overview = async { client.accounts.overview(account) }
-          val positions = async { client.accounts.positions(account) }
-          val orders = async { client.accounts.openOrders(account) }
-          Triple(overview.await(), positions.await(), orders.await())
-        })
-      }).first()
-    }
-      .onSuccess { (overview, positions, orders) ->
-        if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-        venuePositions = positions.filterNot(Position::isDeleted)
-        val openOrders = orders.items.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
-        mutableSnapshot.value =
-          AccountSnapshot(
-            account = account,
-            overview = overview.toAccountOverview(),
-            positions = venuePositions.map { it.toPosition(openOrders) },
-            openOrders = openOrders,
-            stale = false,
-          )
-      }
-      .onFailure { error ->
+    accountRefresh.run(account, maxAgeMs, shareInFlight) {
+      val readSession = runSuspendCatching { ensureReadSession(account) }.getOrNull()
+      if (readSession == null) {
         mutableSnapshot.update {
-          it.copy(
-            loading = false,
-            stale = true,
-            error = error.message ?: "Account data is unavailable",
+          (if (it.account == account) it else AccountSnapshot(account = account)).copy(
+            loading = false, stale = true,
+            error = "Account access is unavailable. Check the selected wallet and trading account.",
           )
         }
+        return@run false
       }
+      mutableSnapshot.update {
+        val current = if (it.account == account) it else AccountSnapshot(account = account)
+        current.copy(loading = current.overview == null, error = null)
+      }
+      val result = runSuspendCatching {
+        sessions.bind(readSession, flow {
+          emit(coroutineScope {
+            val overview = async { client.accounts.overview(account) }
+            val positions = async { client.accounts.positions(account) }
+            val orders = async { client.accounts.openOrders(account) }
+            Triple(overview.await(), positions.await(), orders.await())
+          })
+        }).first()
+      }
+        .onSuccess { (overview, positions, orders) ->
+          if (preferences.values.first().selectedSubaccount != account) return@onSuccess
+          venuePositions = positions.filterNot(Position::isDeleted)
+          val openOrders = orders.items.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
+          mutableSnapshot.value =
+            AccountSnapshot(
+              account = account,
+              overview = overview.toAccountOverview(),
+              positions = venuePositions.map { it.toPosition(openOrders) },
+              openOrders = openOrders,
+              stale = false,
+            )
+        }
+        .onFailure { error ->
+          mutableSnapshot.update {
+            it.copy(
+              loading = false,
+              stale = true,
+              error = error.message ?: "Account data is unavailable",
+            )
+          }
+        }
+      result.isSuccess
+    }
   }
 
-  override suspend fun refreshHistory() = historyMutex.withLock {
+  override suspend fun refreshHistory() {
+    refreshHistory(AccountHistoryKind.entries.toSet(), shareInFlight = false)
+  }
+
+  private suspend fun refreshHistory(
+    kinds: Set<AccountHistoryKind>,
+    maxAgeMs: Long = 0L,
+    shareInFlight: Boolean = true,
+  ) {
     val account = preferences.values.first().selectedSubaccount
     if (account == null) {
       mutableHistory.value = AccountHistorySnapshot(error = "No trading account is selected")
-      return@withLock
+      return
     }
-    val readSession = runSuspendCatching { ensureReadSession(account) }.getOrNull()
-    if (readSession == null) {
-      mutableHistory.update {
-        (if (it.account == account) it else AccountHistorySnapshot(account = account)).copy(
-          loading = false, stale = true,
-          error = "Account access is unavailable. Check the selected wallet and trading account.",
-        )
+    historyRefresh.run(account to kinds, maxAgeMs, shareInFlight) {
+      val fullRefresh = kinds.size == AccountHistoryKind.entries.size
+      if (fullRefresh) mutableHistory.update {
+        val current = if (it.account == account) it else AccountHistorySnapshot(account = account)
+        current.copy(loading = current.stale, error = null)
       }
-      return@withLock
-    }
-    mutableHistory.update { it.copy(account = account, loading = true, error = null) }
-    runSuspendCatching {
-      sessions.bind(readSession, flow {
-        emit(coroutineScope {
-          val orders = async { client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0) }
-          val trades = async { client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0) }
-          val funding = async { client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0) }
-          val transfers = async { client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0) }
-          object {
-            val orders = orders
-            val trades = trades
-            val funding = funding
-            val transfers = transfers
-          }
-        })
-      }).first()
-    }
-      .onSuccess { data ->
-        val orders = data.orders.await()
-        val trades = data.trades.await()
-        val funding = data.funding.await()
-        val transfers = data.transfers.await()
+      val result = runSuspendCatching {
+        val readSession = ensureReadSession(account)
+        sessions.bind(readSession, flow {
+          emit(coroutineScope {
+            kinds.map { kind -> async {
+              when (kind) {
+                AccountHistoryKind.ORDERS -> HistoryResult.Orders(client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0))
+                AccountHistoryKind.TRADES -> HistoryResult.Trades(client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0))
+                AccountHistoryKind.FUNDING -> HistoryResult.Funding(client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0))
+                AccountHistoryKind.TRANSFERS -> HistoryResult.Transfers(client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0))
+              }
+            } }.map { it.await() }
+          })
+        }).first()
+      }
+      result.onSuccess { pages ->
         if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-        mutableHistory.value =
-          AccountHistorySnapshot(
-            account = account,
-            orders = orders.items.map { it.toOrderHistoryEntry() },
-            trades = trades.items.map { it.toFill() },
-            funding = funding.items.map { it.toFundingPayment() },
-            transfers = transfers.items.map { it.toFundMovement() },
-            ordersHasMore = orders.hasMore(0),
-            tradesHasMore = trades.hasMore(0),
-            fundingHasMore = funding.hasMore(0),
-            transfersHasMore = transfers.hasMore(0),
-            stale = false,
-          )
-      }
-      .onFailure { error ->
-        mutableHistory.update {
-          it.copy(
+        mutableHistory.update { current ->
+          pages.fold(if (current.account == account) current else AccountHistorySnapshot(account = account)) { state, page ->
+            when (page) {
+              is HistoryResult.Orders -> {
+                val window = refreshedHistoryWindow(state.orders, page.page.items.map { it.toOrderHistoryEntry() }, state.ordersHasMore, page.page.hasMore(0)) { it.order.orderId to it.order.marketId }
+                state.copy(orders = window.items, ordersHasMore = window.hasMore)
+              }
+              is HistoryResult.Trades -> {
+                val window = refreshedHistoryWindow(state.trades, page.page.items.map { it.toFill() }, state.tradesHasMore, page.page.hasMore(0), key = Fill::id)
+                state.copy(trades = window.items, tradesHasMore = window.hasMore)
+              }
+              is HistoryResult.Funding -> {
+                val window = refreshedHistoryWindow(state.funding, page.page.items.map { it.toFundingPayment() }, state.fundingHasMore, page.page.hasMore(0)) { it.marketId to it.timeMs }
+                state.copy(funding = window.items, fundingHasMore = window.hasMore)
+              }
+              is HistoryResult.Transfers -> {
+                val window = refreshedHistoryWindow(state.transfers, page.page.items.map { it.toFundMovement() }, state.transfersHasMore, page.page.hasMore(0)) { listOf(it.reference, it.kind, it.timeMs, it.amount) }
+                state.copy(transfers = window.items, transfersHasMore = window.hasMore)
+              }
+            }
+          }.copy(
             loading = false,
-            stale = true,
-            error = error.message ?: "Account history is unavailable",
+            stale = if (fullRefresh) false else current.stale,
+            error = if (fullRefresh) null else current.error,
           )
         }
+      }.onFailure { error ->
+        if (preferences.values.first().selectedSubaccount == account) mutableHistory.update {
+          it.copy(loading = false, stale = true, error = error.message ?: "Account history is unavailable")
+        }
       }
+      result.isSuccess
+    }
   }
 
   override suspend fun loadMoreHistory(kind: AccountHistoryKind) = historyMutex.withLock {
@@ -851,7 +892,23 @@ class DefaultAccountRepository(
       }
   }
 
+  override fun setForeground(active: Boolean) {
+    foreground.value = active
+    client.stream.setEnabled(active)
+    // Restoring the account authenticates before restarting its private collector.
+    if (!active) {
+      streamJob?.cancel()
+      streamJob = null
+      streamingAccount = null
+    }
+  }
+
+  override fun setHistoryVisible(visible: Boolean) {
+    historyVisible.value = visible
+  }
+
   override fun startLive() {
+    if (!foreground.value) return
     val account = mutableSnapshot.value.account ?: return
     if (
       sessions.status.value?.role == null || sessions.status.value?.role == SessionRole.ANONYMOUS
@@ -864,10 +921,19 @@ class DefaultAccountRepository(
     streamJob = scope.launch { collectAccountStream(account) }
   }
 
-  private suspend fun collectAccountStream(account: String) {
-    venuePositions = emptyList()
+  private suspend fun collectAccountStream(account: String) = coroutineScope {
     var lastBackfillAtMs = 0L
     var lastHistoryBackfillAtMs = 0L
+    var lastConnectionBackfillAtMs = 0L
+    val streamConnected = MutableStateFlow(false)
+    launch {
+      while (true) {
+        delay(REST_FALLBACK_INTERVAL_MS)
+        if (!streamConnected.value) refreshAccount()
+        // Funding and transfers have no stream topic; keep visible history current too.
+        if (historyVisible.value) refreshHistory(AccountHistoryKind.entries.toSet())
+      }
+    }
     val userTrades = UserTrades(account)
     val topics: Set<DecibelStreamTopic> =
       setOf(
@@ -877,13 +943,21 @@ class DefaultAccountRepository(
         OrderUpdates(account),
         userTrades,
       )
-    client.stream.subscribe(topics).collect { event ->
+    val readSession = ensureReadSession(account)
+    sessions.bind(readSession, client.stream.subscribe(topics)).collect { event ->
       when (event) {
         is StreamEvent.Connected -> {
-          refresh()
-          refreshHistory()
-          lastBackfillAtMs = Clock.System.now().toEpochMilliseconds()
-          lastHistoryBackfillAtMs = lastBackfillAtMs
+          streamConnected.value = true
+          val now = Clock.System.now().toEpochMilliseconds()
+          if (now - lastConnectionBackfillAtMs >= REST_FALLBACK_INTERVAL_MS) {
+            refreshAccount(maxAgeMs = BACKFILL_INTERVAL_MS)
+            if (historyVisible.value || mutableHistory.value.stale) {
+              refreshHistory(AccountHistoryKind.entries.toSet(), maxAgeMs = BACKFILL_INTERVAL_MS)
+            }
+            lastBackfillAtMs = Clock.System.now().toEpochMilliseconds()
+            lastHistoryBackfillAtMs = lastBackfillAtMs
+            lastConnectionBackfillAtMs = lastBackfillAtMs
+          }
         }
         is StreamEvent.Message -> {
           val now = Clock.System.now().toEpochMilliseconds()
@@ -923,9 +997,7 @@ class DefaultAccountRepository(
                       (data.values.map { it.toFill() } + current.trades)
                         .distinctBy(Fill::id)
                         .sortedByDescending(Fill::timeMs)
-                        .take(HISTORY_PAGE_SIZE),
-                    stale = false,
-                    error = null,
+                        .take(maxOf(HISTORY_PAGE_SIZE, current.trades.size)),
                   )
                 }
               }
@@ -935,30 +1007,32 @@ class DefaultAccountRepository(
             (event.topic is OrderUpdates || event.data is DecibelStreamData.Malformed) &&
               now - lastBackfillAtMs >= BACKFILL_INTERVAL_MS
           ) {
-            refresh()
+            refreshAccount()
             lastBackfillAtMs = now
           }
           if (
             event.topic is OrderUpdates && now - lastHistoryBackfillAtMs >= BACKFILL_INTERVAL_MS
           ) {
-            refreshHistory()
+            refreshHistory(setOf(AccountHistoryKind.ORDERS))
             lastHistoryBackfillAtMs = now
           }
         }
         is StreamEvent.SequenceGap -> {
-          refresh()
-          refreshHistory()
+          refreshAccount()
+          refreshHistory(AccountHistoryKind.entries.toSet())
           lastBackfillAtMs = Clock.System.now().toEpochMilliseconds()
           lastHistoryBackfillAtMs = lastBackfillAtMs
         }
         is StreamEvent.Rejected -> {
-          mutableSnapshot.update { it.copy(stale = true, error = event.reason) }
-          mutableHistory.update { it.copy(stale = true, error = event.reason) }
+          streamConnected.value = false
+          mutableSnapshot.update { it.afterStreamFailure(event.reason) }
+          mutableHistory.update { it.afterStreamFailure(event.reason) }
         }
         is StreamEvent.Disconnected ->
           (event.reason ?: "Account stream disconnected").let { reason ->
-            mutableSnapshot.update { it.copy(stale = true, error = reason) }
-            mutableHistory.update { it.copy(stale = true, error = reason) }
+            streamConnected.value = false
+            mutableSnapshot.update { it.afterStreamFailure(reason) }
+            mutableHistory.update { it.afterStreamFailure(reason) }
           }
       }
     }
@@ -1028,8 +1102,10 @@ class DefaultAccountRepository(
     readOwner { decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it)) }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
-    val account = preferences.values.first().selectedSubaccount ?: return false
-    return runCatching { client.accounts.redeemReferralCode(account, code).success }.getOrDefault(false)
+    val owner = preferences.values.first().ownerAddress ?: return false
+    val repository = referrals ?: return false
+    return repository.apply(owner, code, VaultPrompt("Apply referral code", "Confirm your identity", requireFreshAuthorization = true))
+      .eligibility == ReferralEligibility.BOUND
   }
 
   override suspend fun activeTwaps(): List<TwapOrder> {
@@ -1169,11 +1245,19 @@ class DefaultAccountRepository(
     /** One reviewed "create account and enable trading" may span its two transactions. */
     const val SETUP_APPROVAL_WINDOW_MS = 60_000L
     const val BACKFILL_INTERVAL_MS = 2_000L
+    const val REST_FALLBACK_INTERVAL_MS = 15_000L
     const val USDC_DECIMALS = 6
     const val SHARE_DECIMALS = 6
     const val HISTORY_PAGE_SIZE = 50
   }
 }
+
+// Losing a live transport does not invalidate a successful REST snapshot, including empty history.
+internal fun AccountSnapshot.afterStreamFailure(reason: String): AccountSnapshot =
+  if (overview != null) this else copy(stale = true, error = error ?: reason)
+
+internal fun AccountHistorySnapshot.afterStreamFailure(reason: String): AccountHistorySnapshot =
+  if (!stale) this else copy(error = error ?: reason)
 
 private sealed interface HistoryResult {
   data class Orders(val page: Page<Order>) : HistoryResult

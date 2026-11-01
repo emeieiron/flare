@@ -10,6 +10,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -31,6 +33,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.caughtUpWith
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.data.withLiveCandle
@@ -122,7 +125,7 @@ data class TradeUiState(
         quoteBalance?.let { formatBalance(it) }
       } else {
         val symbol = quote?.market?.symbol.orEmpty()
-        baseBalance?.let { "${formatQuantity(it, 4)} $symbol".trim() }
+        baseBalance?.let { "${formatTokenBalance(it)} $symbol".trim() }
       }
     } else {
       quoteBalance?.let { formatBalance(it) }
@@ -193,7 +196,6 @@ class TradeViewModel(
   private val loadedChart = MutableStateFlow<ChartKey?>(null)
   private var chartLoadedAtMs = 0L
   private var historyComplete = false
-  private var marketDetailsJob: Job? = null
   private var baseBalanceJob: Job? = null
   private var lastBaseBalanceKey: String? = null
   private var feeAccount: String? = null
@@ -225,7 +227,6 @@ class TradeViewModel(
           syncPositionLeverage()
           syncBalances()
           if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
-          if (quote != null) loadMarketDetails(quote.market.id)
         }
       }
     }
@@ -363,7 +364,6 @@ class TradeViewModel(
           syncBalances(forceBase = true)
           preferences.setSelectedMarket(quote?.market?.id)
           if (quote != null) loadCandles(quote, mutableUiState.value.timeframe)
-          if (quote != null) loadMarketDetails(quote.market.id)
         }
       }
       is TradeIntent.SelectTimeframe -> {
@@ -453,11 +453,13 @@ class TradeViewModel(
     }
   }
 
-  private fun loadMarketDetails(market: String) {
-    marketDetailsJob?.cancel()
-    marketDetailsJob = viewModelScope.launch {
-      marketDetails.refresh(market)
-      marketDetails.connectLive(market)
+  /** Keeps the selected book live only while the trade route owns this collector. */
+  suspend fun followMarketDetails() {
+    mutableUiState.map { it.quote?.market?.id }.distinctUntilChanged().collectLatest { market ->
+      if (market != null) {
+        marketDetails.refresh(market)
+        marketDetails.connectLive(market)
+      }
     }
   }
 

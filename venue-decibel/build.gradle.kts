@@ -25,10 +25,13 @@ kotlin {
   }
 
   sourceSets {
+    commonTest.get().kotlin.srcDir("../aptos-swap/src/commonTestFixtures/kotlin")
     commonMain.dependencies {
       api(project(":shared"))
       implementation(project(":strategies"))
       implementation(project(":decibel"))
+      implementation(project(":aptos-transaction"))
+      implementation(project(":aptos-swap"))
       implementation(libs.kaptos)
       implementation(libs.koin.core)
       implementation(libs.ktor.client.core)

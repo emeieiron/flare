@@ -245,19 +245,19 @@ private fun MarketPageContent(
   if (loading && quotes.isEmpty()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
       MarketSectionHeader(title, showPriceLabel = true)
-      MarketListSkeleton()
+      MarketListSkeleton(Modifier.semantics { contentDescription = "Loading markets" })
     }
   } else if (quotes.isEmpty()) {
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
       EmptyState(
         title =
           when {
-            offline -> "Markets are offline"
+            offline -> "Market data unavailable"
             key.favoritesOnly -> "Your watchlist starts here"
             else -> "No markets here yet"
           },
         message =
-          if (offline) "Prices appear as soon as market data arrives."
+          if (offline) ""
           else if (key.favoritesOnly) "Tap the star beside a market to follow it here."
           else "Swipe to see other markets.",
       )
@@ -268,8 +268,8 @@ private fun MarketPageContent(
       state = listState,
       contentPadding = PaddingValues(horizontal = 24.dp),
     ) {
-      item { MarketSectionHeader(title, showPriceLabel = true) }
-      items(quotes, key = { it.market.id }) { quote ->
+      item(contentType = "market-header") { MarketSectionHeader(title, showPriceLabel = true) }
+      items(quotes, key = { it.market.id }, contentType = { "market-quote" }) { quote ->
         MarketQuoteRow(quote, assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
@@ -331,8 +331,10 @@ private fun MarketSearchResults(
   LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) keyboard?.hide() }
   val query = state.query.trim()
   if (results.isEmpty) {
-    if (state.loading && state.quotes.isEmpty()) {
-      MarketListSkeleton()
+    if (state.error != null && state.quotes.isEmpty()) {
+      EmptyState("Market data unavailable", "")
+    } else if (state.loading && state.quotes.isEmpty()) {
+      MarketListSkeleton(Modifier.semantics { contentDescription = "Loading markets" })
     } else {
       EmptyState(
         title = if (query.isEmpty()) "Search every market" else "No markets match “$query”",
@@ -344,17 +346,19 @@ private fun MarketSearchResults(
   }
   LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
     val firstSection = if (results.perpetuals.isNotEmpty()) "Perpetuals" else "Spot"
-    if (query.isEmpty()) item { MarketSectionHeader("Your watchlist", showPriceLabel = true) }
+    if (query.isEmpty()) item(key = "watchlist-header", contentType = "market-header") {
+      MarketSectionHeader("Your watchlist", showPriceLabel = true)
+    }
     listOf("Perpetuals" to results.perpetuals, "Spot" to results.spot).forEach { (title, quotes) ->
       if (quotes.isEmpty()) return@forEach
-      item(key = "section-$title") {
+      item(key = "section-$title", contentType = "market-header") {
         MarketSectionHeader(
           title,
           showPriceLabel = query.isNotEmpty() && title == firstSection,
           subdued = query.isEmpty(),
         )
       }
-      items(quotes, key = { "search-${it.market.id}" }) { quote ->
+      items(quotes, key = { "search-${it.market.id}" }, contentType = { "market-quote" }) { quote ->
         MarketQuoteRow(quote, state.assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }

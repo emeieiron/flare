@@ -76,6 +76,10 @@ fun PortfolioPerformanceChart(
       }
     }
     if (values.isNotEmpty()) Text(formatBalance(values.last()), style = MaterialTheme.typography.displaySmall)
+    if (error != null && points.isNotEmpty()) Text(
+      "Last known value",
+      color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall,
+    )
     FlareLineChart(
       points = points,
       lineColor =
@@ -91,10 +95,6 @@ fun PortfolioPerformanceChart(
         },
     )
     TimeRangeSelector(PortfolioChartRange.entries, range, { it.label }, onRangeSelect)
-    if (error != null) Text(
-      if (points.isEmpty()) "Reconnecting automatically" else "Updating · showing your last history",
-      color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall,
-    )
     Text(
       if (metric == PortfolioMetric.EQUITY) "Net deposits and realized P&L. Excludes unrealized P&L."
       else "Realized P&L from completed trades.",

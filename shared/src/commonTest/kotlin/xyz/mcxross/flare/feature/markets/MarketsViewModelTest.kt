@@ -5,6 +5,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -156,7 +158,7 @@ class MarketsViewModelTest {
     )
 
   private class FakeMarketsRepository(initialQuotes: List<MarketQuote>) : MarketsRepository {
-    override val catalog: StateFlow<MarketCatalog> =
+    override val catalog: MutableStateFlow<MarketCatalog> =
       MutableStateFlow(MarketCatalog(loading = false, quotes = initialQuotes, stale = false))
 
     override suspend fun refresh() {}
@@ -168,7 +170,7 @@ class MarketsViewModelTest {
 
   private class FakeAssetCatalogRepository(assetsMap: Map<String, AssetMetadata>) :
     AssetCatalogRepository {
-    override val assets: StateFlow<Map<String, AssetMetadata>> = MutableStateFlow(assetsMap)
+    override val assets: MutableStateFlow<Map<String, AssetMetadata>> = MutableStateFlow(assetsMap)
 
     override suspend fun refresh() {}
   }
@@ -294,6 +296,97 @@ class MarketsViewModelTest {
     val browsing = vm.uiState.first { !it.searching }
     assertEquals("crypto", browsing.selectedCategory)
     assertEquals("", browsing.query)
+  }
+
+  @Test
+  fun typingAndSelectingProductsReuseCatalogPages() = runTest {
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+    backgroundScope.launch { vm.uiState.collect() }
+    val initial = vm.uiState.first { it.quotes.isNotEmpty() }
+
+    vm.onIntent(MarketsIntent.OpenSearch)
+    vm.onIntent(MarketsIntent.Search("bTc"))
+    val searching = vm.uiState.first { it.query == "bTc" }
+    assertEquals(listOf("BTC"), searching.searchResults.perpetuals.map { it.market.symbol })
+    assertSame(initial.pageQuotes, searching.pageQuotes)
+
+    vm.onIntent(MarketsIntent.CloseSearch)
+    vm.onIntent(MarketsIntent.SetInstrument(MarketInstrumentFilter.SPOT))
+    val spot = vm.uiState.first { it.selectedInstrument == MarketInstrumentFilter.SPOT }
+    assertSame(initial.pageQuotes, spot.pageQuotes)
+    assertSame(spot.pageQuotes[spot.currentKey(MarketInstrumentFilter.SPOT)], spot.quotes)
+  }
+
+  @Test
+  fun livePricesAndFavoritesStillUpdateEveryPageDuringSearch() = runTest {
+    val repository = FakeMarketsRepository(quotes)
+    val vm = MarketsViewModel(repository, FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+    backgroundScope.launch { vm.uiState.collect() }
+    val initial = vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.OpenSearch)
+    vm.onIntent(MarketsIntent.Search("BTC"))
+    vm.uiState.first { it.query == "BTC" }
+
+    repository.catalog.value = repository.catalog.value.copy(
+      quotes = quotes.map { if (it.market == btcPerp) it.copy(markPrice = 71_000.0, favorite = false) else it },
+    )
+    val updated = vm.uiState.first { it.searchResults.perpetuals.firstOrNull()?.markPrice == 71_000.0 }
+    assertNotSame(initial.pageQuotes, updated.pageQuotes)
+    assertFalse(updated.searchResults.perpetuals.single().favorite)
+    assertEquals(listOf("GOLD"), updated.quotes.map { it.market.symbol })
+    assertEquals(71_000.0, updated.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS)).first().markPrice)
+  }
+
+  @Test
+  fun assetMetadataChangesReclassifyPagesAndSearchNames() = runTest {
+    val assets = FakeAssetCatalogRepository(assetMetadataMap)
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), assets, testVenue())
+    backgroundScope.launch { vm.uiState.collect() }
+    val initial = vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.SetCategory("equity"))
+    vm.uiState.first { it.selectedCategory == "equity" }
+
+    assets.assets.value = assetMetadataMap + ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "equity", name = "Digital gold"))
+    val updated = vm.uiState.first { it.selectedCategory == "equity" && it.quotes.isNotEmpty() }
+    assertNotSame(initial.pageQuotes, updated.pageQuotes)
+    assertEquals(listOf("BTC"), updated.quotes.map { it.market.symbol })
+    assertFalse(updated.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS, category = "crypto")).any { it.market == btcPerp })
+
+    vm.onIntent(MarketsIntent.OpenSearch)
+    vm.onIntent(MarketsIntent.Search("digital"))
+    assertEquals(listOf("BTC"), vm.uiState.first { it.query == "digital" }.searchResults.perpetuals.map { it.market.symbol })
+  }
+
+  @Test
+  fun aCategoryOutsideTheSwipeSequenceStillFiltersCorrectly() = runTest {
+    val assets = assetMetadataMap + ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "custom"))
+    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assets), testVenue())
+    backgroundScope.launch { vm.uiState.collect() }
+    vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.SetCategory("custom"))
+    assertEquals(listOf("BTC"), vm.uiState.first { it.selectedCategory == "custom" }.quotes.map { it.market.symbol })
+  }
+
+  @Test
+  fun catalogRemovalInsertionAndReorderingReachBrowsingAndSearch() = runTest {
+    val repository = FakeMarketsRepository(quotes)
+    val vm = MarketsViewModel(repository, FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+    backgroundScope.launch { vm.uiState.collect() }
+    vm.uiState.first { it.quotes.isNotEmpty() }
+    vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
+    vm.uiState.first { !it.favoritesOnly }
+
+    repository.catalog.value = repository.catalog.value.copy(quotes = listOf(quotes[2], quotes[1], quotes[3]))
+    val reordered = vm.uiState.first { it.quotes.map { quote -> quote.market.symbol } == listOf("GOLD", "ADA") }
+    assertEquals(listOf("GOLD", "ADA"), reordered.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS)).map { it.market.symbol })
+    vm.onIntent(MarketsIntent.OpenSearch)
+    vm.onIntent(MarketsIntent.Search("BTC"))
+    assertTrue(vm.uiState.first { it.query == "BTC" }.searchResults.isEmpty)
+
+    repository.catalog.value = repository.catalog.value.copy(quotes = listOf(quotes[0]) + repository.catalog.value.quotes)
+    val inserted = vm.uiState.first { it.searchResults.perpetuals.isNotEmpty() }
+    assertEquals(listOf("BTC", "GOLD", "ADA"), inserted.quotes.map { it.market.symbol })
+    assertEquals(listOf("BTC"), inserted.searchResults.perpetuals.map { it.market.symbol })
   }
 
   @Test

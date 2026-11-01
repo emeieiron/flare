@@ -72,9 +72,13 @@ fun flareModule(
   single { buildFlareDatabase(databaseBuilder) }
   single { get<FlareDatabase>().marketCacheDao() }
   single { get<FlareDatabase>().assetCatalogDao() }
+  single { get<FlareDatabase>().transactionJournalDao() }
   single { preferences }
   single { walletVault }
   singleOf(::AppPreferences)
+  single<xyz.mcxross.flare.store.SwapOperationStore> {
+    xyz.mcxross.flare.store.PreferencesSwapOperationStore(get())
+  }
   singleOf(::JevCredentials)
   single(named("jev")) {
     HttpClient {
@@ -103,7 +107,7 @@ fun flareModule(
   single { AccountSetupGate(get(), get()) }
   singleOf(::DefaultAssetCatalogRepository) { bind<AssetCatalogRepository>() }
   viewModelOf(::MarketsViewModel)
-  viewModelOf(::OnboardingViewModel)
+  viewModel { OnboardingViewModel(get(), get(), get(), get(), get(), get(), getOrNull()) }
   // Only venues with vaults bind a VaultsRepository.
   viewModel {
     PortfolioViewModel(
@@ -118,6 +122,7 @@ fun flareModule(
       rewardsRepository = getOrNull(),
       assetCatalog = getOrNull(),
       setupGate = getOrNull(),
+      swaps = getOrNull(),
     )
   }
   viewModelOf(::OrdersViewModel)
@@ -133,6 +138,8 @@ fun flareModule(
       venue = get(),
       credentials = get(),
       setupGate = getOrNull(),
+      walletBalances = getOrNull(),
+      referrals = getOrNull(),
     )
   }
 }

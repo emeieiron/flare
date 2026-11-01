@@ -203,7 +203,7 @@ class OrderEntryTest {
         baseBalance = 9.993,
       )
 
-    assertEquals("You have 9.993 APT to sell", spot.orderInputError(OrderSide.SELL))
+    assertEquals("You have 9.99 APT to sell", spot.orderInputError(OrderSide.SELL))
     assertNull(spot.copy(sizeInput = "9.993").orderInputError(OrderSide.SELL))
     assertEquals(
       "Not enough USDC for this order. Available \$5.00",

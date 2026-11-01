@@ -12,6 +12,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
@@ -29,9 +30,30 @@ class WorkerGasSponsorshipRepository(
   private val decibelConfig: DecibelRuntimeConfig,
   private val sessions: SessionRepository,
 ) : GasSponsorshipRepository {
+  override suspend fun canSponsorSwap(): Boolean = try {
+    withTimeoutOrNull(3_000) {
+      val response = client.get("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/swap-availability") {
+        bearerAuth(sessions.accessToken())
+        header(HttpHeaders.Origin, runtime.appOrigin)
+      }
+      response.status.isSuccess() && response.body<SwapSponsorshipAvailability>().available
+    } ?: false
+  } catch (cancelled: CancellationException) {
+    throw cancelled
+  } catch (_: Exception) { false }
+
   override suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,
+  ): AptosResult<String> = submitAuthorized(request, ownerOnly, null)
+
+  override suspend fun submitSwap(request: ExternalFeePayerRequest, authorization: String): AptosResult<String> =
+    submitAuthorized(request, ownerOnly = true, authorization)
+
+  private suspend fun submitAuthorized(
+    request: ExternalFeePayerRequest,
+    ownerOnly: Boolean,
+    swapAuthorization: String?,
   ): AptosResult<String> =
     try {
       val route = if (ownerOnly) "owner" else "trading"
@@ -48,6 +70,7 @@ class WorkerGasSponsorshipRepository(
                 request.additionalSignersAuthenticatorBytes
                   .takeIf { it.isNotEmpty() }
                   ?.map(ByteArray::toUnsignedInts),
+              swapAuthorization = swapAuthorization,
             )
           )
         }
@@ -68,8 +91,8 @@ class WorkerGasSponsorshipRepository(
           AptosError.Api(
             message =
               if (unavailable != null)
-                "Gas sponsorship is unavailable. You can choose to pay gas with APT."
-              else "Gas sponsorship was not accepted",
+                "Fee sponsorship is unavailable. You can choose to pay fees with APT."
+              else "Fee sponsorship was not accepted",
             errorCode = unavailable ?: "gas_station_http_${response.status.value}",
           )
         )
@@ -86,7 +109,7 @@ class WorkerGasSponsorshipRepository(
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Throwable) {
-      AptosResult.Failure(AptosError.Transport("Gas sponsorship request failed", error))
+      AptosResult.Failure(AptosError.Transport("Fee sponsorship request failed", error))
     }
 
   override suspend fun resolve(fingerprint: String): AptosResult<String?> =
@@ -136,9 +159,12 @@ private data class GasStationRequest(
   val transactionBytes: List<Int>,
   val senderAuth: List<Int>,
   val additionalSignersAuth: List<List<Int>>? = null,
+  val swapAuthorization: String? = null,
 )
 
 @Serializable private data class GasStationResponse(val transactionHash: String)
+
+@Serializable private data class SwapSponsorshipAvailability(val available: Boolean)
 
 @Serializable
 private data class GasStationStatusResponse(

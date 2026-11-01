@@ -53,6 +53,7 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareButton
@@ -95,6 +96,9 @@ fun OnboardingRoute(
         OnboardingEffect.Cancelled -> onBack?.invoke() ?: onCompleted()
       }
     }
+  }
+  LifecycleEventEffect(Lifecycle.Event.ON_START) {
+    viewModel.onIntent(OnboardingIntent.ResumeReads)
   }
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
     viewModel.onIntent(OnboardingIntent.ClearSensitiveState)
@@ -428,9 +432,8 @@ private fun VenueChain.roundedFee(units: ULong): String {
   return "${((units + step - 1uL) / step).toDecimalString(SHOWN_DECIMALS)} $feeToken"
 }
 
-/** A balance to four decimals, rounded down so it's never overstated. */
 private fun VenueChain.roundedBalance(units: ULong): String =
-  "${(units / shownStep()).toDecimalString(SHOWN_DECIMALS)} $feeToken"
+  "${formatTokenBalance(units.toDecimalString(feeTokenDecimals))} $feeToken"
 
 private fun VenueChain.shownStep(): ULong {
   var step = 1uL

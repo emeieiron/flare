@@ -14,6 +14,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.test.runTest
@@ -52,13 +54,19 @@ class WorkerSessionRepositoryIosTest {
           "expires_at=$expiresAt",
         )
         .joinToString("\n")
+    var challenges = 0
+    var authentications = 0
+    var tokenExpiry = now + 55 * 60_000
     var signatureVerified = false
     var sessionRevoked = false
     val engine = MockEngine { request ->
       when (request.url.encodedPath) {
-        "/v1/auth/challenge" ->
+        "/v1/auth/challenge" -> {
+          challenges++
           respondJson("""{"challenge":${Json.encodeToString(challenge)},"expiresAt":$expiresAt}""")
+        }
         "/v1/auth/session" -> {
+          authentications++
           val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
           val publicKey = Ed25519PublicKey(body.getValue("publicKey").jsonPrimitive.content)
           val signature =
@@ -69,7 +77,7 @@ class WorkerSessionRepositoryIosTest {
               signature,
             )
           respondJson(
-            """{"token":"owner-token","expiresAt":${now + 55 * 60_000},"role":"owner","walletAddress":"$address"}"""
+            """{"token":"owner-token","expiresAt":$tokenExpiry,"role":"owner","walletAddress":"$address"}"""
           )
         }
         "/v1/session/anonymous" ->
@@ -101,11 +109,27 @@ class WorkerSessionRepositoryIosTest {
     assertEquals(address, status.walletAddress?.canonicalAddress())
     assertEquals("owner-token", repository.accessToken())
     assertEquals(SessionRole.OWNER, repository.status.value?.role)
+    val reused = List(3) { async { repository.ensureOwner(null, prompt) } }.awaitAll()
+    assertTrue(reused.all { it == status })
+    assertEquals(1, challenges)
+    assertEquals(1, authentications)
+    repository.useAnonymous()
+    assertEquals(status, repository.ensureOwner(null, prompt))
+    assertEquals(1, authentications)
+    repository.ensureOwner(null, prompt.copy(requireFreshAuthorization = true))
+    assertEquals(2, authentications)
+    repository.invalidate()
+    tokenExpiry = Clock.System.now().toEpochMilliseconds() + 30_000
+    repository.authenticateOwner(null, prompt)
+    repository.ensureOwner(null, prompt)
+    assertEquals(4, authentications)
+    tokenExpiry = Clock.System.now().toEpochMilliseconds() + 55 * 60_000
+    val renewed = repository.authenticateOwner(null, prompt)
 
     val pinnedToken =
       repository
         .bind(
-          status,
+          renewed,
           flow {
             repository.useAnonymous()
             emit(repository.accessToken())

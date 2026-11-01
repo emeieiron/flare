@@ -66,7 +66,9 @@ class DecibelVenueTest {
         MarketDetailsRepository::class,
         GasSponsorshipRepository::class,
         TradingRepository::class,
+        xyz.mcxross.flare.data.SwapRepository::class,
         AccountRepository::class,
+        xyz.mcxross.flare.feature.referrals.ReferralRepository::class,
       )
       .forEach { type -> assertTrue(type.isInstance(koin.get<Any>(type)), "$type") }
   }
@@ -97,7 +99,7 @@ class DecibelVenueTest {
     assertEquals(Network.MAINNET, descriptor.network)
     with(descriptor.capabilities) {
       assertTrue(
-        spot && twap && subaccounts && referralCodes && sponsoredFees && networkFeeTopUp &&
+        spot && twap && subaccounts && !referralCodes && sponsoredFees && networkFeeTopUp &&
           inAppDeposit
       )
     }
@@ -138,6 +140,11 @@ class DecibelVenueTest {
       single { http }
       single<FlareDatabase> { UnopenedDatabase() }
       single { get<FlareDatabase>().marketCacheDao() }
+      single { get<FlareDatabase>().transactionJournalDao() }
+      single<xyz.mcxross.flare.store.SwapOperationStore> {
+        xyz.mcxross.flare.store.PreferencesSwapOperationStore(preferences)
+      }
+      single<DataStore<Preferences>> { preferences }
       single { AppPreferences(preferences) }
       single { ForegroundWalletVault(UnavailableWalletVault()) }
     }

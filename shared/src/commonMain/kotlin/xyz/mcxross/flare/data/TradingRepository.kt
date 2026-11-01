@@ -1,14 +1,18 @@
 package xyz.mcxross.flare.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradeAction
 
+@Serializable
 enum class FeePayment {
   SPONSORED,
   SELF_PAY,
+  /** Transfers may retry a definite sponsor rejection within the same authorization. */
+  AUTOMATIC,
 }
 
 data class PendingTransaction(

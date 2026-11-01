@@ -59,6 +59,17 @@ class DecibelAccountMappersTest {
   private val json = DecibelClient.DefaultJson
 
   @Test
+  fun mainnetOverviewAcceptsNullSecondaryCollateral() {
+    val overview = json.decodeFromString<DecibelAccountOverview>(
+      """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0,"secondary_collateral":null,"spot":{"positions":[],"in_flight_orders":[],"total_usd":0}}"""
+    ).toAccountOverview()
+
+    assertEquals(100.0, overview.equity)
+    assertTrue(overview.secondaryCollateral.isEmpty())
+    assertTrue(overview.balances.spot?.assets.orEmpty().isEmpty())
+  }
+
+  @Test
   fun anOverviewKeepsPerpAndSpotBalancesApart() {
     val overview =
       json

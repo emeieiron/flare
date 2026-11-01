@@ -1,8 +1,11 @@
 package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,13 +15,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,9 +39,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -43,12 +54,22 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
+import xyz.mcxross.flare.data.AssetCatalogRepository
+import xyz.mcxross.flare.data.AssetMetadata
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.ActionRow
+import xyz.mcxross.flare.design.AssetIcon
+import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareAddressField
 import xyz.mcxross.flare.design.FlareAmountField
@@ -57,6 +78,7 @@ import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareQrCode
+import xyz.mcxross.flare.design.rememberPreparedFlareQrCodePainter
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
@@ -65,7 +87,6 @@ import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
-import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
@@ -73,6 +94,8 @@ import xyz.mcxross.flare.design.fullBleed
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
+import xyz.mcxross.flare.store.tradingAccountDisplayName
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.store.opensApp
 import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.model.ActionState
@@ -93,6 +116,12 @@ fun AccountRoute(
   viewModel: SettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val catalog: AssetCatalogRepository = koinInject()
+  val assetMetadata by catalog.assets.collectAsStateWithLifecycle()
+  val lifecycleOwner = LocalLifecycleOwner.current
+  LaunchedEffect(lifecycleOwner, viewModel) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followWalletBalances() }
+  }
   LaunchedEffect(Unit) {
     viewModel.onIntent(SettingsIntent.LoadSubaccounts)
   }
@@ -106,6 +135,7 @@ fun AccountRoute(
     modifier = modifier,
     openReceive = openReceive,
     onReceiveOpened = onReceiveOpened,
+    assetMetadata = assetMetadata,
   )
 }
 
@@ -120,8 +150,16 @@ fun AccountScreen(
   modifier: Modifier = Modifier,
   openReceive: Boolean = false,
   onReceiveOpened: () -> Unit = {},
+  assetMetadata: Map<String, AssetMetadata> = emptyMap(),
 ) {
   var showWallets by remember { mutableStateOf(false) }
+  var returnToWallets by remember { mutableStateOf(false) }
+  LaunchedEffect(state.nameEditor != null) {
+    if (state.nameEditor == null && returnToWallets) {
+      returnToWallets = false
+      showWallets = true
+    }
+  }
   var showAddWallet by remember { mutableStateOf(false) }
   var showDeposit by remember { mutableStateOf(false) }
   LaunchedEffect(openReceive) {
@@ -137,8 +175,9 @@ fun AccountScreen(
   val clipboard = LocalClipboardManager.current
   val profiles = state.preferences.profiles
   val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
-  val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+  val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
   val walletAddress = (active?.ownerAddress ?: active?.apiWalletAddress).orEmpty()
+  val receiveQrPainter = rememberPreparedFlareQrCodePainter(walletAddress)
   val subaccounts = active?.ownerAddress?.let { state.subaccountsByOwner[it] }.orEmpty()
     .ifEmpty {
       active?.selectedSubaccount?.let {
@@ -163,39 +202,66 @@ fun AccountScreen(
       Text("Your wallet", style = MaterialTheme.typography.headlineLarge)
       FlareButton("Add wallet", { showAddWallet = true }, Modifier.fillMaxWidth().padding(top = 24.dp))
     } else {
-      ActionRow(walletLabel,
-        subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
-          else shortAddress(walletAddress),
-        icon = FlareIcons.Wallet,
-        onClick = { showWallets = true }, enabled = !state.busy)
-      val need = state.setupNeed
-      if (active.setupPending && need != null) {
-        UnavailableNotice(need.reason, need)
-      } else if (!active.onboardingComplete) {
-        FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
-      }
-      if (active.ownerAddress != null) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          FlareButton("Receive", { showDeposit = true }, Modifier.weight(1f))
-          FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
-            style = FlareButtonStyle.OUTLINE,
-            enabled = active.selectedSubaccount != null && !state.busy &&
-              state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
+      Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+          .background(FlareColors.Surface).padding(20.dp)
+      ) {
+        Text("Wallet", style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+        WalletNameRow(walletLabel,
+          subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
+            else shortAddress(walletAddress),
+          icon = FlareIcons.Wallet,
+          onClick = { showWallets = true }, enabled = !state.busy,
+          onClickLabel = "Open wallets",
+          onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) },
+          showDivider = false,
+          showActions = true,
+        )
+        val balances = state.walletBalances.takeIf {
+          state.walletBalanceProfileId == active.id && state.walletBalanceAddress == walletAddress
+        }.orEmpty()
+        if (balances.isNotEmpty()) WalletBalances(balances, assetMetadata)
+        val need = state.setupNeed
+        if (active.setupPending && need != null) {
+          UnavailableNotice(need.reason, need)
+        } else if (!active.onboardingComplete) {
+          FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
         }
-        state.capabilities.unavailableReason(ActionKind.FUNDS)?.takeIf { it != state.setupNeed?.reason }?.let {
-          Text(it, Modifier.padding(bottom = 16.dp), color = FlareColors.TextSecondary,
-            style = MaterialTheme.typography.bodySmall)
+        if (active.ownerAddress != null) {
+          HorizontalDivider(Modifier.padding(top = 20.dp), color = FlareColors.BorderSubtle)
+          Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlareButton("Receive", { showDeposit = true }, Modifier.weight(1f))
+            FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
+              style = FlareButtonStyle.OUTLINE,
+              enabled = active.selectedSubaccount != null && !state.busy &&
+                state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
+          }
+          state.capabilities.unavailableReason(ActionKind.FUNDS)?.takeIf { it != state.setupNeed?.reason }?.let {
+            Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+              style = MaterialTheme.typography.bodySmall)
+          }
         }
       }
-      SectionLabel("Trading accounts")
+      Text("Trading accounts", Modifier.padding(top = 32.dp, bottom = 12.dp),
+        style = MaterialTheme.typography.titleMedium)
       subaccounts.forEachIndexed { index, account ->
         val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
-        Row(Modifier.fillMaxWidth().selectable(selected = selected, enabled = !state.busy, role = Role.RadioButton) {
-          onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
-        }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().combinedClickable(
+          enabled = !state.busy,
+          role = Role.RadioButton,
+          onClickLabel = "Select trading account",
+          onClick = { onIntent(SettingsIntent.SelectSubaccount(active.id, account.address)) },
+          onLongClickLabel = "Rename trading account",
+          onLongClick = { onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address)) },
+        ).semantics { this.selected = selected }.padding(vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically) {
+          Icon(FlareIcons.AccountBranch, null,
+            modifier = Modifier.align(Alignment.Top).padding(top = 2.dp).size(24.dp),
+            tint = FlareColors.BorderStrong)
+          Spacer(Modifier.width(12.dp))
           Column(Modifier.weight(1f)) {
-            Text(account.label?.takeIf { it.isNotBlank() } ?: "Trading account ${index + 1}",
-              style = MaterialTheme.typography.bodyLarge)
+            Text(active.tradingAccountDisplayName(account.address, account.label, index),
+              style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(shortAddress(account.address), style = MaterialTheme.typography.bodySmall,
               color = FlareColors.TextSecondary)
           }
@@ -207,6 +273,9 @@ fun AccountScreen(
           ) {
             Icon(FlareIcons.Copy, null, tint = FlareColors.TextSecondary,
               modifier = Modifier.size(18.dp))
+          }
+          AccountActionsMenu("Trading account", !state.busy) {
+            onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
           }
         }
         HorizontalDivider(color = FlareColors.BorderSubtle)
@@ -222,10 +291,16 @@ fun AccountScreen(
   if (showWallets) FlareSheet("Wallets", { showWallets = false }) {
     Column(Modifier.verticalScroll(rememberScrollState())) {
       profiles.forEachIndexed { index, profile ->
-        ActionRow("Wallet ${index + 1}${if (profile.id == active?.id) " · Selected" else ""}",
+        WalletNameRow(profile.walletDisplayName(index),
           subtitle = if (!profile.onboardingComplete) "Finish setup" else
             shortAddress((profile.ownerAddress ?: profile.apiWalletAddress).orEmpty()),
           enabled = !state.busy,
+          selected = profile.id == active?.id,
+          onRename = {
+            showWallets = false
+            returnToWallets = true
+            onIntent(SettingsIntent.RenameWallet(profile.id))
+          },
           onClick = {
             showWallets = false
             if (profile.opensApp) onIntent(SettingsIntent.SelectProfile(profile.id))
@@ -239,6 +314,7 @@ fun AccountScreen(
       ActionRow("Add wallet", icon = FlareIcons.Add, onClick = { showWallets = false; showAddWallet = true })
     }
   }
+  state.nameEditor?.let { AccountNameSheet(it, onIntent) }
   if (showAddWallet) FlareSheet("Add wallet", { showAddWallet = false }) {
     ActionRow("Create wallet", subtitle = "Get a new recovery phrase", icon = FlareIcons.Key,
       onClick = { showAddWallet = false; onCreateAccount() })
@@ -256,9 +332,93 @@ fun AccountScreen(
   }
   if (showDeposit && walletAddress.isNotBlank()) DepositSheet(walletLabel, walletAddress, copied, {
     clipboard.setText(AnnotatedString(walletAddress)); copied = true
-  }, { showDeposit = false })
+  }, { showDeposit = false }, receiveQrPainter)
   if (showWithdraw && active?.selectedSubaccount != null) WithdrawSheet(state,
     onIntent, { if (!state.withdrawing) { showWithdraw = false; onIntent(SettingsIntent.DismissWithdraw) } })
+}
+
+@Composable
+private fun WalletNameRow(
+  name: String,
+  subtitle: String,
+  enabled: Boolean,
+  onRename: () -> Unit,
+  onClick: () -> Unit,
+  icon: ImageVector? = null,
+  selected: Boolean = false,
+  showDivider: Boolean = true,
+  showActions: Boolean = false,
+  onClickLabel: String = "Select wallet",
+) {
+  Row(Modifier.fillMaxWidth().combinedClickable(
+    enabled = enabled, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick,
+    onLongClickLabel = "Rename wallet", onLongClick = onRename,
+  )
+    .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    icon?.let {
+      Icon(it, null, tint = FlareColors.TextSecondary, modifier = Modifier.size(22.dp))
+    }
+    Column(Modifier.weight(1f)) {
+      Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    }
+    if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
+      modifier = Modifier.size(20.dp))
+    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+    if (showActions) AccountActionsMenu("Wallet", enabled, onRename)
+  }
+  if (showDivider) HorizontalDivider(color = FlareColors.BorderSubtle)
+}
+
+@Composable
+private fun AccountActionsMenu(label: String, enabled: Boolean, onRename: () -> Unit) {
+  var expanded by remember { mutableStateOf(false) }
+  Box {
+    IconButton({ expanded = true }, enabled = enabled,
+      modifier = Modifier.size(48.dp).semantics { contentDescription = "$label options" }) {
+      Icon(FlareIcons.More, null, Modifier.size(20.dp), tint = FlareColors.TextSecondary)
+    }
+    DropdownMenu(expanded, { expanded = false }) {
+      DropdownMenuItem(text = { Text("Rename") }, onClick = { expanded = false; onRename() })
+    }
+  }
+}
+
+@Composable
+private fun WalletBalances(
+  balances: List<WalletTokenBalance>,
+  assetMetadata: Map<String, AssetMetadata>,
+) {
+  val fontScale = LocalDensity.current.fontScale
+  BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+    val columns = if (maxWidth < 280.dp || fontScale > 1.3f || balances.any { it.displayAmount.length > 8 }) 1 else 2
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+      balances.chunked(columns).forEach { group ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+          group.forEachIndexed { index, balance ->
+            if (index > 0) VerticalDivider(Modifier.height(44.dp), color = FlareColors.BorderSubtle)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+              val metadata = assetMetadata[balance.symbol]
+              AssetIcon(resolveAssetIdentity(balance.symbol, balance.symbol, metadata), 28.dp)
+              Column {
+                Text(balance.symbol, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+                Text(balance.displayAmount, style = MaterialTheme.typography.titleLarge,
+                  color = FlareColors.TextPrimary)
+              }
+            }
+          }
+          if (group.size < columns) Spacer(Modifier.weight(1f))
+        }
+      }
+      if (balances.any { it.unavailable }) {
+        Text(if (balances.any { it.unavailable && it.amount == null }) "Balance unavailable" else "Updated earlier",
+          style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      }
+    }
+  }
 }
 
 @Composable
@@ -268,9 +428,13 @@ private fun DepositSheet(
   copied: Boolean,
   onCopy: () -> Unit,
   onDismiss: () -> Unit,
+  qrPainter: Painter?,
 ) {
   val chain = LocalVenue.current.chain
   val receive = LocalVenue.current.receive
+  // Keep an immediate-open fallback for this sheet rather than replacing its warm draw cache
+  // when background preparation finishes. A different address always selects a new painter.
+  val painter = remember(address) { qrPainter }
   FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
       receive?.summary
@@ -282,7 +446,12 @@ private fun DepositSheet(
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
       val codeSize = minOf(maxWidth * 0.84f, maxHeight - 112.dp, 320.dp).coerceAtLeast(168.dp)
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FlareQrCode(address, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        if (painter != null) {
+          FlareQrCode(painter, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        } else {
+          // An immediate tap can precede background preparation; keep Receive fully functional.
+          FlareQrCode(address, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        }
         ReceiveAddress(address, onCopy, Modifier.padding(top = 20.dp))
       }
     }
@@ -332,18 +501,13 @@ fun WithdrawSheet(
   // Progress is saved as soon as any withdrawal starts; only one found on opening is being resumed.
   val resuming = rememberSaveable { state.pendingWithdrawal != null }
   val transaction = state.withdrawTransaction
-  // A fee Flare can't sponsor keeps the review open with the choice to pay it.
-  val feeEstimate =
-    (transaction as? ActionState.Failed)?.selfPay?.estimate
-      ?.takeIf { state.capabilities.sponsoredFees }
-  val stage =
-    when {
-      transaction is ActionState.Committed -> WithdrawStage.SENT
-      !state.withdrawing && feeEstimate == null && transaction != null &&
-        (transaction is ActionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
-      reviewing || state.withdrawing || feeEstimate != null -> WithdrawStage.REVIEW
-      else -> WithdrawStage.FORM
-    }
+  val stage = when {
+    transaction is ActionState.Committed -> WithdrawStage.SENT
+    !state.withdrawing && transaction != null &&
+      (transaction is ActionState.Failed || state.withdrawError != null) -> WithdrawStage.FAILED
+    reviewing || state.withdrawing -> WithdrawStage.REVIEW
+    else -> WithdrawStage.FORM
+  }
   FlareSheet(
     title =
       when (stage) {
@@ -359,7 +523,7 @@ fun WithdrawSheet(
     Column(Modifier.fullBleed().animateContentSize().padding(horizontal = 24.dp)) {
       when (stage) {
         WithdrawStage.FORM -> WithdrawForm(state, onIntent) { reviewing = true }
-        WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, feeEstimate, resuming) { reviewing = false }
+        WithdrawStage.REVIEW -> WithdrawReview(state, onIntent, resuming) { reviewing = false }
         WithdrawStage.SENT -> WithdrawSent(state, (transaction as ActionState.Committed).reference, onDismiss)
         WithdrawStage.FAILED ->
           WithdrawFailed(state, onIntent) {
@@ -419,13 +583,13 @@ private fun WithdrawForm(
     onValueChange = { onIntent(SettingsIntent.ChangeWithdrawAmount(it)) },
     label = "Amount",
     unit = "USDC",
-    availableText = available?.let { "Available ${formatQuantity(it, 2)} USDC" },
+    availableText = available?.let { "Available ${formatTokenBalance(it)} USDC" },
     onMaxClick =
-      available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max))) } },
+      available?.takeIf { it > 0.0 }?.let { max -> { onIntent(SettingsIntent.ChangeWithdrawAmount(maxAmountInput(max), immediate = true)) } },
     isError = exceeds || !coversFee,
     supportingText =
       when {
-        exceeds && available != null -> "You can withdraw up to ${formatQuantity(available, 2)} USDC."
+        exceeds && available != null -> "You can withdraw up to ${formatTokenBalance(available)} USDC."
         fee != null -> "${formatQuantity(fee, 6)} USDC of it pays the withdrawal fee."
         else -> null
       },
@@ -441,7 +605,6 @@ private fun WithdrawForm(
 private fun WithdrawReview(
   state: SettingsUiState,
   onIntent: (SettingsIntent) -> Unit,
-  feeEstimate: ULong?,
   resuming: Boolean,
   onEdit: () -> Unit,
 ) {
@@ -488,8 +651,9 @@ private fun WithdrawReview(
       DetailRow("Recipient gets", "${formatQuantity((it - fee).coerceAtLeast(0.0), 6)} USDC")
     }
   }
-  if (feeEstimate != null) DetailRow("Network fee", "About ${chain.feeAmount(feeEstimate)}")
-  else if (state.capabilities.sponsoredFees) DetailRow("Network fee", "Sponsored by Flare")
+  if (state.capabilities.sponsoredFees) DetailRow("Fees", state.withdrawNetworkFee?.let { fee ->
+    if (fee.covered) "Covered by Flare" else "≈ ${chain.feeAmount(fee.estimate)}"
+  } ?: "—")
   if (state.withdrawOnVenue) Text(
     "${chain.name} may charge a one-time fee to activate an address that has never used it.",
     Modifier.padding(top = 12.dp),
@@ -502,11 +666,8 @@ private fun WithdrawReview(
     color = FlareColors.TextSecondary,
     style = MaterialTheme.typography.bodySmall,
   )
-  feeEstimate?.let {
-    ActionNotice("Flare can’t cover the network fee right now, so your wallet pays it.", Modifier.padding(top = 16.dp))
-  }
   // Problems found before anything was sent stay here, next to what they're about.
-  state.withdrawError?.takeIf { state.withdrawTransaction == null }?.let {
+  (state.withdrawError ?: state.withdrawFeeError)?.takeIf { state.withdrawTransaction == null }?.let {
     ActionNotice(actionFailure(it, WITHDRAWAL_FAILED), Modifier.padding(top = 16.dp), NoticeTone.ALERT)
   }
   FlareButton(
@@ -514,15 +675,10 @@ private fun WithdrawReview(
       state.withdrawing && sendsOn && state.pendingWithdrawal?.withdrawalCommitted == true ->
         "Sending to recipient…"
       state.withdrawing -> "Withdrawing…"
-      feeEstimate != null -> "Pay the fee and withdraw"
       pending != null -> "Finish withdrawal"
       else -> "Confirm withdrawal"
     },
-    {
-      onIntent(
-        if (feeEstimate != null) SettingsIntent.ConfirmWithdrawSelfPay else SettingsIntent.SubmitWithdraw
-      )
-    },
+    { onIntent(SettingsIntent.SubmitWithdraw) },
     Modifier.fillMaxWidth().padding(top = 24.dp),
     working = state.withdrawing,
   )

@@ -1,18 +1,37 @@
 package xyz.mcxross.flare.feature.settings
 
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralController
+import xyz.mcxross.flare.feature.referrals.ReferralUiState
+import kotlinx.coroutines.awaitCancellation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.decimalUnits
+import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.feature.funding.FeeResolver
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
@@ -24,14 +43,21 @@ import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.WalletBalanceRepository
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.store.accountNameError
+import xyz.mcxross.flare.store.tradingAccountDisplayName
+import xyz.mcxross.flare.store.tradingAccountNickname
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.Rewards
@@ -45,6 +71,9 @@ data class SettingsUiState(
   val setupNeed: SetupNeed? = null,
   val preferences: FlarePreferences = FlarePreferences(),
   val profile: WalletProfile = WalletProfile(),
+  val walletBalanceProfileId: String? = null,
+  val walletBalanceAddress: String? = null,
+  val walletBalances: List<WalletTokenBalance> = emptyList(),
   val proxyUrl: String = "",
   val defaultBuilderAddress: String = "",
   val revealedSecretLabel: String? = null,
@@ -53,6 +82,8 @@ data class SettingsUiState(
   val delegationsLoaded: Boolean = false,
   val subaccountsByOwner: Map<String, List<TradingAccount>> = emptyMap(),
   val creatingSubaccount: Boolean = false,
+  val referral: ReferralUiState = ReferralUiState(),
+  val referralManaged: Boolean = false,
   val referralCodeInput: String = "",
   val referralRedeemed: Boolean = false,
   val referralMessage: String? = null,
@@ -62,6 +93,8 @@ data class SettingsUiState(
   val withdrawOnVenue: Boolean = false,
   val withdrawAmount: String = "",
   val withdrawTransaction: ActionState? = null,
+  val withdrawNetworkFee: NetworkFee? = null,
+  val withdrawFeeError: String? = null,
   val withdrawing: Boolean = false,
   /** Why the last withdrawal attempt failed, as reported; screens phrase it for people. */
   val withdrawError: String? = null,
@@ -70,6 +103,7 @@ data class SettingsUiState(
   /** A withdrawal that was interrupted part-way and must be finished before another starts. */
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val busy: Boolean = false,
+  val nameEditor: AccountNameEditor? = null,
   /** The product whose builder approval is being written on-chain. */
   val builderPending: MarketKind? = null,
   /** A builder change Flare couldn't sponsor, which the wallet can pay for once the person agrees. */
@@ -80,10 +114,30 @@ data class SettingsUiState(
 /** [basisPoints] is the rate being approved, or null for a revocation. */
 data class BuilderSelfPay(val product: MarketKind, val basisPoints: Int?, val estimate: ULong)
 
+/** The target is captured when editing begins, independently of the currently selected wallet. */
+data class AccountNameEditor(
+  val profileId: String,
+  val address: String,
+  val tradingAccount: Boolean,
+  val originalName: String,
+  val defaultName: String,
+  val hasCustomName: Boolean,
+  val name: String = originalName,
+  val useDefault: Boolean = false,
+  val saving: Boolean = false,
+  val error: String? = null,
+) {
+  val canSave: Boolean
+    get() = !saving && (if (useDefault) hasCustomName
+      else accountNameError(name) == null && name.trim() != originalName)
+}
+
 sealed interface SettingsIntent {
   data object LoadDelegations : SettingsIntent
 
   data object LoadSubaccounts : SettingsIntent
+
+  data object RefreshWalletBalances : SettingsIntent
 
   data class RevokeDelegate(val address: String) : SettingsIntent
 
@@ -91,11 +145,23 @@ sealed interface SettingsIntent {
 
   data class SelectSubaccount(val profileId: String, val subaccountAddress: String) : SettingsIntent
 
+  data class RenameWallet(val profileId: String) : SettingsIntent
+
+  data class RenameTradingAccount(val profileId: String, val address: String) : SettingsIntent
+
+  data class ChangeAccountName(val name: String) : SettingsIntent
+
+  data object SaveAccountName : SettingsIntent
+
+  data object UseDefaultAccountName : SettingsIntent
+
+  data object DismissAccountName : SettingsIntent
+
   data object CreateSubaccountForActiveProfile : SettingsIntent
 
   data class ChangeWithdrawDestination(val address: String) : SettingsIntent
 
-  data class ChangeWithdrawAmount(val amount: String) : SettingsIntent
+  data class ChangeWithdrawAmount(val amount: String, val immediate: Boolean = false) : SettingsIntent
 
   /** Whether the USDC goes to another account on the venue instead of leaving it. */
   data class SetWithdrawOnVenue(val onVenue: Boolean) : SettingsIntent
@@ -106,7 +172,6 @@ sealed interface SettingsIntent {
   data object SubmitWithdraw : SettingsIntent
 
   /** Retries a withdrawal Flare couldn't sponsor, with the wallet paying the network fee. */
-  data object ConfirmWithdrawSelfPay : SettingsIntent
 
   /** Leaves a failed attempt to change the recipient or amount. */
   data object EditWithdraw : SettingsIntent
@@ -151,6 +216,8 @@ class SettingsViewModel(
   venue: VenueDescriptor,
   private val credentials: CredentialParser,
   private val setupGate: AccountSetupGate? = null,
+  private val walletBalances: WalletBalanceRepository? = null,
+  private val referrals: ReferralRepository? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chainName = venue.chain.name
@@ -160,11 +227,38 @@ class SettingsViewModel(
     MutableStateFlow(
       SettingsUiState(
         capabilities = capabilities,
+        referralManaged = referrals != null,
         proxyUrl = venue.proxyUrl.orEmpty(),
         defaultBuilderAddress = venue.builderAddress.orEmpty(),
       )
     )
+  private val referralController = ReferralController(referrals, viewModelScope)
+  init {
+    viewModelScope.launch {
+      preferences.values.collect { saved -> referralController.context(saved.activeProfileId, saved.ownerAddress) }
+    }
+  }
+
+  suspend fun followReferralsWhileVisible() {
+    referralController.setVisible(true)
+    try { awaitCancellation() } finally { referralController.setVisible(false) }
+  }
+
   private var secretClearJob: Job? = null
+  private data class WithdrawFeeKey(val context: Triple<String, String?, String?>, val units: ULong)
+  private var withdrawFeeContext: Triple<String, String?, String?>? = null
+  private var withdrawFeeVisible = false
+  private var withdrawWarmJob: Job? = null
+  private var withdrawRefreshJob: Job? = null
+  private val withdrawFees = FeeResolver<WithdrawFeeKey>(viewModelScope,
+    read = { accounts.estimateFundingFee(it.units.toDecimalString(6), withdrawing = true) },
+    publish = { key, fee, error ->
+      if (withdrawFeeContext == key.context && withdrawFeeVisible && !local.value.withdrawOnVenue &&
+        decimalUnits(local.value.withdrawAmount, "USDC amount", 6).getOrNull() == key.units && !local.value.withdrawing)
+        local.update { it.copy(withdrawNetworkFee = fee, withdrawFeeError = error) }
+    },
+  )
+  private val balanceRefreshRequests = Channel<Unit>(Channel.CONFLATED)
 
   init {
     setupGate?.let { gate ->
@@ -185,10 +279,11 @@ class SettingsViewModel(
   }
 
   val uiState: StateFlow<SettingsUiState> =
-    combine(local, preferences.values, wallets.profile, accounts.snapshot) {
-        state, persisted, profile, snapshot ->
+    combine(local, preferences.values, wallets.profile, accounts.snapshot, referralController.state) {
+        state, persisted, profile, snapshot, referral ->
         state.copy(
           preferences = persisted,
+          referral = referral.takeIf { it.profileId == persisted.activeProfileId && it.owner == persisted.ownerAddress } ?: ReferralUiState(),
           profile = profile,
           withdrawable = snapshot.overview?.withdrawable,
           pendingWithdrawal =
@@ -197,13 +292,50 @@ class SettingsViewModel(
       }
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), local.value)
 
+  init {
+    viewModelScope.launch {
+      preferences.values.map { Triple(it.activeProfileId, it.ownerAddress, it.selectedSubaccount) }
+        .distinctUntilChanged().collect { context ->
+          withdrawFeeContext = context
+          withdrawRefreshJob?.cancel()
+          withdrawWarmJob?.cancel()
+          withdrawFees.cancel(clearCache = true)
+          local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
+          if (withdrawFeeVisible) scheduleWithdrawFee()
+        }
+    }
+  }
+
   fun onIntent(intent: SettingsIntent) {
     when (intent) {
+      SettingsIntent.RefreshWalletBalances -> balanceRefreshRequests.trySend(Unit).let { }
+      is SettingsIntent.RenameWallet -> openNameEditor(intent.profileId)
+      is SettingsIntent.RenameTradingAccount -> openNameEditor(intent.profileId, intent.address)
+      is SettingsIntent.ChangeAccountName -> local.update { state ->
+        state.copy(nameEditor = state.nameEditor?.let {
+          if (it.saving) it else it.copy(name = intent.name,
+            useDefault = it.useDefault && intent.name == it.defaultName,
+            error = accountNameError(intent.name))
+        })
+      }
+      SettingsIntent.UseDefaultAccountName -> local.update { state ->
+        state.copy(nameEditor = state.nameEditor?.let {
+          if (it.saving || !it.hasCustomName) it
+          else it.copy(name = it.defaultName, useDefault = true, error = null)
+        })
+      }
+      SettingsIntent.SaveAccountName -> saveAccountName()
+      SettingsIntent.DismissAccountName -> local.update {
+        if (it.nameEditor?.saving == true) it else it.copy(nameEditor = null)
+      }
       SettingsIntent.LoadSubaccounts -> loadSubaccounts()
       is SettingsIntent.ChangeReferralCode ->
-        local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
+        if (referrals != null) referralController.change(intent.code)
+        else local.update { it.copy(referralCodeInput = intent.code, referralMessage = null) }
       SettingsIntent.RedeemReferralCode ->
-        launchAction("Redeeming referral code failed.") {
+        if (referrals != null) launchAction("Your referral code wasn’t applied.") {
+          referralController.apply(VaultPrompt("Apply referral code", "Confirm your identity", requireFreshAuthorization = true))
+        } else launchAction("Redeeming referral code failed.") {
           val code = local.value.referralCodeInput.trim()
           check(code.isNotBlank()) { "Enter a referral code" }
           val repository = checkNotNull(rewardsRepository) { "Referral codes aren’t available here" }
@@ -291,20 +423,24 @@ class SettingsViewModel(
             local.update { it.copy(creatingSubaccount = false) }
           }
         }
-      is SettingsIntent.ChangeWithdrawDestination ->
+      is SettingsIntent.ChangeWithdrawDestination -> {
         local.update { it.copy(withdrawDestination = intent.address, withdrawError = null) }
-      is SettingsIntent.SetWithdrawOnVenue ->
-        local.update {
-          if (it.withdrawing) it else it.copy(withdrawOnVenue = intent.onVenue, withdrawError = null)
+        scheduleWithdrawFee()
+      }
+      is SettingsIntent.SetWithdrawOnVenue -> {
+        local.update { if (it.withdrawing) it else it.copy(withdrawOnVenue = intent.onVenue, withdrawError = null) }
+        scheduleWithdrawFee()
+      }
+      is SettingsIntent.ChangeWithdrawAmount -> {
+        local.update { it.copy(withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' }, withdrawError = null) }
+        scheduleWithdrawFee(immediate = intent.immediate)
+      }
+      SettingsIntent.DismissWithdraw -> {
+        if (!local.value.withdrawing) {
+          withdrawFeeVisible = false
+          withdrawWarmJob?.cancel()
+          withdrawFees.cancel(clearCache = true)
         }
-      is SettingsIntent.ChangeWithdrawAmount ->
-        local.update {
-          it.copy(
-            withdrawAmount = intent.amount.filter { c -> c.isDigit() || c == '.' },
-            withdrawError = null,
-          )
-        }
-      SettingsIntent.DismissWithdraw ->
         local.update {
           if (it.withdrawing) it else it.copy(
             withdrawDestination = "",
@@ -313,9 +449,17 @@ class SettingsViewModel(
             withdrawTransaction = null,
             withdrawError = null,
             withdrawing = false,
+            withdrawNetworkFee = null,
+            withdrawFeeError = null,
           )
         }
+      }
       SettingsIntent.OpenWithdraw -> {
+        withdrawFeeVisible = true
+        withdrawWarmJob?.cancel()
+        if (capabilities.sponsoredFees) withdrawWarmJob = viewModelScope.launch {
+          withTimeoutOrNull(5_000) { runSuspendCatching { accounts.warmFundingFees() } }
+        }
         val pending = uiState.value.pendingWithdrawal
         local.update {
           it.copy(
@@ -327,9 +471,9 @@ class SettingsViewModel(
         }
         // The balance shown beside the amount should be the current one.
         viewModelScope.launch { runSuspendCatching { accounts.refresh() } }
+        scheduleWithdrawFee()
       }
-      SettingsIntent.SubmitWithdraw -> submitWithdraw(FeePayment.SPONSORED)
-      SettingsIntent.ConfirmWithdrawSelfPay -> submitWithdraw(FeePayment.SELF_PAY)
+      SettingsIntent.SubmitWithdraw -> submitWithdraw(if (capabilities.sponsoredFees) FeePayment.AUTOMATIC else FeePayment.SPONSORED)
       SettingsIntent.EditWithdraw ->
         local.update {
           if (it.withdrawing) it else it.copy(withdrawTransaction = null, withdrawError = null)
@@ -475,9 +619,23 @@ class SettingsViewModel(
     }
   }
 
+  private fun scheduleWithdrawFee(immediate: Boolean = false) {
+    val current = local.value
+    val context = withdrawFeeContext
+    val units = decimalUnits(current.withdrawAmount, "USDC amount", 6).getOrNull()
+    if (!withdrawFeeVisible || !capabilities.sponsoredFees || current.withdrawing || current.withdrawOnVenue ||
+      context == null || units == null || units == 0uL) {
+      withdrawFees.cancel()
+      local.update { it.copy(withdrawNetworkFee = null, withdrawFeeError = null) }
+      return
+    }
+    withdrawFees.request(WithdrawFeeKey(context, units), immediate)
+  }
+
   private fun submitWithdraw(feePayment: FeePayment) {
     val current = local.value
     if (current.withdrawing || current.withdrawTransaction is ActionState.Committed) return
+    val context = withdrawFeeContext
     val dest = current.withdrawDestination.trim()
     val amt = current.withdrawAmount.trim()
     if (!credentials.isAddress(dest)) {
@@ -489,6 +647,8 @@ class SettingsViewModel(
       local.update { it.copy(withdrawError = "Enter an amount greater than zero.") }
       return
     }
+    withdrawWarmJob?.cancel()
+    withdrawFees.cancel(clearCache = true)
     viewModelScope.launch {
       local.update { it.copy(withdrawing = true, withdrawError = null, withdrawTransaction = null) }
       try {
@@ -497,14 +657,26 @@ class SettingsViewModel(
           if (current.withdrawOnVenue) accounts.transferUsdc(amt, dest, VaultPrompt("Send USDC", "Confirm your identity"))
           else accounts.withdrawUsdc(amt, dest, prompt, feePayment)
         flow.collect { tx ->
-          local.update { it.copy(withdrawTransaction = tx) }
+          local.update {
+            val fee = when (tx) {
+              is ActionState.FeeEstimated -> tx.fee
+              is ActionState.Pending -> tx.networkFee
+              is ActionState.Committed -> tx.networkFee
+              else -> null
+            }
+            it.copy(withdrawTransaction = tx, withdrawNetworkFee = fee ?: it.withdrawNetworkFee)
+          }
         }
         when (val terminal = local.value.withdrawTransaction) {
           is ActionState.Committed -> {
-            accounts.refresh()
-            loadSubaccounts()
+            withdrawRefreshJob?.cancel()
+            withdrawRefreshJob = viewModelScope.launch {
+              if (withdrawFeeContext == context) {
+                withTimeoutOrNull(10_000) { runSuspendCatching { accounts.restoreTrading() } }
+                if (withdrawFeeContext == context) loadSubaccounts()
+              }
+            }
           }
-          // A fee Flare can't sponsor is a choice for the person, not a failure.
           is ActionState.Failed ->
             if (terminal.selfPay?.estimate == null) {
               local.update { it.copy(withdrawError = terminal.message) }
@@ -539,6 +711,101 @@ class SettingsViewModel(
     }
   }
 
+  /** Owned by AccountRoute's visible lifecycle, so hidden screens do not poll or retain old reads. */
+  suspend fun followWalletBalances() {
+    val repository = walletBalances ?: return
+    withdrawFees.setVisible(true)
+    if (withdrawFeeVisible) scheduleWithdrawFee(immediate = true)
+    try {
+      preferences.values
+        .map { it.activeProfileId to (it.ownerAddress ?: it.apiWalletAddress) }
+        .distinctUntilChanged()
+        .collectLatest { (profileId, address) ->
+          local.update { state ->
+            val sameWallet = state.walletBalanceProfileId == profileId && state.walletBalanceAddress == address
+            state.copy(
+              walletBalanceProfileId = profileId,
+              walletBalanceAddress = address,
+              walletBalances = if (address == null) emptyList()
+                else if (sameWallet) state.walletBalances
+                else repository.symbols.map { WalletTokenBalance(it) },
+            )
+          }
+          if (address == null) return@collectLatest
+          while (true) {
+            val failures = coroutineScope {
+              repository.symbols.map { symbol ->
+                async {
+                  val result = runSuspendCatching { repository.balance(address, symbol) }
+                  currentCoroutineContext().ensureActive()
+                  local.update { state ->
+                    if (state.walletBalanceProfileId != profileId || state.walletBalanceAddress != address) state
+                    else state.copy(walletBalances = state.walletBalances.map { balance ->
+                      if (balance.symbol != symbol) balance
+                      else balance.copy(amount = result.getOrNull() ?: balance.amount, unavailable = result.isFailure)
+                    })
+                  }
+                  result.exceptionOrNull()
+                }
+              }.awaitAll().filterNotNull()
+            }
+            if (failures.isEmpty()) ReadRecoveryDiagnostics.recovered(ReadOperation.WALLET_BALANCES)
+            else ReadRecoveryDiagnostics.failed(ReadOperation.WALLET_BALANCES, 1, failures.first())
+            withTimeoutOrNull(WALLET_BALANCE_REFRESH_MS) { balanceRefreshRequests.receive() }
+          }
+        }
+    } finally {
+      withdrawFees.setVisible(false)
+    }
+  }
+
+  private fun openNameEditor(profileId: String, address: String? = null) {
+    if (local.value.nameEditor?.saving == true) return
+    viewModelScope.launch {
+      val profiles = preferences.values.first().profiles
+      val profile = profiles.firstOrNull { it.id == profileId } ?: return@launch
+      val subaccounts = profile.ownerAddress?.let { local.value.subaccountsByOwner[it] }.orEmpty()
+      val position = if (address == null) -1 else subaccounts.indexOfFirst { credentials.sameAddress(it.address, address) }
+      val label = if (address == null) profile.walletDisplayName(profiles.indexOf(profile))
+        else profile.tradingAccountDisplayName(address, subaccounts.getOrNull(position)?.label, position.coerceAtLeast(0))
+      val defaultName = if (address == null) "Wallet ${profiles.indexOf(profile) + 1}"
+        else subaccounts.getOrNull(position)?.label?.takeIf(String::isNotBlank)
+          ?: "Trading account ${position.coerceAtLeast(0) + 1}"
+      local.update {
+        it.copy(nameEditor = AccountNameEditor(
+          profileId = profileId,
+          address = address ?: (profile.ownerAddress ?: profile.apiWalletAddress).orEmpty(),
+          tradingAccount = address != null,
+          originalName = label,
+          defaultName = defaultName,
+          hasCustomName = if (address == null) profile.walletName != null
+            else profile.tradingAccountNickname(address) != null,
+        ))
+      }
+    }
+  }
+
+  private fun saveAccountName() {
+    val editor = local.value.nameEditor ?: return
+    if (!editor.canSave) return
+    local.update { it.copy(nameEditor = editor.copy(saving = true, error = null)) }
+    viewModelScope.launch {
+      runSuspendCatching {
+        if (editor.useDefault) {
+          if (editor.tradingAccount) preferences.resetTradingAccountName(editor.profileId, editor.address)
+          else preferences.resetWalletName(editor.profileId)
+        } else if (editor.tradingAccount) preferences.renameTradingAccount(editor.profileId, editor.address, editor.name)
+        else preferences.renameWallet(editor.profileId, editor.name)
+      }.onSuccess {
+        local.update { it.copy(nameEditor = null) }
+      }.onFailure {
+        local.update {
+          it.copy(nameEditor = editor.copy(error = "The name couldn’t be saved. Try again."))
+        }
+      }
+    }
+  }
+
   private fun loadSubaccounts() {
     // Venues without trading accounts show the selected account alone.
     if (!capabilities.subaccounts) return
@@ -558,6 +825,7 @@ class SettingsViewModel(
   }
 
   private companion object {
+    const val WALLET_BALANCE_REFRESH_MS = 15_000L
     const val SECRET_REVEAL_MS = 60_000L
   }
 }

@@ -112,7 +112,7 @@ fun FlarePriceChart(
   onReachHistoryStart: () -> Unit = {},
 ) {
   if (candles.isEmpty()) {
-    ChartPlaceholder("Price history is unavailable", modifier)
+    ChartPlaceholder("Price history unavailable", modifier)
     return
   }
 

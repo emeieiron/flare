@@ -34,6 +34,9 @@ interface SessionRepository {
 
   suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus
 
+  /** Reuses an owner session for reads; fresh authorization remains explicit. */
+  suspend fun ensureOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus = authenticateOwner(subaccount, prompt)
+
   suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus
 
   /** Reuses the current trading session while it remains valid, renewing it silently otherwise. */

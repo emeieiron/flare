@@ -18,6 +18,7 @@ val ActionState.settling: Boolean
       ActionState.Simulating,
       ActionState.AwaitingAuthorization,
       ActionState.Submitting,
+      is ActionState.FeeEstimated,
       is ActionState.Pending -> true
       is ActionState.Committed,
       is ActionState.Failed -> false

@@ -2,6 +2,8 @@ package xyz.mcxross.flare.feature.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -20,6 +22,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import xyz.mcxross.flare.core.runSuspendCatching
+import xyz.mcxross.flare.feature.funding.FeeResolver
+import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.core.decimalUnits
+import xyz.mcxross.flare.data.SwapRepository
+import xyz.mcxross.flare.data.SwapAmountKind
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.SetupNeed
@@ -38,6 +45,7 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
@@ -46,6 +54,7 @@ import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueDescriptor
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderCheck
@@ -123,6 +132,9 @@ data class PortfolioUiState(
   val withdrawalDestination: String = "",
   val pendingWithdrawal: WithdrawalContinuation? = null,
   val fundingTransaction: ActionState? = null,
+  val fundingNetworkFee: NetworkFee? = null,
+  val fundingFeeError: String? = null,
+  val fundingSwap: FundingSwapState = FundingSwapState(),
   val managedPositionMarket: String? = null,
   val takeProfitInput: String = "",
   val stopLossInput: String = "",
@@ -254,13 +266,21 @@ sealed interface PortfolioIntent {
   /** Switches an open transfer between withdrawing and moving USDC between perps and spot. */
   data class SelectFundingMode(val mode: FundingMode) : PortfolioIntent
 
-  data class ChangeFundingAmount(val value: String) : PortfolioIntent
+  data class ChangeFundingAmount(val value: String, val immediate: Boolean = false) : PortfolioIntent
 
   data object SubmitFunding : PortfolioIntent
 
-  data object ConfirmSelfPay : PortfolioIntent
 
   data object CloseFunding : PortfolioIntent
+
+  data object BeginFundingSwap : PortfolioIntent
+  data class ChangeSwapAmount(val value: String, val kind: SwapAmountKind? = null) : PortfolioIntent
+  data object UseMaximumSwap : PortfolioIntent
+  data object ConfirmSwap : PortfolioIntent
+  data object ConfirmSwapSelfPay : PortfolioIntent
+  data object BackFromSwap : PortfolioIntent
+  data object RefreshFundingWallet : PortfolioIntent
+  data object ReconcileSwap : PortfolioIntent
 
   data class ManagePosition(val market: String) : PortfolioIntent
 
@@ -311,6 +331,7 @@ class PortfolioViewModel(
   private val rewardsRepository: RewardsRepository? = null,
   private val assetCatalog: AssetCatalogRepository? = null,
   private val setupGate: AccountSetupGate? = null,
+  private val swaps: SwapRepository? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val chain = venue.chain
@@ -335,6 +356,22 @@ class PortfolioViewModel(
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var lastPositionAction: TradeAction? = null
+  private var fundingContext: FundingSwapContext? = null
+  private var fundingWarmJob: Job? = null
+  private var fundingRefreshJob: Job? = null
+  private data class FundingFeeKey(val context: FundingSwapContext?, val mode: FundingMode, val units: ULong)
+  private val fundingFees = FeeResolver<FundingFeeKey>(viewModelScope,
+    read = { accounts.estimateFundingFee(it.units.toDecimalString(6), it.mode == FundingMode.WITHDRAW) },
+    publish = { key, fee, error ->
+      if (fundingContext == key.context && local.value.fundingMode == key.mode &&
+        decimalUnits(local.value.fundingAmount, "USDC amount", 6).getOrNull() == key.units && !local.value.busy)
+        local.update { it.copy(fundingNetworkFee = fee, fundingFeeError = error) }
+    },
+  )
+  private val fundingSwaps = FundingSwapController(swaps, viewModelScope, onReadyToTransfer = { amount ->
+    local.update { it.copy(fundingAmount = amount, fundingTransaction = null, actionError = null) }
+    scheduleFundingFee()
+  })
 
   init {
     setupGate?.let { gate ->
@@ -349,10 +386,20 @@ class PortfolioViewModel(
     }
     viewModelScope.launch {
       wallets.profile
-        .mapNotNull { it.ownerAddress }
+        .combine(preferences.values) { profile, saved ->
+          profile.ownerAddress?.let { FundingSwapContext(saved.activeProfileId, it, saved.selectedSubaccount) }
+        }
         .distinctUntilChanged()
-        .collect { owner ->
-          fetchPrimaryUsdcBalance(owner)
+        .collect { context ->
+          if (fundingContext != context) {
+            fundingContext = context
+            fundingRefreshJob?.cancel()
+            fundingSwaps.close()
+            clearFundingFee()
+            local.update { it.copy(fundingMode = null, fundingAmount = "", fundingTransaction = null) }
+            primaryUsdcBalance.value = 0.0
+          }
+          context?.let { fetchPrimaryUsdcBalance(it.owner) }
         }
     }
     viewModelScope.launch {
@@ -417,6 +464,10 @@ class PortfolioViewModel(
           pendingWithdrawal =
             saved.profiles.firstOrNull { it.id == saved.activeProfileId }?.withdrawal
         )
+      }
+      .combine(fundingSwaps.state) { state, swap ->
+        state.copy(fundingSwap = swap, busy = state.busy || swap.working,
+          primaryUsdcBalance = swap.capacity?.outputBalance?.toDouble()?.div(1_000_000) ?: state.primaryUsdcBalance)
       }
       .combine(spotBalances) { state, balances ->
         state to balances
@@ -526,6 +577,7 @@ class PortfolioViewModel(
       is PortfolioIntent.ChangeWithdrawalDestination ->
         local.update { it.copy(withdrawalDestination = intent.value, fundingTransaction = null) }
       is PortfolioIntent.OpenFunding -> {
+        if (local.value.busy || fundingSwaps.state.value.working) return
         // Without in-app deposits, a transfer can only go out to the wallet.
         val mode =
           if (intent.mode == FundingMode.DEPOSIT && !capabilities.inAppDeposit) FundingMode.WITHDRAW
@@ -540,29 +592,35 @@ class PortfolioViewModel(
             actionError = null,
           )
         }
+        if (mode == FundingMode.DEPOSIT && local.value.capabilities.inAppDeposit) fundingSwaps.open(fundingContext)
+        else fundingSwaps.close()
         uiState.value.profile.ownerAddress?.let { owner ->
           viewModelScope.launch { fetchPrimaryUsdcBalance(owner) }
         }
-        viewModelScope.launch { runSuspendCatching { accounts.restoreTrading() } }
+        clearFundingFee()
+        if (capabilities.sponsoredFees) fundingWarmJob = viewModelScope.launch {
+          withTimeoutOrNull(5_000) { runSuspendCatching { accounts.warmFundingFees() } }
+        }
+        scheduleFundingFee()
       }
       is PortfolioIntent.SelectFundingMode ->
-        if (!local.value.busy) {
+        if (!local.value.busy && !fundingSwaps.state.value.working) {
+          fundingSwaps.close()
+          clearFundingFee()
           local.update {
             it.copy(fundingMode = intent.mode, fundingAmount = "", fundingTransaction = null, actionError = null)
           }
         }
-      is PortfolioIntent.ChangeFundingAmount ->
-        local.update {
-          it.copy(
-            fundingAmount =
-              intent.value.filter { character -> character.isDigit() || character == '.' },
-            fundingTransaction = null,
-            actionError = null,
-          )
+      is PortfolioIntent.ChangeFundingAmount -> {
+        if (!local.value.busy && !fundingSwaps.state.value.working && fundingSwaps.state.value.step == null) {
+          local.update { it.copy(fundingAmount = decimalCharacters(intent.value), fundingTransaction = null, actionError = null) }
+          scheduleFundingFee(immediate = intent.immediate)
         }
-      PortfolioIntent.SubmitFunding -> submitFunding(FeePayment.SPONSORED)
-      PortfolioIntent.ConfirmSelfPay -> submitFunding(FeePayment.SELF_PAY)
-      PortfolioIntent.CloseFunding ->
+      }
+      PortfolioIntent.SubmitFunding -> submitFunding(if (capabilities.sponsoredFees) FeePayment.AUTOMATIC else FeePayment.SPONSORED)
+      PortfolioIntent.CloseFunding -> if (!local.value.busy && !fundingSwaps.state.value.working) {
+        fundingSwaps.close()
+        clearFundingFee()
         local.update {
           it.copy(
             fundingMode = null,
@@ -571,6 +629,15 @@ class PortfolioViewModel(
             actionError = null,
           )
         }
+      }
+      PortfolioIntent.BeginFundingSwap -> { clearFundingFee(); fundingSwaps.begin(local.value.fundingAmount) }
+      is PortfolioIntent.ChangeSwapAmount -> fundingSwaps.changeInput(intent.value, intent.kind)
+      PortfolioIntent.UseMaximumSwap -> fundingSwaps.useMaximum()
+      PortfolioIntent.ConfirmSwap -> fundingSwaps.execute()
+      PortfolioIntent.ConfirmSwapSelfPay -> fundingSwaps.execute(selfPay = true)
+      PortfolioIntent.BackFromSwap -> { fundingSwaps.back(); scheduleFundingFee() }
+      PortfolioIntent.RefreshFundingWallet -> fundingSwaps.refresh()
+      PortfolioIntent.ReconcileSwap -> fundingSwaps.reconcile()
       is PortfolioIntent.ManagePosition -> {
         val position = accounts.snapshot.value.positions.firstOrNull { it.marketId == intent.market }
         val tpStr = exitPriceInput(position?.takeProfitTriggerPrice)
@@ -780,6 +847,26 @@ class PortfolioViewModel(
     uiState.value.account.positions.firstOrNull { it.marketId == local.value.managedPositionMarket }
       ?: error("Select an open position")
 
+  private fun clearFundingFee() {
+    fundingWarmJob?.cancel()
+    fundingFees.cancel(clearCache = true)
+    local.update { it.copy(fundingNetworkFee = null, fundingFeeError = null) }
+  }
+
+  private fun scheduleFundingFee(immediate: Boolean = false) {
+    val state = local.value
+    val mode = state.fundingMode ?: return
+    if (!capabilities.sponsoredFees || state.busy || fundingSwaps.state.value.step != null ||
+      mode !in setOf(FundingMode.DEPOSIT, FundingMode.WITHDRAW)) return
+    val units = decimalUnits(state.fundingAmount, "USDC amount", 6).getOrNull()
+    if (units == null || units == 0uL) {
+      fundingFees.cancel()
+      local.update { it.copy(fundingNetworkFee = null, fundingFeeError = null) }
+      return
+    }
+    fundingFees.request(FundingFeeKey(fundingContext, mode, units), immediate)
+  }
+
   private fun submitFunding(feePayment: FeePayment) =
     launchAction(
       when (local.value.fundingMode) {
@@ -792,13 +879,26 @@ class PortfolioViewModel(
     }
 
   private suspend fun submitFundingInternal(feePayment: FeePayment) {
+    fundingWarmJob?.cancel()
+    fundingFees.cancel(clearCache = true)
     val state = local.value
+    val context = fundingContext
     val mode = state.fundingMode ?: error("Choose deposit or withdrawal")
-    val amount = state.fundingAmount.toDoubleOrNull()
-    require(amount != null && amount > 0.0) { "Enter an amount to transfer" }
+    check(fundingSwaps.state.value.step == null && fundingSwaps.state.value.pending == null) {
+      "Check your swap status before transferring."
+    }
+    val units = decimalUnits(state.fundingAmount, "USDC amount", 6).getOrThrow()
+    require(units > 0uL) { "Enter an amount to transfer" }
+    val amount = state.fundingAmount.toDouble()
     val available = uiState.value.fundingAvailable(mode)
-    require(amount <= available + 1e-9) {
-      "You can transfer up to ${formatQuantity(available, 2)} USDC."
+    if (mode == FundingMode.DEPOSIT && swaps != null) {
+      val context = checkNotNull(fundingContext) { "Use a device that holds the owner key." }
+      val capacity = swaps.fundingCapacity(context.owner)
+      check(fundingContext == context) { "The selected wallet changed. Review the transfer again." }
+      fundingSwaps.observeCapacity(context, capacity)
+      if (units > capacity.outputBalance) return
+    } else require(amount <= available + 1e-9) {
+      "You can transfer up to ${formatTokenBalance(available)} USDC."
     }
     val prompt =
       VaultPrompt(
@@ -824,17 +924,39 @@ class PortfolioViewModel(
           )
         }
       }
-    flow.collect { transaction -> local.update { it.copy(fundingTransaction = transaction) } }
+    flow.collect { transaction -> local.update {
+      val fee = when (transaction) {
+        is ActionState.FeeEstimated -> transaction.fee
+        is ActionState.Pending -> transaction.networkFee
+        is ActionState.Committed -> transaction.networkFee
+        else -> null
+      }
+      it.copy(fundingTransaction = transaction, fundingNetworkFee = fee ?: it.fundingNetworkFee)
+    } }
     when (val terminal = local.value.fundingTransaction) {
       is ActionState.Committed -> {
-        accounts.refresh()
-        uiState.value.profile.ownerAddress?.let { fetchPrimaryUsdcBalance(it) }
         local.update { it.copy(fundingAmount = "") }
+        refreshAfterFunding(context)
       }
       is ActionState.Failed -> {
+        if (!terminal.definitelyNotSubmitted && !terminal.committed && terminal.reference != null) return
         if (terminal.selfPay?.estimate == null) error(terminal.message)
       }
       else -> Unit
+    }
+  }
+
+  private fun refreshAfterFunding(context: FundingSwapContext?) {
+    fundingRefreshJob?.cancel()
+    fundingRefreshJob = viewModelScope.launch {
+      if (fundingContext != context) return@launch
+      supervisorScope {
+        launch { withTimeoutOrNull(10_000) { runSuspendCatching { accounts.restoreTrading() } } }
+        context?.owner?.let { owner ->
+          launch { withTimeoutOrNull(10_000) { fetchPrimaryUsdcBalance(owner) } }
+        }
+        fundingSwaps.refresh()
+      }
     }
   }
 
@@ -842,7 +964,7 @@ class PortfolioViewModel(
     val balance = runSuspendCatching {
       trading.baseAssetBalance(ownerAddress, "USDC")
     }.getOrDefault(0.0)
-    primaryUsdcBalance.value = balance
+    if (fundingContext?.owner == ownerAddress) primaryUsdcBalance.value = balance
   }
 
   private suspend fun fetchSpotBalances(subaccount: String) = balanceMutex.withLock {
@@ -868,23 +990,35 @@ class PortfolioViewModel(
 
   /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
   suspend fun refreshWhileVisible() {
-    var waitMs = 2_000L
-    while (currentCoroutineContext().isActive) {
-      delay(waitMs)
-      val snapshot = accounts.snapshot.value
-      val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
-        local.value.rewardsError || local.value.holdingsError != null ||
-        (local.value.historyVisible && local.value.chartError != null)
-      if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
-        runSuspendCatching { accounts.restoreTrading() }
+    fundingSwaps.setVisible(true)
+    fundingFees.setVisible(true)
+    scheduleFundingFee(immediate = true)
+    try {
+      var waitMs = 2_000L
+      while (currentCoroutineContext().isActive) {
+        delay(waitMs)
+        if (local.value.fundingMode == FundingMode.DEPOSIT && !fundingSwaps.state.value.working &&
+          fundingSwaps.state.value.step != FundingSwapStep.PENDING) fundingSwaps.refresh()
+        scheduleFundingFee()
+        val snapshot = accounts.snapshot.value
+        val failed = snapshot.stale || snapshot.error != null || local.value.vaultsError != null ||
+          local.value.rewardsError || local.value.holdingsError != null ||
+          (local.value.historyVisible && local.value.chartError != null)
+        if (snapshot.account != null && (snapshot.stale || snapshot.error != null) && !snapshot.loading) {
+          runSuspendCatching { accounts.restoreTrading() }
+        }
+        if (local.value.historyVisible && local.value.chartError != null && chartJob?.isActive != true) {
+          fetchPortfolioChart()
+        }
+        if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
+        if (local.value.rewardsError && rewardsJob?.isActive != true) fetchRewards()
+        if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
+        waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
       }
-      if (local.value.historyVisible && local.value.chartError != null && chartJob?.isActive != true) {
-        fetchPortfolioChart()
-      }
-      if (local.value.vaultsError != null && vaultsJob?.isActive != true) refreshVaults()
-      if (local.value.rewardsError && rewardsJob?.isActive != true) fetchRewards()
-      if (local.value.holdingsError != null) snapshot.account?.let { fetchSpotBalances(it) }
-      waitMs = if (failed) (waitMs * 2).coerceAtMost(30_000L) else 15_000L
+    } finally {
+      fundingSwaps.setVisible(false)
+      fundingFees.setVisible(false)
+      clearFundingFee()
     }
   }
 
@@ -933,7 +1067,7 @@ class PortfolioViewModel(
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
-    if (local.value.busy) return
+    if (local.value.busy || fundingSwaps.state.value.working) return
     viewModelScope.launch {
       local.update { it.copy(busy = true, actionError = null) }
       try {
@@ -1016,7 +1150,7 @@ class PortfolioViewModel(
           it.copy(
             actionError =
               if (vaultTerms.stakeInUsdc) "You can redeem up to ${formatBalance(maxShares)}."
-              else "You cannot redeem more than your balance of ${formatQuantity(maxShares, 4)} shares."
+              else "You cannot redeem more than your balance of ${formatTokenBalance(maxShares)} shares."
           )
         }
         return
@@ -1028,7 +1162,7 @@ class PortfolioViewModel(
       local.update {
         it.copy(
           actionError =
-            "You can pledge up to ${formatQuantity(collateral.pledgeable, 4)} shares. " +
+            "You can pledge up to ${formatTokenBalance(collateral.pledgeable)} shares. " +
               "Shares still inside the vault's lockup cannot be used as margin."
         )
       }
@@ -1036,7 +1170,7 @@ class PortfolioViewModel(
     }
     if (mode == VaultActionMode.RELEASE && collateral != null && parsedAmount > collateral.pledged) {
       local.update {
-        it.copy(actionError = "You have ${formatQuantity(collateral.pledged, 4)} shares pledged.")
+        it.copy(actionError = "You have ${formatTokenBalance(collateral.pledged)} shares pledged.")
       }
       return
     }

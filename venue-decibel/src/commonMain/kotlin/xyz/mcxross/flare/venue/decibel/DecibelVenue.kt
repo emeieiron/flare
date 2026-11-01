@@ -18,6 +18,7 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.WalletBalanceRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
@@ -98,7 +99,7 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
         networkFeeTopUp = true,
         inAppDeposit = true,
         perpSpotTransfer = false,
-        referralCodes = true,
+        referralCodes = false, // The optional referral module owns entry points and eligibility.
       )
   }
 }
@@ -109,6 +110,7 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
  * the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
+  includes(decibelReferralsModule())
   single { config }
   single<CredentialParser> { DecibelCredentialParser }
   // One wallet and one session, each seen through the neutral and the Decibel interface.
@@ -125,7 +127,7 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
     val sessionRepository = get<SessionRepository>()
     Aptos(
       AptosConfig(
-        network = AptosNetwork.CUSTOM,
+        network = AptosNetwork.MAINNET,
         transactionDefaults = config.transactionDefaults,
         endpoints = AptosEndpoints(fullNode = config.aptosFullnodeUrl),
         fullNode =
@@ -154,20 +156,35 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
           webSocketUrl = config.decibelWebSocketUrl,
           accessToken = { sessionRepository.accessToken() },
         ),
-    )
+    ).also { it.stream.setEnabled(false) }
   }
+  single { FundingFeeMetadata(get()) }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
+  single<WalletBalanceRepository> {
+    AptosWalletBalanceRepository(get(), get<DecibelClient>().config.deployment)
+  }
   single<StrategyMarketFeed> { DecibelStrategyMarketFeed(get(), get()) }
   singleOf(::DefaultChartRepository) { bind<ChartRepository>() }
   singleOf(::DefaultMarketDetailsRepository) { bind<MarketDetailsRepository>() }
   singleOf(::WorkerGasSponsorshipRepository) { bind<GasSponsorshipRepository>() }
+  singleOf(::AptosSubmissionGate)
+  single { xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor(get()) }
+  single<xyz.mcxross.flare.aptos.swap.SwapProvider> {
+    val sessions = get<SessionRepository>()
+    xyz.mcxross.flare.aptos.swap.PanoraSwapProvider(
+      get(), get(), config.workerBaseUrl, { sessions.accessToken() },
+      get<FlareRuntimeConfig>().appOrigin,
+    )
+  }
+  single<xyz.mcxross.flare.data.SwapRepository> {
+    AptosSwapRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), feeMetadata = get())
+  }
   singleOf(::DefaultTradingRepository) {
     bind<TradingRepository>()
     bind<DecibelTrading>()
   }
-  singleOf(::DefaultAccountRepository) {
-    bind<AccountRepository>()
-    bind<VaultsRepository>()
-    bind<RewardsRepository>()
-  }
+  single { DefaultAccountRepository(get(), get(), get(), get(), get(), getOrNull()) }
+  single<AccountRepository> { get<DefaultAccountRepository>() }
+  single<VaultsRepository> { get<DefaultAccountRepository>() }
+  single<RewardsRepository> { get<DefaultAccountRepository>() }
 }

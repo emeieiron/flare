@@ -129,6 +129,12 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<ActionState>
 
+  /** Warms reusable read dependencies without signing or submitting a transaction. */
+  suspend fun warmFundingFees() = Unit
+
+  /** Read-only gas simulation for the funding form; never requests fresh authorization. */
+  suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? = null
+
   /** Withdraws to the owner wallet, or to [destination] through a reviewed follow-up transfer. */
   fun withdrawUsdc(
     amount: String,
@@ -178,6 +184,12 @@ interface AccountRepository {
   suspend fun loadMoreHistory(kind: AccountHistoryKind)
 
   fun startLive()
+
+  /** Owns account reads and their shared venue transport for the unlocked foreground visit. */
+  fun setForeground(active: Boolean) {}
+
+  /** History polling is useful only while the activity screen is visible. */
+  fun setHistoryVisible(visible: Boolean) {}
 }
 
 /** A setup transaction that didn't go through; [transaction] says how far it got. */

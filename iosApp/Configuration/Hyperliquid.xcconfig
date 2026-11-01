@@ -2,7 +2,7 @@
 #include "Config.xcconfig"
 
 PRODUCT_NAME=flare-hyperliquid
-INFOPLIST_KEY_CFBundleDisplayName=flare hl
+INFOPLIST_KEY_CFBundleDisplayName=Flare: Hyperliquid
 PRODUCT_BUNDLE_IDENTIFIER=xyz.mcxross.flare.hyperliquid$(TEAM_ID)
 
 // The Kotlin framework comes from :ios-$(FLARE_VENUE) (see the "Compile Kotlin Framework" phase).

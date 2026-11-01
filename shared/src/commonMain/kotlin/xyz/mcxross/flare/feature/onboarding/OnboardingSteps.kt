@@ -87,6 +87,8 @@ import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.venue.model.TradingAccount
+import xyz.mcxross.flare.feature.referrals.ReferralCodeField
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 
 private val Whitespace = Regex("\\s+")
 
@@ -722,7 +724,9 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
           }
         }
       }
-    state.subaccountsLoaded ->
+    state.subaccountsLoaded -> {
+      val referralActive = (state.referral.enabled || state.referral.pending) &&
+        state.referral.eligibility != ReferralEligibility.INELIGIBLE
       StepLayout(
         title = "Create your trading account",
         subtitle =
@@ -731,10 +735,15 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
         actions = {
           SetupActions(state, onIntent) {
             FlareButton(
-              if (state.error != null) "Try again" else "Create account",
+              when {
+                state.referral.pending -> "Continue"
+                state.error != null -> "Try again"
+                else -> "Create account"
+              },
               { onIntent(OnboardingIntent.CreateSubaccount) },
               Modifier.fillMaxWidth(),
               working = state.busy,
+              enabled = !referralActive || state.referral.canContinue,
             )
             FlareButton(
               "Check again",
@@ -746,12 +755,24 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
           }
         },
       ) {
-        NetworkFeeLine("Network fees", covered = state.setupFee == null)
+        if (referralActive) {
+          ReferralCodeField(
+            state.referral.copy(applying = state.busy || state.referral.applying),
+            { onIntent(OnboardingIntent.ChangeReferralCode(it)) },
+            optional = true,
+          )
+        }
+        NetworkFeeLine(
+          "Network fees",
+          covered = state.setupFee == null,
+          modifier = Modifier.padding(top = if (referralActive) 24.dp else 0.dp),
+        )
       }
-    state.busy ->
+    }
+    state.busy || state.accountLookupError == null ->
       StepLayout(
-        title = "Finding your account",
-        subtitle = "Looking for trading accounts that belong to this wallet.",
+        title = "Find your account",
+        subtitle = null,
         actions = {},
       ) {
         val shimmer = rememberFlareShimmer()
@@ -768,16 +789,8 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
     else ->
       StepLayout(
         title = "Find your account",
-        subtitle = "Flare couldn’t look up your trading accounts. Check your connection and try again.",
-        actions = {
-          SetupActions(state, onIntent) {
-            FlareButton(
-              "Try again",
-              { onIntent(OnboardingIntent.DiscoverSubaccounts) },
-              Modifier.fillMaxWidth(),
-            )
-          }
-        },
+        subtitle = state.accountLookupError,
+        actions = { SetupActions(state, onIntent) {} },
       )
   }
 }
@@ -830,6 +843,8 @@ private fun AccountOption(
 @Composable
 internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val stalled = !state.busy && (state.error != null || state.setupFee != null)
+  val referralActive = !state.accountOpened && (state.referral.enabled || state.referral.pending) &&
+    state.referral.eligibility != ReferralEligibility.INELIGIBLE
   val venueName = LocalVenue.current.displayName
   StepLayout(
     title = "Open your trading account",
@@ -842,11 +857,13 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
           when {
             stalled -> "Try again"
             state.accountOpened -> "Enable trading"
+            state.referral.pending -> "Continue"
             else -> "Open account"
           },
           { onIntent(OnboardingIntent.OpenAccount) },
           Modifier.fillMaxWidth(),
           working = state.busy,
+          enabled = !referralActive || state.referral.canContinue,
         )
       }
     },
@@ -899,7 +916,19 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
         { if (!state.busy) onIntent(OnboardingIntent.SetBuilderOptIn(it)) },
       )
     }
-    NetworkFeeLine("Network fees", covered = state.setupFee == null, Modifier.padding(top = 16.dp))
+    if (referralActive) {
+      ReferralCodeField(
+        state.referral.copy(applying = state.busy || state.referral.applying),
+        { onIntent(OnboardingIntent.ChangeReferralCode(it)) },
+        optional = true,
+        modifier = Modifier.padding(top = 24.dp),
+      )
+    }
+    NetworkFeeLine(
+      "Network fees",
+      covered = state.setupFee == null,
+      modifier = Modifier.padding(top = if (referralActive) 24.dp else 16.dp),
+    )
   }
 }
 

@@ -28,6 +28,7 @@ kotlin {
 
   sourceSets {
     commonMain.dependencies {
+      implementation(project(":aptos-transaction"))
       api(libs.kaptos)
       api(libs.kotlinx.coroutines.core)
       implementation(libs.kotlinx.datetime)

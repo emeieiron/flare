@@ -20,6 +20,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +50,9 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareSkeletonBox
+import xyz.mcxross.flare.design.rememberFlareShimmer
+import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
@@ -52,11 +60,14 @@ import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.store.FlarePreferences
+import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.ActionKind
+import xyz.mcxross.flare.feature.referrals.ReferralCodeField
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 
 @Composable
 fun SettingsRoute(
@@ -66,6 +77,10 @@ fun SettingsRoute(
   jevViewModel: JevSettingsViewModel = koinViewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val lifecycleOwner = LocalLifecycleOwner.current
+  LaunchedEffect(viewModel, lifecycleOwner) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followReferralsWhileVisible() }
+  }
   val autoRuntime: AutoTradingRuntime = koinInject()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
   DisposableEffect(viewModel) { onDispose { viewModel.onIntent(SettingsIntent.HideSecret) } }
@@ -90,6 +105,10 @@ fun SettingsScreen(
   var showAccess by remember { mutableStateOf(false) }
   var showBuilderSheet by remember { mutableStateOf(false) }
   var showReferralSheet by remember { mutableStateOf(false) }
+  LaunchedEffect(state.profile) { showReferralSheet = false }
+  LaunchedEffect(state.referralManaged, state.referral.enabled, state.referral.pending) {
+    if (state.referralManaged && !state.referral.enabled && !state.referral.pending) showReferralSheet = false
+  }
   var revokeProduct by remember { mutableStateOf<MarketKind?>(null) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
   var showSecurity by remember { mutableStateOf(false) }
@@ -162,7 +181,9 @@ fun SettingsScreen(
     )
 
     val offersBuilder = state.defaultBuilderAddress.isNotBlank()
-    if (state.profile.ownerAddress != null && (offersBuilder || state.capabilities.referralCodes)) {
+    val managedReferralVisible = state.referral.enabled || state.referral.pending
+    if (state.profile.ownerAddress != null &&
+      (offersBuilder || state.capabilities.referralCodes || state.referralManaged && managedReferralVisible)) {
       SectionLabel("Protocol & Rewards")
       if (offersBuilder) {
         ActionRow(
@@ -172,7 +193,18 @@ fun SettingsScreen(
           onClick = { showBuilderSheet = true },
         )
       }
-      if (state.capabilities.referralCodes) {
+      if (state.referralManaged && managedReferralVisible) {
+        ActionRow(
+          "Referral code",
+          when {
+            state.referral.pending -> "Confirmation pending"
+            state.referral.eligibility == ReferralEligibility.BOUND -> state.referral.appliedCode.orEmpty()
+            else -> "Enter a referral code"
+          },
+          FlareIcons.Gift,
+          onClick = { showReferralSheet = true },
+        )
+      } else if (!state.referralManaged && state.capabilities.referralCodes) {
         ActionRow(
           "Referral code",
           if (state.referralRedeemed) "Code active" else "Enter a referral code",
@@ -222,12 +254,15 @@ fun SettingsScreen(
       if (state.delegationsLoaded && state.delegations.isEmpty()) {
         Text("Nothing can trade for this account yet.")
       }
-      if (!state.delegationsLoaded || state.busy) {
-        ActionNotice(
-          "Checking authorized keys…",
-          Modifier.padding(top = 12.dp),
-          NoticeTone.PROGRESS,
-        )
+      if (!state.delegationsLoaded && state.error == null) {
+        val shimmer = rememberFlareShimmer()
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp)
+          .semantics { contentDescription = "Loading authorized keys" },
+          verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          repeat(2) {
+            FlareSkeletonBox(Modifier.fillMaxWidth().height(52.dp).shimmer(shimmer))
+          }
+        }
       }
       state.error?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
     }
@@ -311,7 +346,7 @@ fun SettingsScreen(
   removal?.let { intent ->
     val profiles = state.preferences.profiles
     val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
-    val walletLabel = "Wallet ${profiles.indexOf(active).coerceAtLeast(0) + 1}"
+    val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
     val removed =
       if (intent == SettingsIntent.RemoveApi) {
         "$walletLabel’s trading key, ${shortAddress(state.profile.apiWalletAddress.orEmpty())}"
@@ -399,7 +434,26 @@ fun SettingsScreen(
   }
 
   if (showReferralSheet) {
-    FlareSheet("Referral code", { showReferralSheet = false }) {
+    if (state.referralManaged) {
+      FlareSheet("Referral code", { showReferralSheet = false }) {
+        ReferralCodeField(
+          state.referral,
+          { onIntent(SettingsIntent.ChangeReferralCode(it)) },
+          explainIneligible = true,
+        )
+        if (state.referral.eligibility != ReferralEligibility.INELIGIBLE && !state.referral.pending &&
+          state.referral.eligibility != ReferralEligibility.BOUND) {
+          Spacer(Modifier.height(20.dp))
+          FlareButton(
+            "Apply code",
+            { onIntent(SettingsIntent.RedeemReferralCode) },
+            Modifier.fillMaxWidth(),
+            enabled = state.referral.canApply,
+            working = state.referral.applying,
+          )
+        }
+      }
+    } else FlareSheet("Referral code", { showReferralSheet = false }) {
       Text(
         "Enter a ${venue.displayName} referral code to link your account and earn trading fee " +
           "discounts.",

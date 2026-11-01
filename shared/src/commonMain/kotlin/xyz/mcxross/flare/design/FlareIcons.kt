@@ -123,6 +123,27 @@ object FlareIcons {
     }
   }
 
+  val AccountBranch: ImageVector by lazy {
+    icon("AccountBranch", autoMirror = true) {
+      stroke("M4.5 3 V15 A4.5 4.5 0 0 0 9 19.5 H20")
+    }
+  }
+
+  val More: ImageVector by lazy {
+    icon("More") {
+      solid("M12 4.5 A1.5 1.5 0 1 0 12 7.5 A1.5 1.5 0 1 0 12 4.5 Z")
+      solid("M12 10.5 A1.5 1.5 0 1 0 12 13.5 A1.5 1.5 0 1 0 12 10.5 Z")
+      solid("M12 16.5 A1.5 1.5 0 1 0 12 19.5 A1.5 1.5 0 1 0 12 16.5 Z")
+    }
+  }
+
+  val Edit: ImageVector by lazy {
+    icon("Edit") {
+      stroke("M4.5 15 L15.5 4 A2.12 2.12 0 0 1 18.5 7 L7.5 18 L3.5 19 Z")
+      stroke("M13.5 6 L16.5 9")
+    }
+  }
+
   /** Opens something outside Flare, such as the block explorer. */
   val External: ImageVector by lazy {
     icon("External", autoMirror = true) {

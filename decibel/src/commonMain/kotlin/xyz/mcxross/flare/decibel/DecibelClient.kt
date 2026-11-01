@@ -33,6 +33,8 @@ class DecibelClient(
   val vaultCollateral: VaultCollateralService =
     DefaultVaultCollateralService(aptosClient, config.deployment)
 
+  fun close() = stream.close()
+
   companion object {
     val DefaultJson = Json {
       ignoreUnknownKeys = true
