@@ -15,7 +15,7 @@ class StreamDataTest {
   fun decodesAllMarketPriceEnvelope() {
     val payload =
       objectPayload(
-        """{"topic":"all_market_prices","prices":[{"market":"0x1","oracle_px":100.0,"mark_px":101.0,"mid_px":100.5,"funding_rate_bps":0.01,"is_funding_positive":true,"funding_period_s":3600,"transaction_unix_ms":1000,"open_interest":500.0}]}"""
+        """{"topic":"all_market_prices","prices":[{"market":"0x1","oracle_px":100.0,"mark_px":101.0,"mid_px":100.5,"funding_rate_bps":0.01,"is_funding_positive":true,"funding_period_s":3600,"transaction_unix_ms":1000,"open_interest":500.0}]}""",
       )
 
     val data =
@@ -27,7 +27,7 @@ class StreamDataTest {
   fun decodesAllSpotMidsEnvelope() {
     val payload =
       objectPayload(
-        """{"topic":"all_spot_mids","mids":[{"market_addr":"0x26f","asset_type":"spot","mid":0.597,"last_trade_price":0.683,"transaction_unix_ms":1789358981393}]}"""
+        """{"topic":"all_spot_mids","mids":[{"market_addr":"0x26f","asset_type":"spot","mid":0.597,"last_trade_price":0.683,"transaction_unix_ms":1789358981393}]}""",
       )
 
     val data = assertIs<DecibelStreamData.SpotMids>(decodeStreamData(AllSpotMids, payload, json))
@@ -42,10 +42,11 @@ class StreamDataTest {
     val topic = MarketCandlestick("0x1", CandleInterval.ONE_MINUTE)
     val payload =
       objectPayload(
-        """{"topic":"${topic.wireValue}","candle":{"t":1790518620000,"T":1790518679999,"o":340.35,"h":340.35,"l":340.14,"c":340.14,"v":0.12,"i":"1m"}}"""
+        """{"topic":"${topic.wireValue}","candle":{"t":1790518620000,"T":1790518679999,"o":340.35,"h":340.35,"l":340.14,"c":340.14,"v":0.12,"i":"1m"}}""",
       )
 
-    val candle = assertIs<DecibelStreamData.CandleValue>(decodeStreamData(topic, payload, json)).value
+    val candle =
+      assertIs<DecibelStreamData.CandleValue>(decodeStreamData(topic, payload, json)).value
     assertEquals(1790518620000, candle.openTimeMs)
     assertEquals(340.14, candle.close)
     assertEquals("1m", candle.interval)
@@ -56,7 +57,7 @@ class StreamDataTest {
     val topic = MarketDepth("0x1", DepthAggregation.ONE)
     val payload =
       objectPayload(
-        """{"topic":"${topic.wireValue}","market":"0x1","asks":[{"price":100.125,"size":1.25}],"bids":[{"price":100.0,"size":2}],"best_ask":100.125,"best_bid":100.0,"unix_ms":1000,"sequence":7}"""
+        """{"topic":"${topic.wireValue}","market":"0x1","asks":[{"price":100.125,"size":1.25}],"bids":[{"price":100.0,"size":2}],"best_ask":100.125,"best_bid":100.0,"unix_ms":1000,"sequence":7}""",
       )
 
     val data = assertIs<DecibelStreamData.MarketDepthValue>(decodeStreamData(topic, payload, json))

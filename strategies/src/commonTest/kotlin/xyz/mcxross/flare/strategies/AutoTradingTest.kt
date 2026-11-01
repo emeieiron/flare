@@ -108,18 +108,19 @@ class AutoTradingTest {
     assertFalse(AutoRisk.check(limits, "10", 0, "0", StrategyDirection.BUY, "100").allowed)
     assertFalse(
       AutoRisk.check(limits.copy(orderSize = "19"), "10", 0, "0", StrategyDirection.SELL, "100")
-        .allowed
+        .allowed,
     )
     assertTrue(
       AutoRisk.check(limits.copy(orderSize = "11"), "10", 0, "0", StrategyDirection.SELL, "100")
-        .allowed
+        .allowed,
     )
     assertTrue(
       AutoRisk.check(limits.copy(orderSize = "10"), "10", 0, "0", StrategyDirection.SELL, "100")
-        .allowed
+        .allowed,
     )
     assertFalse(
-      AutoRisk.check(limits, "0", 0, "0", StrategyDirection.SELL, "100", allowShort = false).allowed
+      AutoRisk.check(limits, "0", 0, "0", StrategyDirection.SELL, "100", allowShort = false)
+        .allowed,
     )
     assertFalse(
       AutoRisk.check(
@@ -131,7 +132,7 @@ class AutoTradingTest {
           "100",
           allowShort = false,
         )
-        .allowed
+        .allowed,
     )
   }
 
@@ -156,7 +157,7 @@ class AutoTradingTest {
           StrategyDirection.BUY,
           "2",
         )
-        .allowed
+        .allowed,
     )
   }
 
@@ -241,7 +242,7 @@ class AutoTradingTest {
               listOf(StrategyBookLevel("99", "10")),
               listOf(StrategyBookLevel("100", "0.5"), StrategyBookLevel("101", "0.5")),
               10_000,
-            )
+            ),
         )
     val result = simulator.fill(config, PaperState(), book, StrategyDirection.BUY, 10_000)
     assertNull(result.rejection)
@@ -254,12 +255,12 @@ class AutoTradingTest {
     assertNotNull(
       simulator
         .fill(config.copy(slippageBps = 0), PaperState(), book, StrategyDirection.BUY, 10_000)
-        .rejection
+        .rejection,
     )
     assertNotNull(
       simulator
         .fill(config.copy(orderSize = "2"), PaperState(), book, StrategyDirection.BUY, 10_000)
-        .rejection
+        .rejection,
     )
   }
 
@@ -284,7 +285,7 @@ class AutoTradingTest {
     assertNotNull(
       simulator
         .fill(config, initial, snapshot(), StrategyDirection.SELL, 10_000, allowShort = false)
-        .rejection
+        .rejection,
     )
     assertNotNull(
       simulator
@@ -295,12 +296,12 @@ class AutoTradingTest {
           StrategyDirection.BUY,
           10_000,
         )
-        .rejection
+        .rejection,
     )
     assertNotNull(
       simulator
         .fill(config, PaperState(positionSize = "1"), snapshot(), StrategyDirection.BUY, 10_000)
-        .rejection
+        .rejection,
     )
   }
 }

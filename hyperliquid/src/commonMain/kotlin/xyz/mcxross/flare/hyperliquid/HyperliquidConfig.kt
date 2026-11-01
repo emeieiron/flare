@@ -18,8 +18,8 @@ data class HyperliquidDeployment(
   /** `hyperliquidChain` in user-signed actions. */
   val hyperliquidChain: String,
   /**
-   * The EIP-712 chain id user-signed actions declare, as hex. Hyperliquid accepts any chain id
-   * that matches the signature; `0x66eee` (Arbitrum Sepolia) is what the official SDK sends.
+   * The EIP-712 chain id user-signed actions declare, as hex. Hyperliquid accepts any chain id that
+   * matches the signature; `0x66eee` (Arbitrum Sepolia) is what the official SDK sends.
    */
   val signatureChainId: String = "0x66eee",
 ) {

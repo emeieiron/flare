@@ -47,8 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
@@ -93,8 +93,8 @@ enum class FlareButtonStyle {
 }
 
 /**
- * A uniform, elevated input field matching Flare's dark-mode fintech design system.
- * Eliminates generic Android outline styling and floating notch cuts.
+ * A uniform, elevated input field matching Flare's dark-mode fintech design system. Eliminates
+ * generic Android outline styling and floating notch cuts.
  */
 @Composable
 fun FlareTextField(
@@ -118,14 +118,15 @@ fun FlareTextField(
   interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
 ) {
   val focused by interactionSource.collectIsFocusedAsState()
-  val borderColor by animateColorAsState(
-    when {
-      !enabled -> FlareColors.BorderSubtle.copy(alpha = 0.5f)
-      isError -> FlareColors.Negative
-      focused -> FlareColors.Positive
-      else -> FlareColors.BorderSubtle
-    }
-  )
+  val borderColor by
+    animateColorAsState(
+      when {
+        !enabled -> FlareColors.BorderSubtle.copy(alpha = 0.5f)
+        isError -> FlareColors.Negative
+        focused -> FlareColors.Positive
+        else -> FlareColors.BorderSubtle
+      },
+    )
   val containerColor = if (enabled) FlareColors.Elevated else FlareColors.Surface
 
   Column(
@@ -136,23 +137,24 @@ fun FlareTextField(
       Text(
         text = label,
         style = MaterialTheme.typography.labelMedium,
-        color = when {
-          !enabled -> FlareColors.TextDisabled
-          isError -> FlareColors.Negative
-          focused -> FlareColors.TextPrimary
-          else -> FlareColors.TextSecondary
-        },
+        color =
+          when {
+            !enabled -> FlareColors.TextDisabled
+            isError -> FlareColors.Negative
+            focused -> FlareColors.TextPrimary
+            else -> FlareColors.TextSecondary
+          },
       )
     }
     BasicTextField(
       value = value,
       onValueChange = onValueChange,
-      modifier = Modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(14.dp))
-        .background(containerColor)
-        .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-        .padding(horizontal = 14.dp, vertical = if (singleLine) 14.dp else 12.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .clip(RoundedCornerShape(14.dp))
+          .background(containerColor)
+          .border(1.dp, borderColor, RoundedCornerShape(14.dp))
+          .padding(horizontal = 14.dp, vertical = if (singleLine) 14.dp else 12.dp),
       enabled = enabled,
       readOnly = readOnly,
       singleLine = singleLine,
@@ -162,9 +164,10 @@ fun FlareTextField(
       keyboardActions = keyboardActions,
       visualTransformation = visualTransformation,
       interactionSource = interactionSource,
-      textStyle = MaterialTheme.typography.bodyLarge.copy(
-        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
-      ),
+      textStyle =
+        MaterialTheme.typography.bodyLarge.copy(
+          color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+        ),
       cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
       decorationBox = { innerTextField ->
         Row(
@@ -205,8 +208,8 @@ fun FlareTextField(
 }
 
 /**
- * A dedicated financial amount input matching Flare's trading card aesthetic.
- * Integrates label, available balance, numeric field, unit badge, and optional MAX button.
+ * A dedicated financial amount input matching Flare's trading card aesthetic. Integrates label,
+ * available balance, numeric field, unit badge, and optional MAX button.
  */
 @Composable
 fun FlareAmountField(
@@ -227,14 +230,15 @@ fun FlareAmountField(
   loading: Boolean = false,
 ) {
   val focused by interactionSource.collectIsFocusedAsState()
-  val labelColor by animateColorAsState(
-    when {
-      !enabled -> FlareColors.TextDisabled
-      isError -> FlareColors.Negative
-      focused -> FlareColors.TextPrimary
-      else -> FlareColors.TextTertiary
-    }
-  )
+  val labelColor by
+    animateColorAsState(
+      when {
+        !enabled -> FlareColors.TextDisabled
+        isError -> FlareColors.Negative
+        focused -> FlareColors.TextPrimary
+        else -> FlareColors.TextTertiary
+      },
+    )
   val shape = RoundedCornerShape(if (compact) 14.dp else 18.dp)
   val valueStyle =
     if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
@@ -246,22 +250,23 @@ fun FlareAmountField(
     BasicTextField(
       value = value,
       onValueChange = onValueChange,
-      modifier = Modifier
-        .fillMaxWidth()
-        .clip(shape)
-        .background(FlareColors.Surface)
-        .then(if (isError) Modifier.border(1.dp, FlareColors.Negative, shape) else Modifier)
-        .padding(
-          horizontal = if (compact) 14.dp else 16.dp,
-          vertical = if (compact) 12.dp else 14.dp,
-        ),
+      modifier =
+        Modifier.fillMaxWidth()
+          .clip(shape)
+          .background(FlareColors.Surface)
+          .then(if (isError) Modifier.border(1.dp, FlareColors.Negative, shape) else Modifier)
+          .padding(
+            horizontal = if (compact) 14.dp else 16.dp,
+            vertical = if (compact) 12.dp else 14.dp,
+          ),
       enabled = enabled,
       singleLine = true,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
       interactionSource = interactionSource,
-      textStyle = valueStyle.copy(
-        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
-      ),
+      textStyle =
+        valueStyle.copy(
+          color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+        ),
       cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
       decorationBox = { innerTextField ->
         Column(verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
@@ -278,7 +283,8 @@ fun FlareAmountField(
                 color = FlareColors.Positive,
                 modifier =
                   if (onMaxClick != null) {
-                    Modifier.clip(RoundedCornerShape(4.dp)).clickable(enabled = enabled, onClick = onMaxClick)
+                    Modifier.clip(RoundedCornerShape(4.dp))
+                      .clickable(enabled = enabled, onClick = onMaxClick)
                   } else {
                     Modifier
                   },
@@ -292,20 +298,27 @@ fun FlareAmountField(
               }
               Box(Modifier.alpha(if (loading) 0f else 1f)) { innerTextField() }
               if (loading) {
-                FlareSkeletonBox(Modifier.width(100.dp).height(if (compact) 24.dp else 32.dp)
-                  .then(if (rememberReducedMotion()) Modifier else Modifier.shimmer(rememberFlareShimmer()))
-                  .semantics { contentDescription = "Loading amount" })
+                FlareSkeletonBox(
+                  Modifier.width(100.dp)
+                    .height(if (compact) 24.dp else 32.dp)
+                    .then(
+                      if (rememberReducedMotion()) Modifier
+                      else Modifier.shimmer(rememberFlareShimmer()),
+                    )
+                    .semantics { contentDescription = "Loading amount" },
+                )
               }
             }
             if (onMaxClick != null) {
               Box(
-                modifier = Modifier.align(Alignment.CenterVertically)
-                  .padding(start = 10.dp)
-                  .clip(RoundedCornerShape(8.dp))
-                  .background(FlareColors.Surface)
-                  .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
-                  .clickable(enabled = enabled, onClick = onMaxClick)
-                  .padding(horizontal = 10.dp, vertical = 5.dp),
+                modifier =
+                  Modifier.align(Alignment.CenterVertically)
+                    .padding(start = 10.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(FlareColors.Surface)
+                    .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
+                    .clickable(enabled = enabled, onClick = onMaxClick)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
@@ -326,7 +339,11 @@ fun FlareAmountField(
             }
           }
           if (valueHint != null) {
-            Text(text = valueHint, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextTertiary)
+            Text(
+              text = valueHint,
+              style = MaterialTheme.typography.bodySmall,
+              color = FlareColors.TextTertiary,
+            )
           }
         }
       },
@@ -370,7 +387,12 @@ fun FlareSearchField(
           .padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Icon(leadingIcon, contentDescription = null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+        Icon(
+          leadingIcon,
+          contentDescription = null,
+          tint = FlareColors.TextTertiary,
+          modifier = Modifier.size(18.dp),
+        )
         Box(Modifier.weight(1f).padding(horizontal = 10.dp)) {
           if (value.isEmpty()) {
             Text(
@@ -538,7 +560,7 @@ fun FlareChip(
   val foreground by
     animateColorAsState(
       if (!enabled) FlareColors.TextDisabled
-      else if (selected) semanticColor ?: FlareColors.TextPrimary else FlareColors.TextSecondary
+      else if (selected) semanticColor ?: FlareColors.TextPrimary else FlareColors.TextSecondary,
     )
   Box(
     modifier =
@@ -572,8 +594,10 @@ fun IndicatorChip(
   modifier: Modifier = Modifier,
 ) {
   val background by animateColorAsState(if (selected) FlareColors.Elevated else Color.Transparent)
-  val border by animateColorAsState(if (selected) FlareColors.Elevated else FlareColors.BorderDefault)
-  val foreground by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
+  val border by
+    animateColorAsState(if (selected) FlareColors.Elevated else FlareColors.BorderDefault)
+  val foreground by
+    animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
   val dot by animateFloatAsState(if (selected) 1f else 0f, label = "indicatorDot")
   Row(
     modifier
@@ -586,9 +610,7 @@ fun IndicatorChip(
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Box(
-      Modifier.padding(end = (6 * dot).dp)
-        .size((6 * dot).dp)
-        .background(color, CircleShape)
+      Modifier.padding(end = (6 * dot).dp).size((6 * dot).dp).background(color, CircleShape),
     )
     Text(text, color = foreground, style = MaterialTheme.typography.labelMedium)
   }
@@ -609,11 +631,12 @@ fun <T> FlareSegmentedControl(
   indicatorPosition: (() -> Float)? = null,
 ) {
   val index = options.indexOf(selectedOption).coerceAtLeast(0)
-  val position by animateFloatAsState(
-    index.toFloat(),
-    spring(stiffness = Spring.StiffnessMediumLow),
-    label = "segmentIndicator",
-  )
+  val position by
+    animateFloatAsState(
+      index.toFloat(),
+      spring(stiffness = Spring.StiffnessMediumLow),
+      label = "segmentIndicator",
+    )
   Row(
     modifier =
       modifier
@@ -636,19 +659,23 @@ fun <T> FlareSegmentedControl(
   ) {
     options.forEach { option ->
       val selected = option == selectedOption
-      val textColor by animateColorAsState(
-        when {
-          !enabled -> FlareColors.TextDisabled
-          selected -> FlareColors.TextPrimary
-          else -> FlareColors.TextTertiary
-        }
-      )
+      val textColor by
+        animateColorAsState(
+          when {
+            !enabled -> FlareColors.TextDisabled
+            selected -> FlareColors.TextPrimary
+            else -> FlareColors.TextTertiary
+          },
+        )
       Box(
         modifier =
-          Modifier.weight(1f)
-            .heightIn(min = 42.dp)
-            .clip(CircleShape)
-            .selectable(selected = selected, enabled = enabled, role = Role.Tab) { onOptionSelected(option) },
+          Modifier.weight(1f).heightIn(min = 42.dp).clip(CircleShape).selectable(
+            selected = selected,
+            enabled = enabled,
+            role = Role.Tab,
+          ) {
+            onOptionSelected(option)
+          },
         contentAlignment = Alignment.Center,
       ) {
         Text(
@@ -928,7 +955,10 @@ fun MarketListRow(
     Spacer(Modifier.width(8.dp))
     val favoriteLabel =
       if (favorite) "Remove ${asset.symbol} from watchlist" else "Add ${asset.symbol} to watchlist"
-    IconButton(onClick = onFavorite, modifier = Modifier.semantics { contentDescription = favoriteLabel }) {
+    IconButton(
+      onClick = onFavorite,
+      modifier = Modifier.semantics { contentDescription = favoriteLabel },
+    ) {
       Icon(
         if (favorite) FlareIcons.StarFilled else FlareIcons.Star,
         contentDescription = null,
@@ -940,8 +970,9 @@ fun MarketListRow(
 }
 
 /**
- * An asset's logo, or its monogram until the logo shows. The request asks for exactly the drawn size,
- * so a logo already in memory resolves before its first frame, and no subcomposition is needed.
+ * An asset's logo, or its monogram until the logo shows. The request asks for exactly the drawn
+ * size, so a logo already in memory resolves before its first frame, and no subcomposition is
+ * needed.
  */
 @Composable
 internal fun AssetIcon(asset: AssetIdentity, size: Dp, modifier: Modifier = Modifier) {
@@ -955,17 +986,19 @@ internal fun AssetIcon(asset: AssetIdentity, size: Dp, modifier: Modifier = Modi
     } else {
       val context = LocalPlatformContext.current
       val px = with(LocalDensity.current) { size.roundToPx() }
-      val request = remember(url, px, context) { ImageRequest.Builder(context).data(url).size(px).build() }
+      val request =
+        remember(url, px, context) { ImageRequest.Builder(context).data(url).size(px).build() }
       val painter = rememberAsyncImagePainter(request, contentScale = ContentScale.Crop)
       val observed by painter.state.collectAsState()
       // Decided at draw time from the painter itself, so a logo that resolved from memory before
       // the first frame never shows its monogram; reading [observed] redraws once a load settles.
       Text(
         assetMonogram(asset.symbol),
-        Modifier.clearAndSetSemantics {}.drawWithContent {
-          observed
-          if (painter.state.value !is AsyncImagePainter.State.Success) drawContent()
-        },
+        Modifier.clearAndSetSemantics {}
+          .drawWithContent {
+            observed
+            if (painter.state.value !is AsyncImagePainter.State.Success) drawContent()
+          },
         style = MaterialTheme.typography.titleLarge,
       )
       Image(painter, "${asset.name} icon", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -987,12 +1020,13 @@ fun EmptyState(
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-    if (message.isNotBlank()) Text(
-      message,
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
-    )
+    if (message.isNotBlank())
+      Text(
+        message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+      )
     actionLabel?.let {
       Spacer(Modifier.height(4.dp))
       FlareButton(text = it, onClick = onAction, style = FlareButtonStyle.OUTLINE)
@@ -1020,11 +1054,12 @@ fun FlareBottomNavigation(
   ) {
     items.forEachIndexed { index, item ->
       val selected = index == selectedIndex
-      val color by animateColorAsState(
-        if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary,
-        tween(180),
-        label = "tabColor",
-      )
+      val color by
+        animateColorAsState(
+          if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary,
+          tween(180),
+          label = "tabColor",
+        )
       Column(
         modifier =
           Modifier.weight(1f).heightIn(min = 52.dp).selectable(

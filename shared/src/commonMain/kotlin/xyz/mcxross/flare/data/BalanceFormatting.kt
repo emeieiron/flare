@@ -5,11 +5,13 @@ private val DecimalBalance = Regex("""([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))
 /** Display only: round decimal text directly, retaining nonzero balances smaller than 0.01. */
 fun formatTokenBalance(amount: String): String {
   val match = DecimalBalance.matchEntire(amount) ?: return "—"
-  val exponent = match.groupValues[4].let { if (it.isEmpty()) 0 else it.toIntOrNull() } ?: return "—"
+  val exponent =
+    match.groupValues[4].let { if (it.isEmpty()) 0 else it.toIntOrNull() } ?: return "—"
   if (exponent !in -1_000..1_000) return "—"
   val digits = match.groupValues[2] + match.groupValues[3]
   val point = match.groupValues[2].length + exponent
-  val whole = if (point <= 0) "0" else digits.padEnd(point, '0').take(point).trimStart('0').ifEmpty { "0" }
+  val whole =
+    if (point <= 0) "0" else digits.padEnd(point, '0').take(point).trimStart('0').ifEmpty { "0" }
   val fraction = if (point < 0) "0".repeat(-point) + digits else digits.drop(point)
   val nonzero = digits.any { it != '0' }
   val sign = if (match.groupValues[1] == "-" && nonzero) "−" else ""

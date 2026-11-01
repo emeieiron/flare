@@ -17,7 +17,6 @@ import xyz.mcxross.flare.hyperliquid.model.ExchangeResponse
 import xyz.mcxross.flare.hyperliquid.model.L1Action
 import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
 import xyz.mcxross.flare.hyperliquid.model.OrderStatus
-import xyz.mcxross.flare.hyperliquid.model.TwapHistoryEntry
 import xyz.mcxross.flare.hyperliquid.model.TwapOrderStatus
 import xyz.mcxross.flare.hyperliquid.model.UsdClassTransfer
 import xyz.mcxross.flare.hyperliquid.model.UsdSend
@@ -37,8 +36,8 @@ import xyz.mcxross.flare.venue.model.TwapSchedule
 
 /**
  * Fund moves, TWAPs and sub-account actions as sent, and how each is followed to an outcome: an
- * answer settles it, otherwise the ledger or TWAP history does once it lists it, and an action
- * past its lapse that isn't listed failed.
+ * answer settles it, otherwise the ledger or TWAP history does once it lists it, and an action past
+ * its lapse that isn't listed failed.
  */
 class HyperliquidFundsTest {
   private val prompt = VaultPrompt("Move funds", "Confirm your identity")
@@ -47,7 +46,9 @@ class HyperliquidFundsTest {
   fun aWithdrawalGoesToTheOwnerOnArbitrumAndTakesItsLedgerHash() = runTest {
     val harness = harness()
     var journaled: String? = null
-    harness.submitter.beforeSigning = { journaled = harness.journal.find(it.toString())?.operationName }
+    harness.submitter.beforeSigning = {
+      journaled = harness.journal.find(it.toString())?.operationName
+    }
     harness.ledger = { nonce -> """[${withdrawal(nonce * 1_000, "5.5")}]""" }
 
     val states = harness.trading.execute(TradeAction.Withdraw(OWNER, "5.5"), prompt).toList()
@@ -80,7 +81,10 @@ class HyperliquidFundsTest {
     val badAddress = harness.funds.withdraw(OWNER, "0x1234", "5", prompt)
     val tooPrecise = harness.funds.withdraw(OWNER, null, "5.0000001", prompt)
 
-    assertEquals("A withdrawal must be more than the 1 USDC fee", assertIs<ActionState.Failed>(atTheFee).message)
+    assertEquals(
+      "A withdrawal must be more than the 1 USDC fee",
+      assertIs<ActionState.Failed>(atTheFee).message,
+    )
     assertEquals("Enter a valid Arbitrum address", assertIs<ActionState.Failed>(badAddress).message)
     assertTrue(assertIs<ActionState.Failed>(tooPrecise).definitelyNotSubmitted)
     assertTrue(harness.submitter.sent.isEmpty())
@@ -104,11 +108,18 @@ class HyperliquidFundsTest {
   fun usdcMovesBetweenPerpsAndSpotOnlyWhereTheyAreApart() = runTest {
     val harness = harness()
 
-    val toSpot = harness.trading.execute(TradeAction.MovePerpSpot(OWNER, "3", toSpot = true), prompt).toList().last()
+    val toSpot =
+      harness.trading
+        .execute(TradeAction.MovePerpSpot(OWNER, "3", toSpot = true), prompt)
+        .toList()
+        .last()
     harness.abstraction = Fixtures.USER_ABSTRACTION_UNIFIED
     val unified = harness.funds.movePerpSpot(OWNER, "3", toPerp = true, prompt)
 
-    assertEquals(UsdClassTransfer("3".toHlDecimal(), toPerp = false), harness.submitter.sent.single().first)
+    assertEquals(
+      UsdClassTransfer("3".toHlDecimal(), toPerp = false),
+      harness.submitter.sent.single().first,
+    )
     assertIs<ActionState.Committed>(toSpot)
     assertEquals(
       "This account shares one balance between perps and spot, so there’s nothing to move",
@@ -141,10 +152,16 @@ class HyperliquidFundsTest {
     val harness = harness()
     harness.ledger = { _ -> """[${vaultDeposit("5")}]""" }
 
-    val deposit = harness.trading.execute(TradeAction.VaultDeposit(OWNER, Fixtures.HLP_VAULT, "5"), prompt).toList().last()
-    harness.equities = """[{"vaultAddress":"${Fixtures.HLP_VAULT}","equity":"5.0","lockedUntilTimestamp":${harness.now + 3_600_000}}]"""
+    val deposit =
+      harness.trading
+        .execute(TradeAction.VaultDeposit(OWNER, Fixtures.HLP_VAULT, "5"), prompt)
+        .toList()
+        .last()
+    harness.equities =
+      """[{"vaultAddress":"${Fixtures.HLP_VAULT}","equity":"5.0","lockedUntilTimestamp":${harness.now + 3_600_000}}]"""
     val locked = harness.funds.vault(OWNER, Fixtures.HLP_VAULT, false, "5", prompt)
-    harness.equities = """[{"vaultAddress":"${Fixtures.HLP_VAULT}","equity":"5.0","lockedUntilTimestamp":${harness.now - 1}}]"""
+    harness.equities =
+      """[{"vaultAddress":"${Fixtures.HLP_VAULT}","equity":"5.0","lockedUntilTimestamp":${harness.now - 1}}]"""
     val redeemed = harness.funds.vault(OWNER, Fixtures.HLP_VAULT, false, "5", prompt)
 
     assertEquals(
@@ -176,20 +193,29 @@ class HyperliquidFundsTest {
     harness.ledger = { _ -> """[${classTransfer("3", toPerp = false)}]""" }
     assertEquals(1, harness.actions.reconcile().finalized)
     harness.now += HyperliquidActions.NONCE_WINDOW_MS + 60_000
-    assertIs<ActionState.Failed>(harness.trading.transactionStatus(harness.journal.entries.value.keys.single()))
+    assertIs<ActionState.Failed>(
+      harness.trading.transactionStatus(harness.journal.entries.value.keys.single()),
+    )
     assertTrue(harness.journal.entries.value.isEmpty())
   }
 
   @Test
   fun aTwapRunsForItsMinutesFromTheAgent() = runTest {
     val harness = harness()
-    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Running(42L))) }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Running(42L)))
+    }
 
     val placed = harness.placeTwap(OWNER, "0.01", minutes = 60)
-    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Error("Too small"))) }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Error("Too small")))
+    }
     val refused = harness.placeTwap(OWNER, "0.01", minutes = 60)
 
-    assertEquals("""{"type":"twapOrder","twap":{"a":0,"b":true,"s":"0.01","r":false,"m":60,"t":false}}""", harness.wires().first())
+    assertEquals(
+      """{"type":"twapOrder","twap":{"a":0,"b":true,"s":"0.01","r":false,"m":60,"t":false}}""",
+      harness.wires().first(),
+    )
     assertEquals("Your TWAP is running.", assertIs<ActionState.Committed>(placed).detail)
     val failed = assertIs<ActionState.Failed>(refused)
     assertEquals("Too small", failed.message)
@@ -200,9 +226,15 @@ class HyperliquidFundsTest {
   @Test
   fun aTwapIsCanceledByItsId() = runTest {
     val harness = harness()
-    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.TwapCanceled(CancelStatus.Success)) }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.TwapCanceled(CancelStatus.Success))
+    }
 
-    val result = harness.trading.execute(TradeAction.CancelTwapOrder(OWNER, "BTC", "42"), prompt).toList().last()
+    val result =
+      harness.trading
+        .execute(TradeAction.CancelTwapOrder(OWNER, "BTC", "42"), prompt)
+        .toList()
+        .last()
 
     assertEquals("""{"type":"twapCancel","a":0,"t":42}""", harness.wires().single())
     assertIs<ActionState.Committed>(result)
@@ -215,7 +247,10 @@ class HyperliquidFundsTest {
 
     assertIs<ActionState.Pending>(harness.placeTwap(OWNER, "0.01", minutes = 60))
     assertIs<ActionState.Pending>(
-      harness.trading.execute(TradeAction.CancelTwapOrder(OWNER, "BTC", "7"), prompt).toList().last()
+      harness.trading
+        .execute(TradeAction.CancelTwapOrder(OWNER, "BTC", "7"), prompt)
+        .toList()
+        .last(),
     )
     assertEquals(2, harness.actions.reconcile().unresolved)
     harness.twaps = "[${twap(null, "activated")},${twap(7, "terminated")}]"
@@ -227,8 +262,10 @@ class HyperliquidFundsTest {
     val harness = harness()
     harness.submitter.outcome = { action ->
       when (action.type) {
-        "order" -> ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Resting(5L))))
-        "twapOrder" -> ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Running(1L)))
+        "order" ->
+          ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Resting(5L))))
+        "twapOrder" ->
+          ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Running(1L)))
         else -> ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success)))
       }
     }
@@ -248,10 +285,23 @@ class HyperliquidFundsTest {
     fun update(json: String) = HyperliquidClient.DefaultJson.decodeFromString<LedgerUpdate>(json)
 
     val withdraw = JournaledAction.Withdraw(OWNER, DESTINATION, "5.5", 0L)
-    assertTrue(HyperliquidLedger.matches(update(withdrawal(7_000, "5.5", time = 2_000)), withdraw, 7L, since))
-    assertTrue(HyperliquidLedger.matches(update(withdrawal(7, "4.5", time = 2_000)), withdraw, 7L, since))
-    assertFalse(HyperliquidLedger.matches(update(withdrawal(8, "5.5", time = 2_000)), withdraw, 7L, since))
-    assertFalse(HyperliquidLedger.matches(update(withdrawal(7, "5.5", time = 999)), withdraw, 7L, since))
+    assertTrue(
+      HyperliquidLedger.matches(
+        update(withdrawal(7_000, "5.5", time = 2_000)),
+        withdraw,
+        7L,
+        since,
+      ),
+    )
+    assertTrue(
+      HyperliquidLedger.matches(update(withdrawal(7, "4.5", time = 2_000)), withdraw, 7L, since),
+    )
+    assertFalse(
+      HyperliquidLedger.matches(update(withdrawal(8, "5.5", time = 2_000)), withdraw, 7L, since),
+    )
+    assertFalse(
+      HyperliquidLedger.matches(update(withdrawal(7, "5.5", time = 999)), withdraw, 7L, since),
+    )
 
     val sent = JournaledAction.SendUsdc(OWNER, DESTINATION, "10", 0L)
     val internal =
@@ -260,14 +310,31 @@ class HyperliquidFundsTest {
     assertFalse(HyperliquidLedger.matches(update(internal.replace("9.0", "8.0")), sent, 7L, since))
 
     val move = JournaledAction.MovePerpSpot(OWNER, "3", toPerp = false, 0L)
-    assertTrue(HyperliquidLedger.matches(update(classTransfer("3.0", toPerp = false, time = 2_000)), move, 7L, since))
-    assertFalse(HyperliquidLedger.matches(update(classTransfer("3.0", toPerp = true, time = 2_000)), move, 7L, since))
+    assertTrue(
+      HyperliquidLedger.matches(
+        update(classTransfer("3.0", toPerp = false, time = 2_000)),
+        move,
+        7L,
+        since,
+      ),
+    )
+    assertFalse(
+      HyperliquidLedger.matches(
+        update(classTransfer("3.0", toPerp = true, time = 2_000)),
+        move,
+        7L,
+        since,
+      ),
+    )
 
-    val redeem = JournaledAction.VaultTransfer(OWNER, Fixtures.HLP_VAULT, isDeposit = false, "5", 0L)
+    val redeem =
+      JournaledAction.VaultTransfer(OWNER, Fixtures.HLP_VAULT, isDeposit = false, "5", 0L)
     val redeemed =
       """{"time":2000,"hash":"$HASH","delta":{"type":"vaultWithdraw","vault":"${Fixtures.HLP_VAULT}","user":"${OWNER.lowercase()}","requestedUsd":"5.0","commission":"0.0","closingCost":"0.0","basis":"4.98","netWithdrawnUsd":"5.0"}}"""
     assertTrue(HyperliquidLedger.matches(update(redeemed), redeem, 7L, since))
-    assertFalse(HyperliquidLedger.matches(update(vaultDeposit("5", time = 2_000)), redeem, 7L, since))
+    assertFalse(
+      HyperliquidLedger.matches(update(vaultDeposit("5", time = 2_000)), redeem, 7L, since),
+    )
   }
 
   @Test
@@ -288,15 +355,24 @@ class HyperliquidFundsTest {
   }
 
   private class Harness(val setup: SetupHarness) {
-    val submitter get() = setup.submitter
-    val journal get() = setup.journal
-    val actions get() = setup.actions
-    val wallet get() = setup.wallet
+    val submitter
+      get() = setup.submitter
+
+    val journal
+      get() = setup.journal
+
+    val actions
+      get() = setup.actions
+
+    val wallet
+      get() = setup.wallet
+
     var now: Long
       get() = setup.now
       set(value) {
         setup.now = value
       }
+
     /** `userNonFundingLedgerUpdates`, given the nonce last sent. */
     var ledger: (nonce: Long) -> String = { "[]" }
     var abstraction = Fixtures.USER_ABSTRACTION
@@ -304,7 +380,13 @@ class HyperliquidFundsTest {
     var twaps = "[]"
     val funds = HyperliquidFunds(setup.client, setup.actions, setup.preferences) { setup.now }
     val trading =
-      HyperliquidTradingRepository(setup.client, setup.actions, setup.setup, funds, HyperliquidAssets(setup.client))
+      HyperliquidTradingRepository(
+        setup.client,
+        setup.actions,
+        setup.setup,
+        funds,
+        HyperliquidAssets(setup.client),
+      )
 
     fun nonce(): Long = submitter.sent.last().second
 
@@ -312,8 +394,17 @@ class HyperliquidFundsTest {
 
     suspend fun placeTwap(account: String, size: String, minutes: Long): ActionState {
       val order =
-        OrderRequest("BTC", OrderSide.BUY, OrderType.TWAP, size, twap = TwapSchedule(30, minutes * 60))
-      return trading.execute(TradeAction.PlaceOrder(account, BTC, order), VaultPrompt("TWAP", "")).toList().last()
+        OrderRequest(
+          "BTC",
+          OrderSide.BUY,
+          OrderType.TWAP,
+          size,
+          twap = TwapSchedule(30, minutes * 60),
+        )
+      return trading
+        .execute(TradeAction.PlaceOrder(account, BTC, order), VaultPrompt("TWAP", ""))
+        .toList()
+        .last()
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -347,7 +438,9 @@ class HyperliquidFundsTest {
   private fun vaultDeposit(usdc: String, time: Long = 1_800_000_000_100L) =
     """{"time":$time,"hash":"$HASH","delta":{"type":"vaultDeposit","vault":"${Fixtures.HLP_VAULT}","usdc":"$usdc"}}"""
 
-  /** A history entry of the TWAP [placeTwap] sends, started now; [id] null is from before TWAP ids. */
+  /**
+   * A history entry of the TWAP [placeTwap] sends, started now; [id] null is from before TWAP ids.
+   */
   private fun twap(id: Long?, status: String) =
     """{"time":1800000001,"state":{"coin":"BTC","user":"${OWNER.lowercase()}","side":"B","sz":"0.01","executedSz":"0.0","executedNtl":"0.0","minutes":60,"reduceOnly":false,"randomize":false,"timestamp":1800000000500},"status":{"status":"$status"}${id?.let { ",\"twapId\":$it" } ?: ""}}"""
 
@@ -362,7 +455,18 @@ class HyperliquidFundsTest {
 
     val BTC: Market =
       HyperliquidOrderRules("BTC", "BTC", MarketKind.PERP, 5).let { rules ->
-        Market("BTC", "BTC", "BTC/USD", MarketKind.PERP, "crypto", rules.maxPriceDecimals, 5, 40, false, rules)
+        Market(
+          "BTC",
+          "BTC",
+          "BTC/USD",
+          MarketKind.PERP,
+          "crypto",
+          rules.maxPriceDecimals,
+          5,
+          40,
+          false,
+          rules,
+        )
       }
   }
 }

@@ -17,7 +17,7 @@ class DecibelPointsHistoryTest {
             """{"day_index":3,"day_start_unix_ms":1792627200000,"total_amps":1240.0,"trading_amps":900.0},""" +
             """{"day_index":2,"day_start_unix_ms":1792540800000,"total_amps":980.5,"trading_amps":700.0},""" +
             """{"day_index":1,"day_start_unix_ms":1792454400000,"total_amps":410.25,"trading_amps":410.25}""" +
-            """]}"""
+            """]}""",
         )
         .toPointsHistory()
 
@@ -28,7 +28,9 @@ class DecibelPointsHistoryTest {
   @Test
   fun anOwnerWithNoSeasonDaysChartsNothing() {
     val history =
-      json.decodeFromString<OwnerAmpsDaily>("""{"owner":"0x1","season":"S1","days":[]}""").toPointsHistory()
+      json
+        .decodeFromString<OwnerAmpsDaily>("""{"owner":"0x1","season":"S1","days":[]}""")
+        .toPointsHistory()
     assertEquals(emptyList(), history)
   }
 }

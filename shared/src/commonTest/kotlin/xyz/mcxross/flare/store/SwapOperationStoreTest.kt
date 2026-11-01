@@ -31,7 +31,9 @@ class SwapOperationStoreTest {
     val pending = prepared.copy(status = SwapOperationStatus.PENDING)
     store.write(pending)
     assertFailsWith<IllegalArgumentException> { store.write(prepared) }
-    assertFailsWith<IllegalArgumentException> { store.write(pending.copy(status = SwapOperationStatus.NOT_SUBMITTED)) }
+    assertFailsWith<IllegalArgumentException> {
+      store.write(pending.copy(status = SwapOperationStatus.NOT_SUBMITTED))
+    }
     assertFailsWith<IllegalArgumentException> { store.write(pending.copy(profileId = "another")) }
   }
 
@@ -39,12 +41,26 @@ class SwapOperationStoreTest {
   fun aDefiniteRejectionAllowsANewSignedReferenceForTheSameQuote() = runTest {
     val store = PreferencesSwapOperationStore(MemoryPreferences())
     val prepared = operation("swap")
-    store.write(prepared.copy(status = SwapOperationStatus.NOT_SUBMITTED, feePayment = FeePayment.SPONSORED))
-    store.write(prepared.copy(reference = "0xselfpaid", preparedReference = "0xselfpaid", feePayment = FeePayment.SELF_PAY))
+    store.write(
+      prepared.copy(status = SwapOperationStatus.NOT_SUBMITTED, feePayment = FeePayment.SPONSORED),
+    )
+    store.write(
+      prepared.copy(
+        reference = "0xselfpaid",
+        preparedReference = "0xselfpaid",
+        feePayment = FeePayment.SELF_PAY,
+      ),
+    )
     assertEquals("0xselfpaid", store.operations.first().single().reference)
     assertEquals(FeePayment.SELF_PAY, store.operations.first().single().feePayment)
     assertFailsWith<IllegalArgumentException> {
-      store.write(prepared.copy(reference = "0xselfpaid", preparedReference = "0xselfpaid", feePayment = FeePayment.SPONSORED))
+      store.write(
+        prepared.copy(
+          reference = "0xselfpaid",
+          preparedReference = "0xselfpaid",
+          feePayment = FeePayment.SPONSORED,
+        ),
+      )
     }
   }
 
@@ -52,8 +68,13 @@ class SwapOperationStoreTest {
   fun historyRetentionNeverDiscardsUnresolvedOperations() = runTest {
     val store = PreferencesSwapOperationStore(MemoryPreferences())
     store.write(operation("pending"))
-    for (index in 1..105) store.write(operation("done-$index").copy(
-      status = SwapOperationStatus.COMMITTED, updatedAtMs = index.toLong()))
+    for (index in 1..105) store.write(
+      operation("done-$index")
+        .copy(
+          status = SwapOperationStatus.COMMITTED,
+          updatedAtMs = index.toLong(),
+        ),
+    )
     val saved = store.operations.first()
     assertEquals(101, saved.size)
     assertTrue(saved.any { it.id == "pending" && it.isUnresolved })
@@ -61,8 +82,15 @@ class SwapOperationStoreTest {
 }
 
 private fun operation(id: String): SwapOperation {
-  val request = SwapRequest("0x1", SwapAsset("aptos:1", "0xa", 8),
-    SwapAsset("aptos:1", "0xb", 6), SwapAmountKind.EXACT_OUTPUT, "1000000")
-  val quote = SwapQuote(id, "provider", request, "100", "1000000", "101", "1000000", emptyList(), 30000)
+  val request =
+    SwapRequest(
+      "0x1",
+      SwapAsset("aptos:1", "0xa", 8),
+      SwapAsset("aptos:1", "0xb", 6),
+      SwapAmountKind.EXACT_OUTPUT,
+      "1000000",
+    )
+  val quote =
+    SwapQuote(id, "provider", request, "100", "1000000", "101", "1000000", emptyList(), 30000)
   return SwapOperation(id, "profile", quote, SwapOperationStatus.PREPARED, "sponsor:$id", 1)
 }

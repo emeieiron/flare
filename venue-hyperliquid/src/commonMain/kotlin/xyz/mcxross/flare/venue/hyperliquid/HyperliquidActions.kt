@@ -204,26 +204,39 @@ internal sealed interface JournaledAction {
       val lapses = parts[2].toLongOrNull() ?: return null
       val rest = parts.drop(3)
       return runCatching {
-          when (parts[0]) {
-            "DELEGATE_TRADING" -> ApproveAgent(account, rest[0], rest[1].fromHexText(), lapses)
-            "REVOKE_DELEGATION" -> RevokeAgent(account, rest[0], rest[1].fromHexText(), lapses)
-            "APPROVE_MAX_BUILDER_FEE" -> ApproveBuilderFee(account, rest[0], rest[1].toInt(), lapses)
-            "REVOKE_MAX_BUILDER_FEE" -> RevokeBuilderFee(account, rest[0], lapses)
-            "PLACE_ORDER" -> PlaceOrder(account, lapses)
-            "CANCEL_ORDER" -> CancelOrders(account, rest[0].split(","), lapses)
-            "CONFIGURE_MARKET" ->
-              UpdateLeverage(account, rest[0].fromHexText(), rest[1].toBooleanStrict(), rest[2].toInt(), lapses)
-            "WITHDRAW" -> Withdraw(account, rest[0], rest[1], lapses)
-            "TRANSFER" -> SendUsdc(account, rest[0], rest[1], lapses)
-            "MOVE_PERP_SPOT" -> MovePerpSpot(account, rest[0], rest[1].toBooleanStrict(), lapses)
-            "CONTRIBUTE_TO_VAULT" -> VaultTransfer(account, rest[0], true, rest[1], lapses)
-            "REDEEM_FROM_VAULT" -> VaultTransfer(account, rest[0], false, rest[1], lapses)
-            "PLACE_TWAP_ORDER" ->
-              PlaceTwap(account, rest[0].fromHexText(), rest[1].toBooleanStrict(), rest[2], rest[3].toInt(), lapses)
-            "CANCEL_TWAP_ORDER" -> CancelTwap(account, rest[0].toLong(), lapses)
-            else -> null
-          }
+        when (parts[0]) {
+          "DELEGATE_TRADING" -> ApproveAgent(account, rest[0], rest[1].fromHexText(), lapses)
+          "REVOKE_DELEGATION" -> RevokeAgent(account, rest[0], rest[1].fromHexText(), lapses)
+          "APPROVE_MAX_BUILDER_FEE" -> ApproveBuilderFee(account, rest[0], rest[1].toInt(), lapses)
+          "REVOKE_MAX_BUILDER_FEE" -> RevokeBuilderFee(account, rest[0], lapses)
+          "PLACE_ORDER" -> PlaceOrder(account, lapses)
+          "CANCEL_ORDER" -> CancelOrders(account, rest[0].split(","), lapses)
+          "CONFIGURE_MARKET" ->
+            UpdateLeverage(
+              account,
+              rest[0].fromHexText(),
+              rest[1].toBooleanStrict(),
+              rest[2].toInt(),
+              lapses,
+            )
+          "WITHDRAW" -> Withdraw(account, rest[0], rest[1], lapses)
+          "TRANSFER" -> SendUsdc(account, rest[0], rest[1], lapses)
+          "MOVE_PERP_SPOT" -> MovePerpSpot(account, rest[0], rest[1].toBooleanStrict(), lapses)
+          "CONTRIBUTE_TO_VAULT" -> VaultTransfer(account, rest[0], true, rest[1], lapses)
+          "REDEEM_FROM_VAULT" -> VaultTransfer(account, rest[0], false, rest[1], lapses)
+          "PLACE_TWAP_ORDER" ->
+            PlaceTwap(
+              account,
+              rest[0].fromHexText(),
+              rest[1].toBooleanStrict(),
+              rest[2],
+              rest[3].toInt(),
+              lapses,
+            )
+          "CANCEL_TWAP_ORDER" -> CancelTwap(account, rest[0].toLong(), lapses)
+          else -> null
         }
+      }
         .getOrNull()
     }
 
@@ -278,7 +291,10 @@ class HyperliquidActions(
    * chose to confirm each transaction. Owner actions authenticate on their own, every time.
    */
   suspend fun <T> confirmed(prompt: VaultPrompt, block: suspend () -> T): T {
-    if (currentCoroutineContext()[ConfirmedAction] == null && preferences.values.first().confirmTransactions) {
+    if (
+      currentCoroutineContext()[ConfirmedAction] == null &&
+        preferences.values.first().confirmTransactions
+    ) {
       wallets.confirmIdentity(prompt)
     }
     return withContext(ConfirmedAction()) { block() }
@@ -296,8 +312,12 @@ class HyperliquidActions(
     exclusively(action.type) {
       wallets.withOwnerSigner(prompt) { signer ->
         val nonce = uniqueNonce(signer.address)
-        send(action.type, nonce.toString(), record(nonce), { ActionState.Committed(nonce.toString()) }) {
-          beforeSend ->
+        send(
+          action.type,
+          nonce.toString(),
+          record(nonce),
+          { ActionState.Committed(nonce.toString()) },
+        ) { beforeSend ->
           submitter.submit(action, signer, nonce, beforeSend)
         }
       }
@@ -324,8 +344,12 @@ class HyperliquidActions(
           val nonce = uniqueNonce(signer.address)
           val reference = cloid?.hex ?: nonce.toString()
           val expiresAfter = clockMs() + ACTION_TTL_MS
-          send(action.type, reference, record(expiresAfter + CLOCK_SKEW_MS), { settle(it, reference) }) {
-            beforeSend ->
+          send(
+            action.type,
+            reference,
+            record(expiresAfter + CLOCK_SKEW_MS),
+            { settle(it, reference) },
+          ) { beforeSend ->
             submitter.submit(action, signer, nonce, vaultAddress, expiresAfter, beforeSend)
           }
         }
@@ -334,14 +358,20 @@ class HyperliquidActions(
 
   private suspend fun exclusively(type: String, block: suspend () -> ActionState): ActionState {
     if (!submissionMutex.tryLock()) {
-      return ActionState.Failed("Another action is already being authorized", definitelyNotSubmitted = true)
+      return ActionState.Failed(
+        "Another action is already being authorized",
+        definitelyNotSubmitted = true,
+      )
     }
     try {
       return block()
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
-      return ActionState.Failed(error.message ?: "$type wasn’t signed", definitelyNotSubmitted = true)
+      return ActionState.Failed(
+        error.message ?: "$type wasn’t signed",
+        definitelyNotSubmitted = true,
+      )
     } finally {
       submissionMutex.unlock()
     }
@@ -364,7 +394,7 @@ class HyperliquidActions(
         state = JournalState.PREPARED,
         createdAtMs = now,
         updatedAtMs = now,
-      )
+      ),
     )
     var sent = false
     val outcome =
@@ -379,15 +409,18 @@ class HyperliquidActions(
       } catch (error: Exception) {
         settleInterrupted(reference, sent)
         return if (sent) ActionState.Pending(reference)
-        else ActionState.Failed(error.message ?: "$type wasn’t signed", definitelyNotSubmitted = true)
+        else
+          ActionState.Failed(error.message ?: "$type wasn’t signed", definitelyNotSubmitted = true)
       }
     val settled =
       when (outcome) {
         is ExchangeOutcome.Accepted -> settle(outcome.response)
-        is ExchangeOutcome.Rejected -> ActionState.Failed(outcome.reason, reference, committed = true)
+        is ExchangeOutcome.Rejected ->
+          ActionState.Failed(outcome.reason, reference, committed = true)
         is ExchangeOutcome.Unknown -> null
       }
-    // Without a definite answer it may have executed: it stays journaled until Hyperliquid's state says.
+    // Without a definite answer it may have executed: it stays journaled until Hyperliquid's state
+    // says.
     if (settled == null) {
       updateState(reference, JournalState.RECONCILE_REQUIRED)
       return ActionState.Pending(reference)
@@ -471,43 +504,47 @@ class HyperliquidActions(
     updateState(entry.hash, JournalState.RECONCILING)
     val inEffect =
       runSuspendCatching {
-          when (action) {
-            is JournaledAction.ApproveAgent ->
-              client.info.extraAgents(action.account).any { it.address.sameAs(action.agent) }
-            is JournaledAction.RevokeAgent ->
-              client.info.extraAgents(action.account).none { it.address.sameAs(action.agent) }
-            is JournaledAction.ApproveBuilderFee ->
-              client.info.maxBuilderFee(action.account, action.builder) == action.tenthsOfBasisPoint
-            is JournaledAction.RevokeBuilderFee ->
-              client.info.maxBuilderFee(action.account, action.builder) == 0
-            // Any status means Hyperliquid has the order; `unknownOid` means it doesn't (yet).
-            is JournaledAction.PlaceOrder ->
-              client.info.orderStatus(action.account, Cloid.parse(entry.hash)).isKnown
-            // Once none of them is open, the cancel has done what it was for, whoever did it.
-            is JournaledAction.CancelOrders -> {
-              val wanted = action.orders.map(String::lowercase).toSet()
-              client.info.openOrders(action.account).none {
-                it.oid.toString() in wanted || it.cloid?.lowercase() in wanted
-              }
+        when (action) {
+          is JournaledAction.ApproveAgent ->
+            client.info.extraAgents(action.account).any { it.address.sameAs(action.agent) }
+          is JournaledAction.RevokeAgent ->
+            client.info.extraAgents(action.account).none { it.address.sameAs(action.agent) }
+          is JournaledAction.ApproveBuilderFee ->
+            client.info.maxBuilderFee(action.account, action.builder) == action.tenthsOfBasisPoint
+          is JournaledAction.RevokeBuilderFee ->
+            client.info.maxBuilderFee(action.account, action.builder) == 0
+          // Any status means Hyperliquid has the order; `unknownOid` means it doesn't (yet).
+          is JournaledAction.PlaceOrder ->
+            client.info.orderStatus(action.account, Cloid.parse(entry.hash)).isKnown
+          // Once none of them is open, the cancel has done what it was for, whoever did it.
+          is JournaledAction.CancelOrders -> {
+            val wanted = action.orders.map(String::lowercase).toSet()
+            client.info.openOrders(action.account).none {
+              it.oid.toString() in wanted || it.cloid?.lowercase() in wanted
             }
-            is JournaledAction.UpdateLeverage ->
-              client.info.activeAssetData(action.account, action.coin).leverage.let {
-                it.isCross == action.isCross && it.value == action.leverage
-              }
-            is JournaledAction.Withdraw,
-            is JournaledAction.SendUsdc,
-            is JournaledAction.MovePerpSpot,
-            is JournaledAction.VaultTransfer -> ledgerEntry(action, entry.hash, entry.createdAtMs) != null
-            is JournaledAction.PlaceTwap ->
-              client.info.twapHistory(action.account).any { HyperliquidLedger.isTwap(it, action, entry.createdAtMs) }
-            // Once it's no longer running, the cancel has done what it was for.
-            is JournaledAction.CancelTwap ->
-              client.info.twapHistory(action.account)
-                .filter { it.twapId == action.twapId }
-                .maxByOrNull { it.time }
-                ?.let { it.status.status != TWAP_RUNNING } == true
           }
+          is JournaledAction.UpdateLeverage ->
+            client.info.activeAssetData(action.account, action.coin).leverage.let {
+              it.isCross == action.isCross && it.value == action.leverage
+            }
+          is JournaledAction.Withdraw,
+          is JournaledAction.SendUsdc,
+          is JournaledAction.MovePerpSpot,
+          is JournaledAction.VaultTransfer ->
+            ledgerEntry(action, entry.hash, entry.createdAtMs) != null
+          is JournaledAction.PlaceTwap ->
+            client.info.twapHistory(action.account).any {
+              HyperliquidLedger.isTwap(it, action, entry.createdAtMs)
+            }
+          // Once it's no longer running, the cancel has done what it was for.
+          is JournaledAction.CancelTwap ->
+            client.info
+              .twapHistory(action.account)
+              .filter { it.twapId == action.twapId }
+              .maxByOrNull { it.time }
+              ?.let { it.status.status != TWAP_RUNNING } == true
         }
+      }
         .getOrNull() ?: return Reconciled.UNRESOLVED
     return when {
       inEffect -> Reconciled.CONFIRMED
@@ -517,12 +554,17 @@ class HyperliquidActions(
   }
 
   /**
-   * The ledger entry a fund move journaled under [nonce] made, if it has been made. It's looked
-   * for from shortly before [sentAtMs], when it was signed.
+   * The ledger entry a fund move journaled under [nonce] made, if it has been made. It's looked for
+   * from shortly before [sentAtMs], when it was signed.
    */
-  internal suspend fun ledgerEntry(action: JournaledAction, nonce: String, sentAtMs: Long): LedgerUpdate? =
-    client.info.ledgerUpdates(action.account, sentAtMs - CLOCK_SKEW_MS)
-      .firstOrNull { HyperliquidLedger.matches(it, action, nonce.toLongOrNull(), sentAtMs - CLOCK_SKEW_MS) }
+  internal suspend fun ledgerEntry(
+    action: JournaledAction,
+    nonce: String,
+    sentAtMs: Long,
+  ): LedgerUpdate? =
+    client.info.ledgerUpdates(action.account, sentAtMs - CLOCK_SKEW_MS).firstOrNull {
+      HyperliquidLedger.matches(it, action, nonce.toLongOrNull(), sentAtMs - CLOCK_SKEW_MS)
+    }
 
   private suspend fun updateState(reference: String, state: String) {
     val current = journal.find(reference) ?: return

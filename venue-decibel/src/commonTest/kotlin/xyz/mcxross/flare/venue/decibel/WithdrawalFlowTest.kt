@@ -83,7 +83,7 @@ class WithdrawalFlowTest {
       f.accounts.withdrawUsdc("10", "0x3", prompt).toList()
       assertNotNull(f.progress()!!.withdrawalReference)
       assertIs<ActionState.Pending>(
-        f.accounts.withdrawUsdc("10", "0x3", prompt).toList().last()
+        f.accounts.withdrawUsdc("10", "0x3", prompt).toList().last(),
       )
       assertEquals(1, f.trading.commands.size)
       assertFailsWith<IllegalArgumentException> {
@@ -128,7 +128,7 @@ class WithdrawalFlowTest {
   fun apiOnlyProfileCannotWithdraw() = runTest {
     fixture { f ->
       f.preferences.registerProfile(
-        AccountProfile("api", apiWalletAddress = "0x4", selectedSubaccount = "0x2")
+        AccountProfile("api", apiWalletAddress = "0x4", selectedSubaccount = "0x2"),
       )
       assertFailsWith<IllegalStateException> {
         f.accounts.withdrawUsdc("10", null, prompt).toList()
@@ -148,21 +148,27 @@ private suspend fun fixture(block: suspend (WithdrawalFixture) -> Unit) {
     }
   val preferences = AppPreferences(data)
   preferences.registerProfile(
-    AccountProfile("owner", ownerAddress = "0x1", selectedSubaccount = "0x2")
+    AccountProfile("owner", ownerAddress = "0x1", selectedSubaccount = "0x2"),
   )
   val http =
     HttpClient(
       MockEngine { request ->
-        val body = when (request.url.encodedPath.substringAfterLast('/')) {
-          "account_positions" -> "[]"
-          "open_orders", "order_history", "trade_history", "funding_rate_history" -> """{"items":[],"total_count":0}"""
-          "account_fund_history" -> """{"funds":[],"total":0}"""
-          else -> """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}"""
-        }
-        respond(body,
+        val body =
+          when (request.url.encodedPath.substringAfterLast('/')) {
+            "account_positions" -> "[]"
+            "open_orders",
+            "order_history",
+            "trade_history",
+            "funding_rate_history" -> """{"items":[],"total_count":0}"""
+            "account_fund_history" -> """{"funds":[],"total":0}"""
+            else ->
+              """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}"""
+          }
+        respond(
+          body,
           headers = headersOf(HttpHeaders.ContentType, "application/json"),
         )
-      }
+      },
     )
   val aptos = Aptos()
   try {

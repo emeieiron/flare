@@ -17,7 +17,7 @@ fun MainViewController(infoPlist: Map<String, String>) = run {
   val walletVault = IosWalletVault()
   val venue =
     DecibelVenue(
-      DecibelRuntimeConfig(workerBaseUrl = infoPlist["FlareWorkerURL"] ?: MAINNET_WORKER_URL)
+      DecibelRuntimeConfig(workerBaseUrl = infoPlist["FlareWorkerURL"] ?: MAINNET_WORKER_URL),
     )
   ComposeUIViewController {
     App(

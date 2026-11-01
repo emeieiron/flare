@@ -17,6 +17,7 @@ import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.model.AccountAbstraction
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
 import xyz.mcxross.flare.hyperliquid.model.DailyVolume
+import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.FundingUpdate
 import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
@@ -29,20 +30,19 @@ import xyz.mcxross.flare.hyperliquid.model.TwapHistoryEntry
 import xyz.mcxross.flare.hyperliquid.model.UserFees
 import xyz.mcxross.flare.hyperliquid.model.VaultDetails
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
-import xyz.mcxross.flare.venue.model.ManagerFee
-import xyz.mcxross.flare.venue.model.VaultFact
-import xyz.mcxross.flare.venue.model.VaultFactValue
-import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.FeeRates
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
-import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
+import xyz.mcxross.flare.venue.model.VaultFact
+import xyz.mcxross.flare.venue.model.VaultFactValue
+import xyz.mcxross.flare.venue.model.VaultKind
 
 class HyperliquidAccountMappersTest {
   private val json = HyperliquidClient.DefaultJson
@@ -94,7 +94,10 @@ class HyperliquidAccountMappersTest {
     val total = PortfolioUiState(account = AccountSnapshot(overview = overview)).totalBalance
     assertEquals(716.428468, total, 1e-6)
 
-    assertFalse(overview.perpSpotSeparate, "a unified account has nothing to move between perps and spot")
+    assertFalse(
+      overview.perpSpotSeparate,
+      "a unified account has nothing to move between perps and spot",
+    )
 
     // Read as separate accounts, the same balances would count the USDC twice.
     val separate = accountOverview(perp, spot, standard, prices, null, 0L)
@@ -108,7 +111,7 @@ class HyperliquidAccountMappersTest {
   fun aSpotBuyCanSpendOnlyFreeUsdc() {
     val spot =
       decode<SpotClearinghouseState>(
-        """{"balances":[{"coin":"USDC","token":0,"total":"983.489225","hold":"0.998232","entryNtl":"0.0"}]}"""
+        """{"balances":[{"coin":"USDC","token":0,"total":"983.489225","hold":"0.998232","entryNtl":"0.0"}]}""",
       )
     val perp = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
     val free = 983.489225 - 0.998232
@@ -125,7 +128,7 @@ class HyperliquidAccountMappersTest {
   fun unifiedFreeUsdcIsWhatMarginDoesNotHold() {
     val spot =
       decode<SpotClearinghouseState>(
-        """{"balances":[{"coin":"USDC","token":0,"total":"983.489225","hold":"0.998232","entryNtl":"0.0"}]}"""
+        """{"balances":[{"coin":"USDC","token":0,"total":"983.489225","hold":"0.998232","entryNtl":"0.0"}]}""",
       )
     val perp = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE_EMPTY)
 
@@ -141,7 +144,10 @@ class HyperliquidAccountMappersTest {
     val perp = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
     val lockedUntil = equities.single().lockedUntilTimestamp!!
 
-    assertEquals(0.0, accountOverview(perp, null, standard, emptyMap(), equities, lockedUntil - 1).vaultEquity)
+    assertEquals(
+      0.0,
+      accountOverview(perp, null, standard, emptyMap(), equities, lockedUntil - 1).vaultEquity,
+    )
     assertEquals(
       1070.102048,
       accountOverview(perp, null, standard, emptyMap(), equities, lockedUntil).vaultEquity!!,
@@ -164,7 +170,10 @@ class HyperliquidAccountMappersTest {
   fun mapsPositionsWithTheirExits() {
     val state = decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE)
     // The captured position stop-loss is on SOL; here it guards BTC instead.
-    val orders = decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS.replace("\"SOL\"", "\"BTC\""))
+    val orders =
+      decode<List<FrontendOrder>>(
+        Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS.replace("\"SOL\"", "\"BTC\""),
+      )
 
     val positions = state.toPositions(orders)
 
@@ -187,8 +196,11 @@ class HyperliquidAccountMappersTest {
     // normalTpsl children of a filled order: plain reduce-only triggers, not position-level.
     val orders =
       decode<List<FrontendOrder>>(
-        "[" + exitJson(1, "Take Profit Market", "120000.0", position = false) + "," +
-          exitJson(2, "Stop Market", "40000.0", position = false) + "]"
+        "[" +
+          exitJson(1, "Take Profit Market", "120000.0", position = false) +
+          "," +
+          exitJson(2, "Stop Market", "40000.0", position = false) +
+          "]",
       )
 
     val btc = state.toPositions(orders).first()
@@ -204,11 +216,13 @@ class HyperliquidAccountMappersTest {
       decode<List<FrontendOrder>>(
         "[" +
           listOf(
-            exitJson(1, "Stop Market", "40000.0", position = false, time = 3),
-            exitJson(2, "Stop Market", "50000.0", position = true, time = 1),
-            exitJson(3, "Take Profit Market", "110000.0", position = false, time = 1),
-            exitJson(4, "Take Profit Market", "120000.0", position = false, time = 2),
-          ).joinToString(",") + "]"
+              exitJson(1, "Stop Market", "40000.0", position = false, time = 3),
+              exitJson(2, "Stop Market", "50000.0", position = true, time = 1),
+              exitJson(3, "Take Profit Market", "110000.0", position = false, time = 1),
+              exitJson(4, "Take Profit Market", "120000.0", position = false, time = 2),
+            )
+            .joinToString(",") +
+          "]",
       )
 
     val btc = state.toPositions(orders).first()
@@ -225,14 +239,16 @@ class HyperliquidAccountMappersTest {
       decode<List<FrontendOrder>>(
         "[" +
           listOf(
-            // Waiting on an entry that hasn't filled.
-            waiting,
-            """{"coin":"BTC","side":"B","limitPx":"80000.0","sz":"0.1","oid":6,"timestamp":1,"origSz":"0.1","children":[$waiting],"reduceOnly":false,"orderType":"Limit","tif":"Gtc"}""",
-            // A buy can't close a long.
-            exitJson(7, "Stop Market", "90000.0", position = false, side = "B"),
-            // Not reduce-only.
-            exitJson(8, "Stop Market", "41000.0", position = false, reduceOnly = false),
-          ).joinToString(",") + "]"
+              // Waiting on an entry that hasn't filled.
+              waiting,
+              """{"coin":"BTC","side":"B","limitPx":"80000.0","sz":"0.1","oid":6,"timestamp":1,"origSz":"0.1","children":[$waiting],"reduceOnly":false,"orderType":"Limit","tif":"Gtc"}""",
+              // A buy can't close a long.
+              exitJson(7, "Stop Market", "90000.0", position = false, side = "B"),
+              // Not reduce-only.
+              exitJson(8, "Stop Market", "41000.0", position = false, reduceOnly = false),
+            )
+            .joinToString(",") +
+          "]",
       )
 
     val btc = state.toPositions(orders).first()
@@ -254,7 +270,8 @@ class HyperliquidAccountMappersTest {
 
   @Test
   fun mapsOpenOrdersWithTriggersAndAttachedExits() {
-    val orders = decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS).map { it.toOpenOrder() }
+    val orders =
+      decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS).map { it.toOpenOrder() }
 
     val takeProfit = orders[0]
     assertEquals("62483867152", takeProfit.orderId)
@@ -283,13 +300,15 @@ class HyperliquidAccountMappersTest {
   @Test
   fun exitRowsShowTheirKindTriggerAndSize() {
     fun rows(fixture: String) =
-      decode<List<FrontendOrder>>(fixture).map { it.toOpenOrder() }
+      decode<List<FrontendOrder>>(fixture)
+        .map { it.toOpenOrder() }
         .map { openOrderConditions(it) to openOrderSummary(it) }
 
     assertEquals(
       listOf(
         "stop market · Reduce only" to "Sell entire position · at market · trigger \$35,000.00",
-        "take profit market · Reduce only" to "Sell entire position · at market · trigger \$130,000.00",
+        "take profit market · Reduce only" to
+          "Sell entire position · at market · trigger \$130,000.00",
       ),
       rows(Fixtures.FRONTEND_OPEN_ORDERS_POSITION_EXITS),
     )
@@ -308,7 +327,8 @@ class HyperliquidAccountMappersTest {
 
   @Test
   fun namesOrderHistoryStatuses() {
-    val history = decode<List<OrderWithStatus>>(Fixtures.HISTORICAL_ORDERS).map { it.toOrderHistoryEntry() }
+    val history =
+      decode<List<OrderWithStatus>>(Fixtures.HISTORICAL_ORDERS).map { it.toOrderHistoryEntry() }
 
     assertEquals(
       listOf("Canceled", "Open", "Rejected: post-only would have crossed"),
@@ -363,7 +383,9 @@ class HyperliquidAccountMappersTest {
     assertEquals(5.0, movements[5]!!.amount)
 
     val others =
-      decode<List<LedgerUpdate>>(Fixtures.USER_NON_FUNDING_LEDGER_UPDATES).map { it.toFundMovement(user) }
+      decode<List<LedgerUpdate>>(Fixtures.USER_NON_FUNDING_LEDGER_UPDATES).map {
+        it.toFundMovement(user)
+      }
     assertEquals(FundMovementKind.TRANSFER_IN, others[0]!!.kind)
     assertEquals(1000.0, others[0]!!.amount)
     assertEquals(FundMovementKind.TRANSFER_IN, others[1]!!.kind)
@@ -372,7 +394,10 @@ class HyperliquidAccountMappersTest {
 
     // The sender sees the same transfer going out.
     val sender = "0x1000000000000000000000000000000000000007"
-    assertEquals(FundMovementKind.TRANSFER_OUT, decode<List<LedgerUpdate>>(Fixtures.LEDGER_UPDATES_KINDS)[2].toFundMovement(sender)!!.kind)
+    assertEquals(
+      FundMovementKind.TRANSFER_OUT,
+      decode<List<LedgerUpdate>>(Fixtures.LEDGER_UPDATES_KINDS)[2].toFundMovement(sender)!!.kind,
+    )
   }
 
   @Test
@@ -382,8 +407,14 @@ class HyperliquidAccountMappersTest {
     val day = portfolio.chart(PortfolioChartRange.DAY_1, PortfolioMetric.EQUITY)
     assertEquals(1791677160046L, day.first().timeMs)
     assertEquals(102605.807678, day.first().value)
-    assertEquals(100.653305, portfolio.chart(PortfolioChartRange.DAY_1, PortfolioMetric.PNL)[1].value)
-    assertEquals(8167.780658, portfolio.chart(PortfolioChartRange.ALL, PortfolioMetric.EQUITY)[1].value)
+    assertEquals(
+      100.653305,
+      portfolio.chart(PortfolioChartRange.DAY_1, PortfolioMetric.PNL)[1].value,
+    )
+    assertEquals(
+      8167.780658,
+      portfolio.chart(PortfolioChartRange.ALL, PortfolioMetric.EQUITY)[1].value,
+    )
     assertEquals(3, portfolio.chart(PortfolioChartRange.WEEK_1, PortfolioMetric.EQUITY).size)
     assertEquals(3, portfolio.chart(PortfolioChartRange.MONTH_1, PortfolioMetric.PNL).size)
   }
@@ -439,7 +470,10 @@ class HyperliquidAccountMappersTest {
     // A manager's own stake is a user-vault fact, and this one is far below a rounded 0.01%.
     assertEquals(6.645107064126772e-7 * 100.0, assertNotNull(userVault.managerStakePercent), 1e-12)
 
-    val stake = decode<List<VaultEquity>>(Fixtures.USER_VAULT_EQUITIES).single().toVaultPosition(vault, details)
+    val stake =
+      decode<List<VaultEquity>>(Fixtures.USER_VAULT_EQUITIES)
+        .single()
+        .toVaultPosition(vault, details)
     assertEquals(1070.102048, stake.value)
     assertEquals(stake.value, stake.shares)
     assertEquals(1765926140668L, stake.lockedUntilMs)
@@ -465,7 +499,10 @@ class HyperliquidAccountMappersTest {
     assertTrue(first.hasMore)
     assertEquals(times[times.size - 50], first.oldestMs)
 
-    val sparse = latestPage(now, 50, 500, { it }) { start, end -> listOf(0L, 60_000L).filter { it in start..end } }
+    val sparse =
+      latestPage(now, 50, 500, { it }) { start, end ->
+        listOf(0L, 60_000L).filter { it in start..end }
+      }
     assertEquals(listOf(60_000L, 0L), sparse.items)
     assertFalse(sparse.hasMore)
   }
@@ -491,7 +528,10 @@ class HyperliquidAccountMappersTest {
     assertNull(tier.stakingDiscount)
     assertNull(tier.referralDiscount)
 
-    val days = (1..16).map { DailyVolume("2026-09-${it.toString().padStart(2, '0')}", "600000.0", "400000.0", "0") }
+    val days =
+      (1..16).map {
+        DailyVolume("2026-09-${it.toString().padStart(2, '0')}", "600000.0", "400000.0", "0")
+      }
     val busier =
       fixture.copy(
         dailyUserVlm = days,
@@ -512,7 +552,9 @@ class HyperliquidAccountMappersTest {
       decode<Referral>(Fixtures.REFERRAL).toReferralSummary(),
     )
     val unready =
-      decode<Referral>("""{"referredBy":null,"cumVlm":"0","unclaimedRewards":"0","claimedRewards":"0","builderRewards":"0","referrerState":{"stage":"needToTrade","data":{"required":10000}}}""")
+      decode<Referral>(
+        """{"referredBy":null,"cumVlm":"0","unclaimedRewards":"0","claimedRewards":"0","builderRewards":"0","referrerState":{"stage":"needToTrade","data":{"required":10000}}}""",
+      )
     assertEquals(ReferralSummary(earnedUsd = 0.0), unready.toReferralSummary())
   }
 

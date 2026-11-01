@@ -57,7 +57,7 @@ internal class ExactAmount private constructor(val coefficient: Long, val scale:
       }
     }
     require(
-      left == 0L || right == 0L || kotlin.math.abs(left) <= Long.MAX_VALUE / kotlin.math.abs(right)
+      left == 0L || right == 0L || kotlin.math.abs(left) <= Long.MAX_VALUE / kotlin.math.abs(right),
     ) {
       "Amount overflow"
     }

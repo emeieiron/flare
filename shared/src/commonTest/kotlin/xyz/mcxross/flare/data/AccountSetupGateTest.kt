@@ -18,7 +18,8 @@ class AccountSetupGateTest {
 
   private suspend fun gate(
     accounts: SetupAccounts,
-    profile: AccountProfile = AccountProfile("owner_0x1", ownerAddress = "0x1", setupDeferred = true),
+    profile: AccountProfile =
+      AccountProfile("owner_0x1", ownerAddress = "0x1", setupDeferred = true),
   ): Pair<AccountSetupGate, AppPreferences> {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(profile)
@@ -77,7 +78,8 @@ class AccountSetupGateTest {
 
   @Test
   fun everyActionWaitsBehindTheVenuesOwnReasons() {
-    val venue = VenueCapabilities.All.copy(unavailableActions = mapOf(ActionKind.TWAP to "Not on this venue"))
+    val venue =
+      VenueCapabilities.All.copy(unavailableActions = mapOf(ActionKind.TWAP to "Not on this venue"))
 
     assertSame(venue, venue.gatedBy(null))
     val gated = venue.gatedBy(SetupNeed.FUNDS)

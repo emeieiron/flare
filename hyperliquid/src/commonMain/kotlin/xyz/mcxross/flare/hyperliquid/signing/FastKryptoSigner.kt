@@ -33,7 +33,7 @@ class FastKryptoSigner(privateKey: ByteArray) : EvmSigner {
     require(
       signingInput.size == Eip712.SIGNING_INPUT_SIZE &&
         signingInput[0] == 0x19.toByte() &&
-        signingInput[1] == 0x01.toByte()
+        signingInput[1] == 0x01.toByte(),
     ) {
       "EIP-712 signing input is 0x1901 followed by two 32-byte hashes"
     }

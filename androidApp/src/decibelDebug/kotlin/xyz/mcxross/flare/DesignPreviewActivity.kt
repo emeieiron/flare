@@ -14,20 +14,19 @@ import androidx.fragment.app.FragmentActivity
 import kotlin.math.sin
 import xyz.mcxross.flare.data.*
 import xyz.mcxross.flare.design.*
+import xyz.mcxross.flare.feature.auto.*
 import xyz.mcxross.flare.feature.markets.*
 import xyz.mcxross.flare.feature.onboarding.*
 import xyz.mcxross.flare.feature.orders.*
 import xyz.mcxross.flare.feature.portfolio.*
-import xyz.mcxross.flare.feature.settings.*
-import xyz.mcxross.flare.feature.trade.*
-import xyz.mcxross.flare.feature.strategies.*
-import xyz.mcxross.flare.feature.auto.*
 import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import xyz.mcxross.flare.feature.referrals.ReferralUiState
-import xyz.mcxross.flare.strategies.*
-import xyz.mcxross.flare.security.JevCredentialMetadata
+import xyz.mcxross.flare.feature.settings.*
+import xyz.mcxross.flare.feature.strategies.*
+import xyz.mcxross.flare.feature.trade.*
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
+import xyz.mcxross.flare.strategies.*
 import xyz.mcxross.flare.venue.decibel.DecibelCredentialParser
 import xyz.mcxross.flare.venue.decibel.DecibelVenue
 import xyz.mcxross.flare.venue.model.AccountOverview
@@ -38,10 +37,10 @@ import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.OrderCheck
 import xyz.mcxross.flare.venue.model.OrderRequest
 import xyz.mcxross.flare.venue.model.OrderRules
-import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardPointsSource
@@ -98,12 +97,14 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
         tradingEnabled = initialScreen != "trade-offline",
         quoteBalance = 10000.0,
         sizeInput = if (initialScreen.startsWith("trade-")) "0.01" else "",
-      )
+      ),
     )
   }
   var auto by remember { mutableStateOf(previewAuto(initialScreen)) }
   var strategies by remember { mutableStateOf(previewStrategies()) }
-  var jevKey by remember { mutableStateOf(JevSettingsUiState(sheetOpen = true, keyInput = "sample-preview-key")) }
+  var jevKey by remember {
+    mutableStateOf(JevSettingsUiState(sheetOpen = true, keyInput = "sample-preview-key"))
+  }
   var section by remember { mutableStateOf(OrdersSection.OPEN) }
   var settings by remember { mutableStateOf(previewSettingsState(initialScreen)) }
   var portfolio by remember { mutableStateOf(previewPortfolioState(initialScreen)) }
@@ -119,37 +120,78 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
     }
     Box(Modifier.weight(1f)) {
       when (screen) {
-        "auto", "auto-real", "auto-review" -> AutoTradingScreen(auto, { action ->
-          auto = when (action) {
-            is AutoTradingIntent.Configure -> auto.copy(config = action.config)
-            AutoTradingIntent.Pause -> auto.copy(active = false, status = "Paused")
-            AutoTradingIntent.Reset -> previewAuto("auto-real").copy(config = auto.config, active = false)
-            AutoTradingIntent.ReviewStart -> if (auto.config.mode == AutoRunMode.REAL) auto.copy(reviewOpen = true)
-              else auto.copy(active = true, status = "Simulation running")
-            AutoTradingIntent.DismissReview -> auto.copy(reviewOpen = false)
-            AutoTradingIntent.ConfirmStart -> auto.copy(reviewOpen = false, active = true, status = "Preview only")
-            else -> auto
+        "auto",
+        "auto-real",
+        "auto-review" ->
+          AutoTradingScreen(
+            auto,
+            { action ->
+              auto =
+                when (action) {
+                  is AutoTradingIntent.Configure -> auto.copy(config = action.config)
+                  AutoTradingIntent.Pause -> auto.copy(active = false, status = "Paused")
+                  AutoTradingIntent.Reset ->
+                    previewAuto("auto-real").copy(config = auto.config, active = false)
+                  AutoTradingIntent.ReviewStart ->
+                    if (auto.config.mode == AutoRunMode.REAL) auto.copy(reviewOpen = true)
+                    else auto.copy(active = true, status = "Simulation running")
+                  AutoTradingIntent.DismissReview -> auto.copy(reviewOpen = false)
+                  AutoTradingIntent.ConfirmStart ->
+                    auto.copy(reviewOpen = false, active = true, status = "Preview only")
+                  else -> auto
+                }
+            },
+            { screen = "chart" },
+          )
+        "strategies" ->
+          StrategiesSheet(
+            "BTC",
+            strategies,
+            { action ->
+              strategies =
+                when (action) {
+                  is StrategiesIntent.Select -> strategies.copy(selected = action.strategy)
+                  is StrategiesIntent.UseJev -> strategies.copy(useJev = action.enabled)
+                  else -> strategies
+                }
+            },
+            { screen = "chart" },
+          )
+        "jev-key" ->
+          JevKeySheet(jevKey) { action ->
+            jevKey =
+              when (action) {
+                is JevSettingsIntent.ChangeKey -> jevKey.copy(keyInput = action.value)
+                JevSettingsIntent.Dismiss -> {
+                  screen = "settings"
+                  jevKey
+                }
+                else -> jevKey
+              }
           }
-        }, { screen = "chart" })
-        "strategies" -> StrategiesSheet("BTC", strategies, { action ->
-          strategies = when (action) {
-            is StrategiesIntent.Select -> strategies.copy(selected = action.strategy)
-            is StrategiesIntent.UseJev -> strategies.copy(useJev = action.enabled)
-            else -> strategies
-          }
-        }, { screen = "chart" })
-        "jev-key" -> JevKeySheet(jevKey) { action ->
-          jevKey = when (action) {
-            is JevSettingsIntent.ChangeKey -> jevKey.copy(keyInput = action.value)
-            JevSettingsIntent.Dismiss -> { screen = "settings"; jevKey }
-            else -> jevKey
-          }
-        }
         "splash" -> FlareSplashScreen()
-        "welcome", "import", "import-phrase", "import-key", "backup", "backup-revealed", "confirm",
-        "accounts", "create-account", "finding", "enable", "enable-working", "setup-error",
-        "fee-can-pay", "fee-needs-funds", "fee-unchecked", "open-account", "referral-onboarding", "open-account-working",
-        "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
+        "welcome",
+        "import",
+        "import-phrase",
+        "import-key",
+        "backup",
+        "backup-revealed",
+        "confirm",
+        "accounts",
+        "create-account",
+        "finding",
+        "enable",
+        "enable-working",
+        "setup-error",
+        "fee-can-pay",
+        "fee-needs-funds",
+        "fee-unchecked",
+        "open-account",
+        "referral-onboarding",
+        "open-account-working",
+        "open-account-opened",
+        "open-account-sponsor",
+        "open-account-stalled" ->
           OnboardingScreen(onboarding, { onboarding = previewOnboardingIntent(onboarding, it) })
         "markets" ->
           MarketsScreen(
@@ -160,26 +202,39 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
               favoritesOnly = favorites,
               quotes = quotes.filter { !favorites || it.favorite },
               searching = searching,
-              searchResults = if (searching) searchMarkets(quotes, emptyMap(), query) else MarketSearchResults(),
-              pages = mapOf(
-                MarketInstrumentFilter.PERPETUALS to MarketPage(
-                  favoritesOnly = favorites,
-                  categories = listOf("commodity", "crypto", "equity"),
-                  quotes = quotes.filter { it.market.kind == MarketKind.PERP && (!favorites || it.favorite) },
+              searchResults =
+                if (searching) searchMarkets(quotes, emptyMap(), query) else MarketSearchResults(),
+              pages =
+                mapOf(
+                  MarketInstrumentFilter.PERPETUALS to
+                    MarketPage(
+                      favoritesOnly = favorites,
+                      categories = listOf("commodity", "crypto", "equity"),
+                      quotes =
+                        quotes.filter {
+                          it.market.kind == MarketKind.PERP && (!favorites || it.favorite)
+                        },
+                    ),
+                  MarketInstrumentFilter.SPOT to
+                    MarketPage(
+                      favoritesOnly = false,
+                      categories = listOf("crypto"),
+                      quotes = quotes.filter { it.market.kind == MarketKind.SPOT },
+                    ),
                 ),
-                MarketInstrumentFilter.SPOT to MarketPage(
-                  favoritesOnly = false,
-                  categories = listOf("crypto"),
-                  quotes = quotes.filter { it.market.kind == MarketKind.SPOT },
-                ),
-              ),
               pageQuotes = marketPageQuotes(quotes, emptyMap()),
             ),
             { intent ->
               when (intent) {
                 is MarketsIntent.Search -> query = intent.value
-                MarketsIntent.OpenSearch -> { searching = true; query = "" }
-                MarketsIntent.CloseSearch -> { searching = false; query = "" }
+                MarketsIntent.OpenSearch -> {
+                  searching = true
+                  query = ""
+                }
+                MarketsIntent.CloseSearch -> {
+                  searching = false
+                  query = ""
+                }
                 is MarketsIntent.SetFavoritesOnly -> favorites = intent.enabled
                 is MarketsIntent.ToggleFavorite -> quotes = quotes.map {
                     if (it.market.id == intent.marketAddress) it.copy(favorite = !it.favorite)
@@ -196,7 +251,12 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
           )
         "chart",
         "candles",
-        "ticket", "trade-success", "trade-failure", "trade-busy", "trade-offline", "trade-selfpay" ->
+        "ticket",
+        "trade-success",
+        "trade-failure",
+        "trade-busy",
+        "trade-offline",
+        "trade-selfpay" ->
           TradeScreen(
             trade,
             { intent ->
@@ -212,53 +272,84 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                   is TradeIntent.SetStopLoss -> trade.copy(stopLossInput = intent.value)
                   is TradeIntent.SetLeverage -> trade.copy(leverage = intent.value)
                   is TradeIntent.SetOrderType -> trade.copy(orderType = intent.type)
-                  is TradeIntent.SetTwapDurationMinutes -> trade.copy(twapDurationMinutesInput = intent.value)
-                  is TradeIntent.SetTwapFrequencyMinutes -> trade.copy(twapFrequencyMinutesInput = intent.value)
-                  TradeIntent.ConfirmSelfPay -> trade.copy(transaction = ActionState.Committed("preview-only"))
-                  TradeIntent.DismissOrderReceipt -> trade.copy(transaction = null, sizeInput = "", orderError = null)
-                  is TradeIntent.Submit -> when (initialScreen) {
-                    "trade-success" -> trade.copy(transaction = ActionState.Committed("preview-only"))
-                    "trade-busy" -> trade.copy(orderBusy = true)
-                    "trade-selfpay" -> trade.copy(
-                      transaction = ActionState.Failed(
-                        "Sponsorship unavailable",
-                        selfPay = SelfPayOffer(2_400uL),
-                      ),
-                      apiWalletNeedsTopUp = true,
-                      suggestedTopUp = 50_000uL,
-                    )
-                    else -> trade.copy(orderError = "Preview only. No order was placed.")
-                  }
+                  is TradeIntent.SetTwapDurationMinutes ->
+                    trade.copy(twapDurationMinutesInput = intent.value)
+                  is TradeIntent.SetTwapFrequencyMinutes ->
+                    trade.copy(twapFrequencyMinutesInput = intent.value)
+                  TradeIntent.ConfirmSelfPay ->
+                    trade.copy(transaction = ActionState.Committed("preview-only"))
+                  TradeIntent.DismissOrderReceipt ->
+                    trade.copy(transaction = null, sizeInput = "", orderError = null)
+                  is TradeIntent.Submit ->
+                    when (initialScreen) {
+                      "trade-success" ->
+                        trade.copy(transaction = ActionState.Committed("preview-only"))
+                      "trade-busy" -> trade.copy(orderBusy = true)
+                      "trade-selfpay" ->
+                        trade.copy(
+                          transaction =
+                            ActionState.Failed(
+                              "Sponsorship unavailable",
+                              selfPay = SelfPayOffer(2_400uL),
+                            ),
+                          apiWalletNeedsTopUp = true,
+                          suggestedTopUp = 50_000uL,
+                        )
+                      else -> trade.copy(orderError = "Preview only. No order was placed.")
+                    }
                   else -> trade
                 }
             },
             onBack = { screen = "markets" },
             onOpenActivity = { screen = "activity" },
           )
-        "portfolio", "portfolio-loading", "portfolio-empty", "portfolio-stale", "portfolio-unavailable", "portfolio-many",
+        "portfolio",
+        "portfolio-loading",
+        "portfolio-empty",
+        "portfolio-stale",
+        "portfolio-unavailable",
+        "portfolio-many",
         "portfolio-showcase" ->
           previewPosition?.let { market ->
-            PositionScreen(portfolio, market, { portfolio = previewPortfolioIntent(portfolio, it) }, { previewPosition = null })
-          } ?: PortfolioScreen(
-            portfolio,
-            { portfolio = previewPortfolioIntent(portfolio, it) },
-            { screen = "welcome" },
-            onPositionClick = { previewPosition = it },
-          )
-        "withdraw-form", "withdraw-invalid", "withdraw-over", "withdraw-review", "withdraw-working",
-        "withdraw-sending", "withdraw-selfpay", "withdraw-resume", "withdraw-sent", "withdraw-failed",
+            PositionScreen(
+              portfolio,
+              market,
+              { portfolio = previewPortfolioIntent(portfolio, it) },
+              { previewPosition = null },
+            )
+          }
+            ?: PortfolioScreen(
+              portfolio,
+              { portfolio = previewPortfolioIntent(portfolio, it) },
+              { screen = "welcome" },
+              onPositionClick = { previewPosition = it },
+            )
+        "withdraw-form",
+        "withdraw-invalid",
+        "withdraw-over",
+        "withdraw-review",
+        "withdraw-working",
+        "withdraw-sending",
+        "withdraw-selfpay",
+        "withdraw-resume",
+        "withdraw-sent",
+        "withdraw-failed",
         "withdraw-uncertain" -> {
           var withdraw by remember { mutableStateOf(previewWithdrawState(screen)) }
           Box(Modifier.fillMaxSize())
           WithdrawSheet(
             withdraw,
             { intent ->
-              withdraw = when (intent) {
-                is SettingsIntent.ChangeWithdrawDestination -> withdraw.copy(withdrawDestination = intent.address)
-                is SettingsIntent.ChangeWithdrawAmount -> withdraw.copy(withdrawAmount = intent.amount)
-                SettingsIntent.EditWithdraw -> withdraw.copy(withdrawTransaction = null, withdrawError = null)
-                else -> withdraw
-              }
+              withdraw =
+                when (intent) {
+                  is SettingsIntent.ChangeWithdrawDestination ->
+                    withdraw.copy(withdrawDestination = intent.address)
+                  is SettingsIntent.ChangeWithdrawAmount ->
+                    withdraw.copy(withdrawAmount = intent.amount)
+                  SettingsIntent.EditWithdraw ->
+                    withdraw.copy(withdrawTransaction = null, withdrawError = null)
+                  else -> withdraw
+                }
             },
             {},
             startInReview = screen !in setOf("withdraw-form", "withdraw-invalid", "withdraw-over"),
@@ -283,27 +374,55 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
         "account-layout" -> {
           val owner = "0x3fbda2cb" + "0".repeat(50) + "ff51c4"
           val account = "0x2aa050b3" + "0".repeat(50) + "806ebb"
-          val profile = xyz.mcxross.flare.store.AccountProfile("preview", ownerAddress = owner,
-            selectedSubaccount = account, onboardingComplete = true, walletName = "Main")
+          val profile =
+            xyz.mcxross.flare.store.AccountProfile(
+              "preview",
+              ownerAddress = owner,
+              selectedSubaccount = account,
+              onboardingComplete = true,
+              walletName = "Main",
+            )
           Column {
             AccountScreen(
               SettingsUiState(
-                preferences = FlarePreferences(activeProfileId = "preview", profiles = listOf(profile)),
-                walletBalanceProfileId = "preview", walletBalanceAddress = owner,
-                walletBalances = listOf(WalletTokenBalance("APT", "6.66"), WalletTokenBalance("USDC", "0")),
-                subaccountsByOwner = mapOf(owner to listOf(TradingAccount(account, owner, label = "Leverage", primary = true))),
-              ), {}, {}, {}, {}, {}, Modifier.weight(1f),
+                preferences =
+                  FlarePreferences(activeProfileId = "preview", profiles = listOf(profile)),
+                walletBalanceProfileId = "preview",
+                walletBalanceAddress = owner,
+                walletBalances =
+                  listOf(WalletTokenBalance("APT", "6.66"), WalletTokenBalance("USDC", "0")),
+                subaccountsByOwner =
+                  mapOf(
+                    owner to
+                      listOf(TradingAccount(account, owner, label = "Leverage", primary = true)),
+                  ),
+              ),
+              {},
+              {},
+              {},
+              {},
+              {},
+              Modifier.weight(1f),
             )
-            FlareBottomNavigation(listOf(
-              FlareNavigationItem("Markets", FlareIcons.Markets),
-              FlareNavigationItem("Portfolio", FlareIcons.Portfolio),
-              FlareNavigationItem("Activity", FlareIcons.Activity),
-              FlareNavigationItem("Account", FlareIcons.Account, FlareIcons.AccountFilled),
-            ), 3, {})
+            FlareBottomNavigation(
+              listOf(
+                FlareNavigationItem("Markets", FlareIcons.Markets),
+                FlareNavigationItem("Portfolio", FlareIcons.Portfolio),
+                FlareNavigationItem("Activity", FlareIcons.Activity),
+                FlareNavigationItem("Account", FlareIcons.Account, FlareIcons.AccountFilled),
+              ),
+              3,
+              {},
+            )
           }
         }
-        "account", "account-owner", "settings-auto", "referral-settings", "referral-bound",
-        "referral-ineligible", "referral-pending" ->
+        "account",
+        "account-owner",
+        "settings-auto",
+        "referral-settings",
+        "referral-bound",
+        "referral-ineligible",
+        "referral-pending" ->
           SettingsScreen(
             settings,
             { intent ->
@@ -323,28 +442,35 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                         else
                           prefs.copy(
                             spotBuilderFeeBps = intent.basisPoints,
-                            spotBuilderApproved = prefs.spotBuilderApproved || intent.basisPoints > 0,
-                          )
+                            spotBuilderApproved =
+                              prefs.spotBuilderApproved || intent.basisPoints > 0,
+                          ),
                     )
                   is SettingsIntent.RevokeBuilderFee ->
                     settings.copy(
                       preferences =
                         if (intent.product == MarketKind.PERP) prefs.copy(builderApproved = false)
-                        else prefs.copy(spotBuilderApproved = false)
+                        else prefs.copy(spotBuilderApproved = false),
                     )
                   is SettingsIntent.ChangeReferralCode ->
-                    settings.copy(referral = settings.referral.copy(
-                      input = intent.code,
-                      valid = intent.code.isNotBlank(),
-                      error = null,
-                    ))
+                    settings.copy(
+                      referral =
+                        settings.referral.copy(
+                          input = intent.code,
+                          valid = intent.code.isNotBlank(),
+                          error = null,
+                        ),
+                    )
                   SettingsIntent.RedeemReferralCode ->
-                    settings.copy(referral = settings.referral.copy(
-                      eligibility = ReferralEligibility.BOUND,
-                      appliedCode = settings.referral.input,
-                      applying = false,
-                      error = null,
-                    ))
+                    settings.copy(
+                      referral =
+                        settings.referral.copy(
+                          eligibility = ReferralEligibility.BOUND,
+                          appliedCode = settings.referral.input,
+                          applying = false,
+                          error = null,
+                        ),
+                    )
                   else -> settings
                 }
             },
@@ -357,29 +483,62 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
 
 /** "account-owner" signs in with an owner key, which unlocks the builder approvals. */
 private fun previewSettingsState(screen: String): SettingsUiState =
-  if (screen == "settings-auto") SettingsUiState(preferences = FlarePreferences(autoTradingActive = true, confirmTransactions = false))
-  else if (screen in setOf("referral-settings", "referral-bound", "referral-ineligible", "referral-pending")) {
-    val referral = when (screen) {
-      "referral-bound" -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
-        eligibility = ReferralEligibility.BOUND, appliedCode = "OC9E6E")
-      "referral-ineligible" -> ReferralUiState(enabled = true,
-        eligibility = ReferralEligibility.INELIGIBLE)
-      "referral-pending" -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
-        eligibility = ReferralEligibility.PENDING, appliedCode = "OC9E6E",
-        tradingAccount = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48")
-      else -> ReferralUiState(enabled = true, suggestedCode = "OC9E6E", input = "OC9E6E",
-        eligibility = ReferralEligibility.ELIGIBLE, valid = true)
-    }
+  if (screen == "settings-auto")
     SettingsUiState(
-      profile = WalletProfile(ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8"),
+      preferences = FlarePreferences(autoTradingActive = true, confirmTransactions = false),
+    )
+  else if (
+    screen in
+      setOf("referral-settings", "referral-bound", "referral-ineligible", "referral-pending")
+  ) {
+    val referral =
+      when (screen) {
+        "referral-bound" ->
+          ReferralUiState(
+            enabled = true,
+            suggestedCode = "OC9E6E",
+            input = "OC9E6E",
+            eligibility = ReferralEligibility.BOUND,
+            appliedCode = "OC9E6E",
+          )
+        "referral-ineligible" ->
+          ReferralUiState(
+            enabled = true,
+            eligibility = ReferralEligibility.INELIGIBLE,
+          )
+        "referral-pending" ->
+          ReferralUiState(
+            enabled = true,
+            suggestedCode = "OC9E6E",
+            input = "OC9E6E",
+            eligibility = ReferralEligibility.PENDING,
+            appliedCode = "OC9E6E",
+            tradingAccount = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48",
+          )
+        else ->
+          ReferralUiState(
+            enabled = true,
+            suggestedCode = "OC9E6E",
+            input = "OC9E6E",
+            eligibility = ReferralEligibility.ELIGIBLE,
+            valid = true,
+          )
+      }
+    SettingsUiState(
+      profile =
+        WalletProfile(
+          ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8",
+        ),
       referral = referral,
       referralManaged = true,
     )
-  }
-  else if (screen != "account-owner") SettingsUiState()
+  } else if (screen != "account-owner") SettingsUiState()
   else
     SettingsUiState(
-      profile = WalletProfile(ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8"),
+      profile =
+        WalletProfile(
+          ownerAddress = "0x7a3f0c21e98d4b65a1f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a7b8",
+        ),
       defaultBuilderAddress = "0x51c0de0b7e2a4f6c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
       preferences = FlarePreferences(builderApproved = true, builderFeeBps = 5),
     )
@@ -387,22 +546,31 @@ private fun previewSettingsState(screen: String): SettingsUiState =
 /** Each stage of a withdrawal, with sample data. */
 private fun previewWithdrawState(screen: String): SettingsUiState {
   val address = "0xe05e75a9f25b254fcc354d5a68d7d15f7b97ac6ee56922fac3c1c27009d0c25b"
-  val filled = SettingsUiState(withdrawDestination = address, withdrawAmount = "25", withdrawable = 998.51)
+  val filled =
+    SettingsUiState(withdrawDestination = address, withdrawAmount = "25", withdrawable = 998.51)
   return when (screen) {
     "withdraw-form" -> SettingsUiState(withdrawable = 998.51)
     "withdraw-invalid" -> filled.copy(withdrawDestination = "0xe05e75a9-not-an-address")
     "withdraw-over" -> filled.copy(withdrawAmount = "1200")
-    "withdraw-working" -> filled.copy(withdrawing = true, withdrawTransaction = ActionState.Submitting)
+    "withdraw-working" ->
+      filled.copy(withdrawing = true, withdrawTransaction = ActionState.Submitting)
     "withdraw-sending" ->
       filled.copy(
         withdrawing = true,
         withdrawTransaction = ActionState.Submitting,
-        pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true),
+        pendingWithdrawal =
+          WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true),
       )
     "withdraw-selfpay" ->
-      filled.copy(withdrawTransaction = ActionState.Failed("Sponsor unavailable", selfPay = SelfPayOffer(12_400uL)))
+      filled.copy(
+        withdrawTransaction =
+          ActionState.Failed("Sponsor unavailable", selfPay = SelfPayOffer(12_400uL)),
+      )
     "withdraw-resume" ->
-      filled.copy(pendingWithdrawal = WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true))
+      filled.copy(
+        pendingWithdrawal =
+          WithdrawalContinuation("0x1", address, "25", "0xabc", withdrawalCommitted = true),
+      )
     "withdraw-sent" -> filled.copy(withdrawTransaction = ActionState.Committed("0xfeed"))
     "withdraw-failed" ->
       filled.copy(
@@ -420,7 +588,10 @@ private fun previewWithdrawState(screen: String): SettingsUiState {
 }
 
 /** Enough of the portfolio's behaviour to walk through a position and its close sheet. */
-private fun previewPortfolioIntent(state: PortfolioUiState, intent: PortfolioIntent): PortfolioUiState =
+private fun previewPortfolioIntent(
+  state: PortfolioUiState,
+  intent: PortfolioIntent,
+): PortfolioUiState =
   when (intent) {
     is PortfolioIntent.ManagePosition -> state.copy(managedPositionMarket = intent.market)
     PortfolioIntent.DismissPositionManagement -> state.copy(managedPositionMarket = null)
@@ -544,75 +715,135 @@ private fun previewPortfolio() =
 
 /** Deterministic read states for visual checks; this activity never submits transactions. */
 private fun previewPortfolioState(screen: String): PortfolioUiState {
-  val loaded = previewPortfolio().copy(vaultsLoaded = true, chartLoaded = true, rewardsLoaded = true)
+  val loaded =
+    previewPortfolio().copy(vaultsLoaded = true, chartLoaded = true, rewardsLoaded = true)
   return when (screen) {
     "portfolio-many" -> {
-      val positions = (1..24).map { index ->
-        Position("0xposition$index", "$index", 2, 10.0, isolated = false, liquidationPrice = 5.0)
-      }
-      val vaults = (1..12).map { index ->
-        VaultSummary(address = "0xvault$index", name = "Vault $index", totalValue = index * 100_000.0)
-      }
+      val positions =
+        (1..24).map { index ->
+          Position("0xposition$index", "$index", 2, 10.0, isolated = false, liquidationPrice = 5.0)
+        }
+      val vaults =
+        (1..12).map { index ->
+          VaultSummary(
+            address = "0xvault$index",
+            name = "Vault $index",
+            totalValue = index * 100_000.0,
+          )
+        }
       loaded.copy(
         account = loaded.account.copy(positions = positions),
-        marketSymbols = positions.mapIndexed { index, position -> position.marketId to "Market ${index + 1}" }.toMap(),
+        marketSymbols =
+          positions
+            .mapIndexed { index, position -> position.marketId to "Market ${index + 1}" }
+            .toMap(),
         markPrices = positions.associate { it.marketId to 12.0 },
-        spotHoldings = loaded.spotHoldings.take(1) + (1..47).map { index ->
-          SpotHolding("ASSET$index", "Asset $index", quantity = index.toDouble(), markPrice = 1.0, valueUsd = index.toDouble())
-        },
+        spotHoldings =
+          loaded.spotHoldings.take(1) +
+            (1..47).map { index ->
+              SpotHolding(
+                "ASSET$index",
+                "Asset $index",
+                quantity = index.toDouble(),
+                markPrice = 1.0,
+                valueUsd = index.toDouble(),
+              )
+            },
         vaults = vaults,
-        accountVaults = vaults.take(3).map { VaultPosition(vault = it, shares = 10.0, value = 10.0) },
-        rewards = previewRewards(totalAmps = 2400.0, tradingAmps = 2200.0, vaultAmps = 200.0, tier = "Silver"),
+        accountVaults =
+          vaults.take(3).map { VaultPosition(vault = it, shares = 10.0, value = 10.0) },
+        rewards =
+          previewRewards(
+            totalAmps = 2400.0,
+            tradingAmps = 2200.0,
+            vaultAmps = 200.0,
+            tier = "Silver",
+          ),
       )
     }
     // A believable account for product imagery: three positions in major markets, a vault, rewards.
     "portfolio-showcase" -> {
-      val positions = listOf(
-        Position("0xbtc", "0.12", 10, 81_740.0, isolated = false, liquidationPrice = 74_210.0),
-        Position("0xeth", "-1.8", 5, 3_412.5, isolated = false, liquidationPrice = 3_980.0),
-        Position("0xsol", "24", 3, 188.2, isolated = false, liquidationPrice = 131.0),
-      )
+      val positions =
+        listOf(
+          Position("0xbtc", "0.12", 10, 81_740.0, isolated = false, liquidationPrice = 74_210.0),
+          Position("0xeth", "-1.8", 5, 3_412.5, isolated = false, liquidationPrice = 3_980.0),
+          Position("0xsol", "24", 3, 188.2, isolated = false, liquidationPrice = 131.0),
+        )
       val vault = VaultSummary(address = "0xdlp", name = "DLP", totalValue = 12_400_000.0)
       loaded.copy(
-        account = loaded.account.copy(
-          positions = positions,
-          overview = loaded.account.overview!!.copy(
-            equity = 12_480.65,
-            unrealizedPnl = 446.46,
-            vaultEquity = 1_214.6,
-            balances = Balances(spot = SpotBalances(totalUsd = 1_050.0)),
+        account =
+          loaded.account.copy(
+            positions = positions,
+            overview =
+              loaded.account.overview!!.copy(
+                equity = 12_480.65,
+                unrealizedPnl = 446.46,
+                vaultEquity = 1_214.6,
+                balances = Balances(spot = SpotBalances(totalUsd = 1_050.0)),
+              ),
           ),
-        ),
         marketSymbols = mapOf("0xbtc" to "BTC", "0xeth" to "ETH", "0xsol" to "SOL"),
         markPrices = mapOf("0xbtc" to 83_909.0, "0xeth" to 3_356.4, "0xsol" to 191.75),
         accountVaults = listOf(VaultPosition(vault = vault, shares = 1_150.0, value = 1_214.6)),
-        rewards = previewRewards(totalAmps = 18_420.0, tradingAmps = 16_900.0, vaultAmps = 1_520.0, tier = "Gold"),
+        rewards =
+          previewRewards(
+            totalAmps = 18_420.0,
+            tradingAmps = 16_900.0,
+            vaultAmps = 1_520.0,
+            tier = "Gold",
+          ),
       )
     }
-    "portfolio-loading" -> loaded.copy(
-      spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", loading = true),
-      vaultsLoaded = false, chartLoaded = false, rewardsLoaded = false,
-    )
-    "portfolio-empty" -> loaded.copy(
-      spotHoldings = emptyList(), account = loaded.account.copy(overview = loaded.account.overview!!.copy(
-        equity = 0.0, unrealizedPnl = 0.0, availableToTrade = 0.0, withdrawable = 0.0, vaultEquity = 0.0,
-        balances = Balances(collateral = 0.0, spot = SpotBalances()),
-      )),
-    )
-    "portfolio-stale" -> loaded.copy(
-      account = loaded.account.copy(stale = true, error = "Offline"),
-      vaultsError = "Offline", chartError = "Offline", rewardsError = true,
-    )
-    "portfolio-unavailable" -> loaded.copy(
-      spotHoldings = emptyList(), account = AccountSnapshot(account = "preview", error = "Offline"),
-      vaultsError = "Offline", chartError = "Offline", rewardsError = true,
-    )
+    "portfolio-loading" ->
+      loaded.copy(
+        spotHoldings = emptyList(),
+        account = AccountSnapshot(account = "preview", loading = true),
+        vaultsLoaded = false,
+        chartLoaded = false,
+        rewardsLoaded = false,
+      )
+    "portfolio-empty" ->
+      loaded.copy(
+        spotHoldings = emptyList(),
+        account =
+          loaded.account.copy(
+            overview =
+              loaded.account.overview!!.copy(
+                equity = 0.0,
+                unrealizedPnl = 0.0,
+                availableToTrade = 0.0,
+                withdrawable = 0.0,
+                vaultEquity = 0.0,
+                balances = Balances(collateral = 0.0, spot = SpotBalances()),
+              ),
+          ),
+      )
+    "portfolio-stale" ->
+      loaded.copy(
+        account = loaded.account.copy(stale = true, error = "Offline"),
+        vaultsError = "Offline",
+        chartError = "Offline",
+        rewardsError = true,
+      )
+    "portfolio-unavailable" ->
+      loaded.copy(
+        spotHoldings = emptyList(),
+        account = AccountSnapshot(account = "preview", error = "Offline"),
+        vaultsError = "Offline",
+        chartError = "Offline",
+        rewardsError = true,
+      )
     else -> loaded
   }
 }
 
 /** Amps and a tier as Decibel reports them, in the order its rewards page lists their sources. */
-private fun previewRewards(totalAmps: Double, tradingAmps: Double, vaultAmps: Double, tier: String) =
+private fun previewRewards(
+  totalAmps: Double,
+  tradingAmps: Double,
+  vaultAmps: Double,
+  tier: String,
+) =
   Rewards(
     points =
       RewardPoints(
@@ -630,41 +861,95 @@ private fun previewRewards(totalAmps: Double, tradingAmps: Double, vaultAmps: Do
   )
 
 private val PreviewWords =
-  listOf("orbit", "velvet", "canyon", "ember", "mosaic", "harbor", "lunar", "quartz", "willow", "summit", "prism", "cobalt")
+  listOf(
+    "orbit",
+    "velvet",
+    "canyon",
+    "ember",
+    "mosaic",
+    "harbor",
+    "lunar",
+    "quartz",
+    "willow",
+    "summit",
+    "prism",
+    "cobalt",
+  )
 
 private val PreviewSubaccounts =
   listOf(
-    TradingAccount(address = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48", owner = "0x1", label = "Main", primary = true),
-    TradingAccount(address = "0x2e91b47c0d8a35f6e1c94b27a0d6f3e85c1b49a7d2e06f3c8b5a1d94e7f20c36", owner = "0x1", primary = false),
+    TradingAccount(
+      address = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48",
+      owner = "0x1",
+      label = "Main",
+      primary = true,
+    ),
+    TradingAccount(
+      address = "0x2e91b47c0d8a35f6e1c94b27a0d6f3e85c1b49a7d2e06f3c8b5a1d94e7f20c36",
+      owner = "0x1",
+      primary = false,
+    ),
   )
 
 private fun previewOnboardingState(screen: String): OnboardingUiState {
-  val owner = WalletProfile(ownerAddress = "0x1c4e8f2a9b7d3c6e5f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6")
+  val owner =
+    WalletProfile(
+      ownerAddress = "0x1c4e8f2a9b7d3c6e5f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e4f5a6",
+    )
   val backup =
     OnboardingUiState(
       step = OnboardingStep.SHOW_BACKUP,
       profile = owner,
       backupWords = PreviewWords,
       confirmationIndices = listOf(2, 6, 10),
-      confirmationOptions = mapOf(
-        2 to listOf("summit", "canyon", "ember"),
-        6 to listOf("lunar", "prism", "velvet"),
-        10 to listOf("orbit", "harbor", "prism"),
-      ),
+      confirmationOptions =
+        mapOf(
+          2 to listOf("summit", "canyon", "ember"),
+          6 to listOf("lunar", "prism", "velvet"),
+          10 to listOf("orbit", "harbor", "prism"),
+        ),
     )
   return when (screen) {
     "import" -> OnboardingUiState(step = OnboardingStep.IMPORT)
-    "import-phrase" -> OnboardingUiState(step = OnboardingStep.IMPORT, input = PreviewWords.joinToString(" "))
-    "import-key" -> OnboardingUiState(step = OnboardingStep.IMPORT, input = "ed25519-priv-0x" + "5f".repeat(32))
+    "import-phrase" ->
+      OnboardingUiState(step = OnboardingStep.IMPORT, input = PreviewWords.joinToString(" "))
+    "import-key" ->
+      OnboardingUiState(step = OnboardingStep.IMPORT, input = "ed25519-priv-0x" + "5f".repeat(32))
     "backup" -> backup
     "backup-revealed" -> backup.copy(backupRevealed = true)
-    "confirm" -> backup.copy(step = OnboardingStep.CONFIRM_BACKUP, backupRevealed = true, confirmations = mapOf(2 to "canyon"))
-    "accounts" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, subaccounts = PreviewSubaccounts, subaccountsLoaded = true, selectedSubaccount = PreviewSubaccounts[0].address)
-    "create-account" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, subaccountsLoaded = true)
+    "confirm" ->
+      backup.copy(
+        step = OnboardingStep.CONFIRM_BACKUP,
+        backupRevealed = true,
+        confirmations = mapOf(2 to "canyon"),
+      )
+    "accounts" ->
+      OnboardingUiState(
+        step = OnboardingStep.SUBACCOUNT,
+        profile = owner,
+        subaccounts = PreviewSubaccounts,
+        subaccountsLoaded = true,
+        selectedSubaccount = PreviewSubaccounts[0].address,
+      )
+    "create-account" ->
+      OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, subaccountsLoaded = true)
     "finding" -> OnboardingUiState(step = OnboardingStep.SUBACCOUNT, profile = owner, busy = true)
-    "enable" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address)
-    "enable-working" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, busy = true)
-    "fee-can-pay", "fee-needs-funds", "fee-unchecked" ->
+    "enable" ->
+      OnboardingUiState(
+        step = OnboardingStep.ENABLE_TRADING,
+        profile = owner,
+        selectedSubaccount = PreviewSubaccounts[0].address,
+      )
+    "enable-working" ->
+      OnboardingUiState(
+        step = OnboardingStep.ENABLE_TRADING,
+        profile = owner,
+        selectedSubaccount = PreviewSubaccounts[0].address,
+        busy = true,
+      )
+    "fee-can-pay",
+    "fee-needs-funds",
+    "fee-unchecked" ->
       OnboardingUiState(
         step = OnboardingStep.ENABLE_TRADING,
         profile = owner,
@@ -674,60 +959,92 @@ private fun previewOnboardingState(screen: String): OnboardingUiState {
           when (screen) {
             "fee-can-pay" -> SetupFee.WalletCanPay(estimate = 104_300uL, balance = 48_210_000uL)
             "fee-needs-funds" ->
-              SetupFee.WalletNeedsFunds(104_300uL, reserve = 5_000_000uL, balance = 0uL, address = owner.ownerAddress!!)
+              SetupFee.WalletNeedsFunds(
+                104_300uL,
+                reserve = 5_000_000uL,
+                balance = 0uL,
+                address = owner.ownerAddress!!,
+              )
             else -> SetupFee.Unchecked(104_300uL)
           },
       )
-    "open-account", "referral-onboarding", "open-account-working", "open-account-opened", "open-account-sponsor", "open-account-stalled" ->
+    "open-account",
+    "referral-onboarding",
+    "open-account-working",
+    "open-account-opened",
+    "open-account-sponsor",
+    "open-account-stalled" ->
       OnboardingUiState(
         step = OnboardingStep.OPEN_ACCOUNT,
         profile = owner,
         accountOpened = screen == "open-account-opened" || screen == "open-account-stalled",
         busy = screen == "open-account-working" || screen == "open-account-opened",
         setupOperation =
-          if (screen == "open-account-stalled") SetupOperation.ENABLE_TRADING else SetupOperation.CREATE_ACCOUNT,
-        setupFee = if (screen == "open-account-sponsor") SetupFee.AwaitingSponsor(104_300uL) else null,
+          if (screen == "open-account-stalled") SetupOperation.ENABLE_TRADING
+          else SetupOperation.CREATE_ACCOUNT,
+        setupFee =
+          if (screen == "open-account-sponsor") SetupFee.AwaitingSponsor(104_300uL) else null,
         error =
-          if (screen == "open-account-stalled") "Trading wasn’t enabled on this device. Flare couldn’t reach the network."
+          if (screen == "open-account-stalled")
+            "Trading wasn’t enabled on this device. Flare couldn’t reach the network."
           else null,
-        referral = if (screen == "referral-onboarding") ReferralUiState(
-          enabled = true,
-          suggestedCode = "OC9E6E",
-          input = "OC9E6E",
-          eligibility = ReferralEligibility.ELIGIBLE,
-          valid = true,
-        ) else ReferralUiState(),
+        referral =
+          if (screen == "referral-onboarding")
+            ReferralUiState(
+              enabled = true,
+              suggestedCode = "OC9E6E",
+              input = "OC9E6E",
+              eligibility = ReferralEligibility.ELIGIBLE,
+              valid = true,
+            )
+          else ReferralUiState(),
       )
-    "setup-error" -> OnboardingUiState(step = OnboardingStep.ENABLE_TRADING, profile = owner, selectedSubaccount = PreviewSubaccounts[0].address, error = "Trading wasn’t enabled on this device. The network didn’t respond.")
+    "setup-error" ->
+      OnboardingUiState(
+        step = OnboardingStep.ENABLE_TRADING,
+        profile = owner,
+        selectedSubaccount = PreviewSubaccounts[0].address,
+        error = "Trading wasn’t enabled on this device. The network didn’t respond.",
+      )
     else -> OnboardingUiState()
   }
 }
 
 /** Walks the preview through setup without keys, network or transactions. */
-private fun previewOnboardingIntent(state: OnboardingUiState, intent: OnboardingIntent): OnboardingUiState =
+private fun previewOnboardingIntent(
+  state: OnboardingUiState,
+  intent: OnboardingIntent,
+): OnboardingUiState =
   when (intent) {
     OnboardingIntent.ShowImport -> OnboardingUiState(step = OnboardingStep.IMPORT)
     OnboardingIntent.CreateOwner -> previewOnboardingState("backup")
     is OnboardingIntent.ChangeInput -> state.copy(input = intent.value)
     is OnboardingIntent.SetApiImport -> state.copy(apiImport = intent.enabled)
     is OnboardingIntent.ChangeTradingAccount -> state.copy(tradingAccountInput = intent.value)
-    is OnboardingIntent.ChangeReferralCode -> state.copy(referral = state.referral.copy(
-      input = intent.code,
-      valid = intent.code.isNotBlank(),
-      error = null,
-    ))
+    is OnboardingIntent.ChangeReferralCode ->
+      state.copy(
+        referral =
+          state.referral.copy(
+            input = intent.code,
+            valid = intent.code.isNotBlank(),
+            error = null,
+          ),
+      )
     OnboardingIntent.ImportCredential -> previewOnboardingState("accounts")
     OnboardingIntent.RevealBackup -> state.copy(backupRevealed = true)
     OnboardingIntent.ReviewBackup -> state.copy(step = OnboardingStep.CONFIRM_BACKUP)
-    is OnboardingIntent.ChangeConfirmation -> state.copy(confirmations = state.confirmations + (intent.index to intent.value))
+    is OnboardingIntent.ChangeConfirmation ->
+      state.copy(confirmations = state.confirmations + (intent.index to intent.value))
     OnboardingIntent.ConfirmBackup -> previewOnboardingState("open-account")
     OnboardingIntent.OpenAccount -> state.copy(busy = true, error = null, setupFee = null)
-    OnboardingIntent.CreateSubaccount, OnboardingIntent.DiscoverSubaccounts -> previewOnboardingState("accounts")
+    OnboardingIntent.CreateSubaccount,
+    OnboardingIntent.DiscoverSubaccounts -> previewOnboardingState("accounts")
     is OnboardingIntent.SelectSubaccount -> state.copy(selectedSubaccount = intent.address)
     OnboardingIntent.ContinueSubaccount -> previewOnboardingState("enable")
     is OnboardingIntent.SetBuilderOptIn -> state.copy(builderOptIn = intent.enabled)
-    OnboardingIntent.EnableTrading, OnboardingIntent.ConfirmSetupSelfPay, OnboardingIntent.RetrySetup ->
-      state.copy(busy = true)
+    OnboardingIntent.EnableTrading,
+    OnboardingIntent.ConfirmSetupSelfPay,
+    OnboardingIntent.RetrySetup -> state.copy(busy = true)
     OnboardingIntent.Back ->
       when (state.step) {
         OnboardingStep.CONFIRM_BACKUP -> state.copy(step = OnboardingStep.SHOW_BACKUP)
@@ -737,20 +1054,57 @@ private fun previewOnboardingIntent(state: OnboardingUiState, intent: Onboarding
     else -> state
   }
 
-
 private fun previewStrategies(): StrategiesUiState {
   val key = StrategyMarketKey("decibel", "mainnet", "0xbtc", 60_000)
   val time = 1_790_518_620_000L
   return StrategiesUiState(
-    key = key, active = true, keyConfigured = true, useJev = true,
-    baseline = StrategyEvaluation(key, time, time - 1, listOf(
-      StrategySignal(StrategyKind.MACD_CROSSOVER, StrategyDirection.BUY, "Closed-candle MACD histogram zero crossing"),
-      StrategySignal(StrategyKind.RSI_REVERSAL, StrategyDirection.WAIT, "Closed-candle RSI exit from 30/70 zone"),
-      StrategySignal(StrategyKind.MOMENTUM_PULLBACK, StrategyDirection.BUY, "Closed-candle recovery through SMA20 in trend direction"),
-    ), mapOf("rsi" to 56.4, "macd" to 32.1, "macdSignal" to 28.7, "macdHistogram" to 3.4, "sma20" to 83_100.0,
-      "return1" to 0.0014, "volume" to 24.5, "bookFresh" to 1.0)),
-    confluence = ConfluenceEvaluation(StrategyDirection.BUY,
-      mapOf(StrategyDirection.BUY to 0.7, StrategyDirection.SELL to 0.1, StrategyDirection.WAIT to 0.2), 0.7),
+    key = key,
+    active = true,
+    keyConfigured = true,
+    useJev = true,
+    baseline =
+      StrategyEvaluation(
+        key,
+        time,
+        time - 1,
+        listOf(
+          StrategySignal(
+            StrategyKind.MACD_CROSSOVER,
+            StrategyDirection.BUY,
+            "Closed-candle MACD histogram zero crossing",
+          ),
+          StrategySignal(
+            StrategyKind.RSI_REVERSAL,
+            StrategyDirection.WAIT,
+            "Closed-candle RSI exit from 30/70 zone",
+          ),
+          StrategySignal(
+            StrategyKind.MOMENTUM_PULLBACK,
+            StrategyDirection.BUY,
+            "Closed-candle recovery through SMA20 in trend direction",
+          ),
+        ),
+        mapOf(
+          "rsi" to 56.4,
+          "macd" to 32.1,
+          "macdSignal" to 28.7,
+          "macdHistogram" to 3.4,
+          "sma20" to 83_100.0,
+          "return1" to 0.0014,
+          "volume" to 24.5,
+          "bookFresh" to 1.0,
+        ),
+      ),
+    confluence =
+      ConfluenceEvaluation(
+        StrategyDirection.BUY,
+        mapOf(
+          StrategyDirection.BUY to 0.7,
+          StrategyDirection.SELL to 0.1,
+          StrategyDirection.WAIT to 0.2,
+        ),
+        0.7,
+      ),
   )
 }
 
@@ -758,24 +1112,86 @@ private fun previewAuto(screen: String): AutoTradingUiState {
   val real = screen in setOf("auto-real", "auto-review")
   val signal = previewStrategies()
   return AutoTradingUiState(
-    config = AutoRunConfig(StrategyKind.MACD_CROSSOVER, if (real) AutoRunMode.REAL else AutoRunMode.SIMULATION,
-      "0.001", "0.01", "1000", 10, 30, 60, 50, 1),
-    market = previewQuotes().first().market, timeframeMs = ChartTimeframe.FIVE_MINUTES.durationMs,
+    config =
+      AutoRunConfig(
+        StrategyKind.MACD_CROSSOVER,
+        if (real) AutoRunMode.REAL else AutoRunMode.SIMULATION,
+        "0.001",
+        "0.01",
+        "1000",
+        10,
+        30,
+        60,
+        50,
+        1,
+      ),
+    market = previewQuotes().first().market,
+    timeframeMs = ChartTimeframe.FIVE_MINUTES.durationMs,
     account = "0x7a3f9c21e4b85d06a1f3c92b7e4d815a6c09b3e27f1d4a8c5e6b09f2d3a17c48",
-    active = !real, reviewOpen = screen == "auto-review", status = if (real) "Ready" else "Running",
-    candles = previewCandles().map { StrategyCandle(it.openTimeMs, it.closeTimeMs, it.open, it.high, it.low, it.close, it.volume) },
-    markPrice = "83109.00", baseline = signal.baseline, confluence = signal.confluence,
-    useJev = true, keyConfigured = true, modelCalls = if (real) 0 else 8, modelLatencyMs = if (real) null else 243,
-    orders = if (real) 0 else 2, consumedNotional = if (real) "0" else "166.10", positionSize = if (real) "0" else "0.002",
-    realizedPnl = "0", unrealizedPnl = if (real) "0" else "0.12", startedAtMs = if (real) null else 1_790_518_500_000,
-    decision = if (real) null else AutoDecision(previewCandles()[previewCandles().size - 3].closeTimeMs, StrategyDirection.BUY, AutoOutcome.ACTED, 0.87, 243),
-    markers = if (real) emptyList() else previewCandles().let { c ->
-      listOf(AutoMarker(c[c.size - 12].closeTimeMs, StrategyDirection.BUY), AutoMarker(c[c.size - 3].closeTimeMs, StrategyDirection.BUY))
-    },
-    activity = if (real) emptyList() else listOf(
-      AutoActivity(1_790_518_620_000, 1_790_518_620_000 - 20_000, "Paper buy · 0.001 BTC at 83109.00", StrategyDirection.BUY, AutoOutcome.ACTED),
-      AutoActivity(1_790_518_320_000, 1_790_518_320_000 - 20_000, "Vetoed sell · Jev wait at 52% confidence", StrategyDirection.SELL, AutoOutcome.VETOED),
-      AutoActivity(1_790_518_020_000, 1_790_518_020_000 - 20_000, "Wait · no new MACD crossover signal", StrategyDirection.WAIT, AutoOutcome.WAITING),
-    ),
+    active = !real,
+    reviewOpen = screen == "auto-review",
+    status = if (real) "Ready" else "Running",
+    candles =
+      previewCandles().map {
+        StrategyCandle(it.openTimeMs, it.closeTimeMs, it.open, it.high, it.low, it.close, it.volume)
+      },
+    markPrice = "83109.00",
+    baseline = signal.baseline,
+    confluence = signal.confluence,
+    useJev = true,
+    keyConfigured = true,
+    modelCalls = if (real) 0 else 8,
+    modelLatencyMs = if (real) null else 243,
+    orders = if (real) 0 else 2,
+    consumedNotional = if (real) "0" else "166.10",
+    positionSize = if (real) "0" else "0.002",
+    realizedPnl = "0",
+    unrealizedPnl = if (real) "0" else "0.12",
+    startedAtMs = if (real) null else 1_790_518_500_000,
+    decision =
+      if (real) null
+      else
+        AutoDecision(
+          previewCandles()[previewCandles().size - 3].closeTimeMs,
+          StrategyDirection.BUY,
+          AutoOutcome.ACTED,
+          0.87,
+          243,
+        ),
+    markers =
+      if (real) emptyList()
+      else
+        previewCandles().let { c ->
+          listOf(
+            AutoMarker(c[c.size - 12].closeTimeMs, StrategyDirection.BUY),
+            AutoMarker(c[c.size - 3].closeTimeMs, StrategyDirection.BUY),
+          )
+        },
+    activity =
+      if (real) emptyList()
+      else
+        listOf(
+          AutoActivity(
+            1_790_518_620_000,
+            1_790_518_620_000 - 20_000,
+            "Paper buy · 0.001 BTC at 83109.00",
+            StrategyDirection.BUY,
+            AutoOutcome.ACTED,
+          ),
+          AutoActivity(
+            1_790_518_320_000,
+            1_790_518_320_000 - 20_000,
+            "Vetoed sell · Jev wait at 52% confidence",
+            StrategyDirection.SELL,
+            AutoOutcome.VETOED,
+          ),
+          AutoActivity(
+            1_790_518_020_000,
+            1_790_518_020_000 - 20_000,
+            "Wait · no new MACD crossover signal",
+            StrategyDirection.WAIT,
+            AutoOutcome.WAITING,
+          ),
+        ),
   )
 }

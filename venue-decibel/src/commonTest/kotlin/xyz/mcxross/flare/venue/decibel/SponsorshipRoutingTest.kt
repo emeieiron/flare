@@ -89,5 +89,19 @@ private const val SUB = "0x11"
 private const val MARKET = "0x22"
 private const val ASSET = "0x33"
 private val ORDER =
-  ValidatedOrder(MARKET, OrderSide.BUY, 10uL, 1uL, TimeInForce.GOOD_TILL_CANCELLED, false, null, null, null, null, null, null)
-private val REQUEST = ExternalFeePayerRequest(byteArrayOf(1), byteArrayOf(2), fingerprint = "0x" + "11".repeat(32))
+  ValidatedOrder(
+    MARKET,
+    OrderSide.BUY,
+    10uL,
+    1uL,
+    TimeInForce.GOOD_TILL_CANCELLED,
+    false,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  )
+private val REQUEST =
+  ExternalFeePayerRequest(byteArrayOf(1), byteArrayOf(2), fingerprint = "0x" + "11".repeat(32))

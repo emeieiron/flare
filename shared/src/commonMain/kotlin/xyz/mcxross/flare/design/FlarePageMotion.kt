@@ -19,13 +19,17 @@ import androidx.navigationevent.NavigationEvent
 
 private const val PAGE_DURATION_MS = 240
 
-fun pagePushEnter() = slideInHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { it }
+fun pagePushEnter() =
+  slideInHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { it }
 
-fun pagePushExit() = slideOutHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { -it / 4 }
+fun pagePushExit() =
+  slideOutHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { -it / 4 }
 
-fun pagePopEnter() = slideInHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { -it / 4 }
+fun pagePopEnter() =
+  slideInHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { -it / 4 }
 
-fun pagePopExit() = slideOutHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { it }
+fun pagePopExit() =
+  slideOutHorizontally(tween(PAGE_DURATION_MS, easing = FastOutSlowInEasing)) { it }
 
 // A back gesture tracks the finger directly rather than applying a timed easing curve.
 fun pagePredictivePopEnter(swipeEdge: Int) =
@@ -48,17 +52,19 @@ fun <T> FlarePageTransition(
 ) {
   AnimatedContent(
     targetState = page,
-    // Each page carries the background, since a page must cover the one it slides over; the container
+    // Each page carries the background, since a page must cover the one it slides over; the
+    // container
     // would only paint the same black a second time.
     modifier = modifier.fillMaxSize().clipToBounds(),
     transitionSpec = {
       val fromDepth = depth(initialState)
       val toDepth = depth(targetState)
-      val transition = when {
-        toDepth > fromDepth -> pagePushEnter() togetherWith pagePushExit()
-        toDepth < fromDepth -> pagePopEnter() togetherWith pagePopExit()
-        else -> EnterTransition.None togetherWith ExitTransition.None
-      }
+      val transition =
+        when {
+          toDepth > fromDepth -> pagePushEnter() togetherWith pagePushExit()
+          toDepth < fromDepth -> pagePopEnter() togetherWith pagePopExit()
+          else -> EnterTransition.None togetherWith ExitTransition.None
+        }
       transition.apply { targetContentZIndex = toDepth.toFloat() }.using(null)
     },
     label = "Page navigation",

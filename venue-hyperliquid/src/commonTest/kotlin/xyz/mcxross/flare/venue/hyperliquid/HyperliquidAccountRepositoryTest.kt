@@ -11,6 +11,7 @@ import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.api.StreamData
 import xyz.mcxross.flare.hyperliquid.model.ClearinghouseState
+import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.LedgerUpdate
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
@@ -21,7 +22,6 @@ import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.TradingAccount
-import xyz.mcxross.flare.hyperliquid.model.Fill as HyperliquidFill
 
 class HyperliquidAccountRepositoryTest {
   private val json = HyperliquidClient.DefaultJson
@@ -119,21 +119,30 @@ class HyperliquidAccountRepositoryTest {
     assertTrue(
       accounts.applyStreamData(
         Fixtures.USER,
-        StreamData.Clearinghouse(user, decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE_EMPTY)),
-      )
+        StreamData.Clearinghouse(
+          user,
+          decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE_EMPTY),
+        ),
+      ),
     )
     assertTrue(accounts.snapshot.value.positions.isEmpty())
     assertEquals(0.0, accounts.snapshot.value.overview!!.equity)
 
     accounts.applyStreamData(
       Fixtures.USER,
-      StreamData.OpenOrders(user, decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS)),
+      StreamData.OpenOrders(
+        user,
+        decode<List<FrontendOrder>>(Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS),
+      ),
     )
     assertEquals("62483867152", accounts.snapshot.value.openOrders.first().orderId)
 
     accounts.applyStreamData(
       Fixtures.USER,
-      StreamData.SpotState(user, decode<SpotClearinghouseState>(Fixtures.SPOT_CLEARINGHOUSE_STATE_UNIFIED)),
+      StreamData.SpotState(
+        user,
+        decode<SpotClearinghouseState>(Fixtures.SPOT_CLEARINGHOUSE_STATE_UNIFIED),
+      ),
     )
     val spot = accounts.snapshot.value.overview!!.balances.spot!!
     assertEquals(716.428232, spot.assets.single { it.symbol == "USDC" }.amount)
@@ -146,7 +155,7 @@ class HyperliquidAccountRepositoryTest {
           Fixtures.UNIFIED_USER,
           decode<ClearinghouseState>(Fixtures.CLEARINGHOUSE_STATE),
         ),
-      )
+      ),
     )
     assertTrue(accounts.snapshot.value.positions.isEmpty())
   }
@@ -171,14 +180,27 @@ class HyperliquidAccountRepositoryTest {
     val user = Fixtures.USER.lowercase()
     val newer = fills.first().copy(tid = 1L, time = 1791764999999L)
     // A snapshot repeats what was read; only live fills are added, each once.
-    accounts.applyStreamData(Fixtures.USER, StreamData.UserFills(user, listOf(newer), isSnapshot = true))
+    accounts.applyStreamData(
+      Fixtures.USER,
+      StreamData.UserFills(user, listOf(newer), isSnapshot = true),
+    )
     assertEquals(3, accounts.history.value.trades.size)
-    accounts.applyStreamData(Fixtures.USER, StreamData.UserFills(user, listOf(newer, fills[0]), isSnapshot = false))
-    assertEquals(listOf("1", "1057008188568842"), accounts.history.value.trades.take(2).map { it.id })
+    accounts.applyStreamData(
+      Fixtures.USER,
+      StreamData.UserFills(user, listOf(newer, fills[0]), isSnapshot = false),
+    )
+    assertEquals(
+      listOf("1", "1057008188568842"),
+      accounts.history.value.trades.take(2).map { it.id },
+    )
     assertEquals(4, accounts.history.value.trades.size)
 
-    val deposit = decode<List<LedgerUpdate>>(Fixtures.LEDGER_UPDATES_KINDS).first().copy(time = 1791800000000L)
-    accounts.applyStreamData(Fixtures.USER, StreamData.LedgerUpdates(user, listOf(deposit), isSnapshot = false))
+    val deposit =
+      decode<List<LedgerUpdate>>(Fixtures.LEDGER_UPDATES_KINDS).first().copy(time = 1791800000000L)
+    accounts.applyStreamData(
+      Fixtures.USER,
+      StreamData.LedgerUpdates(user, listOf(deposit), isSnapshot = false),
+    )
     assertEquals(FundMovementKind.DEPOSIT, accounts.history.value.transfers.first().kind)
     assertEquals(7, accounts.history.value.transfers.size)
   }
@@ -224,7 +246,10 @@ class HyperliquidAccountRepositoryTest {
   @Test
   fun readsTheFeeTierReferralAndSubAccounts() = runTest {
     val (accounts, _) =
-      repository(standardResponses + mapOf("referral" to Fixtures.REFERRAL, "subAccounts" to Fixtures.SUB_ACCOUNTS))
+      repository(
+        standardResponses +
+          mapOf("referral" to Fixtures.REFERRAL, "subAccounts" to Fixtures.SUB_ACCOUNTS),
+      )
 
     val rewards = assertNotNull(accounts.rewards())
     assertEquals("Tier 0", rewards.feeTier?.name)
@@ -236,7 +261,11 @@ class HyperliquidAccountRepositoryTest {
       listOf(
         TradingAccount(Fixtures.USER, Fixtures.USER, primary = true),
         TradingAccount("0x100000000000000000000000000000000000000d", Fixtures.USER, label = "Grid"),
-        TradingAccount("0x100000000000000000000000000000000000000e", Fixtures.USER, label = "Hedge"),
+        TradingAccount(
+          "0x100000000000000000000000000000000000000e",
+          Fixtures.USER,
+          label = "Hedge",
+        ),
       ),
       subaccounts,
     )

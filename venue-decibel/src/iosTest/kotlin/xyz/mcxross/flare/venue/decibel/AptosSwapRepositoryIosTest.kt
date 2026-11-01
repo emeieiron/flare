@@ -36,20 +36,43 @@ import xyz.mcxross.kaptos.model.*
 import xyz.mcxross.kaptos.transaction.authenticator.AccountAuthenticator
 import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 
-/** Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot load its JNI library. */
+/**
+ * Uses the native chain runtime, as SponsoredCommandFlowIosTest does; host Android tests cannot
+ * load its JNI library.
+ */
 class AptosSwapRepositoryIosTest {
   @Test
   fun aPreparedTransactionCannotSignADifferentPayload() = runTest {
     fixture { f ->
-      val plan = PanoraSwapProvider(f.http, f.aptos, "https://worker", { "session" }, now = { f.now })
-        .quote(AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000"))
+      val plan =
+        PanoraSwapProvider(f.http, f.aptos, "https://worker", { "session" }, now = { f.now })
+          .quote(AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000"))
       f.wallets.withOwnerAccount(PROMPT) { account ->
         val executor = AptosTransactionExecutor(f.aptos)
-        val prepared = assertIs<AptosResult.Success<xyz.mcxross.flare.aptos.transaction.PreparedAptosTransaction>>(
-          executor.prepare(account, plan.payload(), options = TransactionOptions(maxGasAmount = 50_000uL))).value
-        val changed = plan.payload().let { TransactionPayload.EntryFunction(it.call.copy(function = Identifier("other"))) }
-        val result = executor.execute(account, { AptosResult.Success(changed) }, prepared = prepared,
-          beforeSign = { fail("A changed payload must not request authorization") }).last()
+        val prepared =
+          assertIs<
+              AptosResult.Success<xyz.mcxross.flare.aptos.transaction.PreparedAptosTransaction>,
+            >(
+              executor.prepare(
+                account,
+                plan.payload(),
+                options = TransactionOptions(maxGasAmount = 50_000uL),
+              ),
+            )
+            .value
+        val changed =
+          plan.payload().let {
+            TransactionPayload.EntryFunction(it.call.copy(function = Identifier("other")))
+          }
+        val result =
+          executor
+            .execute(
+              account,
+              { AptosResult.Success(changed) },
+              prepared = prepared,
+              beforeSign = { fail("A changed payload must not request authorization") },
+            )
+            .last()
         assertIs<xyz.mcxross.flare.aptos.transaction.AptosTransactionState.Failed>(result)
         assertEquals(listOf("simulate"), f.events)
       }
@@ -64,7 +87,9 @@ class AptosSwapRepositoryIosTest {
       assertEquals(SwapNetworkFee(FeePayment.SELF_PAY, 10_000uL, 5_000_000uL), quote.networkFee)
       assertEquals(listOf("simulate"), f.events)
       assertTrue(f.store.operations.first().isEmpty())
-      assertIs<ActionState.Committed>(f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last())
+      assertIs<ActionState.Committed>(
+        f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last(),
+      )
       assertEquals(listOf("simulate", "authorize", "sign", "submit", "confirm"), f.events)
       assertEquals(FeePayment.SELF_PAY, f.store.operations.first().single().feePayment)
     }
@@ -111,7 +136,10 @@ class AptosSwapRepositoryIosTest {
       val capacity = f.repository.fundingCapacity("0x1")
       assertEquals(f.balance.toULong(), capacity.inputBalance)
       assertEquals(f.balance.toULong(), capacity.outputBalance)
-      assertEquals((50_000uL + f.aptos.settings.transactionDefaults.maxGasAmount) * 100uL, capacity.networkFeeReserve)
+      assertEquals(
+        (50_000uL + f.aptos.settings.transactionDefaults.maxGasAmount) * 100uL,
+        capacity.networkFeeReserve,
+      )
       assertEquals(capacity.inputBalance - capacity.networkFeeReserve, capacity.maximumInput)
       assertTrue(f.events.isEmpty())
     }
@@ -159,7 +187,9 @@ class AptosSwapRepositoryIosTest {
       assertTrue(failed.definitelyNotSubmitted, failed.toString())
       assertNotNull(failed.selfPay)
       assertEquals(SwapOperationStatus.NOT_SUBMITTED, f.store.operations.first().single().status)
-      assertIs<ActionState.Committed>(f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last())
+      assertIs<ActionState.Committed>(
+        f.repository.execute(quote.id, PROMPT, FeePayment.SELF_PAY).last(),
+      )
       assertEquals(1, f.events.count { it == "sponsor" })
       assertEquals(1, f.events.count { it == "submit" })
       assertEquals(FeePayment.SELF_PAY, f.store.operations.first().single().feePayment)
@@ -187,10 +217,15 @@ class AptosSwapRepositoryIosTest {
     fixture { f ->
       val quote = f.repository.quote(REQUEST)
       f.gate.mutex.lock()
-      try { assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last()) }
-      finally { f.gate.mutex.unlock() }
+      try {
+        assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last())
+      } finally {
+        f.gate.mutex.unlock()
+      }
       assertEquals(listOf("simulate"), f.events)
-      f.wallets.onConfirm = { f.preferences.registerProfile(AccountProfile("other", ownerAddress = "0x2")) }
+      f.wallets.onConfirm = {
+        f.preferences.registerProfile(AccountProfile("other", ownerAddress = "0x2"))
+      }
       assertIs<ActionState.Failed>(f.repository.execute(quote.id, PROMPT).last())
       assertFalse("sign" in f.events)
     }
@@ -198,12 +233,25 @@ class AptosSwapRepositoryIosTest {
 
   private suspend fun fixture(block: suspend (SwapFixture) -> Unit) {
     val f = SwapFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
-    try { f.initialize(); block(f) } finally { f.aptos.close(); f.http.close() }
+    try {
+      f.initialize()
+      block(f)
+    } finally {
+      f.aptos.close()
+      f.http.close()
+    }
   }
 }
 
 private val PROMPT = VaultPrompt("Swap", "Confirm swap")
-private val REQUEST = SwapRequest("0x1", AptosSwapRepository.APT, AptosSwapRepository.USDC, SwapAmountKind.EXACT_OUTPUT, "10000000")
+private val REQUEST =
+  SwapRequest(
+    "0x1",
+    AptosSwapRepository.APT,
+    AptosSwapRepository.USDC,
+    SwapAmountKind.EXACT_OUTPUT,
+    "10000000",
+  )
 private val HASH = "0x" + "ab".repeat(32)
 
 private class SwapFixture(dispatcher: CoroutineDispatcher) {
@@ -214,88 +262,166 @@ private class SwapFixture(dispatcher: CoroutineDispatcher) {
   var restoreDelayMs = 0L
   var sponsorFailure: AptosError? = null
   var sponsorshipAvailable = true
-  private val data = object : DataStore<Preferences> {
-    override val data = MutableStateFlow(emptyPreferences())
-    override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = transform(data.value).also { data.value = it }
-  }
+  private val data =
+    object : DataStore<Preferences> {
+      override val data = MutableStateFlow(emptyPreferences())
+
+      override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+        transform(data.value).also { data.value = it }
+    }
   val preferences = AppPreferences(data)
   val store = PreferencesSwapOperationStore(data)
   val journal = SwapTestJournal()
   val gate = AptosSubmissionGate()
   val wallets = SwapTestWallet(events)
   val trading = SwapTestTrading()
-  val http = HttpClient(MockEngine(MockEngineConfig().apply {
-    this.dispatcher = dispatcher
-    addHandler { call ->
-      val path = call.url.encodedPath
-      val body = when {
-        path == "/swap/quote" -> buildJsonObject {
-          put("id", "fixture"); put("request", Json.encodeToJsonElement(AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000")))
-          put("response", Json.parseToJsonElement(FIXTURE_RESPONSE)); put("payloadHash", FIXTURE_HASH)
-          put("expiresAtMs", now + 30000); put("issuedAtMs", now); put("authorization", "signed-quote")
-        }.toString()
-        path.endsWith("/estimate_gas_price") -> {
-          check(!refuseGasProbe) { "An empty wallet must not require a fee probe" }
-          """{"gas_estimate":100}"""
-        }
-        path.contains("/balance/") -> "\"$balance\""
-        path.contains("/accounts/") -> """{"sequence_number":"0","authentication_key":"0x1"}"""
-        path.endsWith("/transactions/simulate") -> { events += "simulate"; "[${transaction(HASH)}]" }
-        path.contains("/transactions/by_hash/") -> { events += "confirm"; transaction(path.substringAfterLast('/')) }
-        path.endsWith("/transactions") -> {
-          events += "submit"
-          assertEquals(SwapOperationStatus.SUBMITTING, store.operations.first().single().status)
-          val hash = journal.pending().single().hash
-          transaction(hash).replace("user_transaction", "pending_transaction")
-        }
-        else -> error("Unexpected request $path")
+  val http =
+    HttpClient(
+      MockEngine(
+        MockEngineConfig().apply {
+          this.dispatcher = dispatcher
+          addHandler { call ->
+            val path = call.url.encodedPath
+            val body =
+              when {
+                path == "/swap/quote" -> buildJsonObject {
+                    put("id", "fixture")
+                    put(
+                      "request",
+                      Json.encodeToJsonElement(
+                        AptosSwapRequest("0x1", SwapKind.EXACT_OUTPUT, "10000000"),
+                      ),
+                    )
+                    put("response", Json.parseToJsonElement(FIXTURE_RESPONSE))
+                    put("payloadHash", FIXTURE_HASH)
+                    put("expiresAtMs", now + 30000)
+                    put("issuedAtMs", now)
+                    put("authorization", "signed-quote")
+                  }
+                    .toString()
+                path.endsWith("/estimate_gas_price") -> {
+                  check(!refuseGasProbe) { "An empty wallet must not require a fee probe" }
+                  """{"gas_estimate":100}"""
+                }
+                path.contains("/balance/") -> "\"$balance\""
+                path.contains("/accounts/") ->
+                  """{"sequence_number":"0","authentication_key":"0x1"}"""
+                path.endsWith("/transactions/simulate") -> {
+                  events += "simulate"
+                  "[${transaction(HASH)}]"
+                }
+                path.contains("/transactions/by_hash/") -> {
+                  events += "confirm"
+                  transaction(path.substringAfterLast('/'))
+                }
+                path.endsWith("/transactions") -> {
+                  events += "submit"
+                  assertEquals(
+                    SwapOperationStatus.SUBMITTING,
+                    store.operations.first().single().status,
+                  )
+                  val hash = journal.pending().single().hash
+                  transaction(hash).replace("user_transaction", "pending_transaction")
+                }
+                else -> error("Unexpected request $path")
+              }
+            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+          }
+        },
+      ),
+    ) {
+      install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+    }
+  val aptos =
+    Aptos(
+      AptosConfig(
+        network = Network.MAINNET,
+        endpoints = AptosEndpoints(fullNode = "https://worker/v1"),
+        transport = http.asAptosTransport(),
+      ),
+    )
+  private val sessions =
+    object : SessionRepository {
+      override val status = MutableStateFlow<SessionStatus?>(null)
+
+      override fun <T> bind(status: SessionStatus, operation: Flow<T>) = operation
+
+      override suspend fun accessToken() = "session"
+
+      override suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt) =
+        SessionStatus(SessionRole.OWNER, "0x1", subaccount, now + 60000).also { status.value = it }
+
+      override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
+        error("Not used")
+
+      override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
+        delay(restoreDelayMs)
+        return SessionStatus(SessionRole.API, "0x2", subaccount, now + 60000)
       }
-      respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+
+      override suspend fun useAnonymous(): SessionStatus = error("Not used")
+
+      override suspend fun invalidate() = Unit
     }
-  })) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
-  val aptos = Aptos(AptosConfig(network = Network.MAINNET,
-    endpoints = AptosEndpoints(fullNode = "https://worker/v1"), transport = http.asAptosTransport()))
-  private val sessions = object : SessionRepository {
-    override val status = MutableStateFlow<SessionStatus?>(null)
-    override fun <T> bind(status: SessionStatus, operation: Flow<T>) = operation
-    override suspend fun accessToken() = "session"
-    override suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt) =
-      SessionStatus(SessionRole.OWNER, "0x1", subaccount, now + 60000).also { status.value = it }
-    override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus = error("Not used")
-    override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
-      delay(restoreDelayMs)
-      return SessionStatus(SessionRole.API, "0x2", subaccount, now + 60000)
+  private val gas =
+    object : GasSponsorshipRepository {
+      override suspend fun canSponsorSwap() = sponsorshipAvailable
+
+      override suspend fun submit(
+        request: ExternalFeePayerRequest,
+        ownerOnly: Boolean,
+      ): AptosResult<String> = error("Not used")
+
+      override suspend fun resolve(fingerprint: String): AptosResult<String?> = error("Not used")
+
+      override suspend fun submitSwap(
+        request: ExternalFeePayerRequest,
+        authorization: String,
+      ): AptosResult<String> {
+        assertEquals("signed-quote", authorization)
+        assertEquals(SwapOperationStatus.SUBMITTING, store.operations.first().single().status)
+        assertTrue(journal.pending().single().hash.startsWith("sponsor:"))
+        events += "sponsor"
+        return sponsorFailure?.let { AptosResult.Failure(it) } ?: AptosResult.Success(HASH)
+      }
     }
-    override suspend fun useAnonymous(): SessionStatus = error("Not used")
-    override suspend fun invalidate() = Unit
-  }
-  private val gas = object : GasSponsorshipRepository {
-    override suspend fun canSponsorSwap() = sponsorshipAvailable
-    override suspend fun submit(request: ExternalFeePayerRequest, ownerOnly: Boolean): AptosResult<String> = error("Not used")
-    override suspend fun resolve(fingerprint: String): AptosResult<String?> = error("Not used")
-    override suspend fun submitSwap(request: ExternalFeePayerRequest, authorization: String): AptosResult<String> {
-      assertEquals("signed-quote", authorization)
-      assertEquals(SwapOperationStatus.SUBMITTING, store.operations.first().single().status)
-      assertTrue(journal.pending().single().hash.startsWith("sponsor:"))
-      events += "sponsor"
-      return sponsorFailure?.let { AptosResult.Failure(it) } ?: AptosResult.Success(HASH)
-    }
-  }
   lateinit var repository: AptosSwapRepository
+
   suspend fun initialize() {
     preferences.registerProfile(AccountProfile("owner", ownerAddress = "0x1"))
     aptos.transactions.preloadModuleAbis(Json.decodeFromString<MoveModuleBytecode>(FIXTURE_ABI))
     repository = newRepository()
   }
-  fun newRepository() = AptosSwapRepository(
-    PanoraSwapProvider(http, aptos, "https://worker", { "session" }, now = { now }),
-    AptosTransactionExecutor(aptos), aptos, wallets, sessions, gas, trading, preferences,
-    store, journal, gate, FlareRuntimeConfig(VenueNetwork.MAINNET), now = { now },
-  )
+
+  fun newRepository() =
+    AptosSwapRepository(
+      PanoraSwapProvider(http, aptos, "https://worker", { "session" }, now = { now }),
+      AptosTransactionExecutor(aptos),
+      aptos,
+      wallets,
+      sessions,
+      gas,
+      trading,
+      preferences,
+      store,
+      journal,
+      gate,
+      FlareRuntimeConfig(VenueNetwork.MAINNET),
+      now = { now },
+    )
+
   private fun transaction(hash: String): String {
-    fun primary(metadata: String) = AccountAddress(sha3Hash(AccountAddress.ONE.data +
-      AccountAddress.fromString(metadata).data + byteArrayOf(0xfc.toByte()))).toString()
-    fun event(kind: String, store: String, amount: String) = """{"guid":{},"type":"0x1::fungible_asset::$kind","data":{"store":"$store","amount":"$amount"}}"""
+    fun primary(metadata: String) =
+      AccountAddress(
+          sha3Hash(
+            AccountAddress.ONE.data +
+              AccountAddress.fromString(metadata).data +
+              byteArrayOf(0xfc.toByte()),
+          ),
+        )
+        .toString()
+    fun event(kind: String, store: String, amount: String) =
+      """{"guid":{},"type":"0x1::fungible_asset::$kind","data":{"store":"$store","amount":"$amount"}}"""
     return """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0",
       "event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"100","success":true,
       "vm_status":"Executed successfully","accumulator_root_hash":"0x0","sender":"0x1","sequence_number":"0",
@@ -308,61 +434,131 @@ internal class SwapTestWallet(private val events: MutableList<String>) : AptosSi
   var onConfirm: suspend () -> Unit = {}
   var generation = 0L
   var ownerReads = 0
-  override val authorizationGeneration get() = generation
-  override fun requireAuthorization(generation: Long) { check(generation == this.generation) }
+  override val authorizationGeneration
+    get() = generation
+
+  override fun requireAuthorization(generation: Long) {
+    check(generation == this.generation)
+  }
+
   override val profile = flowOf(WalletProfile(ownerAddress = "0x1"))
-  override suspend fun confirmIdentity(prompt: VaultPrompt) { events += "authorize"; onConfirm() }
+
+  override suspend fun confirmIdentity(prompt: VaultPrompt) {
+    events += "authorize"
+    onConfirm()
+  }
+
   override suspend fun <T> withOwnerAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T {
     ownerReads++
-    return block(object : Account() {
-    override val publicKey = Ed25519PublicKey(ByteArray(32) { 0x11 })
-    override val accountAddress = AccountAddress.ONE
-    override val signingScheme = SigningScheme.Ed25519
-    override val isPrivateKeyCleared = true
-    override fun clearPrivateKey() = Unit
-    override fun sign(message: HexInput): Signature = error("Not used")
-    override fun signTransactionSignature(tx: UnsignedTransaction): Signature = error("Not used")
-    override fun verifySignature(message: HexInput, signature: Signature) = true
-    override fun signWithAuthenticator(message: HexInput): AccountAuthenticator {
-      events += "sign"
-      return AccountAuthenticator.Ed25519(publicKey, Ed25519Signature(ByteArray(64) { 0x22 }))
-    }
-    })
+    return block(
+      object : Account() {
+        override val publicKey = Ed25519PublicKey(ByteArray(32) { 0x11 })
+        override val accountAddress = AccountAddress.ONE
+        override val signingScheme = SigningScheme.Ed25519
+        override val isPrivateKeyCleared = true
+
+        override fun clearPrivateKey() = Unit
+
+        override fun sign(message: HexInput): Signature = error("Not used")
+
+        override fun signTransactionSignature(tx: UnsignedTransaction): Signature =
+          error("Not used")
+
+        override fun verifySignature(message: HexInput, signature: Signature) = true
+
+        override fun signWithAuthenticator(message: HexInput): AccountAuthenticator {
+          events += "sign"
+          return AccountAuthenticator.Ed25519(publicKey, Ed25519Signature(ByteArray(64) { 0x22 }))
+        }
+      },
+    )
   }
-  override suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T = error("Owner only")
-  override suspend fun importAptosApiWallet(key: String, prompt: VaultPrompt, verify: suspend (Account) -> Unit): String = error("Not used")
+
+  override suspend fun <T> withApiAccount(prompt: VaultPrompt, block: suspend (Account) -> T): T =
+    error("Owner only")
+
+  override suspend fun importAptosApiWallet(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (Account) -> Unit,
+  ): String = error("Not used")
+
   override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup = error("Not used")
+
   override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String = error("Not used")
+
   override suspend fun confirmOwnerBackup() = Unit
+
   override suspend fun createApiWallet(prompt: VaultPrompt): String = error("Not used")
-  override suspend fun importApiWallet(key: String, prompt: VaultPrompt, verify: suspend (String) -> Unit): String = error("Not used")
+
+  override suspend fun importApiWallet(
+    key: String,
+    prompt: VaultPrompt,
+    verify: suspend (String) -> Unit,
+  ): String = error("Not used")
+
   override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = error("Not used")
+
   override suspend fun exportApiWallet(prompt: VaultPrompt): String = error("Not used")
+
   override suspend fun removeOwner(prompt: VaultPrompt) = Unit
+
   override suspend fun removeApiWallet(prompt: VaultPrompt) = Unit
+
   override fun lock() = Unit
 }
 
 private class SwapTestTrading : TradingRepository {
   var statusResult: ActionState = ActionState.Pending("unknown")
   override val pendingTransactions = flowOf(emptyList<PendingTransaction>())
-  override fun execute(action: TradeAction, prompt: VaultPrompt, feePayment: FeePayment, onPrepared: suspend (String) -> Unit): Flow<ActionState> = error("Not used")
+
+  override fun execute(
+    action: TradeAction,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+    onPrepared: suspend (String) -> Unit,
+  ): Flow<ActionState> = error("Not used")
+
   override suspend fun transactionStatus(reference: String) = statusResult
+
   override suspend fun tradingKeyFeeBalance() = 0uL
-  override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> = error("Not used")
+
+  override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> =
+    error("Not used")
+
   override suspend fun reconcilePending() = ReconciliationResult(0, 0)
 }
 
 internal class SwapTestJournal : TransactionJournalDao {
   private val rows = MutableStateFlow<List<PendingTransactionEntity>>(emptyList())
-  override suspend fun upsert(transaction: PendingTransactionEntity) { rows.value = rows.value.filterNot { it.hash == transaction.hash } + transaction }
+
+  override suspend fun upsert(transaction: PendingTransactionEntity) {
+    rows.value = rows.value.filterNot { it.hash == transaction.hash } + transaction
+  }
+
   override fun observePending(): Flow<List<PendingTransactionEntity>> = rows
+
   override suspend fun pending() = rows.value
+
   override suspend fun find(hash: String) = rows.value.firstOrNull { it.hash == hash }
-  override suspend fun remove(hash: String) { rows.value = rows.value.filterNot { it.hash == hash } }
-  override suspend fun deleteOtherNetworks(network: String) { rows.value = rows.value.filter { it.network == network } }
-  override suspend fun replaceHash(oldHash: String, newHash: String, state: String, updatedAtMs: Long): Int {
+
+  override suspend fun remove(hash: String) {
+    rows.value = rows.value.filterNot { it.hash == hash }
+  }
+
+  override suspend fun deleteOtherNetworks(network: String) {
+    rows.value = rows.value.filter { it.network == network }
+  }
+
+  override suspend fun replaceHash(
+    oldHash: String,
+    newHash: String,
+    state: String,
+    updatedAtMs: Long,
+  ): Int {
     val old = find(oldHash) ?: return 0
-    remove(oldHash); upsert(old.copy(hash = newHash, state = state, updatedAtMs = updatedAtMs)); return 1
+    remove(oldHash)
+    upsert(old.copy(hash = newHash, state = state, updatedAtMs = updatedAtMs))
+    return 1
   }
 }

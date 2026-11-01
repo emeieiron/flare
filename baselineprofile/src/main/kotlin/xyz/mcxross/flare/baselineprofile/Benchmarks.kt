@@ -14,10 +14,10 @@ import org.junit.runner.RunWith
 /**
  * Measures what the baseline profile buys, each case with and without it:
  *
- *   ./gradlew :baselineprofile:connectedDecibelBenchmarkReleaseAndroidTest
+ * ./gradlew :baselineprofile:connectedDecibelBenchmarkReleaseAndroidTest
  *
- * Startup runs unattended: it times the first frame, which comes before the unlock prompt.
- * Browsing needs one unlock per case.
+ * Startup runs unattended: it times the first frame, which comes before the unlock prompt. Browsing
+ * needs one unlock per case.
  */
 @RunWith(AndroidJUnit4::class)
 class StartupBenchmark {
@@ -25,7 +25,8 @@ class StartupBenchmark {
 
   @Test fun startupWithoutProfile() = startup(CompilationMode.None())
 
-  @Test fun startupWithBaselineProfile() = startup(CompilationMode.Partial(BaselineProfileMode.Require))
+  @Test
+  fun startupWithBaselineProfile() = startup(CompilationMode.Partial(BaselineProfileMode.Require))
 
   private fun startup(mode: CompilationMode) =
     rule.measureRepeated(
@@ -46,7 +47,8 @@ class MarketsScrollBenchmark {
 
   @Test fun browseWithoutProfile() = browse(CompilationMode.None())
 
-  @Test fun browseWithBaselineProfile() = browse(CompilationMode.Partial(BaselineProfileMode.Require))
+  @Test
+  fun browseWithBaselineProfile() = browse(CompilationMode.Partial(BaselineProfileMode.Require))
 
   private fun browse(mode: CompilationMode) =
     rule.measureRepeated(

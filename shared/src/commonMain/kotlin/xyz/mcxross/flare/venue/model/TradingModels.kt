@@ -262,7 +262,11 @@ sealed interface ActionState {
   data class Pending(val reference: String, val networkFee: NetworkFee? = null) : ActionState
 
   /** [detail] says what came of it, where the exchange tells, such as an order's fill. */
-  data class Committed(val reference: String, val detail: String? = null, val networkFee: NetworkFee? = null) : ActionState
+  data class Committed(
+    val reference: String,
+    val detail: String? = null,
+    val networkFee: NetworkFee? = null,
+  ) : ActionState
 
   data class Failed(
     val message: String,

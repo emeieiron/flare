@@ -14,8 +14,8 @@ internal fun ByteArray.toHexDigits(): String {
 }
 
 /**
- * Decodes hex with or without a `0x` prefix. Throws [IllegalArgumentException] for an odd length
- * or a non-hex character, without echoing the input (it may be key material).
+ * Decodes hex with or without a `0x` prefix. Throws [IllegalArgumentException] for an odd length or
+ * a non-hex character, without echoing the input (it may be key material).
  */
 internal fun decodeHex(value: String, what: String = "hex"): ByteArray {
   val trimmed = value.trim()

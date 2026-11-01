@@ -11,8 +11,6 @@ import kotlinx.coroutines.flow.emptyFlow
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.RewardsRepository
-import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
@@ -20,7 +18,9 @@ import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
@@ -30,8 +30,8 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
@@ -51,8 +51,8 @@ class MemoryPreferences(initial: Preferences = emptyPreferences()) : DataStore<P
 }
 
 /**
- * Keys held by the device for setup tests. With [preferences] it saves each wallet's profile, as the
- * venues' wallet repositories do.
+ * Keys held by the device for setup tests. With [preferences] it saves each wallet's profile, as
+ * the venues' wallet repositories do.
  */
 class SetupWallets(private val preferences: AppPreferences? = null) : WalletRepository {
   override val profile = MutableStateFlow(WalletProfile())
@@ -61,14 +61,16 @@ class SetupWallets(private val preferences: AppPreferences? = null) : WalletRepo
   override fun requireAuthorization(generation: Long) {}
 
   override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup {
-    preferences?.registerProfile(AccountProfile("owner_$SETUP_OWNER", ownerAddress = SETUP_OWNER, createdInApp = true))
+    preferences?.registerProfile(
+      AccountProfile("owner_$SETUP_OWNER", ownerAddress = SETUP_OWNER, createdInApp = true),
+    )
     profile.value = profile.value.copy(ownerAddress = SETUP_OWNER, ownerBackupConfirmed = false)
     return OwnerBackup(SETUP_OWNER, SetupBackupWords)
   }
 
   override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String {
     preferences?.registerProfile(
-      AccountProfile("owner_$SETUP_OWNER", ownerAddress = SETUP_OWNER, ownerBackupConfirmed = true)
+      AccountProfile("owner_$SETUP_OWNER", ownerAddress = SETUP_OWNER, ownerBackupConfirmed = true),
     )
     profile.value = profile.value.copy(ownerAddress = SETUP_OWNER, ownerBackupConfirmed = true)
     return SETUP_OWNER
@@ -91,7 +93,8 @@ class SetupWallets(private val preferences: AppPreferences? = null) : WalletRepo
     verify: suspend (address: String) -> Unit,
   ): String = error("Not used")
 
-  override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = SetupBackupWords.joinToString(" ")
+  override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String =
+    SetupBackupWords.joinToString(" ")
 
   override suspend fun exportApiWallet(prompt: VaultPrompt): String = error("Not used")
 
@@ -128,7 +131,8 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
       TradingAccount("0xa2", SETUP_OWNER),
     )
   override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(AccountSnapshot())
-  override val history: StateFlow<AccountHistorySnapshot> = MutableStateFlow(AccountHistorySnapshot())
+  override val history: StateFlow<AccountHistorySnapshot> =
+    MutableStateFlow(AccountHistorySnapshot())
 
   var awaitingDeposit = false
   var approveResult: ActionState = ActionState.Committed("0x")
@@ -156,14 +160,16 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
     preferences?.setSelectedSubaccount(subaccount)
   }
 
-  override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState = error("Not used")
+  override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
+    error("Not used")
 
   override suspend fun openTradingAccount(prompt: VaultPrompt): String {
     events += "open"
     return "0xa1"
   }
 
-  override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment) = error("Not used")
+  override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment) =
+    error("Not used")
 
   override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {
     events += "prepare"
@@ -176,10 +182,15 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
     return awaitingDeposit
   }
 
-  override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment) = emptyFlow<ActionState>()
-
-  override fun withdrawUsdc(amount: String, destination: String?, prompt: VaultPrompt, feePayment: FeePayment) =
+  override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
     emptyFlow<ActionState>()
+
+  override fun withdrawUsdc(
+    amount: String,
+    destination: String?,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ) = emptyFlow<ActionState>()
 
   override suspend fun approveBuilderFee(
     builderAddress: String,
@@ -214,11 +225,19 @@ open class SetupAccounts(private val preferences: AppPreferences? = null) :
 
   override suspend fun vaultPositions() = emptyList<VaultPosition>()
 
-  override fun contribute(vaultAddress: String, amount: String, prompt: VaultPrompt, feePayment: FeePayment) =
-    emptyFlow<ActionState>()
+  override fun contribute(
+    vaultAddress: String,
+    amount: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ) = emptyFlow<ActionState>()
 
-  override fun redeem(vaultAddress: String, shares: String, prompt: VaultPrompt, feePayment: FeePayment) =
-    emptyFlow<ActionState>()
+  override fun redeem(
+    vaultAddress: String,
+    shares: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ) = emptyFlow<ActionState>()
 
   override suspend fun refresh() {}
 

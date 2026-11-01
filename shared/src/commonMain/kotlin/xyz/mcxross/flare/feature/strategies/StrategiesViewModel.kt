@@ -8,8 +8,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.runSuspendCatching
@@ -39,15 +39,22 @@ data class StrategiesUiState(
   val confluenceError: String? = null,
   val error: String? = null,
 ) {
-  val signal: StrategySignal? get() = baseline?.signals?.firstOrNull { it.kind == selected }
+  val signal: StrategySignal?
+    get() = baseline?.signals?.firstOrNull { it.kind == selected }
 }
 
 sealed interface StrategiesIntent {
-  data class Bind(val marketId: String, val timeframeMs: Long, val account: String?) : StrategiesIntent
+  data class Bind(val marketId: String, val timeframeMs: Long, val account: String?) :
+    StrategiesIntent
+
   data class Select(val strategy: StrategyKind) : StrategiesIntent
+
   data class UseJev(val enabled: Boolean) : StrategiesIntent
+
   data object Resume : StrategiesIntent
+
   data object Pause : StrategiesIntent
+
   data object Evaluate : StrategiesIntent
 }
 
@@ -71,37 +78,56 @@ class StrategiesViewModel(
 
   init {
     viewModelScope.launch {
-      preferences.values.map { it.selectedStrategy }.distinctUntilChanged().collectLatest { name ->
-        val strategy = StrategyKind.entries.firstOrNull { it.name == name } ?: StrategyKind.MACD_CROSSOVER
-        mutableState.update { it.copy(selected = strategy) }
-      }
+      preferences.values
+        .map { it.selectedStrategy }
+        .distinctUntilChanged()
+        .collectLatest { name ->
+          val strategy =
+            StrategyKind.entries.firstOrNull { it.name == name } ?: StrategyKind.MACD_CROSSOVER
+          mutableState.update { it.copy(selected = strategy) }
+        }
     }
     viewModelScope.launch {
       credentials.metadata.distinctUntilChanged().collectLatest { metadata ->
         invalidate()
-        mutableState.update { it.copy(useJev = metadata.enabled, keyConfigured = metadata.configured) }
+        mutableState.update {
+          it.copy(useJev = metadata.enabled, keyConfigured = metadata.configured)
+        }
       }
     }
     viewModelScope.launch { wallets.profile.distinctUntilChanged().collectLatest { invalidate() } }
     viewModelScope.launch {
-      preferences.values.map { it.activeProfileId to it.selectedSubaccount }.distinctUntilChanged().collectLatest { invalidate() }
+      preferences.values
+        .map { it.activeProfileId to it.selectedSubaccount }
+        .distinctUntilChanged()
+        .collectLatest { invalidate() }
     }
   }
 
   fun onIntent(intent: StrategiesIntent) {
     when (intent) {
       is StrategiesIntent.Bind -> {
-        val key = StrategyMarketKey(descriptor.id, descriptor.network.name.lowercase(), intent.marketId, intent.timeframeMs)
+        val key =
+          StrategyMarketKey(
+            descriptor.id,
+            descriptor.network.name.lowercase(),
+            intent.marketId,
+            intent.timeframeMs,
+          )
         if (key != uiState.value.key || account != intent.account) {
           invalidate()
           account = intent.account
           mutableState.update { it.copy(key = key) }
         }
       }
-      is StrategiesIntent.Select -> viewModelScope.launch { preferences.setSelectedStrategy(intent.strategy.name) }
+      is StrategiesIntent.Select ->
+        viewModelScope.launch { preferences.setSelectedStrategy(intent.strategy.name) }
       is StrategiesIntent.UseJev -> viewModelScope.launch { credentials.setEnabled(intent.enabled) }
       StrategiesIntent.Resume -> mutableState.update { it.copy(active = true) }
-      StrategiesIntent.Pause -> { invalidate(); mutableState.update { it.copy(active = false) } }
+      StrategiesIntent.Pause -> {
+        invalidate()
+        mutableState.update { it.copy(active = false) }
+      }
       StrategiesIntent.Evaluate -> evaluate()
     }
   }
@@ -112,7 +138,15 @@ class StrategiesViewModel(
     request = null
     expiry?.cancel()
     expiry = null
-    mutableState.update { it.copy(working = false, baseline = null, confluence = null, confluenceError = null, error = null) }
+    mutableState.update {
+      it.copy(
+        working = false,
+        baseline = null,
+        confluence = null,
+        confluenceError = null,
+        error = null,
+      )
+    }
   }
 
   private fun evaluate() {
@@ -129,18 +163,25 @@ class StrategiesViewModel(
         snapshot to engine.evaluate(snapshot, nowMs())
       }
       if (expected != generation || !uiState.value.active) return@launch
-      val (snapshot, baseline) = result.getOrNull() ?: run {
-        mutableState.update { it.copy(working = false, error = "Market data unavailable. Refresh to try again.") }
-        return@launch
-      }
+      val (snapshot, baseline) =
+        result.getOrNull()
+          ?: run {
+            mutableState.update {
+              it.copy(working = false, error = "Market data unavailable. Refresh to try again.")
+            }
+            return@launch
+          }
       mutableState.update { it.copy(baseline = baseline) }
       if (baseline.rejection == null) {
-        val expiresAt = minOf(snapshot.fetchedAtMs + 60_000, baseline.closedAtMs!! + key.timeframeMs)
+        val expiresAt =
+          minOf(snapshot.fetchedAtMs + 60_000, baseline.closedAtMs!! + key.timeframeMs)
         expiry = viewModelScope.launch {
           delay((expiresAt - nowMs() + 1).coerceAtLeast(1))
           if (expected == generation) {
             invalidate()
-            mutableState.update { it.copy(error = "Signal data expired. Refresh to evaluate again.") }
+            mutableState.update {
+              it.copy(error = "Signal data expired. Refresh to evaluate again.")
+            }
           }
         }
       }
@@ -148,13 +189,26 @@ class StrategiesViewModel(
         val confluence = runSuspendCatching { JevConfluence.evaluate(baseline, model) }
         if (expected != generation || !uiState.value.active) return@launch
         // The model request may outlive the snapshot's freshness window.
-        if (nowMs() - snapshot.fetchedAtMs > 60_000 || nowMs() - baseline.closedAtMs!! > key.timeframeMs) {
-          mutableState.update { it.copy(working = false, baseline = null, error = "Signal data expired. Refresh to evaluate again.") }
+        if (
+          nowMs() - snapshot.fetchedAtMs > 60_000 ||
+            nowMs() - baseline.closedAtMs!! > key.timeframeMs
+        ) {
+          mutableState.update {
+            it.copy(
+              working = false,
+              baseline = null,
+              error = "Signal data expired. Refresh to evaluate again.",
+            )
+          }
           return@launch
         }
         mutableState.update {
-          it.copy(confluence = confluence.getOrNull(),
-            confluenceError = if (confluence.isFailure) "Jev unavailable. Baseline signals remain independent." else null)
+          it.copy(
+            confluence = confluence.getOrNull(),
+            confluenceError =
+              if (confluence.isFailure) "Jev unavailable. Baseline signals remain independent."
+              else null,
+          )
         }
       }
       mutableState.update { it.copy(working = false) }

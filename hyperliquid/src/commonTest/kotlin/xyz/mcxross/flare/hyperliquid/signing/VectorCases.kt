@@ -70,8 +70,8 @@ internal object VectorCases {
           reduceOnly = false,
           type = OrderType.Limit(TimeInForce.GTC),
           cloid = cloid,
-        )
-      )
+        ),
+      ),
     )
 
   private fun dummy(num: String) = buildJsonObject {
@@ -92,8 +92,8 @@ internal object VectorCases {
                 size = "0.0147".toHlDecimal(),
                 reduceOnly = false,
                 type = OrderType.Limit(TimeInForce.IOC),
-              )
-            )
+              ),
+            ),
           )
           .toWire(),
         SdkVectors.PHANTOM_AGENT,
@@ -121,13 +121,17 @@ internal object VectorCases {
                 size = "100".toHlDecimal(),
                 reduceOnly = false,
                 type = OrderType.Trigger("103".toHlDecimal(), isMarket = true, TpSl.STOP_LOSS),
-              )
-            )
+              ),
+            ),
           )
           .toWire(),
         SdkVectors.ORDER_TPSL,
       ),
-      L1Case("createSubAccount", CreateSubAccount("example").toWire(), SdkVectors.CREATE_SUB_ACCOUNT),
+      L1Case(
+        "createSubAccount",
+        CreateSubAccount("example").toWire(),
+        SdkVectors.CREATE_SUB_ACCOUNT,
+      ),
       L1Case(
         "subAccountTransfer",
         buildJsonObject {
@@ -194,7 +198,7 @@ internal object VectorCases {
                 size = "2.5".toHlDecimal(),
                 reduceOnly = true,
                 type = OrderType.Trigger("150".toHlDecimal(), isMarket = true, TpSl.STOP_LOSS),
-              )
+              ),
             ),
             grouping = OrderGrouping.POSITION_TPSL,
           )
@@ -249,7 +253,12 @@ internal object VectorCases {
         SdkVectors.TWAP_ORDER,
         nonce = NONCE,
       ),
-      L1Case("twapCancel", CancelTwap(3, 77_738_308L).toWire(), SdkVectors.TWAP_CANCEL, nonce = NONCE),
+      L1Case(
+        "twapCancel",
+        CancelTwap(3, 77_738_308L).toWire(),
+        SdkVectors.TWAP_CANCEL,
+        nonce = NONCE,
+      ),
       L1Case(
         "vaultTransfer",
         VaultTransfer.ofUsdc(HLP_VAULT, isDeposit = true, "5".toHlDecimal()).toWire(),
@@ -260,7 +269,12 @@ internal object VectorCases {
 
   val user: List<UserCase> =
     listOf(
-      UserCase("usdSend", UsdSend(DESTINATION, "1".toHlDecimal()), SdkVectors.USD_SEND, 1_687_816_341_423L),
+      UserCase(
+        "usdSend",
+        UsdSend(DESTINATION, "1".toHlDecimal()),
+        SdkVectors.USD_SEND,
+        1_687_816_341_423L,
+      ),
       UserCase(
         "withdraw3",
         Withdraw(DESTINATION, "1".toHlDecimal()),

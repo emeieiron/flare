@@ -42,7 +42,8 @@ class HyperliquidWalletIosTest {
     val preferences = testPreferences()
     val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), preferences)
 
-    val address = wallets.importOwner("  TEST test test test test test test test test test test junk ", prompt)
+    val address =
+      wallets.importOwner("  TEST test test test test test test test test test test junk ", prompt)
 
     assertEquals(HARDHAT_ADDRESS, address)
     assertEquals("owner_$HARDHAT_ADDRESS", preferences.values.first().activeProfileId)
@@ -58,7 +59,10 @@ class HyperliquidWalletIosTest {
     val preferences = testPreferences()
     val wallets = HyperliquidWalletRepository(ForegroundWalletVault(vault), preferences)
 
-    assertEquals(HARDHAT_ADDRESS, wallets.importOwner(HARDHAT_KEY.removePrefix("0x").uppercase(), prompt))
+    assertEquals(
+      HARDHAT_ADDRESS,
+      wallets.importOwner(HARDHAT_KEY.removePrefix("0x").uppercase(), prompt),
+    )
     assertEquals(HARDHAT_KEY, wallets.exportOwnerMnemonic(prompt))
     assertEquals(HARDHAT_ADDRESS, wallets.importOwner(HARDHAT_PHRASE, prompt))
     assertEquals(1, preferences.values.first().profiles.size)
@@ -110,7 +114,9 @@ class HyperliquidWalletIosTest {
     assertEquals(agent, EvmKeys.address(key))
     assertEquals(
       key,
-      vault.entries.getValue(WalletSecretSlot.API_PRIVATE_KEY.forProfile("owner_$HARDHAT_ADDRESS")).decodeToString(),
+      vault.entries
+        .getValue(WalletSecretSlot.API_PRIVATE_KEY.forProfile("owner_$HARDHAT_ADDRESS"))
+        .decodeToString(),
     )
     wallets.withAgentSigner(prompt) { assertEquals(agent.lowercase(), it.address) }
     wallets.withOwnerSigner(prompt) { assertEquals(HARDHAT_ADDRESS.lowercase(), it.address) }
@@ -166,14 +172,26 @@ class HyperliquidWalletIosTest {
                     }
                   else -> error("Unexpected request")
                 }
-            respond(reply, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-          }
-        )
+            respond(
+              reply,
+              HttpStatusCode.OK,
+              headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+          },
+        ),
       )
     val nonces = HyperliquidNonces(preferences)
     val actions =
-      HyperliquidActions(MemoryJournal(), preferences, wallets, client, ClientSubmitter(client), nonces)
-    val setup = HyperliquidSetup(client, preferences, wallets, actions, nonces, verificationDelayMs = 0)
+      HyperliquidActions(
+        MemoryJournal(),
+        preferences,
+        wallets,
+        client,
+        ClientSubmitter(client),
+        nonces,
+      )
+    val setup =
+      HyperliquidSetup(client, preferences, wallets, actions, nonces, verificationDelayMs = 0)
 
     setup.enableTrading(prompt)
 

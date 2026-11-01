@@ -31,7 +31,10 @@ class HyperliquidSetupTest {
   private val prompt = VaultPrompt("Enable trading", "Confirm your identity")
 
   /** `/info` for a funded owner whose agents are [agents] (name to address). */
-  private fun SetupHarness.funded(agents: () -> List<Pair<String, String>>, maxBuilderFee: () -> Int = { 0 }) {
+  private fun SetupHarness.funded(
+    agents: () -> List<Pair<String, String>>,
+    maxBuilderFee: () -> Int = { 0 },
+  ) {
     answer = { type, _ ->
       when (type) {
         "userRole" -> """{"role":"user"}"""
@@ -47,7 +50,10 @@ class HyperliquidSetupTest {
 
   @Test
   fun anUnfundedAccountMustDepositBeforeEnablingTrading() = runTest {
-    val harness = SetupHarness { type, _ -> """{"role":"missing"}""".takeIf { type == "userRole" } }.withOwner()
+    val harness = SetupHarness { type, _ ->
+      """{"role":"missing"}""".takeIf { type == "userRole" }
+    }
+      .withOwner()
 
     assertTrue(harness.setup.awaitsFirstDeposit(SetupHarness.OWNER))
     val error = assertFailsWith<IllegalStateException> { harness.setup.enableTrading(prompt) }
@@ -60,14 +66,13 @@ class HyperliquidSetupTest {
   fun aWalletBrowsingBeforeItsFirstDepositIsAskedToFundThenToEnableTrading() = runTest {
     var role = "missing"
     var roleChecks = 0
-    val harness =
-      SetupHarness { type, _ ->
-          if (type == "userRole") {
-            roleChecks++
-            """{"role":"$role"}"""
-          } else null
-        }
-        .withOwner()
+    val harness = SetupHarness { type, _ ->
+      if (type == "userRole") {
+        roleChecks++
+        """{"role":"$role"}"""
+      } else null
+    }
+      .withOwner()
     harness.preferences.setSelectedSubaccount(SetupHarness.OWNER)
     harness.preferences.deferSetup()
     val accounts = testAccounts(harness.client, harness.preferences, harness.setup)
@@ -95,7 +100,9 @@ class HyperliquidSetupTest {
       seen += entry.state
       assertTrue(entry.operationName.startsWith("DELEGATE_TRADING:${SetupHarness.OWNER}:"))
     }
-    harness.submitter.afterSigning = { nonce -> seen += harness.journal.find(nonce.toString())!!.state }
+    harness.submitter.afterSigning = { nonce ->
+      seen += harness.journal.find(nonce.toString())!!.state
+    }
     harness.submitter.outcome = { action ->
       agents += "flare" to (action as ApproveAgent).agentAddress
       ExchangeOutcome.Accepted(ExchangeResponse.Default)
@@ -140,7 +147,8 @@ class HyperliquidSetupTest {
     assertEquals(1, harness.actions.pendingTransactions.first().size)
     assertEquals("DELEGATE_TRADING", harness.actions.pendingTransactions.first().single().operation)
 
-    // Still not listed: the same key is approved again, which is harmless if the first went through.
+    // Still not listed: the same key is approved again, which is harmless if the first went
+    // through.
     harness.now += 1_000
     harness.submitter.outcome = { action ->
       agents += "flare" to (action as ApproveAgent).agentAddress
@@ -149,7 +157,10 @@ class HyperliquidSetupTest {
     harness.setup.enableTrading(prompt)
 
     assertEquals(agent, harness.preferences.values.first().apiWalletAddress)
-    assertEquals(listOf(agent, agent), harness.submitter.sent.map { (it.first as ApproveAgent).agentAddress })
+    assertEquals(
+      listOf(agent, agent),
+      harness.submitter.sent.map { (it.first as ApproveAgent).agentAddress },
+    )
     // The earlier attempt is settled by what Hyperliquid now lists, never marked failed.
     assertTrue(harness.journal.entries.value.isEmpty())
   }
@@ -172,7 +183,9 @@ class HyperliquidSetupTest {
   fun aRejectedApprovalFailsAndLeavesNothingPending() = runTest {
     val harness = SetupHarness().withOwner()
     harness.funded({ emptyList() })
-    harness.submitter.outcome = { ExchangeOutcome.Rejected("Must deposit before performing actions.") }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Rejected("Must deposit before performing actions.")
+    }
 
     val error = assertFailsWith<SetupTransactionException> { harness.setup.enableTrading(prompt) }
 
@@ -244,7 +257,8 @@ class HyperliquidSetupTest {
 
     // Past the nonce window and not in effect: it never will be.
     fee = 0
-    val second = assertIs<ActionState.Pending>(harness.setup.approveBuilderFee(builder, 10u, prompt))
+    val second =
+      assertIs<ActionState.Pending>(harness.setup.approveBuilderFee(builder, 10u, prompt))
     harness.now += HyperliquidActions.NONCE_WINDOW_MS + 1
     val result = harness.actions.reconcile()
     assertEquals(1, result.finalized)
@@ -268,13 +282,15 @@ class HyperliquidSetupTest {
         network = "MAINNET",
         operation =
           journalOperation(
-            JournaledAction.encode(JournaledAction.PlaceOrder(SetupHarness.OWNER, harness.now + 60_000)),
+            JournaledAction.encode(
+              JournaledAction.PlaceOrder(SetupHarness.OWNER, harness.now + 60_000),
+            ),
             profile,
           ),
         state = "RECONCILE_REQUIRED",
         createdAtMs = harness.now,
         updatedAtMs = harness.now,
-      )
+      ),
     )
 
     assertEquals(1, harness.actions.reconcile().unresolved)
@@ -310,11 +326,16 @@ class HyperliquidSetupTest {
     val result = harness.setup.revoke(agent.uppercase().replace("0X", "0x"), prompt)
 
     assertIs<ActionState.Committed>(result)
-    assertEquals(ApproveAgent.revoke("flare valid_until 1900000000000"), harness.submitter.sent.single().first)
+    assertEquals(
+      ApproveAgent.revoke("flare valid_until 1900000000000"),
+      harness.submitter.sent.single().first,
+    )
     assertTrue(harness.wallet.ownerPrompts.single().requireFreshAuthorization)
     assertEquals(1, harness.wallet.discarded)
     assertNull(harness.preferences.values.first().apiWalletAddress)
-    assertIs<ActionState.Failed>(harness.setup.revoke("0x100000000000000000000000000000000000000b", prompt))
+    assertIs<ActionState.Failed>(
+      harness.setup.revoke("0x100000000000000000000000000000000000000b", prompt),
+    )
   }
 
   @Test
@@ -336,7 +357,9 @@ class HyperliquidSetupTest {
       listOf(ApproveBuilderFee(builder, "0.1%"), ApproveBuilderFee(builder, "0%")),
       harness.submitter.sent.map { it.first },
     )
-    assertFailsWith<IllegalArgumentException> { harness.setup.approveBuilderFee(builder, 11u, prompt) }
+    assertFailsWith<IllegalArgumentException> {
+      harness.setup.approveBuilderFee(builder, 11u, prompt)
+    }
 
     // The saved approval follows what Hyperliquid reports.
     fee = 50
@@ -356,7 +379,9 @@ class HyperliquidSetupTest {
     }
     harness.now = 1_700_000_000_000L
 
-    assertFailsWith<IllegalStateException> { harness.setup.importTradingKey("stranger-key", account, prompt) }
+    assertFailsWith<IllegalStateException> {
+      harness.setup.importTradingKey("stranger-key", account, prompt)
+    }
     assertTrue(harness.preferences.values.first().profiles.isEmpty())
 
     harness.setup.importTradingKey("agent-key", account, prompt)
@@ -370,12 +395,13 @@ class HyperliquidSetupTest {
   fun setupActionsAreSentThroughTheTradingRepository() = runTest {
     val harness = SetupHarness().withOwner()
     harness.funded({ emptyList() })
-    val funds = HyperliquidFunds(harness.client, harness.actions, harness.preferences) { harness.now }
-    val trading = HyperliquidTradingRepository(harness.client, harness.actions, harness.setup, funds)
+    val funds =
+      HyperliquidFunds(harness.client, harness.actions, harness.preferences) { harness.now }
+    val trading =
+      HyperliquidTradingRepository(harness.client, harness.actions, harness.setup, funds)
     val builder = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d"
 
-    val revoke =
-      trading.execute(TradeAction.RevokeBuilderFee(SetupHarness.OWNER, builder), prompt)
+    val revoke = trading.execute(TradeAction.RevokeBuilderFee(SetupHarness.OWNER, builder), prompt)
 
     assertIs<ActionState.Committed>(revoke.toList().last())
     assertEquals(ApproveBuilderFee.revoke(builder), harness.submitter.sent.single().first)

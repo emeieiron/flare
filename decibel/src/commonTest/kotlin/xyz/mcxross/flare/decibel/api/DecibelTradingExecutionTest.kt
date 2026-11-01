@@ -32,7 +32,8 @@ class DecibelTradingExecutionTest {
   fun simulationPolicyCanRejectEffectsBeforeAnySignature() = runTest {
     fixture { f ->
       assertFailsWith<IllegalStateException> {
-        xyz.mcxross.flare.aptos.transaction.AptosTransactionExecutor(f.aptos)
+        xyz.mcxross.flare.aptos.transaction
+          .AptosTransactionExecutor(f.aptos)
           .execute(
             signer = f.signer,
             payload = { f.service.payload(DecibelCommand.CreateSubaccount) },
@@ -165,7 +166,7 @@ class DecibelTradingExecutionTest {
             ExternalFeePayerSubmitter {
               assertTrue(f.hash.startsWith("sponsor:"))
               AptosResult.Failure(AptosError.Api("rejected", errorCode = "gas_station_http_$code"))
-            }
+            },
           )
         val failed = assertIs<TransactionState.Failed>(states.last())
         assertEquals(code < 500, failed.definitelyNotSubmitted)
@@ -178,23 +179,21 @@ class DecibelTradingExecutionTest {
 
   @Test
   fun unavailableSponsorCredentialsAreSafeForExplicitSelfPay() = runTest {
-    for (
-      code in
-        listOf(
-          "gas_station_not_configured",
-          "gas_station_credentials_rejected",
-          "gas_station_transaction_not_allowed",
-        )
-    ) {
+    for (code in
+      listOf(
+        "gas_station_not_configured",
+        "gas_station_credentials_rejected",
+        "gas_station_transaction_not_allowed",
+      )) {
       fixture { f ->
         val failed =
           assertIs<TransactionState.Failed>(
             f.execute(
                 ExternalFeePayerSubmitter {
                   AptosResult.Failure(AptosError.Api("unavailable", errorCode = code))
-                }
+                },
               )
-              .last()
+              .last(),
           )
         assertTrue(failed.definitelyNotSubmitted)
         assertEquals(200uL, failed.selfPayEstimateOctas)
@@ -230,7 +229,7 @@ class DecibelTradingExecutionTest {
     fixture { f ->
       val failed =
         assertIs<TransactionState.Failed>(
-          f.execute(ExternalFeePayerSubmitter { AptosResult.Success("invalid") }).last()
+          f.execute(ExternalFeePayerSubmitter { AptosResult.Success("invalid") }).last(),
         )
       assertFalse(failed.definitelyNotSubmitted)
       assertFalse("confirm" in f.events)
@@ -326,7 +325,7 @@ class DecibelTradingExecutionTest {
     for (command in everyCommand()) for (outcome in outcomes) fixture { f ->
       val failed =
         assertIs<TransactionState.Failed>(
-          f.execute(ExternalFeePayerSubmitter { AptosResult.Failure(outcome) }, command).last()
+          f.execute(ExternalFeePayerSubmitter { AptosResult.Failure(outcome) }, command).last(),
         )
       assertFalse(failed.definitelyNotSubmitted, "$command $outcome")
       assertNull(failed.selfPayEstimateOctas, "$command $outcome")
@@ -364,9 +363,9 @@ class DecibelTradingExecutionTest {
           f.execute(
               ExternalFeePayerSubmitter {
                 AptosResult.Failure(AptosError.Transport("response lost"))
-              }
+              },
             )
-            .last()
+            .last(),
         )
       assertFalse(failure.definitelyNotSubmitted)
       assertNull(failure.selfPayEstimateOctas)
@@ -379,7 +378,7 @@ class DecibelTradingExecutionTest {
     try {
       assertIs<AptosResult.Success<Unit>>(f.aptos.transactions.preloadModuleAbis(DECIBEL_ENTRY_ABI))
       assertIs<AptosResult.Success<Unit>>(
-        f.aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI)
+        f.aptos.transactions.preloadModuleAbis(DECIBEL_SPOT_ENTRY_ABI),
       )
       block(f)
     } finally {
@@ -432,8 +431,8 @@ private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
               }
             respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
           }
-        }
-      )
+        },
+      ),
     ) {
       install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
@@ -443,7 +442,7 @@ private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
         network = Network.MAINNET,
         endpoints = AptosEndpoints(fullNode = "https://test.invalid/v1"),
         transport = http.asAptosTransport(),
-      )
+      ),
     )
   val service = DefaultDecibelTradingService(aptos, DecibelDeployment.Mainnet)
   // Deterministic external signer: tests the transaction protocol, not native key storage.
@@ -463,7 +462,7 @@ private class ExecutionFixture(dispatcher: CoroutineDispatcher) {
       override suspend fun signText(message: String) = signBytes(message.encodeToByteArray())
 
       override suspend fun signTransaction(
-        transaction: UnsignedTransaction
+        transaction: UnsignedTransaction,
       ): AptosResult<AccountAuthenticator> {
         events += "sign"
         return AptosResult.Success(auth)

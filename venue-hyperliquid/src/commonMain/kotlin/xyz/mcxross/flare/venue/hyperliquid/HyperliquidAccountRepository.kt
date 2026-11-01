@@ -24,6 +24,8 @@ import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.api.StreamData
 import xyz.mcxross.flare.hyperliquid.api.StreamEvent
@@ -34,8 +36,6 @@ import xyz.mcxross.flare.hyperliquid.model.FrontendOrder
 import xyz.mcxross.flare.hyperliquid.model.SpotClearinghouseState
 import xyz.mcxross.flare.hyperliquid.model.TwapState
 import xyz.mcxross.flare.hyperliquid.model.VaultEquity
-import xyz.mcxross.flare.data.RewardsRepository
-import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.venue.model.ActionState
@@ -46,8 +46,8 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TradingKey
@@ -84,7 +84,9 @@ class HyperliquidAccountRepository(
   private var tokenPrices: Map<String, Double> = mapOf(USDC to 1.0)
   private var tokenPricesAtMs = 0L
 
-  /** Every order in the latest `historicalOrders`, newest first; the history shows a page at a time. */
+  /**
+   * Every order in the latest `historicalOrders`, newest first; the history shows a page at a time.
+   */
   private var orderHistory: List<OrderHistoryEntry> = emptyList()
   /** How far back each time-paged history has been read. */
   private val oldestLoaded = mutableMapOf<AccountHistoryKind, Long>()
@@ -98,7 +100,8 @@ class HyperliquidAccountRepository(
       mutableSnapshot.value = AccountSnapshot(error = NO_ACCOUNT)
       return@withLock
     }
-    if (!mutableSnapshot.value.account.sameAs(account)) mutableSnapshot.value = AccountSnapshot(account = account)
+    if (!mutableSnapshot.value.account.sameAs(account))
+      mutableSnapshot.value = AccountSnapshot(account = account)
     mutableSnapshot.update { it.copy(account = account, loading = true, error = null) }
     runSuspendCatching { readAccount(account) }
       .onSuccess { read ->
@@ -120,7 +123,11 @@ class HyperliquidAccountRepository(
       }
       .onFailure { error ->
         mutableSnapshot.update {
-          it.copy(loading = false, stale = true, error = error.message ?: "Account data is unavailable")
+          it.copy(
+            loading = false,
+            stale = true,
+            error = error.message ?: "Account data is unavailable",
+          )
         }
       }
     Unit
@@ -130,7 +137,9 @@ class HyperliquidAccountRepository(
     val perp = async { client.info.clearinghouseState(account) }
     val spot = async { client.info.spotClearinghouseState(account) }
     val orders = async { client.info.openOrders(account) }
-    val abstraction = async { runSuspendCatching { client.info.userAbstraction(account) }.getOrNull() }
+    val abstraction = async {
+      runSuspendCatching { client.info.userAbstraction(account) }.getOrNull()
+    }
     val vaults = async { runSuspendCatching { client.info.userVaultEquities(account) }.getOrNull() }
     val prices = async { refreshTokenPrices() }
     prices.await()
@@ -156,7 +165,14 @@ class HyperliquidAccountRepository(
       AccountSnapshot(
         account = current.account,
         overview =
-          accountOverview(perp, current.spot, current.abstraction, tokenPrices, current.vaultEquities, nowMs()),
+          accountOverview(
+            perp,
+            current.spot,
+            current.abstraction,
+            tokenPrices,
+            current.vaultEquities,
+            nowMs(),
+          ),
         positions = perp.toPositions(current.orders),
         openOrders = current.orders.map { it.toOpenOrder() },
         stale = false,
@@ -176,7 +192,8 @@ class HyperliquidAccountRepository(
       mutableHistory.value = AccountHistorySnapshot(error = NO_ACCOUNT)
       return@withLock
     }
-    if (!mutableHistory.value.account.sameAs(account)) mutableHistory.value = AccountHistorySnapshot(account = account)
+    if (!mutableHistory.value.account.sameAs(account))
+      mutableHistory.value = AccountHistorySnapshot(account = account)
     mutableHistory.update { it.copy(account = account, loading = true, error = null) }
     val end = nowMs()
     runSuspendCatching {
@@ -211,7 +228,11 @@ class HyperliquidAccountRepository(
       }
       .onFailure { error ->
         mutableHistory.update {
-          it.copy(loading = false, stale = true, error = error.message ?: "Account history is unavailable")
+          it.copy(
+            loading = false,
+            stale = true,
+            error = error.message ?: "Account history is unavailable",
+          )
         }
       }
     Unit
@@ -227,14 +248,20 @@ class HyperliquidAccountRepository(
     latestPage(endMs, HISTORY_PAGE_SIZE, FUNDING_CAP, { it.time }) { start, end ->
         client.info.funding(account, start, end)
       }
-      .let { page -> HistoryPage(page.items.map { it.toFundingPayment() }, page.hasMore, page.oldestMs) }
+      .let { page ->
+        HistoryPage(page.items.map { it.toFundingPayment() }, page.hasMore, page.oldestMs)
+      }
 
   private suspend fun ledgerPage(account: String, endMs: Long): HistoryPage<FundMovement> =
     latestPage(endMs, HISTORY_PAGE_SIZE, LEDGER_CAP, { it.time }) { start, end ->
         client.info.ledgerUpdates(account, start, end)
       }
       .let { page ->
-        HistoryPage(page.items.mapNotNull { it.toFundMovement(account) }, page.hasMore, page.oldestMs)
+        HistoryPage(
+          page.items.mapNotNull { it.toFundMovement(account) },
+          page.hasMore,
+          page.oldestMs,
+        )
       }
 
   override suspend fun loadMoreHistory(kind: AccountHistoryKind) = historyMutex.withLock {
@@ -298,7 +325,10 @@ class HyperliquidAccountRepository(
       }
       .onFailure { error ->
         mutableHistory.update {
-          it.copy(loadingMore = false, error = error.message ?: "Unable to load more account history")
+          it.copy(
+            loadingMore = false,
+            error = error.message ?: "Unable to load more account history",
+          )
         }
       }
     Unit
@@ -326,7 +356,8 @@ class HyperliquidAccountRepository(
       )
     client.stream.subscribe(subscriptions).collect { event ->
       when (event) {
-        // Account streams start with snapshots; history and the reads they don't carry catch up here.
+        // Account streams start with snapshots; history and the reads they don't carry catch up
+        // here.
         is StreamEvent.Connected -> {
           refresh()
           refreshHistory()
@@ -334,7 +365,9 @@ class HyperliquidAccountRepository(
         is StreamEvent.Message -> {
           if (applyStreamData(account, event.data)) return@collect
           val now = nowMs()
-          if (event.data is StreamData.Malformed && now - lastRecoveryAtMs >= RECOVERY_INTERVAL_MS) {
+          if (
+            event.data is StreamData.Malformed && now - lastRecoveryAtMs >= RECOVERY_INTERVAL_MS
+          ) {
             lastRecoveryAtMs = now
             refresh()
           }
@@ -369,32 +402,37 @@ class HyperliquidAccountRepository(
       // Snapshots repeat what the history read; only new entries are merged.
       is StreamData.UserFills -> {
         if (!data.user.sameAs(account)) return false
-        if (!data.isSnapshot) mergeHistory(account) { history ->
-          history.copy(
-            trades = (data.fills.map { it.toFill() } + history.trades)
-              .distinctBy { it.id }
-              .sortedByDescending { it.timeMs },
-          )
-        }
+        if (!data.isSnapshot)
+          mergeHistory(account) { history ->
+            history.copy(
+              trades =
+                (data.fills.map { it.toFill() } + history.trades)
+                  .distinctBy { it.id }
+                  .sortedByDescending { it.timeMs },
+            )
+          }
       }
       is StreamData.UserFundings -> {
         if (!data.user.sameAs(account)) return false
-        if (!data.isSnapshot) mergeHistory(account) { history ->
-          history.copy(
-            funding = (data.fundings.mapNotNull { it.toFundingPayment() } + history.funding)
-              .distinct()
-              .sortedByDescending { it.timeMs },
-          )
-        }
+        if (!data.isSnapshot)
+          mergeHistory(account) { history ->
+            history.copy(
+              funding =
+                (data.fundings.mapNotNull { it.toFundingPayment() } + history.funding)
+                  .distinct()
+                  .sortedByDescending { it.timeMs },
+            )
+          }
       }
       is StreamData.LedgerUpdates -> {
         if (!data.user.sameAs(account)) return false
         if (!data.isSnapshot) {
           mergeHistory(account) { history ->
             history.copy(
-              transfers = (data.updates.mapNotNull { it.toFundMovement(account) } + history.transfers)
-                .distinct()
-                .sortedByDescending { it.timeMs },
+              transfers =
+                (data.updates.mapNotNull { it.toFundMovement(account) } + history.transfers)
+                  .distinct()
+                  .sortedByDescending { it.timeMs },
             )
           }
           // Vault stakes aren't streamed; a ledger change is when they move.
@@ -406,8 +444,13 @@ class HyperliquidAccountRepository(
     return true
   }
 
-  private fun mergeHistory(account: String, change: (AccountHistorySnapshot) -> AccountHistorySnapshot) {
-    mutableHistory.update { if (it.account.sameAs(account)) change(it).copy(stale = false, error = null) else it }
+  private fun mergeHistory(
+    account: String,
+    change: (AccountHistorySnapshot) -> AccountHistorySnapshot,
+  ) {
+    mutableHistory.update {
+      if (it.account.sameAs(account)) change(it).copy(stale = false, error = null) else it
+    }
   }
 
   private fun markStale(reason: String) {
@@ -452,7 +495,9 @@ class HyperliquidAccountRepository(
     val account = currentAccount() ?: return null
     return coroutineScope {
       val fees = async { runSuspendCatching { client.info.userFees(account).toFeeTier() } }
-      val referral = async { runSuspendCatching { client.info.referral(account).toReferralSummary() } }
+      val referral = async {
+        runSuspendCatching { client.info.referral(account).toReferralSummary() }
+      }
       hyperliquidRewards(fees.await(), referral.await())
     }
   }
@@ -470,16 +515,21 @@ class HyperliquidAccountRepository(
 
   override suspend fun twapHistory(limit: Int): List<TwapOrder> {
     val account = currentAccount() ?: return emptyList()
-    return client.info.twapHistory(account).latestTwaps().filter { it.status != TWAP_ACTIVE }.take(limit)
+    return client.info
+      .twapHistory(account)
+      .latestTwaps()
+      .filter { it.status != TWAP_ACTIVE }
+      .take(limit)
   }
 
   /**
-   * Hyperliquid lists no vault directory over its API, so the list is HLP, the protocol vault,
-   * plus any vault the account has a stake in.
+   * Hyperliquid lists no vault directory over its API, so the list is HLP, the protocol vault, plus
+   * any vault the account has a stake in.
    */
   override suspend fun vaults(limit: Int): List<VaultSummary> {
     val account = currentAccount()
-    val staked = account?.let { client.info.userVaultEquities(it) }.orEmpty().map { it.vaultAddress }
+    val staked =
+      account?.let { client.info.userVaultEquities(it) }.orEmpty().map { it.vaultAddress }
     return (listOf(HLP) + staked)
       .distinctBy { it.lowercase() }
       .take(limit)
@@ -489,7 +539,8 @@ class HyperliquidAccountRepository(
   override suspend fun vaultPositions(): List<VaultPosition> {
     val account = currentAccount() ?: return emptyList()
     return coroutineScope {
-      client.info.userVaultEquities(account)
+      client.info
+        .userVaultEquities(account)
         .map { equity ->
           async {
             val details = client.info.vaultDetails(equity.vaultAddress, account)
@@ -521,13 +572,15 @@ class HyperliquidAccountRepository(
    */
   override suspend fun subaccounts(owner: String): List<TradingAccount> =
     listOf(TradingAccount(owner, owner, primary = true)) +
-      client.info.subAccounts(owner).map { TradingAccount(it.subAccountUser, owner, label = it.name) }
+      client.info.subAccounts(owner).map {
+        TradingAccount(it.subAccountUser, owner, label = it.name)
+      }
 
   /** Agents are approved for the owner and trade for its sub-accounts too. */
   override suspend fun delegations(): List<TradingKey> =
     setup.delegations(
       preferences.values.first().let { it.ownerAddress ?: it.selectedSubaccount }
-        ?: error("Select a trading account")
+        ?: error("Select a trading account"),
     )
 
   override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
@@ -562,8 +615,11 @@ class HyperliquidAccountRepository(
     restoreTrading()
   }
 
-  override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> =
-    flowOf(unavailable(DEPOSIT_BY_ADDRESS))
+  override fun depositUsdc(
+    amount: String,
+    prompt: VaultPrompt,
+    feePayment: FeePayment,
+  ): Flow<ActionState> = flowOf(unavailable(DEPOSIT_BY_ADDRESS))
 
   /** Withdraws to Arbitrum: to [destination], or to the owner's own address there. */
   override fun withdrawUsdc(
@@ -589,15 +645,20 @@ class HyperliquidAccountRepository(
     product: MarketKind,
   ): ActionState = setup.revokeBuilderFee(builderAddress, prompt)
 
-  override fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> =
-    moving { account -> funds.send(account, destination, amount, prompt) }
+  override fun transferUsdc(
+    amount: String,
+    destination: String,
+    prompt: VaultPrompt,
+  ): Flow<ActionState> = moving { account -> funds.send(account, destination, amount, prompt) }
 
   override fun contribute(
     vaultAddress: String,
     amount: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<ActionState> = moving { account -> funds.vault(account, vaultAddress, true, amount, prompt) }
+  ): Flow<ActionState> = moving { account ->
+    funds.vault(account, vaultAddress, true, amount, prompt)
+  }
 
   /** Hyperliquid vault stakes are USDC amounts, so [shares] is the USDC to take out. */
   override fun redeem(
@@ -605,7 +666,9 @@ class HyperliquidAccountRepository(
     shares: String,
     prompt: VaultPrompt,
     feePayment: FeePayment,
-  ): Flow<ActionState> = moving { account -> funds.vault(account, vaultAddress, false, shares, prompt) }
+  ): Flow<ActionState> = moving { account ->
+    funds.vault(account, vaultAddress, false, shares, prompt)
+  }
 
   /** Runs a fund move for the selected account, then reloads what it changed. */
   private fun moving(move: suspend (account: String) -> ActionState): Flow<ActionState> = flow {
@@ -660,11 +723,14 @@ class HyperliquidAccountRepository(
   }
 }
 
-/** Hyperliquid addresses are case-insensitive: the API answers in lower case, the wallet in EIP-55. */
+/**
+ * Hyperliquid addresses are case-insensitive: the API answers in lower case, the wallet in EIP-55.
+ */
 internal fun String?.sameAs(other: String?): Boolean =
   this != null && other != null && equals(other, ignoreCase = true)
 
-internal const val DEPOSIT_BY_ADDRESS = "Deposit USDC by sending it to this account’s address on Hyperliquid."
+internal const val DEPOSIT_BY_ADDRESS =
+  "Deposit USDC by sending it to this account’s address on Hyperliquid."
 
 internal fun unavailable(reason: String): ActionState.Failed =
   ActionState.Failed(reason, definitelyNotSubmitted = true)

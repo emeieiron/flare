@@ -7,9 +7,9 @@ import xyz.mcxross.flare.decibel.model.MarginMode
 import xyz.mcxross.flare.decibel.model.OrderSide
 import xyz.mcxross.flare.decibel.model.TimeInForce
 import xyz.mcxross.flare.decibel.model.ValidatedOrder
+import xyz.mcxross.flare.venue.model.MarginMode as NeutralMarginMode
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradeAction
-import xyz.mcxross.flare.venue.model.MarginMode as NeutralMarginMode
 
 /**
  * The action decides the key. If a new command appears, the `when` in [requiredSigner] stops

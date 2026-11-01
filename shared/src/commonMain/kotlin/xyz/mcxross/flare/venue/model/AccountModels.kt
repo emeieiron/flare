@@ -1,6 +1,7 @@
 package xyz.mcxross.flare.venue.model
 
 import kotlinx.datetime.LocalDate
+
 /**
  * What a trading account holds and is worth, as the portfolio shows it. Display only: amounts that
  * feed a transfer or an order are entered as decimal text and checked by the venue.
@@ -29,8 +30,8 @@ data class AccountOverview(
 
 /**
  * The account's assets. On some venues spot balances also back perpetuals (Hyperliquid's unified
- * margin): the same USDC then shows in spot and in [AccountOverview.equity], and
- * [sharedWithEquity] says how much of it to count only once.
+ * margin): the same USDC then shows in spot and in [AccountOverview.equity], and [sharedWithEquity]
+ * says how much of it to count only once.
  */
 data class Balances(
   /** USDC collateral owned by the perpetuals account, margin in use included. */
@@ -409,7 +410,11 @@ data class Rewards(
   /** True when no part of the rewards has anything to show yet. */
   val isEmpty: Boolean
     get() =
-      points == null && streak == null && tier == null && referral == null && feeTier == null &&
+      points == null &&
+        streak == null &&
+        tier == null &&
+        referral == null &&
+        feeTier == null &&
         campaigns?.hasAnything != true
 
   /** These rewards, with the parts that failed to load taken from [previous]. */

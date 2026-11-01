@@ -14,12 +14,14 @@ import org.koin.core.module.dsl.singleOf
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.core.qualifier.named
-import org.koin.dsl.onClose
 import org.koin.dsl.module
+import org.koin.dsl.onClose
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.DefaultAssetCatalogRepository
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
+import xyz.mcxross.flare.feature.auto.AutoTradingViewModel
 import xyz.mcxross.flare.feature.markets.MarketsViewModel
 import xyz.mcxross.flare.feature.onboarding.OnboardingViewModel
 import xyz.mcxross.flare.feature.orders.OrdersViewModel
@@ -28,8 +30,6 @@ import xyz.mcxross.flare.feature.settings.DirectJevKeyChecker
 import xyz.mcxross.flare.feature.settings.JevKeyChecker
 import xyz.mcxross.flare.feature.settings.JevSettingsViewModel
 import xyz.mcxross.flare.feature.settings.SettingsViewModel
-import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
-import xyz.mcxross.flare.feature.auto.AutoTradingViewModel
 import xyz.mcxross.flare.feature.strategies.StrategiesViewModel
 import xyz.mcxross.flare.feature.trade.TradeViewModel
 import xyz.mcxross.flare.jev.JevClient
@@ -63,7 +63,7 @@ fun flareModule(
           Json {
             ignoreUnknownKeys = true
             explicitNulls = false
-          }
+          },
         )
       }
       install(WebSockets)
@@ -84,7 +84,12 @@ fun flareModule(
     HttpClient {
       followRedirects = false
       install(ContentNegotiation) {
-        json(Json { ignoreUnknownKeys = true; explicitNulls = false })
+        json(
+          Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+          },
+        )
       }
       install(HttpTimeout) {
         requestTimeoutMillis = 10_000
@@ -101,7 +106,9 @@ fun flareModule(
   }
   single<JevKeyChecker> { DirectJevKeyChecker(get(named("jev"))) }
   viewModelOf(::JevSettingsViewModel)
-  single { AutoTradingRuntime(get(), get(), get(), get(), get(), get(), get(), get(), get()) } onClose { it?.close() }
+  single {
+    AutoTradingRuntime(get(), get(), get(), get(), get(), get(), get(), get(), get())
+  } onClose { it?.close() }
   viewModelOf(::AutoTradingViewModel)
   viewModel { StrategiesViewModel(get(), get(), get(), get(), get(), get()) }
   single { AccountSetupGate(get(), get()) }

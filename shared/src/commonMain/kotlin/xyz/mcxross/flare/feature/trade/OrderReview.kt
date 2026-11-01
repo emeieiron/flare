@@ -18,11 +18,15 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 
-/** "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and result. */
+/**
+ * "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and
+ * result.
+ */
 internal fun TradeUiState.orderSummary(side: OrderSide): Pair<String, String> {
   val market = quote?.market
   val isSpot = market?.kind == MarketKind.SPOT
-  val title = "${if (side == OrderSide.BUY) "Buy" else "Sell"} $sizeInput ${market?.symbol.orEmpty()}".trim()
+  val title =
+    "${if (side == OrderSide.BUY) "Buy" else "Sell"} $sizeInput ${market?.symbol.orEmpty()}".trim()
   val typeLabel =
     if (orderType == OrderType.TWAP) "TWAP"
     else orderType.name.lowercase().replaceFirstChar(Char::uppercase)
@@ -65,14 +69,17 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
     }
     if (state.orderType == OrderType.TWAP) {
       DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
-      if (state.capabilities.twapInterval) DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
+      if (state.capabilities.twapInterval)
+        DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
     }
     val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
     if (productFees != null && estimate != null) {
       val takerFee = estimate.value * productFees.takerRate
       val makerFee = estimate.value * productFees.makerRate
-      val feeText = if (state.orderType == OrderType.MARKET) formatBalance(takerFee)
-        else "${formatBalance(minOf(makerFee, takerFee))}–${formatBalance(maxOf(makerFee, takerFee))}"
+      val feeText =
+        if (state.orderType == OrderType.MARKET) formatBalance(takerFee)
+        else
+          "${formatBalance(minOf(makerFee, takerFee))}–${formatBalance(maxOf(makerFee, takerFee))}"
       DetailRow(if (isSpot) "Trading fee (USD estimate)" else "Estimated trading fee", feeText)
     } else {
       DetailRow("Trading fee", "Unavailable")
@@ -86,7 +93,9 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
   }
 }
 
-/** Only exits the person actually set are worth a row; the rest is noise on a confirmation screen. */
+/**
+ * Only exits the person actually set are worth a row; the rest is noise on a confirmation screen.
+ */
 @Composable
 internal fun ReviewExits(state: TradeUiState, side: OrderSide) {
   val isSpot = state.quote?.market?.kind == MarketKind.SPOT

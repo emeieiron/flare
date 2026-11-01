@@ -11,9 +11,9 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlin.random.Random
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
@@ -48,7 +48,9 @@ data class AccountProfile(
   val selectedSubaccount: String? = null,
   val onboardingComplete: Boolean = false,
   val builderAddress: String? = null,
-  /** Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry. */
+  /**
+   * Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry.
+   */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
   val spotBuilderFeeBps: Int = 5,
@@ -102,7 +104,9 @@ data class FlarePreferences(
   val ownerBackupConfirmed: Boolean = false,
   val selectedSubaccount: String? = null,
   val builderAddress: String? = null,
-  /** Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry. */
+  /**
+   * Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry.
+   */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
   val spotBuilderFeeBps: Int = 5,
@@ -134,7 +138,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         autoTradingActive = owner != null && owner == preferences[AutoRunKey],
         selectedStrategy = preferences[SelectedStrategyKey] ?: "MACD_CROSSOVER",
         jevKeyConfigured = preferences[JevKeyConfiguredKey] ?: false,
-        useJevConfluence = (preferences[UseJevConfluenceKey] ?: false) && (preferences[JevKeyConfiguredKey] ?: false),
+        useJevConfluence =
+          (preferences[UseJevConfluenceKey] ?: false) &&
+            (preferences[JevKeyConfiguredKey] ?: false),
         selectedMarket = preferences[SelectedMarketKey],
         favoriteMarkets = preferences[FavoriteMarketsKey].orEmpty(),
         spotWatchlistSeeded = preferences[SpotWatchlistSeededKey] ?: false,
@@ -158,11 +164,13 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   /**
    * The network this installation's stored state belongs to, or null when it belongs to none Flare
-   * trades: installations that predate the marker, and those that marked a network Flare has
-   * since dropped, were testnet builds.
+   * trades: installations that predate the marker, and those that marked a network Flare has since
+   * dropped, were testnet builds.
    */
   suspend fun storedNetwork(): Network? =
-    dataStore.data.first()[NetworkKey]?.let { value -> Network.entries.firstOrNull { it.name == value } }
+    dataStore.data.first()[NetworkKey]?.let { value ->
+      Network.entries.firstOrNull { it.name == value }
+    }
 
   /**
    * Drops the state that only means something on the network it was written for: the trading
@@ -186,7 +194,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             builderApproved = false,
             spotBuilderApproved = false,
           )
-        }
+        },
       )
       preferences.remove(SelectedMarketKey)
       preferences.remove(FavoriteMarketsKey)
@@ -233,7 +241,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   suspend fun setConfirmTransactions(confirm: Boolean) {
     dataStore.edit {
-      check(autoOwner.value == null && it[AutoRunKey] == null) { "Pause real auto trading before changing confirmations." }
+      check(autoOwner.value == null && it[AutoRunKey] == null) {
+        "Pause real auto trading before changing confirmations."
+      }
       it[ConfirmTransactionsKey] = confirm
     }
   }
@@ -311,7 +321,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
   /**
    * The next value of the counter [name]: above every value it returned before, and at least
-   * [floor]. Saved before it's returned, so a value is never handed out twice, even across restarts.
+   * [floor]. Saved before it's returned, so a value is never handed out twice, even across
+   * restarts.
    */
   suspend fun nextSequence(name: String, floor: Long): Long {
     var next = floor
@@ -330,7 +341,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   suspend fun setOwnerWallet(address: String?, backupConfirmed: Boolean) = updateActiveProfile {
     val resolvedAddress =
       if (address != null && it.id.startsWith("owner_")) it.id.removePrefix("owner_") else address
-    it.copy(ownerAddress = resolvedAddress, ownerBackupConfirmed = resolvedAddress != null && backupConfirmed)
+    it.copy(
+      ownerAddress = resolvedAddress,
+      ownerBackupConfirmed = resolvedAddress != null && backupConfirmed,
+    )
   }
 
   suspend fun setOwnerBackupConfirmed(confirmed: Boolean) = updateActiveProfile {
@@ -393,8 +407,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   suspend fun setWithdrawal(profileId: String, withdrawal: WithdrawalContinuation?) =
     updateProfile(profileId) { it.copy(withdrawal = withdrawal) }
 
-  suspend fun renameWallet(profileId: String, name: String) =
-    renameAccount(profileId, null, name)
+  suspend fun renameWallet(profileId: String, name: String) = renameAccount(profileId, null, name)
 
   suspend fun renameTradingAccount(profileId: String, address: String, name: String) {
     require(address.isNotBlank()) { "A trading account address is required" }
@@ -410,11 +423,17 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     if (name != null) require(accountNameError(name) == null) { accountNameError(name).orEmpty() }
     dataStore.edit { preferences ->
       val profiles = preferences.profiles()
-      val profile = profiles.firstOrNull { it.id == profileId }
-        ?: error("This wallet is no longer on this device")
-      val renamed = if (address == null) profile.copy(walletName = name?.trim())
-      else profile.copy(tradingAccountNames = if (name == null) profile.tradingAccountNames - accountNameKey(address)
-        else profile.tradingAccountNames + (accountNameKey(address) to name.trim()))
+      val profile =
+        profiles.firstOrNull { it.id == profileId }
+          ?: error("This wallet is no longer on this device")
+      val renamed =
+        if (address == null) profile.copy(walletName = name?.trim())
+        else
+          profile.copy(
+            tradingAccountNames =
+              if (name == null) profile.tradingAccountNames - accountNameKey(address)
+              else profile.tradingAccountNames + (accountNameKey(address) to name.trim()),
+          )
       preferences.writeProfiles(profiles.replacing(renamed))
     }
   }
@@ -434,7 +453,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     dataStore.edit { preferences ->
       val profiles = preferences.profiles()
       preferences.writeProfiles(
-        if (profiles.any { it.id == profile.id }) profiles else profiles + profile
+        if (profiles.any { it.id == profile.id }) profiles else profiles + profile,
       )
       preferences[ActiveProfileKey] = profile.id
     }
@@ -472,9 +491,9 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
    * migrated from their flat keys on the first read, and those keys are dropped on the first write.
    */
   private fun Preferences.profiles(): List<AccountProfile> =
-    this[ProfilesKey]?.let { Json.decodeFromString<List<AccountProfile>>(it) }
-      ?.map(::sanitizeProfile)
-      ?: listOfNotNull(migratedProfile())
+    this[ProfilesKey]
+      ?.let { Json.decodeFromString<List<AccountProfile>>(it) }
+      ?.map(::sanitizeProfile) ?: listOfNotNull(migratedProfile())
 
   private fun sanitizeProfile(profile: AccountProfile): AccountProfile {
     if (profile.id.startsWith("owner_")) {
@@ -503,13 +522,12 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
   private fun Preferences.activeProfile(profiles: List<AccountProfile>): AccountProfile? =
     profiles.firstOrNull { it.id == this[ActiveProfileKey] } ?: profiles.firstOrNull()
 
-
   /** A profile without keys holds nothing worth remembering, so removing both removes it. */
   private fun MutablePreferences.writeProfiles(profiles: List<AccountProfile>) {
     val sanitized = profiles.map(::sanitizeProfile)
     this[ProfilesKey] =
       Json.encodeToString(
-        sanitized.filter { it.ownerAddress != null || it.apiWalletAddress != null }
+        sanitized.filter { it.ownerAddress != null || it.apiWalletAddress != null },
       )
     listOf(OwnerAddressKey, ApiWalletAddressKey, SelectedSubaccountKey).forEach(::remove)
     listOf(OwnerBackupConfirmedKey, OnboardingCompleteKey).forEach(::remove)

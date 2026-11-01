@@ -28,7 +28,10 @@ internal object Fixtures {
   const val SPOT_META =
     """{"universe":[{"tokens":[1,0],"name":"PURR/USDC","index":0,"isCanonical":true},{"tokens":[2,0],"name":"@1","index":1,"isCanonical":false},{"tokens":[3,0],"name":"@2","index":2,"isCanonical":false},{"tokens":[4,0],"name":"@3","index":3,"isCanonical":false},{"tokens":[6,0],"name":"@5","index":5,"isCanonical":false},{"tokens":[1105,0],"name":"@1035","index":1035,"isCanonical":false}],"tokens":[{"name":"USDC","szDecimals":8,"weiDecimals":8,"index":0,"tokenId":"0xeb62eee3685fc4c43992febcd9e75443","isCanonical":true,"evmContract":{"address":"0x1000000000000000000000000000000000000003","evm_extra_wei_decimals":-2},"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"PURR","szDecimals":0,"weiDecimals":5,"index":1,"tokenId":"0xc4bf3f870c0e9465323c0b6ed28096c2","isCanonical":true,"evmContract":{"address":"0x1000000000000000000000000000000000000004","evm_extra_wei_decimals":13},"fullName":"Hypurr","deployerTradingFeeShare":"0.0"},{"name":"TEST","szDecimals":1,"weiDecimals":8,"index":2,"tokenId":"0x98b101daf4ff26697646131261c100bf","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"JPL ","szDecimals":3,"weiDecimals":5,"index":3,"tokenId":"0x68046c075c2c34873fd465c76804ef90","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"BREAD","szDecimals":1,"weiDecimals":1,"index":4,"tokenId":"0x88dd6a0b7c51fb87d26f5a77084122dc","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"KOGU","szDecimals":1,"weiDecimals":1,"index":6,"tokenId":"0x656a0c76e43d33f0f0896e8e64655806","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"HYPE","szDecimals":2,"weiDecimals":8,"index":1105,"tokenId":"0x7317beb7cceed72ef0b346074cc8e7ab","isCanonical":false,"evmContract":{"address":"0x1000000000000000000000000000000000000005","evm_extra_wei_decimals":10},"fullName":"Hyperliquid","deployerTradingFeeShare":"0.0"}]}"""
 
-  /** `spotMetaAndAssetCtxs`: [SPOT_META]'s pairs; contexts include `@7` (not in the trimmed meta) and two `#…` outcome coins. */
+  /**
+   * `spotMetaAndAssetCtxs`: [SPOT_META]'s pairs; contexts include `@7` (not in the trimmed meta)
+   * and two `#…` outcome coins.
+   */
   const val SPOT_META_AND_ASSET_CTXS =
     """[{"universe":[{"tokens":[1,0],"name":"PURR/USDC","index":0,"isCanonical":true},{"tokens":[2,0],"name":"@1","index":1,"isCanonical":false},{"tokens":[3,0],"name":"@2","index":2,"isCanonical":false},{"tokens":[4,0],"name":"@3","index":3,"isCanonical":false},{"tokens":[6,0],"name":"@5","index":5,"isCanonical":false},{"tokens":[1105,0],"name":"@1035","index":1035,"isCanonical":false}],"tokens":[{"name":"USDC","szDecimals":8,"weiDecimals":8,"index":0,"tokenId":"0xeb62eee3685fc4c43992febcd9e75443","isCanonical":true,"evmContract":{"address":"0x1000000000000000000000000000000000000003","evm_extra_wei_decimals":-2},"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"PURR","szDecimals":0,"weiDecimals":5,"index":1,"tokenId":"0xc4bf3f870c0e9465323c0b6ed28096c2","isCanonical":true,"evmContract":{"address":"0x1000000000000000000000000000000000000004","evm_extra_wei_decimals":13},"fullName":"Hypurr","deployerTradingFeeShare":"0.0"},{"name":"TEST","szDecimals":1,"weiDecimals":8,"index":2,"tokenId":"0x98b101daf4ff26697646131261c100bf","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"JPL ","szDecimals":3,"weiDecimals":5,"index":3,"tokenId":"0x68046c075c2c34873fd465c76804ef90","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"BREAD","szDecimals":1,"weiDecimals":1,"index":4,"tokenId":"0x88dd6a0b7c51fb87d26f5a77084122dc","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"KOGU","szDecimals":1,"weiDecimals":1,"index":6,"tokenId":"0x656a0c76e43d33f0f0896e8e64655806","isCanonical":false,"evmContract":null,"fullName":null,"deployerTradingFeeShare":"0.0"},{"name":"HYPE","szDecimals":2,"weiDecimals":8,"index":1105,"tokenId":"0x7317beb7cceed72ef0b346074cc8e7ab","isCanonical":false,"evmContract":{"address":"0x1000000000000000000000000000000000000005","evm_extra_wei_decimals":10},"fullName":"Hyperliquid","deployerTradingFeeShare":"0.0"}]},[{"prevDayPx":"4.5795","dayNtlVlm":"2547.8644","markPx":"4.6252","midPx":"4.60235","circulatingSupply":"198729033.7196399868","coin":"PURR/USDC","totalSupply":"198731931.760589987","dayBaseVlm":"553.0"},{"prevDayPx":"0.0","dayNtlVlm":"0.0","markPx":"1.0936","midPx":null,"circulatingSupply":"999.81880382","coin":"@1","totalSupply":"999.81880382","dayBaseVlm":"0.0"},{"prevDayPx":"0.50032","dayNtlVlm":"0.0","markPx":"0.50032","midPx":"0.50282","circulatingSupply":"999928.7","coin":"@5","totalSupply":"999928.7","dayBaseVlm":"0.0"},{"prevDayPx":"0.0","dayNtlVlm":"0.0","markPx":"1015609.0","midPx":null,"circulatingSupply":"19.99","coin":"@7","totalSupply":"19.99","dayBaseVlm":"0.0"},{"prevDayPx":"22.908","dayNtlVlm":"115737.86721","markPx":"38.84","midPx":"39.141","circulatingSupply":"474797526.6053209305","coin":"@1035","totalSupply":"999329056.6732883453","dayBaseVlm":"3200.71"},{"prevDayPx":"0.0","dayNtlVlm":"0.0","markPx":"0.5","midPx":null,"circulatingSupply":"0.0","coin":"#113990","totalSupply":"184467440737095.53125","dayBaseVlm":"0.0"},{"prevDayPx":"0.0","dayNtlVlm":"0.0","markPx":"0.5","midPx":null,"circulatingSupply":"0.0","coin":"#113991","totalSupply":"184467440737095.53125","dayBaseVlm":"0.0"}]]"""
 
@@ -73,8 +76,7 @@ internal object Fixtures {
     """[{"coin":"ETH","side":"B","limitPx":"2529.2","sz":"5.0","oid":62467226234,"timestamp":1791768486999,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"5.0","tif":"Alo","cloid":null},{"coin":"ETH","side":"A","limitPx":"2529.8","sz":"5.0","oid":62467226053,"timestamp":1791768486589,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"5.0","tif":"Alo","cloid":null},{"coin":"BTC","side":"B","limitPx":"82987.0","sz":"0.3","oid":62467224838,"timestamp":1791768485667,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"0.3","tif":"Alo","cloid":null},{"coin":"BTC","side":"A","limitPx":"83109.0","sz":"0.3","oid":62467221660,"timestamp":1791768482444,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"0.3","tif":"Alo","cloid":null}]"""
 
   /** `frontendOpenOrders` of UNIFIED_USER. */
-  const val FRONTEND_OPEN_ORDERS_EMPTY =
-    """[]"""
+  const val FRONTEND_OPEN_ORDERS_EMPTY = """[]"""
 
   /** `userFillsByTime`. */
   const val USER_FILLS_BY_TIME =
@@ -101,8 +103,7 @@ internal object Fixtures {
   const val ACTIVE_ASSET_DATA =
     """{"user":"0xdfc24b077bc1425ad1dea75bcb6f8158e10df303","coin":"ETH","leverage":{"type":"cross","value":20},"maxTradeSzs":["7.8146","7.8146"],"availableToTrade":["13692157.5423300005","13692157.5423300005"],"markPx":"2559.3"}"""
 
-  const val ORDER_STATUS_UNKNOWN =
-    """{"status":"unknownOid"}"""
+  const val ORDER_STATUS_UNKNOWN = """{"status":"unknownOid"}"""
 
   /** `portfolio`: every period, three points each. */
   const val PORTFOLIO =
@@ -113,20 +114,17 @@ internal object Fixtures {
     """{"dailyUserVlm":[{"date":"2026-09-28","userCross":"0.0","userAdd":"2301145.8900000001","exchange":"4192427.0"},{"date":"2026-09-29","userCross":"0.0","userAdd":"2169061.8700000001","exchange":"4035362.29"}],"feeSchedule":{"cross":"0.00045","add":"0.00015","spotCross":"0.0007","spotAdd":"0.0004","tiers":{"vip":[{"ntlCutoff":"5000000.0","cross":"0.0004","add":"0.00012","spotCross":"0.0006","spotAdd":"0.0003"},{"ntlCutoff":"25000000.0","cross":"0.00035","add":"0.00008","spotCross":"0.0005","spotAdd":"0.0002"},{"ntlCutoff":"100000000.0","cross":"0.0003","add":"0.00004","spotCross":"0.0004","spotAdd":"0.0001"},{"ntlCutoff":"500000000.0","cross":"0.00028","add":"0.0","spotCross":"0.00035","spotAdd":"0.0"},{"ntlCutoff":"2000000000.0","cross":"0.00026","add":"0.0","spotCross":"0.0003","spotAdd":"0.0"},{"ntlCutoff":"7000000000.0","cross":"0.00024","add":"0.0","spotCross":"0.00025","spotAdd":"0.0"}],"mm":[{"makerFractionCutoff":"0.005","add":"-0.00001"},{"makerFractionCutoff":"0.015","add":"-0.00002"},{"makerFractionCutoff":"0.03","add":"-0.00003"}]},"referralDiscount":"0.04","stakingDiscountTiers":[{"bpsOfMaxSupply":"0.0","discount":"0.0"},{"bpsOfMaxSupply":"0.0001","discount":"0.05"},{"bpsOfMaxSupply":"0.001","discount":"0.1"},{"bpsOfMaxSupply":"0.01","discount":"0.15"},{"bpsOfMaxSupply":"0.1","discount":"0.2"},{"bpsOfMaxSupply":"1.0","discount":"0.3"},{"bpsOfMaxSupply":"5.0","discount":"0.4"}]},"userCrossRate":"0.00035","userAddRate":"-0.00003","userSpotCrossRate":"0.0005","userSpotAddRate":"-0.00003","activeReferralDiscount":"0.0","trial":null,"feeTrialEscrow":"0.0","nextTrialAvailableTimestamp":null,"stakingLink":null,"activeStakingDiscount":{"bpsOfMaxSupply":"0.0","discount":"0.0"}}"""
 
   /** `userRole` of USER. */
-  const val USER_ROLE =
-    """{"role":"user"}"""
+  const val USER_ROLE = """{"role":"user"}"""
 
   /** `userRole` of an address that never received funds. */
-  const val USER_ROLE_MISSING =
-    """{"role":"missing"}"""
+  const val USER_ROLE_MISSING = """{"role":"missing"}"""
 
   /** `extraAgents`. */
   const val EXTRA_AGENTS =
     """[{"name":"grid_bot","address":"0x1000000000000000000000000000000000000009","validUntil":1799909269142}]"""
 
   /** `maxBuilderFee` with no approval. */
-  const val MAX_BUILDER_FEE =
-    """0"""
+  const val MAX_BUILDER_FEE = """0"""
 
   /** `vaultDetails` for HLP (numbers for `apr` etc., `6.6e-7` included). */
   const val VAULT_DETAILS =
@@ -141,30 +139,28 @@ internal object Fixtures {
     """[{"vaultAddress":"0xdfc24b077bc1425ad1dea75bcb6f8158e10df303","equity":"1070.102048","lockedUntilTimestamp":1765926140668}]"""
 
   /** `userVaultEquities` of USER. */
-  const val USER_VAULT_EQUITIES_EMPTY =
-    """[]"""
+  const val USER_VAULT_EQUITIES_EMPTY = """[]"""
 
   /** `twapHistory` of USER. */
-  const val TWAP_HISTORY =
-    """[]"""
+  const val TWAP_HISTORY = """[]"""
 
   /** `subAccounts` of an account without any: `null`. */
-  const val SUB_ACCOUNTS =
-    """null"""
+  const val SUB_ACCOUNTS = """null"""
 
   /** `referral` of USER. */
   const val REFERRAL =
     """{"referredBy":null,"cumVlm":"125674407.5799999982","unclaimedRewards":"0.015443","claimedRewards":"0.0","builderRewards":"0.015443","referrerState":{"stage":"needToCreateCode"},"rewardHistory":[],"tokenToState":[[0,{"cumVlm":"125674407.5799999982","unclaimedRewards":"0.015443","claimedRewards":"0.0","builderRewards":"0.015443"}]]}"""
 
   /** `userAbstraction` of USER. */
-  const val USER_ABSTRACTION =
-    """"default""""
+  const val USER_ABSTRACTION = """"default""""
 
   /** `userAbstraction` of UNIFIED_USER. */
-  const val USER_ABSTRACTION_UNIFIED =
-    """"unifiedAccount""""
+  const val USER_ABSTRACTION_UNIFIED = """"unifiedAccount""""
 
-  /** `twapHistory`: a TWAP's activation and termination, and another one terminated. `time` is in seconds. */
+  /**
+   * `twapHistory`: a TWAP's activation and termination, and another one terminated. `time` is in
+   * seconds.
+   */
   const val TWAP_HISTORY_ENTRIES =
     """[{"time":1774612361,"state":{"coin":"osrs:DTEST","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"2256.5","executedSz":"658.6","executedNtl":"37506.2979","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774612247837,"trigger":null,"stopPx":null},"status":{"status":"terminated"},"twapId":14656},{"time":1774612247,"state":{"coin":"osrs:DTEST","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"2256.5","executedSz":"0.0","executedNtl":"0.0","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774612247837,"trigger":null,"stopPx":null},"status":{"status":"activated"},"twapId":14656},{"time":1774612022,"state":{"coin":"@1035","user":"0x1000000000000000000000000000000000000001","side":"A","sz":"199.99","executedSz":"0.0","executedNtl":"0.0","minutes":5,"reduceOnly":false,"randomize":false,"timestamp":1774611979263,"trigger":null,"stopPx":null},"status":{"status":"terminated"},"twapId":14654}]"""
 
@@ -264,6 +260,5 @@ internal object Fixtures {
     """{"channel":"error","data":"Error parsing JSON into valid websocket request: {\"method\": \"subscribe\", \"subscription\": {\"type\": \"bogus\"}}"}"""
 
   /** The answer to a ping. */
-  const val WS_PONG =
-    """{"channel":"pong"}"""
+  const val WS_PONG = """{"channel":"pong"}"""
 }

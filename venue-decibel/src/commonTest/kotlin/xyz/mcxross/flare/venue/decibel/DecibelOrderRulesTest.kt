@@ -8,9 +8,15 @@ import kotlin.test.assertNull
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
+import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
 import xyz.mcxross.flare.decibel.model.MarketPrecision
+import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 import xyz.mcxross.flare.decibel.model.OrderDraft
+import xyz.mcxross.flare.decibel.model.OrderSide as DecibelOrderSide
+import xyz.mcxross.flare.decibel.model.OrderType as DecibelOrderType
 import xyz.mcxross.flare.decibel.model.SlippageBps
+import xyz.mcxross.flare.decibel.model.TimeInForce as DecibelTimeInForce
+import xyz.mcxross.flare.decibel.model.validate as decibelValidate
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderBook
@@ -23,12 +29,6 @@ import xyz.mcxross.flare.venue.model.TimeInForce
 import xyz.mcxross.flare.venue.model.TradeAction
 import xyz.mcxross.flare.venue.model.TwapSchedule
 import xyz.mcxross.kaptos.model.AccountAddress
-import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
-import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
-import xyz.mcxross.flare.decibel.model.OrderSide as DecibelOrderSide
-import xyz.mcxross.flare.decibel.model.OrderType as DecibelOrderType
-import xyz.mcxross.flare.decibel.model.TimeInForce as DecibelTimeInForce
-import xyz.mcxross.flare.decibel.model.validate as decibelValidate
 
 class DecibelOrderRulesTest {
   private val rules =
@@ -156,7 +156,7 @@ class DecibelOrderRulesTest {
     assertEquals("70361", checked.price)
     val placed =
       assertIs<DecibelCommand.PlaceOrder>(
-        TradeAction.PlaceOrder(ACCOUNT, market, checked).toDecibelCommand(USDC)
+        TradeAction.PlaceOrder(ACCOUNT, market, checked).toDecibelCommand(USDC),
       )
     assertEquals(direct, placed.order)
   }
@@ -164,7 +164,9 @@ class DecibelOrderRulesTest {
   @Test
   fun anApprovedBuilderFeeIsSentInDecibelUnitsAndAZeroFeeIsDropped() {
     val checked =
-      assertIs<OrderCheck.Valid>(rules.check(limit.copy(builderAddress = "0x987", builderFeeBps = 5)))
+      assertIs<OrderCheck.Valid>(
+          rules.check(limit.copy(builderAddress = "0x987", builderFeeBps = 5)),
+        )
         .order
     val order = rules.validated(checked)
     assertEquals(AccountAddress.fromString("0x987").toStringLong(), order.builderAddress)
@@ -174,7 +176,9 @@ class DecibelOrderRulesTest {
     assertNull(unpaid.builderFeeUnits)
     assertEquals(
       listOf("Builder fee: Builder fee cannot exceed 10 bps (0.10%)"),
-      assertIs<OrderCheck.Invalid>(rules.check(limit.copy(builderAddress = "0x987", builderFeeBps = 11)))
+      assertIs<OrderCheck.Invalid>(
+          rules.check(limit.copy(builderAddress = "0x987", builderFeeBps = 11)),
+        )
         .errors,
     )
   }
@@ -194,7 +198,7 @@ class DecibelOrderRulesTest {
     val checked = assertIs<OrderCheck.Valid>(rules.check(twap)).order
     val placed =
       assertIs<DecibelCommand.PlaceTwapOrder>(
-        TradeAction.PlaceOrder(ACCOUNT, market, checked).toDecibelCommand(USDC)
+        TradeAction.PlaceOrder(ACCOUNT, market, checked).toDecibelCommand(USDC),
       )
     assertEquals(100_000uL, placed.order.size)
     assertEquals(120uL, placed.order.frequencySeconds)
@@ -204,7 +208,7 @@ class DecibelOrderRulesTest {
     val spot = market.copy(kind = MarketKind.SPOT, rules = spotRules)
     val spotOrder = assertIs<OrderCheck.Valid>(spotRules.check(limit)).order
     assertIs<DecibelCommand.PlaceSpotOrder>(
-      TradeAction.PlaceOrder(ACCOUNT, spot, spotOrder).toDecibelCommand(USDC)
+      TradeAction.PlaceOrder(ACCOUNT, spot, spotOrder).toDecibelCommand(USDC),
     )
   }
 
@@ -225,7 +229,7 @@ class DecibelOrderRulesTest {
     assertEquals("70010", checked.price)
     val placed =
       assertIs<DecibelCommand.PlaceSpotOrder>(
-        TradeAction.PlaceOrder(ACCOUNT, spot, checked).toDecibelCommand(USDC)
+        TradeAction.PlaceOrder(ACCOUNT, spot, checked).toDecibelCommand(USDC),
       )
     assertEquals(7_001_000uL, placed.order.price)
     assertEquals(100_000uL, placed.order.size)
@@ -251,7 +255,7 @@ class DecibelOrderRulesTest {
             takeProfitTrigger = "72000",
             takeProfitLimit = "72000",
           )
-          .toDecibelCommand(USDC)
+          .toDecibelCommand(USDC),
       )
     assertEquals(7_200_000uL, command.takeProfitTrigger)
     assertEquals(7_200_000uL, command.takeProfitLimit)

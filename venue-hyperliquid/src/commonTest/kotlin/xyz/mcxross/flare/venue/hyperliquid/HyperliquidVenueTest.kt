@@ -27,7 +27,10 @@ class HyperliquidVenueTest {
     assertEquals("hyperliquid", mainnet.id)
     assertEquals("Hyperliquid", mainnet.displayName)
     assertEquals(Network.MAINNET, mainnet.network)
-    assertEquals("https://app.hyperliquid.xyz/explorer/tx/$TX_HASH", mainnet.explorer.transactionUrl(TX_HASH))
+    assertEquals(
+      "https://app.hyperliquid.xyz/explorer/tx/$TX_HASH",
+      mainnet.explorer.transactionUrl(TX_HASH),
+    )
     // Order ids and nonces aren't transactions, so they get no link.
     assertNull(mainnet.explorer.transactionUrl("123456789"))
     assertNull(mainnet.explorer.transactionUrl("1784361909247"))
@@ -41,7 +44,8 @@ class HyperliquidVenueTest {
   @Test
   fun setupEnablesTradingAndOffersTheBuilderFeeOnlyWithABuilder() {
     val bare = HyperliquidVenue().descriptor
-    val withBuilder = HyperliquidVenue(builderAddress = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d").descriptor
+    val withBuilder =
+      HyperliquidVenue(builderAddress = "0x8c967e73e7b15087c42a10d344cff4c96d877f1d").descriptor
 
     assertFalse(bare.setup.tradingAccounts || bare.setup.openTradingAccount)
     assertTrue(bare.setup.enableTrading)
@@ -58,10 +62,16 @@ class HyperliquidVenueTest {
     val capabilities = HyperliquidVenue.Capabilities
 
     assertTrue(capabilities.spot && capabilities.twap)
-    assertTrue(capabilities.subaccounts && capabilities.perpSpotTransfer && capabilities.batchCancel)
+    assertTrue(
+      capabilities.subaccounts && capabilities.perpSpotTransfer && capabilities.batchCancel,
+    )
     // Rewards are the fee tier and referral standing: no points, streak or code entry.
-    assertFalse(capabilities.referralCodes || capabilities.createSubaccounts || capabilities.twapInterval)
-    assertFalse(capabilities.sponsoredFees || capabilities.networkFeeTopUp || capabilities.inAppDeposit)
+    assertFalse(
+      capabilities.referralCodes || capabilities.createSubaccounts || capabilities.twapInterval,
+    )
+    assertFalse(
+      capabilities.sponsoredFees || capabilities.networkFeeTopUp || capabilities.inAppDeposit,
+    )
     ActionKind.entries.forEach { assertNull(capabilities.unavailableReason(it), it.name) }
   }
 

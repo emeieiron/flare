@@ -30,22 +30,22 @@ import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovement
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.FundingPayment
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradingFees
 import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.VaultFact
 import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
@@ -88,7 +88,9 @@ internal fun accountOverview(
   val spotBalances = spot?.toSpotBalances(tokenPrices)
   val usdc = spot?.balances?.firstOrNull { it.token == USDC_TOKEN }
   val vaultEquity =
-    vaultEquities?.filter { (it.lockedUntilTimestamp ?: 0L) <= nowMs }?.sumOf { it.equity.toDoubleOrZero() }
+    vaultEquities
+      ?.filter { (it.lockedUntilTimestamp ?: 0L) <= nowMs }
+      ?.sumOf { it.equity.toDoubleOrZero() }
   if (abstraction?.sharesSpotCollateral == true && usdc != null) {
     val usdcTotal = usdc.total.toDoubleOrZero()
     val free = (usdcTotal - usdc.hold.toDoubleOrZero()).coerceAtLeast(0.0)
@@ -125,25 +127,26 @@ internal fun accountOverview(
         spot = spotBalances,
         // Perps and spot are separate accounts: only spot USDC buys spot.
         spotBuyingPower =
-          spot?.let { (usdc?.total.toDoubleOrZero() - usdc?.hold.toDoubleOrZero()).coerceAtLeast(0.0) },
+          spot?.let {
+            (usdc?.total.toDoubleOrZero() - usdc?.hold.toDoubleOrZero()).coerceAtLeast(0.0)
+          },
       ),
   )
 }
 
 /** Every token held, valued at its USDC pair; one without a USDC market is valued at zero. */
 internal fun SpotClearinghouseState.toSpotBalances(tokenPrices: Map<String, Double>): SpotBalances {
-  val assets =
-    balances.mapNotNull { balance ->
-      val amount = balance.total.toDoubleOrZero()
-      if (amount == 0.0) return@mapNotNull null
-      val symbol = balance.coin.trim()
-      SpotBalance(
-        assetId = balance.token.toString(),
-        symbol = symbol,
-        amount = amount,
-        valueUsd = amount * (tokenPrices[symbol] ?: 0.0),
-      )
-    }
+  val assets = balances.mapNotNull { balance ->
+    val amount = balance.total.toDoubleOrZero()
+    if (amount == 0.0) return@mapNotNull null
+    val symbol = balance.coin.trim()
+    SpotBalance(
+      assetId = balance.token.toString(),
+      symbol = symbol,
+      amount = amount,
+      valueUsd = amount * (tokenPrices[symbol] ?: 0.0),
+    )
+  }
   return SpotBalances(assets = assets, totalUsd = assets.sumOf { it.valueUsd })
 }
 
@@ -160,8 +163,10 @@ internal fun ClearinghouseState.toPositions(orders: List<FrontendOrder>): List<P
       entryPrice = position.entryPx.toDoubleOrZero(),
       isolated = !position.leverage.isCross,
       liquidationPrice = position.liquidationPx?.toDoubleOrNull(),
-      takeProfitTriggerPrice = exits.filter { it.isTakeProfit }.shownExit()?.triggerPx?.toDoubleOrNull(),
-      stopLossTriggerPrice = exits.filter { it.isStopLoss }.shownExit()?.triggerPx?.toDoubleOrNull(),
+      takeProfitTriggerPrice =
+        exits.filter { it.isTakeProfit }.shownExit()?.triggerPx?.toDoubleOrNull(),
+      stopLossTriggerPrice =
+        exits.filter { it.isStopLoss }.shownExit()?.triggerPx?.toDoubleOrNull(),
     )
   }
 
@@ -171,11 +176,17 @@ internal fun ClearinghouseState.toPositions(orders: List<FrontendOrder>): List<P
  * (`normalTpsl`, listed as plain reduce-only triggers once that order fills). Exits of an order
  * still resting don't guard the position yet.
  */
-internal fun List<FrontendOrder>.exitsFor(coin: String, closesWithBuy: Boolean): List<FrontendOrder> {
+internal fun List<FrontendOrder>.exitsFor(
+  coin: String,
+  closesWithBuy: Boolean,
+): List<FrontendOrder> {
   val waiting = flatMap { it.children }.map { it.oid }.toSet()
   return filter {
-    it.coin == coin && it.reduceOnly && (it.isTakeProfit || it.isStopLoss) &&
-      (it.side == Side.BUY) == closesWithBuy && it.oid !in waiting
+    it.coin == coin &&
+      it.reduceOnly &&
+      (it.isTakeProfit || it.isStopLoss) &&
+      (it.side == Side.BUY) == closesWithBuy &&
+      it.oid !in waiting
   }
 }
 
@@ -193,9 +204,12 @@ private val FrontendOrder.isMarket: Boolean
   get() = orderType.endsWith("Market")
 
 private fun FrontendOrder.toTrigger(): OrderTrigger? =
-  triggerPx.toDoubleOrNull()?.takeIf { it > 0.0 }?.let {
-    OrderTrigger(triggerPrice = it, limitPrice = if (isMarket) null else limitPx.toDoubleOrNull())
-  }
+  triggerPx
+    .toDoubleOrNull()
+    ?.takeIf { it > 0.0 }
+    ?.let {
+      OrderTrigger(triggerPrice = it, limitPrice = if (isMarket) null else limitPx.toDoubleOrNull())
+    }
 
 internal fun FrontendOrder.toOpenOrder(): OpenOrder =
   OpenOrder(
@@ -277,8 +291,9 @@ internal fun HyperliquidFill.toFill(): Fill =
 internal fun FundingUpdate.toFundingPayment(): FundingPayment =
   fundingPayment(delta.coin, delta.szi, delta.usdc, time)
 
-internal fun StreamFunding.toFundingPayment(): FundingPayment? =
-  time?.let { fundingPayment(coin, szi, usdc, it) }
+internal fun StreamFunding.toFundingPayment(): FundingPayment? = time?.let {
+  fundingPayment(coin, szi, usdc, it)
+}
 
 private fun fundingPayment(coin: String, szi: String, usdc: String, timeMs: Long) =
   FundingPayment(
@@ -296,7 +311,12 @@ private fun fundingPayment(coin: String, szi: String, usdc: String, timeMs: Long
  */
 internal fun LedgerUpdate.toFundMovement(account: String): FundMovement? {
   val incomingTo = { destination: String? -> destination.equals(account, ignoreCase = true) }
-  fun movement(kind: FundMovementKind, amount: String?, symbol: String = USDC, status: String = COMPLETED) =
+  fun movement(
+    kind: FundMovementKind,
+    amount: String?,
+    symbol: String = USDC,
+    status: String = COMPLETED,
+  ) =
     amount?.toDoubleOrNull()?.let {
       FundMovement(kind, it, symbol, status, reference = hash, timeMs = time)
     }
@@ -319,7 +339,8 @@ internal fun LedgerUpdate.toFundMovement(account: String): FundMovement? {
         delta.token?.trim() ?: USDC,
       )
     "accountClassTransfer" ->
-      if (delta.toPerp == true) movement(FundMovementKind.TRANSFER_IN, delta.usdc, status = "to perps")
+      if (delta.toPerp == true)
+        movement(FundMovementKind.TRANSFER_IN, delta.usdc, status = "to perps")
       else movement(FundMovementKind.TRANSFER_OUT, delta.usdc, status = "to spot")
     "vaultCreate",
     "vaultDeposit" -> movement(FundMovementKind.VAULT_DEPOSIT, delta.usdc)
@@ -340,7 +361,10 @@ internal val PortfolioChartRange.hyperliquidPeriod: String
     }
 
 /** The whole account's history over [range]: account value, or P&L since the range began. */
-internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
+internal fun Portfolio.chart(
+  range: PortfolioChartRange,
+  metric: PortfolioMetric,
+): List<SeriesPoint> {
   val period = this[range.hyperliquidPeriod] ?: return emptyList()
   val points =
     when (metric) {
@@ -350,21 +374,29 @@ internal fun Portfolio.chart(range: PortfolioChartRange, metric: PortfolioMetric
   return points.map(HyperliquidPortfolioPoint::toPortfolioPoint)
 }
 
-private fun HyperliquidPortfolioPoint.toPortfolioPoint() = SeriesPoint(timeMs, value.toDoubleOrZero())
+private fun HyperliquidPortfolioPoint.toPortfolioPoint() =
+  SeriesPoint(timeMs, value.toDoubleOrZero())
 
 internal fun UserFees.toTradingFees(): TradingFees =
   TradingFees(
-    perp = FeeRates(makerRate = userAddRate.toDoubleOrZero(), takerRate = userCrossRate.toDoubleOrZero()),
+    perp =
+      FeeRates(
+        makerRate = userAddRate.toDoubleOrZero(),
+        takerRate = userCrossRate.toDoubleOrZero(),
+      ),
     spot =
       if (userSpotAddRate != null && userSpotCrossRate != null) {
-        FeeRates(makerRate = userSpotAddRate.toDoubleOrZero(), takerRate = userSpotCrossRate.toDoubleOrZero())
+        FeeRates(
+          makerRate = userSpotAddRate.toDoubleOrZero(),
+          takerRate = userSpotCrossRate.toDoubleOrZero(),
+        )
       } else null,
   )
 
 /**
  * The account's place on the fee schedule. Its volume is the 14 complete days `dailyUserVlm` lists
- * before today, taker plus maker, as Hyperliquid's app sums it; the tier is the highest volume
- * tier that volume reaches, Tier 0 below the first.
+ * before today, taker plus maker, as Hyperliquid's app sums it; the tier is the highest volume tier
+ * that volume reaches, Tier 0 below the first.
  */
 internal fun UserFees.toFeeTier(): FeeTier {
   val volume =
@@ -384,7 +416,10 @@ internal fun UserFees.toFeeTier(): FeeTier {
 }
 
 /** Rewards from what loaded; a part that didn't is listed as unavailable, both failing throws. */
-internal fun hyperliquidRewards(feeTier: Result<FeeTier>, referral: Result<ReferralSummary>): Rewards {
+internal fun hyperliquidRewards(
+  feeTier: Result<FeeTier>,
+  referral: Result<ReferralSummary>,
+): Rewards {
   feeTier.exceptionOrNull()?.let { error -> if (referral.isFailure) throw error }
   return Rewards(
     feeTier = feeTier.getOrNull(),
@@ -401,7 +436,10 @@ internal fun hyperliquidRewards(feeTier: Result<FeeTier>, referral: Result<Refer
 internal fun Referral.toReferralSummary(): ReferralSummary =
   ReferralSummary(
     code =
-      referrerState?.takeIf { it.stage == "ready" }?.data?.get("code")
+      referrerState
+        ?.takeIf { it.stage == "ready" }
+        ?.data
+        ?.get("code")
         ?.let { (it as? JsonPrimitive)?.contentOrNull }
         ?.takeIf(String::isNotBlank),
     referredBy = referredBy?.code,
@@ -425,14 +463,15 @@ internal fun TwapState.toTwapOrder(id: Long, status: String = "activated"): Twap
  * Each TWAP once, at its latest status, newest first. History lists an entry per status change;
  * entries from before TWAP ids existed are told apart by when they started.
  */
-internal fun List<TwapHistoryEntry>.latestTwaps(): List<TwapOrder> =
-  groupBy { it.twapId?.toString() ?: "${it.state.coin}:${it.state.timestamp}" }
-    .map { (id, entries) ->
-      val latest = entries.maxBy { it.time }
-      latest.state.toTwapOrder(0L, latest.status.status).copy(id = id) to latest.time
-    }
-    .sortedByDescending { it.second }
-    .map { it.first }
+internal fun List<TwapHistoryEntry>.latestTwaps(): List<TwapOrder> = groupBy {
+  it.twapId?.toString() ?: "${it.state.coin}:${it.state.timestamp}"
+}
+  .map { (id, entries) ->
+    val latest = entries.maxBy { it.time }
+    latest.state.toTwapOrder(0L, latest.status.status).copy(id = id) to latest.time
+  }
+  .sortedByDescending { it.second }
+  .map { it.first }
 
 /** A vault as the vault list shows it. Hyperliquid vaults have no shares: a stake is its value. */
 internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary =
@@ -446,7 +485,8 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
     sharePrice = 1.0,
     // Hyperliquid takes its commission on profits above a depositor's own peak.
     fee = ManagerFee.HighWatermark(leaderCommission.toDoubleOrZero() * 100.0),
-    lockupSeconds = if (isProtocolVault) PROTOCOL_VAULT_LOCKUP_SECONDS else USER_VAULT_LOCKUP_SECONDS,
+    lockupSeconds =
+      if (isProtocolVault) PROTOCOL_VAULT_LOCKUP_SECONDS else USER_VAULT_LOCKUP_SECONDS,
     // A protocol vault has no manager staking their own money, so the leader's sliver isn't one.
     managerStakePercent =
       if (isProtocolVault) null
@@ -455,13 +495,18 @@ internal fun VaultDetails.toVaultSummary(isProtocolVault: Boolean): VaultSummary
     depositorCount = null,
     // Hyperliquid reports APR as a fraction, where Decibel reports a percentage.
     performance =
-      apr.toDoubleOrZero().takeIf { it != 0.0 }
+      apr
+        .toDoubleOrZero()
+        .takeIf { it != 0.0 }
         ?.let { listOf(VaultFact("APR", VaultFactValue.Percent(it * 100.0, signed = true))) }
         .orEmpty(),
     isActive = !isClosed && allowDeposits,
   )
 
-internal fun VaultEquity.toVaultPosition(vault: VaultSummary, details: VaultDetails?): VaultPosition {
+internal fun VaultEquity.toVaultPosition(
+  vault: VaultSummary,
+  details: VaultDetails?,
+): VaultPosition {
   val value = equity.toDoubleOrZero()
   val follower = details?.followerState
   val allTimePnl = follower?.allTimePnl?.toDoubleOrNull()
@@ -482,7 +527,8 @@ internal fun VaultEquity.toVaultPosition(vault: VaultSummary, details: VaultDeta
 internal fun marketKindOf(coin: String): MarketKind =
   if (coin.startsWith("@") || '/' in coin) MarketKind.SPOT else MarketKind.PERP
 
-internal fun String?.toDoubleOrZero(): Double = this?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
+internal fun String?.toDoubleOrZero(): Double =
+  this?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
 
 internal const val USDC = "USDC"
 internal const val USDC_TOKEN = 0

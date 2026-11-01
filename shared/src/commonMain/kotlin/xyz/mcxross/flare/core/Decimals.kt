@@ -1,8 +1,8 @@
 package xyz.mcxross.flare.core
 
 /**
- * [value] as a whole number of 10^-[decimals] units, exactly. [field] names the input in errors,
- * as in "Take profit supports at most 2 decimal places".
+ * [value] as a whole number of 10^-[decimals] units, exactly. [field] names the input in errors, as
+ * in "Take profit supports at most 2 decimal places".
  */
 fun decimalUnits(value: String, field: String, decimals: Int): Result<ULong> = runCatching {
   require(decimals in 0..18) { "$field uses an unsupported precision" }

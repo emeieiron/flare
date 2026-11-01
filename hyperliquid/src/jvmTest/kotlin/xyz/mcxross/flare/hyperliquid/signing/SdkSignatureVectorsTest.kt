@@ -6,9 +6,9 @@ import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
 
 /**
- * The final r/s/v of every [SdkVectors] case, signed by [FastKryptoSigner] with the SDK tests'
- * key: `tests/signing_test.py`'s own values, plus signatures generated with
- * hyperliquid-python-sdk 0.24.0 (commit 2fdb18f) for the actions its tests don't cover.
+ * The final r/s/v of every [SdkVectors] case, signed by [FastKryptoSigner] with the SDK tests' key:
+ * `tests/signing_test.py`'s own values, plus signatures generated with hyperliquid-python-sdk
+ * 0.24.0 (commit 2fdb18f) for the actions its tests don't cover.
  */
 class SdkSignatureVectorsTest {
   private val signer = FastKryptoSigner.fromHex(SdkVectors.PRIVATE_KEY)
@@ -58,8 +58,8 @@ class SdkSignatureVectorsTest {
   }
 
   /**
-   * The SDK prints r and s with `to_hex(int)`, dropping leading zeros; Flare always sends 32
-   * bytes. Same number, so compare without the leading zeros.
+   * The SDK prints r and s with `to_hex(int)`, dropping leading zeros; Flare always sends 32 bytes.
+   * Same number, so compare without the leading zeros.
    */
   private fun assertSignature(expected: EvmSignatureVector, actual: EvmSignature, what: String) {
     assertEquals(66, actual.r.length, "$what r width")

@@ -149,4 +149,3 @@ data class TwapValidationResult(
   val isValid: Boolean
     get() = value != null && errors.isEmpty()
 }
-

@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,9 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.filter
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -60,8 +56,11 @@ import androidx.room3.RoomDatabase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -70,11 +69,11 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.dsl.koinConfiguration
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
-import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.CredentialParser
+import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.design.FlareBottomNavigation
@@ -98,6 +97,7 @@ import xyz.mcxross.flare.design.pagePushExit
 import xyz.mcxross.flare.design.rememberFlareIgnition
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.di.flareModule
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
 import xyz.mcxross.flare.feature.markets.MarketsRoute
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
 import xyz.mcxross.flare.feature.onboarding.OnboardingRoute
@@ -108,15 +108,14 @@ import xyz.mcxross.flare.feature.portfolio.PositionRoute
 import xyz.mcxross.flare.feature.settings.AccountRoute
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
-import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
-import xyz.mcxross.flare.security.JevCredentials
 import xyz.mcxross.flare.security.ForegroundWalletVault
+import xyz.mcxross.flare.security.JevCredentials
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.WalletSecretSlot
 import xyz.mcxross.flare.security.WalletVault
 import xyz.mcxross.flare.store.AppPreferences
-import xyz.mcxross.flare.store.adoptNetwork
 import xyz.mcxross.flare.store.FlareDatabase
+import xyz.mcxross.flare.store.adoptNetwork
 import xyz.mcxross.flare.store.setupPending
 import xyz.mcxross.flare.venue.Venue
 
@@ -138,7 +137,8 @@ private const val RECONNECT_MAX_DELAY_MS = 30_000L
 
 @Serializable data object SettingsDestination
 
-@Serializable data class AccountSetupDestination(val mode: String = "CREATE", val profileId: String? = null)
+@Serializable
+data class AccountSetupDestination(val mode: String = "CREATE", val profileId: String? = null)
 
 /**
  * Flare on top of [venue], the exchange this build trades on. Each platform shell passes the venue
@@ -157,7 +157,7 @@ fun App(
     configuration =
       koinConfiguration {
         modules(flareModule(venue, runtimeConfig, databaseBuilder, preferences, foregroundVault))
-      }
+      },
   ) {
     CompositionLocalProvider(
       LocalTransactionExplorer provides
@@ -240,7 +240,12 @@ private fun FlareAppFlow() {
   }
   // Staying current is the app's job: a failed restore retries on its own until the account is
   // live again, so nobody has to notice staleness or press refresh.
-  LaunchedEffect(unlocked, networkAdopted, persisted?.activeProfileId, persisted?.selectedSubaccount) {
+  LaunchedEffect(
+    unlocked,
+    networkAdopted,
+    persisted?.activeProfileId,
+    persisted?.selectedSubaccount,
+  ) {
     if (!unlocked || !networkAdopted) return@LaunchedEffect
     var backoffMs = RECONNECT_BASE_DELAY_MS
     while (true) {
@@ -282,18 +287,22 @@ private fun FlareAppFlow() {
       }
   }
   val shownWallet = remember { arrayOf<String?>(null) }
-  val lastCompletedProfileId = remember(persisted?.profiles, persisted?.activeProfileId) {
-    shownWallet(persisted, shownWallet[0]).also { shownWallet[0] = it }
-  }
+  val lastCompletedProfileId =
+    remember(persisted?.profiles, persisted?.activeProfileId) {
+      shownWallet(persisted, shownWallet[0]).also { shownWallet[0] = it }
+    }
   val savedScreens = rememberSaveableStateHolder()
   val stage = launchStage(persisted, walletLoaded = walletProfile != null, unlocked = unlocked)
-  // Whether this is the moment setup finished, worked out as the stage changes so the curtain covers
+  // Whether this is the moment setup finished, worked out as the stage changes so the curtain
+  // covers
   // the app in that same frame. A wallet that left setup for later isn't ready to trade yet.
   val lastStage = remember { arrayOf(stage) }
   val finishedSetup =
     remember(stage) {
-      (lastStage[0] == LaunchStage.ONBOARDING && stage == LaunchStage.READY &&
-        persisted?.profiles?.any { it.id == lastCompletedProfileId && it.onboardingComplete } == true)
+      (lastStage[0] == LaunchStage.ONBOARDING &&
+          stage == LaunchStage.READY &&
+          persisted?.profiles?.any { it.id == lastCompletedProfileId && it.onboardingComplete } ==
+            true)
         .also { lastStage[0] = stage }
     }
   // A wallet waiting on its first deposit is checked again each time the app comes back, and when
@@ -312,7 +321,8 @@ private fun FlareAppFlow() {
   Box(Modifier.fillMaxSize()) {
     when (stage) {
       LaunchStage.ONBOARDING -> {
-        // A setup that was interrupted picks up where it stopped instead of starting a second account.
+        // A setup that was interrupted picks up where it stopped instead of starting a second
+        // account.
         val unfinished = remember { resumedSetup(persisted) }
         OnboardingRoute(
           onCompleted = {},
@@ -342,9 +352,9 @@ private fun FlareAppFlow() {
  * The splash, held over the app until it can be used. It looks exactly like the system's launch
  * splash, so the app takes over without a visible seam. When the account unlocks, the mark ignites
  * and the curtain lifts off the app already drawn beneath it. Onboarding takes the mark over at the
- * same spot, so there the curtain simply goes, and when setup finishes it returns: the mark lights up
- * in full, once, before the app is revealed. If the unlock is dismissed, the mark stays where it is
- * and the way back in appears beneath it.
+ * same spot, so there the curtain simply goes, and when setup finishes it returns: the mark lights
+ * up in full, once, before the app is revealed. If the unlock is dismissed, the mark stays where it
+ * is and the way back in appears beneath it.
  */
 @Composable
 private fun LaunchCurtain(
@@ -387,8 +397,11 @@ private fun LaunchCurtain(
         }
         if (!covering) return@LaunchedEffect
         coroutineScope {
-          launch { ignition.ignite(reduceMotion, rest = 1f, staggerMs = 50, flareMs = 150, settleMs = 300) }
-          // The curtain starts lifting as the last bar flares, so unlocking never waits on the light.
+          launch {
+            ignition.ignite(reduceMotion, rest = 1f, staggerMs = 50, flareMs = 150, settleMs = 300)
+          }
+          // The curtain starts lifting as the last bar flares, so unlocking never waits on the
+          // light.
           delay(if (reduceMotion) 0 else 200)
           opacity.animateTo(0f, tween(if (reduceMotion) 120 else 240, easing = LinearEasing))
         }
@@ -402,7 +415,9 @@ private fun LaunchCurtain(
     AnimatedVisibility(
       visible = celebrating,
       modifier = Modifier.align(Alignment.Center).padding(top = SplashMarkSize + 88.dp),
-      enter = fadeIn(tween(400, delayMillis = 350)) + slideInVertically(tween(500, 350, FastOutSlowInEasing)) { it / 2 },
+      enter =
+        fadeIn(tween(400, delayMillis = 350)) +
+          slideInVertically(tween(500, 350, FastOutSlowInEasing)) { it / 2 },
       exit = fadeOut(tween(120)),
     ) {
       Text("You’re ready to trade.", style = MaterialTheme.typography.titleMedium)
@@ -410,7 +425,8 @@ private fun LaunchCurtain(
     AnimatedVisibility(
       visible = stage == LaunchStage.LOCKED && locked,
       modifier = Modifier.align(Alignment.BottomCenter),
-      enter = fadeIn(tween(220)) + slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 6 },
+      enter =
+        fadeIn(tween(220)) + slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 6 },
       exit = fadeOut(tween(120)),
     ) {
       Column(
@@ -502,7 +518,9 @@ private fun FlareShell() {
         navigateTo(3)
       }
       SetupNeed.TRADING ->
-        saved?.activeProfileId?.let { navController.navigate(AccountSetupDestination("CONTINUE", it)) }
+        saved?.activeProfileId?.let {
+          navController.navigate(AccountSetupDestination("CONTINUE", it))
+        }
     }
   }
 
@@ -519,7 +537,8 @@ private fun FlareShell() {
           )
       },
     ) { contentPadding ->
-      // No background of its own: the scaffold paints the same black beneath, and each detail page paints
+      // No background of its own: the scaffold paints the same black beneath, and each detail page
+      // paints
       // its own as it slides over, so another full-screen layer here would only be overdraw.
       NavHost(
         navController = navController,
@@ -542,10 +561,12 @@ private fun FlareShell() {
           if (initialState.destination.isDetailPage()) pagePopExit() else ExitTransition.None
         },
         predictivePopEnterTransition = { edge ->
-          if (initialState.destination.isDetailPage()) pagePredictivePopEnter(edge) else EnterTransition.None
+          if (initialState.destination.isDetailPage()) pagePredictivePopEnter(edge)
+          else EnterTransition.None
         },
         predictivePopExitTransition = { edge ->
-          if (initialState.destination.isDetailPage()) pagePredictivePopExit(edge) else ExitTransition.None
+          if (initialState.destination.isDetailPage()) pagePredictivePopExit(edge)
+          else ExitTransition.None
         },
         sizeTransform = { null },
       ) {
@@ -576,13 +597,14 @@ private fun FlareShell() {
             reselections = remember { reselectionsOf(0) },
             onMarketClick = { marketAddress ->
               navController.navigate(TradeDestination(marketAddress)) { launchSingleTop = true }
-            }
+            },
           )
         }
         composable<TradeDestination> { backStackEntry ->
           TradeRoute(
             onOpenActivity = {
-              // The finished order isn't kept: returning to Markets shows the list, not the receipt.
+              // The finished order isn't kept: returning to Markets shows the list, not the
+              // receipt.
               navController.popBackStack()
               navigateTo(2)
             },
@@ -597,7 +619,9 @@ private fun FlareShell() {
             onOpenSettings = { navController.navigate(SettingsDestination) },
             onCreateAccount = { navController.navigate(AccountSetupDestination("CREATE")) },
             onImportAccount = { navController.navigate(AccountSetupDestination("IMPORT")) },
-            onContinueSetup = { id -> navController.navigate(AccountSetupDestination("CONTINUE", id)) },
+            onContinueSetup = { id ->
+              navController.navigate(AccountSetupDestination("CONTINUE", id))
+            },
             openReceive = receiveRequested,
             onReceiveOpened = { receiveRequested = false },
           )
@@ -622,5 +646,7 @@ private fun FlareShell() {
 }
 
 private fun NavDestination.isDetailPage(): Boolean =
-  hasRoute<TradeDestination>() || hasRoute<PositionDestination>() || hasRoute<SettingsDestination>() ||
+  hasRoute<TradeDestination>() ||
+    hasRoute<PositionDestination>() ||
+    hasRoute<SettingsDestination>() ||
     hasRoute<AccountSetupDestination>()

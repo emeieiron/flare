@@ -41,8 +41,8 @@ import xyz.mcxross.flare.hyperliquid.model.VaultEquity
 import xyz.mcxross.flare.hyperliquid.model.normalizeEvmAddress
 
 /**
- * Hyperliquid's `/info` reads. Every request is a POST of `{"type": …}`; every address is
- * validated and lower-cased first. Times are Unix milliseconds.
+ * Hyperliquid's `/info` reads. Every request is a POST of `{"type": …}`; every address is validated
+ * and lower-cased first. Times are Unix milliseconds.
  */
 interface InfoService {
   suspend fun perpMeta(): PerpMeta
@@ -57,8 +57,8 @@ interface InfoService {
   suspend fun allMids(): Map<String, String>
 
   /**
-   * The order book, 20 levels a side. [significantFigures] (2–5) aggregates levels; [mantissa]
-   * (1, 2 or 5) refines it and is only allowed with five figures.
+   * The order book, 20 levels a side. [significantFigures] (2–5) aggregates levels; [mantissa] (1,
+   * 2 or 5) refines it and is only allowed with five figures.
    */
   suspend fun l2Book(coin: String, significantFigures: Int? = null, mantissa: Int? = null): L2Book
 

@@ -1,7 +1,6 @@
 package xyz.mcxross.flare.feature.portfolio
 
 import androidx.compose.ui.graphics.Color
-import kotlin.math.abs
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.design.FlareColors
@@ -72,7 +71,9 @@ internal fun vaultFactColor(value: VaultFactValue): Color =
   if (value is VaultFactValue.Percent && value.signed) amountColor(value.percent)
   else Color.Unspecified
 
-/** An allocation's standing, with the amount where there is one and the deadline where it matters. */
+/**
+ * An allocation's standing, with the amount where there is one and the deadline where it matters.
+ */
 internal fun claimStateText(campaign: Campaign): String {
   val amount = campaign.amount?.let { "$it ${campaign.assetSymbol}" }
   return when (campaign.state) {

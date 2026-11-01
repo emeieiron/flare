@@ -28,11 +28,13 @@ class HyperliquidStrategyMarketFeedTest {
           assertEquals(now.toString(), request.getValue("endTime").jsonPrimitive.content)
           """[{"t":11940000,"T":11999999,"s":"BTC","i":"1m","o":"100.00","h":"101.00","l":"99.00","c":"100.50","v":"20.00"}]"""
         }
-        "l2Book" -> """{"coin":"BTC","time":11999900,"levels":[[{"px":"100.00","sz":"0.0100","n":1}],[{"px":"100.50","sz":"0.0200","n":1}]]}"""
+        "l2Book" ->
+          """{"coin":"BTC","time":11999900,"levels":[[{"px":"100.00","sz":"0.0100","n":1}],[{"px":"100.50","sz":"0.0200","n":1}]]}"""
         else -> error("Unexpected request $type")
       }
     }
-    val result = HyperliquidStrategyMarketFeed(client, HyperliquidVenue().descriptor, { now }).snapshot(key)
+    val result =
+      HyperliquidStrategyMarketFeed(client, HyperliquidVenue().descriptor, { now }).snapshot(key)
     assertEquals(key, result.key)
     assertEquals(now, result.fetchedAtMs)
     assertEquals(100.5, result.candles.single().close)
@@ -43,19 +45,26 @@ class HyperliquidStrategyMarketFeedTest {
 
   @Test
   fun rejectsWrongBindingAndResponseCoinWhileUnavailableBookIsOptional() = runTest {
-    val client = testClient(mapOf(
-      "meta" to """{"universe":[{"name":"BTC","szDecimals":5,"maxLeverage":40}]}""",
-      "candleSnapshot" to "[]",
-    ))
+    val client =
+      testClient(
+        mapOf(
+          "meta" to """{"universe":[{"name":"BTC","szDecimals":5,"maxLeverage":40}]}""",
+          "candleSnapshot" to "[]",
+        ),
+      )
     val feed = HyperliquidStrategyMarketFeed(client, HyperliquidVenue().descriptor, { now })
     assertFailsWith<IllegalArgumentException> { feed.snapshot(key.copy(network = "testnet")) }
     assertFailsWith<IllegalArgumentException> { feed.snapshot(key.copy(venueId = "decibel")) }
     assertFailsWith<IllegalStateException> { feed.snapshot(key.copy(timeframeMs = 7)) }
     assertNull(feed.snapshot(key).book)
-    val wrong = testClient(mapOf(
-      "meta" to """{"universe":[{"name":"BTC","szDecimals":5,"maxLeverage":40}]}""",
-      "candleSnapshot" to """[{"t":11940000,"T":11999999,"s":"ETH","i":"1m","o":"100","h":"101","l":"99","c":"100","v":"20"}]""",
-    ))
+    val wrong =
+      testClient(
+        mapOf(
+          "meta" to """{"universe":[{"name":"BTC","szDecimals":5,"maxLeverage":40}]}""",
+          "candleSnapshot" to
+            """[{"t":11940000,"T":11999999,"s":"ETH","i":"1m","o":"100","h":"101","l":"99","c":"100","v":"20"}]""",
+        ),
+      )
     assertFailsWith<IllegalArgumentException> {
       HyperliquidStrategyMarketFeed(wrong, HyperliquidVenue().descriptor, { now }).snapshot(key)
     }

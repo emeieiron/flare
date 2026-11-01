@@ -14,7 +14,10 @@ class SdkOrderShapesTest {
   @Test
   fun writesMarketIocWithABuilderFee() =
     check(
-      PlaceOrders(listOf(order(0, true, "65325", "0.01", type = ioc, cloid = CLOID)), builder = BUILDER),
+      PlaceOrders(
+        listOf(order(0, true, "65325", "0.01", type = ioc, cloid = CLOID)),
+        builder = BUILDER,
+      ),
       """{"type":"order","orders":[{"a":0,"b":true,"p":"65325","s":"0.01","r":false,"t":{"limit":{"tif":"Ioc"}},"c":"0x0123456789abcdef0123456789abcdef"}],"grouping":"na","builder":{"b":"0x8c967e73e7b15087c42a10d344cff4c96d877f1d","f":50}}""",
       "84a474797065a56f72646572a66f72646572739187a16100a162c3a170a53635333235a173a4302e3031a172c2a17481a56c696d697481a3746966a3496f63a163d92230783031323334353637383961626364656630313233343536373839616263646566a867726f7570696e67a26e61a76275696c64657282a162d92a307838633936376537336537623135303837633432613130643334346366663463393664383737663164a16632",
     )
@@ -27,12 +30,18 @@ class SdkOrderShapesTest {
       "83a474797065a56f72646572a66f72646572739187a16100a162c2a170a53730303030a173a3302e35a172c2a17481a56c696d697481a3746966a3477463a163d92230783031323334353637383961626364656630313233343536373839616263646566a867726f7570696e67a26e61",
     )
     check(
-      PlaceOrders(listOf(order(1, true, "3000.5", "1.25", type = OrderType.Limit(TimeInForce.ALO), cloid = CLOID))),
+      PlaceOrders(
+        listOf(
+          order(1, true, "3000.5", "1.25", type = OrderType.Limit(TimeInForce.ALO), cloid = CLOID),
+        ),
+      ),
       """{"type":"order","orders":[{"a":1,"b":true,"p":"3000.5","s":"1.25","r":false,"t":{"limit":{"tif":"Alo"}},"c":"0x0123456789abcdef0123456789abcdef"}],"grouping":"na"}""",
       "83a474797065a56f72646572a66f72646572739187a16101a162c3a170a6333030302e35a173a4312e3235a172c2a17481a56c696d697481a3746966a3416c6fa163d92230783031323334353637383961626364656630313233343536373839616263646566a867726f7570696e67a26e61",
     )
     check(
-      PlaceOrders(listOf(order(0, false, "64000", "0.01", reduceOnly = true, type = ioc, cloid = CLOID))),
+      PlaceOrders(
+        listOf(order(0, false, "64000", "0.01", reduceOnly = true, type = ioc, cloid = CLOID)),
+      ),
       """{"type":"order","orders":[{"a":0,"b":false,"p":"64000","s":"0.01","r":true,"t":{"limit":{"tif":"Ioc"}},"c":"0x0123456789abcdef0123456789abcdef"}],"grouping":"na"}""",
       "83a474797065a56f72646572a66f72646572739187a16100a162c2a170a53634303030a173a4302e3031a172c3a17481a56c696d697481a3746966a3496f63a163d92230783031323334353637383961626364656630313233343536373839616263646566a867726f7570696e67a26e61",
     )
@@ -52,8 +61,22 @@ class SdkOrderShapesTest {
       PlaceOrders(
         listOf(
           order(0, true, "65000", "0.01", type = gtc, cloid = CLOID),
-          order(0, false, "63000", "0.01", reduceOnly = true, type = trigger("70000", TpSl.TAKE_PROFIT)),
-          order(0, false, "54000", "0.01", reduceOnly = true, type = trigger("60000", TpSl.STOP_LOSS)),
+          order(
+            0,
+            false,
+            "63000",
+            "0.01",
+            reduceOnly = true,
+            type = trigger("70000", TpSl.TAKE_PROFIT),
+          ),
+          order(
+            0,
+            false,
+            "54000",
+            "0.01",
+            reduceOnly = true,
+            type = trigger("60000", TpSl.STOP_LOSS),
+          ),
         ),
         OrderGrouping.NORMAL_TPSL,
         BUILDER,
@@ -67,7 +90,15 @@ class SdkOrderShapesTest {
     check(
       PlaceOrders(
         listOf(
-          order(0, true, "66000", "0", reduceOnly = true, type = trigger("60000", TpSl.TAKE_PROFIT), cloid = CLOID),
+          order(
+            0,
+            true,
+            "66000",
+            "0",
+            reduceOnly = true,
+            type = trigger("60000", TpSl.TAKE_PROFIT),
+            cloid = CLOID,
+          ),
           order(0, true, "77000", "0", reduceOnly = true, type = trigger("70000", TpSl.STOP_LOSS)),
         ),
         OrderGrouping.POSITION_TPSL,

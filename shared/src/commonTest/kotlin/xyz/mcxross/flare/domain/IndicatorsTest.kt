@@ -24,7 +24,7 @@ class IndicatorsTest {
   fun constantSeriesHasZeroMacd() {
     val macd = TradingIndicators.macd(List(40) { 7.0 })
     assertTrue(
-      macd.all { abs(it.macd) < 1e-9 && abs(it.signal) < 1e-9 && abs(it.histogram) < 1e-9 }
+      macd.all { abs(it.macd) < 1e-9 && abs(it.signal) < 1e-9 && abs(it.histogram) < 1e-9 },
     )
   }
 }

@@ -50,7 +50,8 @@ fun JevKeySheet(state: JevSettingsUiState, onIntent: (JevSettingsIntent) -> Unit
       placeholder = if (state.metadata.configured) "Replacement API key" else "Jev API key",
       modifier = Modifier.fillMaxWidth(),
       singleLine = true,
-      keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
+      keyboardOptions =
+        KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password),
       visualTransformation = PasswordVisualTransformation(),
     )
     Spacer(Modifier.height(16.dp))

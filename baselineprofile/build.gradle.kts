@@ -12,7 +12,8 @@ android {
     minSdk = 28
     targetSdk = libs.versions.android.targetSdk.get().toInt()
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    // Benchmarks on the emulator are for comparing builds, not absolute numbers; a phone runs clean.
+    // Benchmarks on the emulator are for comparing builds, not absolute numbers; a phone runs
+    // clean.
     testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "EMULATOR"
   }
 

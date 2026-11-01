@@ -48,9 +48,16 @@ class HyperliquidChartAndDetailsTest {
   fun fallsBackToCachedCandlesOffline() = runTest {
     val cache = MemoryMarketCache()
     val client = testClient(emptyMap())
-    val charts = HyperliquidChartRepository(client, HyperliquidMarketsRepository(client, memoryPreferences(), cache), cache)
+    val charts =
+      HyperliquidChartRepository(
+        client,
+        HyperliquidMarketsRepository(client, memoryPreferences(), cache),
+        cache,
+      )
     val hourAgo = Clock.System.now().toEpochMilliseconds() - 3_600_000L
-    cache.upsertCandles(listOf(CandleEntity("BTC", "1h", hourAgo, hourAgo + 3_599_999L, 1.0, 2.0, 0.5, 1.5, 3.0)))
+    cache.upsertCandles(
+      listOf(CandleEntity("BTC", "1h", hourAgo, hourAgo + 3_599_999L, 1.0, 2.0, 0.5, 1.5, 3.0)),
+    )
 
     val snapshot = charts.candles("BTC", ChartTimeframe.ONE_HOUR)
 
@@ -63,10 +70,14 @@ class HyperliquidChartAndDetailsTest {
   fun readsTheBookAsDecimalTextAndTradesNewestFirst() = runTest {
     val client =
       testClient(
-        MarketResponses + mapOf("l2Book" to Fixtures.L2_BOOK, "recentTrades" to Fixtures.RECENT_TRADES)
+        MarketResponses +
+          mapOf("l2Book" to Fixtures.L2_BOOK, "recentTrades" to Fixtures.RECENT_TRADES),
       )
     val details =
-      HyperliquidMarketDetailsRepository(client, HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()))
+      HyperliquidMarketDetailsRepository(
+        client,
+        HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()),
+      )
 
     details.refresh("BTC")
 
@@ -88,7 +99,10 @@ class HyperliquidChartAndDetailsTest {
   fun aFailedRefreshKeepsTheMarketAndSaysSo() = runTest {
     val client = testClient(emptyMap())
     val details =
-      HyperliquidMarketDetailsRepository(client, HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()))
+      HyperliquidMarketDetailsRepository(
+        client,
+        HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()),
+      )
 
     details.refresh("BTC")
 
@@ -101,7 +115,10 @@ class HyperliquidChartAndDetailsTest {
   fun neverStreamsACoinHyperliquidDoesNotList() = runTest {
     val client = testClient(MarketResponses)
     val details =
-      HyperliquidMarketDetailsRepository(client, HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()))
+      HyperliquidMarketDetailsRepository(
+        client,
+        HyperliquidMarketsRepository(client, memoryPreferences(), MemoryMarketCache()),
+      )
     details.refresh("NOPE")
 
     details.connectLive("NOPE")

@@ -99,7 +99,7 @@ interface MarketCacheDao {
 
   @Query(
     "SELECT * FROM candles WHERE marketAddress = :market AND interval = :interval " +
-      "AND openTimeMs BETWEEN :startTimeMs AND :endTimeMs ORDER BY openTimeMs"
+      "AND openTimeMs BETWEEN :startTimeMs AND :endTimeMs ORDER BY openTimeMs",
   )
   suspend fun candles(
     market: String,
@@ -138,7 +138,7 @@ interface TransactionJournalDao {
 
   @Query(
     "UPDATE pending_transactions SET hash = :newHash, state = :state, " +
-      "updatedAtMs = :updatedAtMs WHERE hash = :oldHash"
+      "updatedAtMs = :updatedAtMs WHERE hash = :oldHash",
   )
   suspend fun replaceHash(
     oldHash: String,
@@ -203,7 +203,4 @@ expect object FlareDatabaseConstructor : RoomDatabaseConstructor<FlareDatabase> 
 }
 
 fun buildFlareDatabase(builder: RoomDatabase.Builder<FlareDatabase>): FlareDatabase =
-  builder
-    .setDriver(BundledSQLiteDriver())
-    .setQueryCoroutineContext(Dispatchers.Default)
-    .build()
+  builder.setDriver(BundledSQLiteDriver()).setQueryCoroutineContext(Dispatchers.Default).build()

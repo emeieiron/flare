@@ -45,7 +45,8 @@ data class SecondaryCollateral(
   @SerialName("withdrawable_amount") val withdrawableAmount: Double = 0.0,
 ) {
   /** The share of value that counts toward margin, as a percentage. */
-  val creditPercent: Double get() = (10_000 - haircutBps) / 100.0
+  val creditPercent: Double
+    get() = (10_000 - haircutBps) / 100.0
 }
 
 @Serializable
@@ -79,8 +80,7 @@ data class ProductFees(
   @SerialName("user_taker_rate") val takerRate: Double,
 )
 
-@Serializable
-data class AccountFees(val perp: ProductFees? = null, val spot: ProductFees? = null)
+@Serializable data class AccountFees(val perp: ProductFees? = null, val spot: ProductFees? = null)
 
 @Serializable
 data class Position(
@@ -280,8 +280,11 @@ data class TwapOrder(
   @SerialName("transaction_unix_ms") val transactionUnixMs: Long = 0L,
   @SerialName("client_order_id") val clientOrderId: String? = null,
 ) {
-  val twapId: String get() = orderId
-  val executedSize: Double get() = (originalSize - remainingSize).coerceAtLeast(0.0)
+  val twapId: String
+    get() = orderId
+
+  val executedSize: Double
+    get() = (originalSize - remainingSize).coerceAtLeast(0.0)
 }
 
 @Serializable
@@ -356,16 +359,26 @@ data class VaultInfo(
     weeklyWinRate12w = null,
   )
 
-  val totalAum: Double get() = tvl ?: totalAumFallback
+  val totalAum: Double
+    get() = tvl ?: totalAumFallback
+
   val performanceFeeBps: Int
-    get() = if (performanceFeeBpsFallback > 0) performanceFeeBpsFallback else ((profitShare ?: 0.0) * 100.0).toInt()
-  val performanceFeePercent: Double get() = profitShare ?: (performanceFeeBpsFallback / 100.0)
-  val lockupSeconds: Long get() = lockdownPeriodS ?: lockupSecondsFallback
+    get() =
+      if (performanceFeeBpsFallback > 0) performanceFeeBpsFallback
+      else ((profitShare ?: 0.0) * 100.0).toInt()
+
+  val performanceFeePercent: Double
+    get() = profitShare ?: (performanceFeeBpsFallback / 100.0)
+
+  val lockupSeconds: Long
+    get() = lockdownPeriodS ?: lockupSecondsFallback
+
   val isActive: Boolean
     get() = if (status != null) status.equals("active", ignoreCase = true) else isActiveFallback
 
   /** Decibel's own DLP vault, rather than one a user launched. */
-  val isProtocol: Boolean get() = vaultType?.equals("protocol", ignoreCase = true) == true
+  val isProtocol: Boolean
+    get() = vaultType?.equals("protocol", ignoreCase = true) == true
 }
 
 @Serializable
@@ -406,24 +419,31 @@ data class AccountVaultPerformance(
   )
 
   /**
-   * Normalized share count. Decibel Move contracts store shares with 6 decimals (1 share = 1,000,000 base units).
-   * The Decibel indexer API returns raw integer share units (e.g. 10,000,000 for 10 shares).
-   * This property presents normalized, human-readable shares for intuitive understanding.
+   * Normalized share count. Decibel Move contracts store shares with 6 decimals (1 share =
+   * 1,000,000 base units). The Decibel indexer API returns raw integer share units (e.g. 10,000,000
+   * for 10 shares). This property presents normalized, human-readable shares for intuitive
+   * understanding.
    */
   val currentNumShares: Double
-    get() = if (rawShares >= 100_000.0) {
-      rawShares / 1_000_000.0
-    } else {
-      rawShares
-    }
+    get() =
+      if (rawShares >= 100_000.0) {
+        rawShares / 1_000_000.0
+      } else {
+        rawShares
+      }
 
-  val rawNumShares: Long get() = rawShares.toLong()
+  val rawNumShares: Long
+    get() = rawShares.toLong()
 
   val currentValue: Double
-    get() = currentValueOfShares ?: if (currentValueFallback > 0.0) currentValueFallback else (currentNumShares * effectiveSharePrice)
+    get() =
+      currentValueOfShares
+        ?: if (currentValueFallback > 0.0) currentValueFallback
+        else (currentNumShares * effectiveSharePrice)
 
   val netDeposits: Double
-    get() = if (netDepositsFallback != 0.0) netDepositsFallback else (totalDeposited - totalWithdrawn)
+    get() =
+      if (netDepositsFallback != 0.0) netDepositsFallback else (totalDeposited - totalWithdrawn)
 
   val realizedPnl: Double
     get() = if (realizedPnlFallback != 0.0) realizedPnlFallback else allTimeEarned

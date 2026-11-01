@@ -56,16 +56,15 @@ internal class DefaultStreamService(
     require(subscriptions.mapNotNull { it.user?.lowercase() }.toSet().size <= MAX_USERS) {
       "Hyperliquid permits at most $MAX_USERS users across user subscriptions"
     }
-    val subscribeMessages =
-      subscriptions.map { subscription ->
-        json.encodeToString(
-          JsonObject.serializer(),
-          buildJsonObject {
-            put("method", "subscribe")
-            put("subscription", subscription.wire)
-          },
-        )
-      }
+    val subscribeMessages = subscriptions.map { subscription ->
+      json.encodeToString(
+        JsonObject.serializer(),
+        buildJsonObject {
+          put("method", "subscribe")
+          put("subscription", subscription.wire)
+        },
+      )
+    }
     var reconnectAttempt = 0
 
     while (currentCoroutineContext().isActive) {
@@ -95,12 +94,12 @@ internal class DefaultStreamService(
                   this@channelFlow.send(
                     StreamEvent.Rejected(
                       (payload["data"] as? JsonPrimitive)?.contentOrNull
-                        ?: "Hyperliquid rejected a request"
-                    )
+                        ?: "Hyperliquid rejected a request",
+                    ),
                   )
                 else ->
                   this@channelFlow.send(
-                    StreamEvent.Message(channel, decodeStreamData(channel, payload["data"], json))
+                    StreamEvent.Message(channel, decodeStreamData(channel, payload["data"], json)),
                   )
               }
             }

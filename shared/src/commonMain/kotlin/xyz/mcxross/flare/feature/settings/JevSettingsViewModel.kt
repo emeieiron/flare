@@ -21,15 +21,19 @@ fun interface JevKeyChecker {
 class DirectJevKeyChecker(
   private val client: HttpClient,
 ) : JevKeyChecker {
-  override suspend fun check(key: String): Boolean = try {
-    client.get("https://api.typesafe.ai/v1/models") {
-      header("Authorization", "Bearer $key")
-    }.status.value in 200..299
-  } catch (cancelled: CancellationException) {
-    throw cancelled
-  } catch (_: Exception) {
-    false
-  }
+  override suspend fun check(key: String): Boolean =
+    try {
+      client
+        .get("https://api.typesafe.ai/v1/models") {
+          header("Authorization", "Bearer $key")
+        }
+        .status
+        .value in 200..299
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      false
+    }
 }
 
 data class JevSettingsUiState(
@@ -46,13 +50,19 @@ data class JevSettingsUiState(
 
 sealed interface JevSettingsIntent {
   data object Open : JevSettingsIntent
+
   data object Dismiss : JevSettingsIntent
+
   data class ChangeKey(val value: String) : JevSettingsIntent {
     override fun toString(): String = "ChangeKey(<redacted>)"
   }
+
   data object Save : JevSettingsIntent
+
   data object Check : JevSettingsIntent
+
   data object Remove : JevSettingsIntent
+
   data class SetEnabled(val enabled: Boolean) : JevSettingsIntent
 }
 
@@ -72,31 +82,37 @@ class JevSettingsViewModel(
 
   fun onIntent(intent: JevSettingsIntent) {
     when (intent) {
-      JevSettingsIntent.Open -> mutable.update { it.copy(sheetOpen = true, notice = null, keyInput = "") }
+      JevSettingsIntent.Open ->
+        mutable.update { it.copy(sheetOpen = true, notice = null, keyInput = "") }
       JevSettingsIntent.Dismiss -> {
         operation?.cancel()
         mutable.update { it.copy(sheetOpen = false, keyInput = "", notice = null, busy = false) }
       }
-      is JevSettingsIntent.ChangeKey -> if (!mutable.value.busy) {
-        mutable.update { it.copy(keyInput = intent.value.take(4_097), notice = null) }
-      }
-      JevSettingsIntent.Save -> withInput { key ->
-        credentials.store(key)
-        mutable.update { it.copy(notice = "API key saved. Enable Jev confluence to use it.") }
-      }
-      JevSettingsIntent.Check -> withInput { key ->
-        val accepted = checker.check(key)
-        mutable.update {
-          it.copy(
-            notice = if (accepted) "API key accepted."
-              else "Jev could not accept this key. Check the key and try again."
-          )
+      is JevSettingsIntent.ChangeKey ->
+        if (!mutable.value.busy) {
+          mutable.update { it.copy(keyInput = intent.value.take(4_097), notice = null) }
         }
-      }
-      JevSettingsIntent.Remove -> work {
-        credentials.remove()
-        mutable.update { it.copy(keyInput = "", notice = "API key removed.") }
-      }
+      JevSettingsIntent.Save ->
+        withInput { key ->
+          credentials.store(key)
+          mutable.update { it.copy(notice = "API key saved. Enable Jev confluence to use it.") }
+        }
+      JevSettingsIntent.Check ->
+        withInput { key ->
+          val accepted = checker.check(key)
+          mutable.update {
+            it.copy(
+              notice =
+                if (accepted) "API key accepted."
+                else "Jev could not accept this key. Check the key and try again.",
+            )
+          }
+        }
+      JevSettingsIntent.Remove ->
+        work {
+          credentials.remove()
+          mutable.update { it.copy(keyInput = "", notice = "API key removed.") }
+        }
       is JevSettingsIntent.SetEnabled -> work { credentials.setEnabled(intent.enabled) }
     }
   }
@@ -105,7 +121,10 @@ class JevSettingsViewModel(
     val key = mutable.value.keyInput
     if (!JevCredentials.validInput(key)) {
       mutable.update {
-        it.copy(notice = "Enter an API key without spaces or control characters (maximum 4,096 characters).")
+        it.copy(
+          notice =
+            "Enter an API key without spaces or control characters (maximum 4,096 characters).",
+        )
       }
       return
     }
@@ -122,7 +141,9 @@ class JevSettingsViewModel(
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (_: Exception) {
-        mutable.update { it.copy(notice = "Could not complete this action. Open Flare and try again.") }
+        mutable.update {
+          it.copy(notice = "Could not complete this action. Open Flare and try again.")
+        }
       } finally {
         mutable.update { it.copy(busy = false) }
       }

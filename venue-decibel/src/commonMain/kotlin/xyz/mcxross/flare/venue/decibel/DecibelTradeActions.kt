@@ -2,20 +2,21 @@ package xyz.mcxross.flare.venue.decibel
 
 import xyz.mcxross.flare.decibel.api.DecibelCommand
 import xyz.mcxross.flare.decibel.model.DecimalInput
+import xyz.mcxross.flare.decibel.model.MarginMode as DecibelMarginMode
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.venue.model.MarginMode
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TradeAction
-import xyz.mcxross.flare.decibel.model.MarginMode as DecibelMarginMode
 
 /** The Decibel transaction for [this] action. USDC moves through [usdcMetadata]. */
 internal fun TradeAction.toDecibelCommand(usdcMetadata: String): DecibelCommand =
   when (this) {
     is TradeAction.PlaceOrder -> {
       val rules = market.decibelRules()
-      if (market.kind == MarketKind.SPOT) DecibelCommand.PlaceSpotOrder(account, rules.validated(order))
+      if (market.kind == MarketKind.SPOT)
+        DecibelCommand.PlaceSpotOrder(account, rules.validated(order))
       else if (order.type == OrderType.TWAP)
         DecibelCommand.PlaceTwapOrder(account, rules.validatedTwap(order))
       else DecibelCommand.PlaceOrder(account, rules.validated(order))
@@ -36,10 +37,13 @@ internal fun TradeAction.toDecibelCommand(usdcMetadata: String): DecibelCommand 
         stopLossSize = stopLossSize?.let { rules.sizeUnits("TP/SL size", it) },
       )
     }
-    is TradeAction.CancelPositionTpSl -> DecibelCommand.CancelPositionTpSl(account, marketId, orderId)
+    is TradeAction.CancelPositionTpSl ->
+      DecibelCommand.CancelPositionTpSl(account, marketId, orderId)
     is TradeAction.CancelOrders -> error("Decibel cancels one order at a time")
     is TradeAction.ConfigureMarket -> {
-      require(leverage in 1..UByte.MAX_VALUE.toInt()) { "Choose leverage within this market’s limit" }
+      require(leverage in 1..UByte.MAX_VALUE.toInt()) {
+        "Choose leverage within this market’s limit"
+      }
       DecibelCommand.ConfigureMarket(
         account,
         marketId,
@@ -80,8 +84,7 @@ internal fun TradeAction.toDecibelCommand(usdcMetadata: String): DecibelCommand 
       DecibelCommand.RedeemFromVault(account, vault, units)
     }
     TradeAction.CreateTradingAccount -> DecibelCommand.CreateSubaccount
-    is TradeAction.MovePerpSpot ->
-      error("Decibel doesn’t keep perpetuals and spot margin apart")
+    is TradeAction.MovePerpSpot -> error("Decibel doesn’t keep perpetuals and spot margin apart")
   }
 
 private fun Market.decibelRules(): DecibelOrderRules =

@@ -22,8 +22,8 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * Lives as long as the process, since the app's dependencies outlive any one activity. Each activity
- * [attach]es itself, and prompts show over whichever one is resumed.
+ * Lives as long as the process, since the app's dependencies outlive any one activity. Each
+ * activity [attach]es itself, and prompts show over whichever one is resumed.
  */
 class AndroidWalletVault(context: Context) : WalletVault {
   @Volatile private var authorizedUntilElapsedMs: Long = 0L
@@ -131,7 +131,7 @@ class AndroidWalletVault(context: Context) : WalletVault {
         BiometricManager.BIOMETRIC_SUCCESS
     ) {
       throw WalletVaultException.Unavailable(
-        "A secure screen lock or strong biometric must be configured before storing a wallet"
+        "A secure screen lock or strong biometric must be configured before storing a wallet",
       )
     }
 
@@ -157,8 +157,8 @@ class AndroidWalletVault(context: Context) : WalletVault {
                     WalletVaultException.Cancelled()
                   } else {
                     WalletVaultException.Unavailable(errString.toString())
-                  }
-                )
+                  },
+                ),
               )
             }
           }

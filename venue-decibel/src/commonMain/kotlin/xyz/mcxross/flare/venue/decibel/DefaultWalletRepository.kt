@@ -15,9 +15,9 @@ import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.account.SingleKeyAccount
 import xyz.mcxross.kaptos.core.crypto.Aip80PrivateKey
 import xyz.mcxross.kaptos.core.crypto.Ed25519PrivateKey
-import xyz.mcxross.kaptos.core.crypto.Secp256k1PrivateKey
 import xyz.mcxross.kaptos.core.crypto.MnemonicPhrase
 import xyz.mcxross.kaptos.core.crypto.MnemonicWordCount
+import xyz.mcxross.kaptos.core.crypto.Secp256k1PrivateKey
 
 /**
  * Aptos keys in the platform vault: the owner as a recovery phrase (or AIP-80 key) and the trading
@@ -51,7 +51,12 @@ class DefaultWalletRepository(
       val id = "owner_$address"
       storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), phrase, prompt, scoped = true)
       preferences.registerProfile(
-        AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false, createdInApp = true)
+        AccountProfile(
+          id,
+          ownerAddress = address,
+          ownerBackupConfirmed = false,
+          createdInApp = true,
+        ),
       )
       OwnerBackup(address, phrase.split(' '))
     } finally {
@@ -68,7 +73,7 @@ class DefaultWalletRepository(
       val id = saved?.id ?: "owner_$address"
       storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), credential, prompt, scoped = true)
       preferences.registerProfile(
-        (saved ?: AccountProfile(id)).copy(ownerAddress = address, ownerBackupConfirmed = true)
+        (saved ?: AccountProfile(id)).copy(ownerAddress = address, ownerBackupConfirmed = true),
       )
       address
     } finally {

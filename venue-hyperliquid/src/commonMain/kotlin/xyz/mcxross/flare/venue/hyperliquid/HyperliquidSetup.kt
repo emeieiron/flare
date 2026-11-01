@@ -79,7 +79,12 @@ class HyperliquidSetup(
       else wallets.newApiWallet(prompt.copy(requireFreshAuthorization = false))
     val result =
       actions.sendAsOwner(ApproveAgent(agent, AGENT_NAME), ownerPrompt(prompt)) { nonce ->
-        JournaledAction.ApproveAgent(owner, agent, AGENT_NAME, nonce + HyperliquidActions.NONCE_WINDOW_MS)
+        JournaledAction.ApproveAgent(
+          owner,
+          agent,
+          AGENT_NAME,
+          nonce + HyperliquidActions.NONCE_WINDOW_MS,
+        )
       }
     if (result !is ActionState.Committed) throw SetupTransactionException(result)
     var lastError: Exception? = null
@@ -94,7 +99,8 @@ class HyperliquidSetup(
       } catch (error: Exception) {
         lastError = error
       }
-      if (attempt < VERIFICATION_ATTEMPTS - 1) delay(verificationDelayMs shl attempt.coerceAtMost(2))
+      if (attempt < VERIFICATION_ATTEMPTS - 1)
+        delay(verificationDelayMs shl attempt.coerceAtMost(2))
     }
     throw IllegalStateException(
       "Hyperliquid accepted this device’s key, but doesn’t list it yet. Try again in a moment.",
@@ -127,28 +133,52 @@ class HyperliquidSetup(
     val owner = owner()
     val agent =
       client.info.extraAgents(owner).firstOrNull { it.address.sameAs(address) }
-        ?: return ActionState.Failed("That key can’t trade for this account", definitelyNotSubmitted = true)
+        ?: return ActionState.Failed(
+          "That key can’t trade for this account",
+          definitelyNotSubmitted = true,
+        )
     val result =
-      actions.sendAsOwner(ApproveAgent.revoke(agent.name), prompt.copy(requireFreshAuthorization = true)) {
-        nonce ->
-        JournaledAction.RevokeAgent(owner, agent.address, agent.name, nonce + HyperliquidActions.NONCE_WINDOW_MS)
+      actions.sendAsOwner(
+        ApproveAgent.revoke(agent.name),
+        prompt.copy(requireFreshAuthorization = true),
+      ) { nonce ->
+        JournaledAction.RevokeAgent(
+          owner,
+          agent.address,
+          agent.name,
+          nonce + HyperliquidActions.NONCE_WINDOW_MS,
+        )
       }
-    if (result is ActionState.Committed && wallets.profile.first().apiWalletAddress.sameAs(address)) {
+    if (
+      result is ActionState.Committed && wallets.profile.first().apiWalletAddress.sameAs(address)
+    ) {
       wallets.discardApiWallet(prompt)
     }
     return result
   }
 
-  /** One approval covers perpetuals and spot. [feeBps] is in basis points; Hyperliquid counts tenths. */
+  /**
+   * One approval covers perpetuals and spot. [feeBps] is in basis points; Hyperliquid counts
+   * tenths.
+   */
   suspend fun approveBuilderFee(builder: String, feeBps: UInt, prompt: VaultPrompt): ActionState {
     require(builder.isNotBlank()) { "No builder to approve" }
-    require(feeBps in 1u..MAX_BUILDER_FEE_BPS) { "Builder fee must be between 1 and 10 bps (up to 0.10%)" }
+    require(feeBps in 1u..MAX_BUILDER_FEE_BPS) {
+      "Builder fee must be between 1 and 10 bps (up to 0.10%)"
+    }
     val owner = owner()
     val tenths = feeBps.toInt() * 10
     val result =
-      actions.sendAsOwner(ApproveBuilderFee.ofTenthsOfBasisPoint(builder, tenths), ownerPrompt(prompt)) {
-        nonce ->
-        JournaledAction.ApproveBuilderFee(owner, builder, tenths, nonce + HyperliquidActions.NONCE_WINDOW_MS)
+      actions.sendAsOwner(
+        ApproveBuilderFee.ofTenthsOfBasisPoint(builder, tenths),
+        ownerPrompt(prompt),
+      ) { nonce ->
+        JournaledAction.ApproveBuilderFee(
+          owner,
+          builder,
+          tenths,
+          nonce + HyperliquidActions.NONCE_WINDOW_MS,
+        )
       }
     if (result is ActionState.Committed) {
       preferences.setBuilderSupport(builder, feeBps.toInt(), builderApproved = true)
@@ -160,8 +190,10 @@ class HyperliquidSetup(
   suspend fun revokeBuilderFee(builder: String, prompt: VaultPrompt): ActionState {
     val owner = owner()
     val result =
-      actions.sendAsOwner(ApproveBuilderFee.revoke(builder), prompt.copy(requireFreshAuthorization = true)) {
-        nonce ->
+      actions.sendAsOwner(
+        ApproveBuilderFee.revoke(builder),
+        prompt.copy(requireFreshAuthorization = true),
+      ) { nonce ->
         JournaledAction.RevokeBuilderFee(owner, builder, nonce + HyperliquidActions.NONCE_WINDOW_MS)
       }
     if (result is ActionState.Committed) {
@@ -176,7 +208,8 @@ class HyperliquidSetup(
     val saved = preferences.values.first()
     val owner = saved.ownerAddress ?: return
     val builder = saved.builderAddress ?: defaultBuilder?.takeIf(String::isNotBlank) ?: return
-    val approved = runSuspendCatching { client.info.maxBuilderFee(owner, builder) > 0 }.getOrNull() ?: return
+    val approved =
+      runSuspendCatching { client.info.maxBuilderFee(owner, builder) > 0 }.getOrNull() ?: return
     if (saved.builderApproved != approved || saved.spotBuilderApproved != approved) {
       preferences.setBuilderSupport(builder, saved.builderFeeBps, builderApproved = approved)
       preferences.setSpotBuilderApproved(approved, builder)
@@ -197,7 +230,9 @@ class HyperliquidSetup(
   }
 
   companion object {
-    /** The name Flare approves its agents under: one per account, so a new device replaces the last. */
+    /**
+     * The name Flare approves its agents under: one per account, so a new device replaces the last.
+     */
     const val AGENT_NAME = "flare"
     private const val VERIFICATION_ATTEMPTS = 5
     private const val MAX_BUILDER_FEE_BPS = 10u

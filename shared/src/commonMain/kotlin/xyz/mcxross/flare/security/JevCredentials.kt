@@ -3,8 +3,8 @@ package xyz.mcxross.flare.security
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -27,9 +27,10 @@ class JevCredentials(
   private val preferences: AppPreferences,
 ) {
   private val revision = MutableStateFlow(0L)
-  val metadata: Flow<JevCredentialMetadata> = combine(preferences.values, revision) { config, version ->
-    JevCredentialMetadata(config.jevKeyConfigured, config.useJevConfluence, version)
-  }
+  val metadata: Flow<JevCredentialMetadata> =
+    combine(preferences.values, revision) { config, version ->
+      JevCredentialMetadata(config.jevKeyConfigured, config.useJevConfluence, version)
+    }
   private val mutex = Mutex()
   private val requests = MutableStateFlow<Set<Job>>(emptySet())
   private val prompt = VaultPrompt("Jev API key", "Confirm your identity")
@@ -88,25 +89,26 @@ class JevCredentials(
 
   suspend fun <T> withKey(block: suspend (String) -> T): T = coroutineScope {
     val job = currentCoroutineContext().job
-    val (bytes, generation) = mutex.withLock {
-      check(metadata.first().enabled) { "Enable Jev confluence in Settings to continue." }
-      requests.update { it + job }
-      val generation = vault.generation
-      try {
-        val config = preferences.values.first()
-        if (!vault.unlocked.value && config.profiles.isEmpty()) {
-          vault.unlock(listOf(WalletSecretSlot.JEV_API_KEY), prompt)
+    val (bytes, generation) =
+      mutex.withLock {
+        check(metadata.first().enabled) { "Enable Jev confluence in Settings to continue." }
+        requests.update { it + job }
+        val generation = vault.generation
+        try {
+          val config = preferences.values.first()
+          if (!vault.unlocked.value && config.profiles.isEmpty()) {
+            vault.unlock(listOf(WalletSecretSlot.JEV_API_KEY), prompt)
+          }
+          vault.read(WalletSecretSlot.JEV_API_KEY, prompt) to generation
+        } catch (_: WalletVaultException.Corrupted) {
+          requests.update { it - job }
+          if (vault.generation == generation) preferences.setJevKeyConfigured(false)
+          throw WalletVaultException.Unavailable("Save a Jev API key in Settings to continue.")
+        } catch (error: Throwable) {
+          requests.update { it - job }
+          throw error
         }
-        vault.read(WalletSecretSlot.JEV_API_KEY, prompt) to generation
-      } catch (_: WalletVaultException.Corrupted) {
-        requests.update { it - job }
-        if (vault.generation == generation) preferences.setJevKeyConfigured(false)
-        throw WalletVaultException.Unavailable("Save a Jev API key in Settings to continue.")
-      } catch (error: Throwable) {
-        requests.update { it - job }
-        throw error
       }
-    }
     try {
       vault.whileAuthorized(generation) {
         currentCoroutineContext().ensureActive()
@@ -119,13 +121,17 @@ class JevCredentials(
   }
 
   private fun cancelRequests() {
-    requests.getAndUpdate { emptySet() }.forEach {
-      it.cancel(CancellationException("Jev credentials changed"))
-    }
+    requests
+      .getAndUpdate { emptySet() }
+      .forEach {
+        it.cancel(CancellationException("Jev credentials changed"))
+      }
   }
 
   companion object {
     fun validInput(key: String): Boolean =
-      key.isNotEmpty() && key.length <= 4_096 && key.all { !it.isWhitespace() && !it.isISOControl() }
+      key.isNotEmpty() &&
+        key.length <= 4_096 &&
+        key.all { !it.isWhitespace() && !it.isISOControl() }
   }
 }

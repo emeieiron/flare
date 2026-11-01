@@ -10,7 +10,8 @@ class SwapRequestTest {
 
   @Test
   fun quantitiesRetainPrecisionAboveTheFloatingPointIntegerRange() {
-    val request = SwapRequest("owner", apt, usdc, SwapAmountKind.EXACT_OUTPUT, "18446744073709551615")
+    val request =
+      SwapRequest("owner", apt, usdc, SwapAmountKind.EXACT_OUTPUT, "18446744073709551615")
     assertEquals("18446744073709551615", request.amount)
     for (amount in listOf("18446744073709551616", "1.5", "1e6", "-1", "0", "01")) {
       assertFailsWith<IllegalArgumentException> { request.copy(amount = amount) }

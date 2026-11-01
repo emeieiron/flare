@@ -60,7 +60,7 @@ class DefaultWalletRepositoryIosTest {
     assertTrue(target.profile.first().apiOnly)
     assertEquals(aip80, target.exportApiWallet(prompt))
     targetPreferences.activateProfile(
-      targetPreferences.values.first().profiles.first { it.ownerAddress == ownerAddress }.id
+      targetPreferences.values.first().profiles.first { it.ownerAddress == ownerAddress }.id,
     )
     assertEquals(phrase, target.exportOwnerMnemonic(prompt))
     assertTrue(target.profile.first().ownerBackupConfirmed)

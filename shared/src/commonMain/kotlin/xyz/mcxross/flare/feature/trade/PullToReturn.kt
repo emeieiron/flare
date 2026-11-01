@@ -35,8 +35,8 @@ private const val RETURN_FLING_VELOCITY = 2_000f
 private const val RETURN_DURATION_MS = 280
 
 /**
- * Pulling past the top of the order view steps back one stage. Normal scrolling is untouched:
- * only drag distance the content could not consume becomes pull.
+ * Pulling past the top of the order view steps back one stage. Normal scrolling is untouched: only
+ * drag distance the content could not consume becomes pull.
  */
 @Stable
 internal class PullToReturnState(
@@ -97,27 +97,28 @@ internal class PullToReturnState(
     settle?.cancel()
     offset = (offset + delta * PULL_RESISTANCE).coerceAtLeast(0f)
     val nowArmed = offset >= threshold
-    if (nowArmed && !armed) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+    if (nowArmed && !armed)
+      haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
     armed = nowArmed
   }
 
   private fun release(velocity: Float) {
     val commit =
-      enabled && (offset >= threshold || (velocity > RETURN_FLING_VELOCITY && offset > threshold / 4))
+      enabled &&
+        (offset >= threshold || (velocity > RETURN_FLING_VELOCITY && offset > threshold / 4))
     armed = false
     if (commit) onReturn()
     val from = offset
-    settle =
-      scope.launch {
-        animate(
-          from,
-          0f,
-          animationSpec =
-            if (commit) tween(RETURN_DURATION_MS) else spring(stiffness = Spring.StiffnessMediumLow),
-        ) { value, _ ->
-          offset = value
-        }
+    settle = scope.launch {
+      animate(
+        from,
+        0f,
+        animationSpec =
+          if (commit) tween(RETURN_DURATION_MS) else spring(stiffness = Spring.StiffnessMediumLow),
+      ) { value, _ ->
+        offset = value
       }
+    }
   }
 }
 
@@ -135,8 +136,8 @@ internal fun rememberPullToReturnState(enabled: Boolean, onReturn: () -> Unit): 
 }
 
 /**
- * Swiping right steps back one stage, like the back gesture but from anywhere on the content.
- * The content follows the finger with the same resistance as a pull.
+ * Swiping right steps back one stage, like the back gesture but from anywhere on the content. The
+ * content follows the finger with the same resistance as a pull.
  */
 @Stable
 internal class SwipeBackState(
@@ -157,27 +158,28 @@ internal class SwipeBackState(
     settle?.cancel()
     offset = (offset + delta * PULL_RESISTANCE).coerceAtLeast(0f)
     val nowArmed = offset >= threshold
-    if (nowArmed && !armed) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+    if (nowArmed && !armed)
+      haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
     armed = nowArmed
   }
 
   fun dragStopped(velocity: Float) {
     val commit =
-      enabled && (offset >= threshold || (velocity > RETURN_FLING_VELOCITY && offset > threshold / 4))
+      enabled &&
+        (offset >= threshold || (velocity > RETURN_FLING_VELOCITY && offset > threshold / 4))
     armed = false
     if (commit) onBack()
     val from = offset
-    settle =
-      scope.launch {
-        animate(
-          from,
-          0f,
-          animationSpec =
-            if (commit) tween(RETURN_DURATION_MS) else spring(stiffness = Spring.StiffnessMediumLow),
-        ) { value, _ ->
-          offset = value
-        }
+    settle = scope.launch {
+      animate(
+        from,
+        0f,
+        animationSpec =
+          if (commit) tween(RETURN_DURATION_MS) else spring(stiffness = Spring.StiffnessMediumLow),
+      ) { value, _ ->
+        offset = value
       }
+    }
   }
 }
 

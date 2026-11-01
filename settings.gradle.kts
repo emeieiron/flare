@@ -27,7 +27,8 @@ dependencyResolutionManagement {
         includeGroupAndSubgroups("com.google")
       }
     }
-    // Only when asked (-PuseMavenLocal=true or FLARE_MAVEN_LOCAL=true), so a locally installed build
+    // Only when asked (-PuseMavenLocal=true or FLARE_MAVEN_LOCAL=true), so a locally installed
+    // build
     // can never stand in for a published one.
     if (useMavenLocal) mavenLocal()
     mavenCentral()
@@ -53,7 +54,9 @@ include(":venue-decibel")
 include(":venue-hyperliquid")
 
 include(":strategies")
+
 include(":jev")
 
 include(":aptos-transaction")
+
 include(":aptos-swap")

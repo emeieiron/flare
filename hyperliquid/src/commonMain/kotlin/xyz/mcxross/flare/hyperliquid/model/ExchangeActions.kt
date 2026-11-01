@@ -12,8 +12,8 @@ import xyz.mcxross.flare.hyperliquid.signing.Eip712Value
 
 /**
  * An action sent to `/exchange`. Field names and their order are those of the official Python SDK
- * (`hyperliquid/exchange.py`, `hyperliquid/utils/signing.py`): for an [L1Action] the order is
- * part of what is signed (its msgpack bytes are hashed), so it must never change.
+ * (`hyperliquid/exchange.py`, `hyperliquid/utils/signing.py`): for an [L1Action] the order is part
+ * of what is signed (its msgpack bytes are hashed), so it must never change.
  */
 sealed interface ExchangeAction {
   /** The action's `type`. */
@@ -21,9 +21,9 @@ sealed interface ExchangeAction {
 }
 
 /**
- * An action signed over a phantom agent (`sign_l1_action`): orders, cancels, leverage, TWAP,
- * vault transfers. An approved agent (API wallet) may sign these for its user, and they may act
- * for a sub-account or vault through `vaultAddress`.
+ * An action signed over a phantom agent (`sign_l1_action`): orders, cancels, leverage, TWAP, vault
+ * transfers. An approved agent (API wallet) may sign these for its user, and they may act for a
+ * sub-account or vault through `vaultAddress`.
  */
 sealed interface L1Action : ExchangeAction {
   /** The action as sent, which is also what its msgpack hash commits to. */
@@ -35,10 +35,10 @@ sealed interface L1Action : ExchangeAction {
 }
 
 /**
- * An action signed by the account owner as human-readable EIP-712 (`sign_user_signed_action`)
- * under the `HyperliquidSignTransaction` domain: agent and builder-fee approvals, withdrawals and
- * transfers. Agents cannot sign these. The nonce is assigned when signing; it is also the
- * message's `nonce` or `time` field.
+ * An action signed by the account owner as human-readable EIP-712 (`sign_user_signed_action`) under
+ * the `HyperliquidSignTransaction` domain: agent and builder-fee approvals, withdrawals and
+ * transfers. Agents cannot sign these. The nonce is assigned when signing; it is also the message's
+ * `nonce` or `time` field.
  */
 sealed interface UserSignedAction : ExchangeAction {
   /** `HyperliquidTransaction:<Name>`. */
@@ -103,10 +103,10 @@ class BuilderFee(address: String, val tenthsOfBasisPoint: Int) {
 }
 
 /**
- * One order: wire keys `a` (asset), `b` (is buy), `p` (price), `s` (size), `r` (reduce only),
- * `t` (type) and optional `c` (cloid). Prices and sizes go out via [HlDecimal.toWire]; round them
- * with [HyperliquidAsset.roundPrice] and [HyperliquidAsset.roundSize] first. A reduce-only trigger
- * of size zero is a `positionTpsl` exit for the whole position, as Hyperliquid's app sends it.
+ * One order: wire keys `a` (asset), `b` (is buy), `p` (price), `s` (size), `r` (reduce only), `t`
+ * (type) and optional `c` (cloid). Prices and sizes go out via [HlDecimal.toWire]; round them with
+ * [HyperliquidAsset.roundPrice] and [HyperliquidAsset.roundSize] first. A reduce-only trigger of
+ * size zero is a `positionTpsl` exit for the whole position, as Hyperliquid's app sends it.
  */
 data class OrderRequest(
   val asset: Int,
@@ -193,7 +193,7 @@ data class CancelOrders(val cancels: List<CancelRequest>) : L1Action {
             buildJsonObject {
               put("a", cancel.asset)
               put("o", cancel.oid)
-            }
+            },
           )
         }
       },
@@ -222,7 +222,7 @@ data class CancelOrdersByCloid(val cancels: List<CancelByCloidRequest>) : L1Acti
             buildJsonObject {
               put("asset", cancel.asset)
               put("cloid", cancel.cloid.hex)
-            }
+            },
           )
         }
       },
@@ -332,9 +332,9 @@ data class CancelTwap(val asset: Int, val twapId: Long) : L1Action {
  * deposit; user vaults: 1 day), in micro-USDC.
  *
  * **Signer:** an approved agent signs it. The SDK's `vault_usd_transfer` signs it with
- * `sign_l1_action` (the phantom-agent scheme API wallets use), always with `vaultAddress = None`, and
- * Hyperliquid's own app signs it with its agent wallet, also without a `vaultAddress`; the SDK's
- * "agents cannot transfer or withdraw funds" means the user-signed `usdSend` and `withdraw3`.
+ * `sign_l1_action` (the phantom-agent scheme API wallets use), always with `vaultAddress = None`,
+ * and Hyperliquid's own app signs it with its agent wallet, also without a `vaultAddress`; the
+ * SDK's "agents cannot transfer or withdraw funds" means the user-signed `usdSend` and `withdraw3`.
  */
 class VaultTransfer(vaultAddress: String, val isDeposit: Boolean, val microUsdc: Long) : L1Action {
   val vaultAddress: String = normalizeEvmAddress(vaultAddress, "vaultAddress")
@@ -401,12 +401,12 @@ data class CreateSubAccount(val name: String) : L1Action {
  * `approveAgent`: lets [agentAddress] (an API wallet) sign L1 actions for the owner and its
  * sub-accounts. Agents cannot sign user-signed actions (withdrawals, transfers, approvals).
  *
- * **Replacing and revoking** (docs, "Nonces and API wallets › API wallet pruning"): approving a
- * new unnamed agent deregisters the existing unnamed one, and approving with an existing
- * [agentName] deregisters the agent registered under that name. Neither the SDK nor the docs have
- * a separate revoke action; Hyperliquid's own app removes an agent by approving the zero address
- * under its name (none for the unnamed agent), which is what [revoke] signs. Agents also lapse when
- * a `valid_until <ms>` suffix on the name expires (at most 180 days ahead) or when the account no
+ * **Replacing and revoking** (docs, "Nonces and API wallets › API wallet pruning"): approving a new
+ * unnamed agent deregisters the existing unnamed one, and approving with an existing [agentName]
+ * deregisters the agent registered under that name. Neither the SDK nor the docs have a separate
+ * revoke action; Hyperliquid's own app removes an agent by approving the zero address under its
+ * name (none for the unnamed agent), which is what [revoke] signs. Agents also lapse when a
+ * `valid_until <ms>` suffix on the name expires (at most 180 days ahead) or when the account no
  * longer has funds. An account holds one unnamed and up to 3 named agents, plus 2 per sub-account.
  * Never reuse a deregistered agent's key: its nonce set may be pruned, making old signed actions
  * replayable.
@@ -583,9 +583,8 @@ class UsdSend(destination: String, val amount: HlDecimal) : UserSignedAction {
 }
 
 /**
- * `usdClassTransfer`: moves USDC between the spot and perp balances ([toPerp] = spot → perp). For
- * a sub-account the SDK appends ` subaccount:<address>` to the amount and sends no
- * `vaultAddress`.
+ * `usdClassTransfer`: moves USDC between the spot and perp balances ([toPerp] = spot → perp). For a
+ * sub-account the SDK appends ` subaccount:<address>` to the amount and sends no `vaultAddress`.
  */
 class UsdClassTransfer(val amount: HlDecimal, val toPerp: Boolean, subAccount: String? = null) :
   UserSignedAction {

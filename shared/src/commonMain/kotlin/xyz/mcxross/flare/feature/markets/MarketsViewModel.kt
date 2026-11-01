@@ -135,7 +135,8 @@ class MarketsViewModel(
   private val perpCategories = venue.perpCategories
   /** Fixed for the venue, so every state shares this one list. */
   private val pageSequence =
-    if (perpCategories == DefaultPerpCategories) MarketPageSequence else marketPageSequence(perpCategories)
+    if (perpCategories == DefaultPerpCategories) MarketPageSequence
+    else marketPageSequence(perpCategories)
 
   // Only the single stateIn upstream collector accesses this cache, in its sequential transform.
   // Keep one projection across filter changes; a new catalog or metadata instance invalidates it.
@@ -180,7 +181,8 @@ class MarketsViewModel(
           assets = assets,
           searching = f.searching,
           searchResults =
-            if (f.searching) searchMarkets(catalog.quotes, assets, f.query) else MarketSearchResults(),
+            if (f.searching) searchMarkets(catalog.quotes, assets, f.query)
+            else MarketSearchResults(),
           pages = pages,
           pageSequence = pageSequence,
           pageQuotes = pageQuotes,
@@ -212,11 +214,15 @@ class MarketsViewModel(
         viewModelScope.launch { repository.toggleFavorite(intent.marketAddress) }
       is MarketsIntent.SetFavoritesOnly ->
         filter.update { f ->
-          f.updatePage(intent.instrument) { it.copy(favoritesOnly = intent.enabled, category = null) }
+          f.updatePage(intent.instrument) {
+            it.copy(favoritesOnly = intent.enabled, category = null)
+          }
         }
       is MarketsIntent.SetCategory ->
         filter.update { f ->
-          f.updatePage(intent.instrument) { it.copy(category = intent.category, favoritesOnly = false) }
+          f.updatePage(intent.instrument) {
+            it.copy(category = intent.category, favoritesOnly = false)
+          }
         }
       is MarketsIntent.SetInstrument -> filter.update { it.copy(instrument = intent.instrument) }
       is MarketsIntent.ShowPage ->
@@ -261,8 +267,9 @@ fun marketPageQuotes(
   quotes: List<MarketQuote>,
   assets: Map<String, xyz.mcxross.flare.data.AssetMetadata>,
   sequence: List<MarketPageKey> = MarketPageSequence,
-): Map<MarketPageKey, List<MarketQuote>> =
-  sequence.associateWith { key -> quotes.filter { it.matches(key, assets) } }
+): Map<MarketPageKey, List<MarketQuote>> = sequence.associateWith { key ->
+  quotes.filter { it.matches(key, assets) }
+}
 
 /** Every stop a swipe passes through, in chip order: perpetuals first, then spot. */
 fun marketPageSequence(perpCategories: List<String> = DefaultPerpCategories): List<MarketPageKey> =
@@ -275,7 +282,8 @@ private val spotCategoryTabs = listOf("crypto")
 
 /**
  * The sequence never changes, so every state shares this one list: screens holding it see the same
- * instance on each price tick and don't recompose for it. Declared after the category lists it reads.
+ * instance on each price tick and don't recompose for it. Declared after the category lists it
+ * reads.
  */
 internal val MarketPageSequence: List<MarketPageKey> = marketPageSequence()
 
@@ -294,7 +302,9 @@ fun searchMarkets(
     else
       quotes
         .mapNotNull { quote ->
-          marketMatchRank(quote, assets[assetKey(quote.market.symbol)], normalized)?.let { quote to it }
+          marketMatchRank(quote, assets[assetKey(quote.market.symbol)], normalized)?.let {
+            quote to it
+          }
         }
         .sortedBy { it.second }
         .map { it.first }
@@ -317,7 +327,8 @@ private fun marketMatchRank(
     ticker.startsWith(query) -> 1
     names.any { it.startsWith(query) } -> 2
     ticker.contains(query) || names.any { it.contains(query) } -> 3
-    kind.isNotBlank() && (kind.contains(query) || marketCategoryLabel(kind).lowercase().contains(query)) -> 4
+    kind.isNotBlank() &&
+      (kind.contains(query) || marketCategoryLabel(kind).lowercase().contains(query)) -> 4
     else -> null
   }
 }

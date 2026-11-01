@@ -5,20 +5,20 @@ import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.binds
 import org.koin.dsl.module
-import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
-import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.hyperliquid.HyperliquidClient
 import xyz.mcxross.flare.hyperliquid.HyperliquidConfig
 import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
 import xyz.mcxross.flare.store.FlareDatabase
+import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.ProtocolVaultTerms
 import xyz.mcxross.flare.venue.ReceiveInstructions
@@ -32,15 +32,17 @@ import xyz.mcxross.flare.venue.VenueSetup
 import xyz.mcxross.flare.venue.WithdrawalTerms
 
 /**
- * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session.
- * The wallet's own address is its account. Setup enables trading with an agent key on this device,
+ * Hyperliquid, reached directly: its reads need no credentials, so there is no backend session. The
+ * wallet's own address is its account. Setup enables trading with an agent key on this device,
  * approved by the owner, plus Flare's builder fee at [builderAddress] if the person opts in (none
  * when it's blank).
  */
 class HyperliquidVenue(builderAddress: String = "") : Venue {
   private val builder: String? =
     builderAddress.trim().takeIf(String::isNotEmpty)?.also {
-      require(HyperliquidCredentialParser.isAddress(it)) { "The builder address must be an EVM address" }
+      require(HyperliquidCredentialParser.isAddress(it)) {
+        "The builder address must be an EVM address"
+      }
     }
 
   override val descriptor: VenueDescriptor =
@@ -133,7 +135,8 @@ class HyperliquidVenue(builderAddress: String = "") : Venue {
     val Explorer =
       VenueExplorer(
         name = "Hyperliquid Explorer",
-        transactionUrlTemplate = "https://app.hyperliquid.xyz/explorer/tx/${VenueExplorer.REFERENCE}",
+        transactionUrlTemplate =
+          "https://app.hyperliquid.xyz/explorer/tx/${VenueExplorer.REFERENCE}",
         // Only L1 transaction hashes have explorer pages; order ids and nonces don't.
         transactionReference = Regex("0x[0-9a-fA-F]{64}"),
       )
@@ -141,36 +144,43 @@ class HyperliquidVenue(builderAddress: String = "") : Venue {
 }
 
 /** Hyperliquid's repositories, on the common bindings from `flareModule`. */
-private fun hyperliquidModule(builder: String?) =
-  module {
-    single { HyperliquidClient(httpClient = get(), config = HyperliquidConfig(HyperliquidDeployment.Mainnet)) }
-    single<CredentialParser> { HyperliquidCredentialParser }
-    singleOf(::HyperliquidWalletRepository) {
-      bind<WalletRepository>()
-      bind<HyperliquidSigningWallet>()
-    }
-    single<HyperliquidSubmitter> { ClientSubmitter(get()) }
-    single { HyperliquidNonces(get()) }
-    single {
-      HyperliquidActions(
-        journal = get<FlareDatabase>().transactionJournalDao(),
-        preferences = get(),
-        wallets = get(),
-        client = get(),
-        submitter = get(),
-        nonces = get(),
-      )
-    }
-    single { HyperliquidSetup(get(), get(), get(), get(), get()) }
-    singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
-    single<StrategyMarketFeed> { HyperliquidStrategyMarketFeed(get(), get()) }
-    singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
-    singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
-    single { HyperliquidFunds(get(), get(), get()) }
-    single { HyperliquidAccountRepository(get(), get(), get(), get(), builder) } binds
-      arrayOf(AccountRepository::class, VaultsRepository::class, RewardsRepository::class)
-    single { HyperliquidAssets(get()) }
-    single<TradingRepository> {
-      HyperliquidTradingRepository(client = get(), actions = get(), setup = get(), funds = get(), assets = get())
-    }
+private fun hyperliquidModule(builder: String?) = module {
+  single {
+    HyperliquidClient(httpClient = get(), config = HyperliquidConfig(HyperliquidDeployment.Mainnet))
   }
+  single<CredentialParser> { HyperliquidCredentialParser }
+  singleOf(::HyperliquidWalletRepository) {
+    bind<WalletRepository>()
+    bind<HyperliquidSigningWallet>()
+  }
+  single<HyperliquidSubmitter> { ClientSubmitter(get()) }
+  single { HyperliquidNonces(get()) }
+  single {
+    HyperliquidActions(
+      journal = get<FlareDatabase>().transactionJournalDao(),
+      preferences = get(),
+      wallets = get(),
+      client = get(),
+      submitter = get(),
+      nonces = get(),
+    )
+  }
+  single { HyperliquidSetup(get(), get(), get(), get(), get()) }
+  singleOf(::HyperliquidMarketsRepository) { bind<MarketsRepository>() }
+  single<StrategyMarketFeed> { HyperliquidStrategyMarketFeed(get(), get()) }
+  singleOf(::HyperliquidChartRepository) { bind<ChartRepository>() }
+  singleOf(::HyperliquidMarketDetailsRepository) { bind<MarketDetailsRepository>() }
+  single { HyperliquidFunds(get(), get(), get()) }
+  single { HyperliquidAccountRepository(get(), get(), get(), get(), builder) } binds
+    arrayOf(AccountRepository::class, VaultsRepository::class, RewardsRepository::class)
+  single { HyperliquidAssets(get()) }
+  single<TradingRepository> {
+    HyperliquidTradingRepository(
+      client = get(),
+      actions = get(),
+      setup = get(),
+      funds = get(),
+      assets = get(),
+    )
+  }
+}

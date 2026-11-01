@@ -25,7 +25,9 @@ object EvmKeys {
     return mnemonicGenerate(words.toUInt())
   }
 
-  /** A new secp256k1 key from FastKrypto's secure randomness, as `0x` and 64 lower-case hex digits. */
+  /**
+   * A new secp256k1 key from FastKrypto's secure randomness, as `0x` and 64 lower-case hex digits.
+   */
   fun generatePrivateKey(): String {
     val key = secp256k1GenerateKeypair().privateKey
     return try {
@@ -40,15 +42,22 @@ object EvmKeys {
   fun normalizeMnemonic(phrase: String): String =
     phrase.trim().lowercase().split(Whitespace).joinToString(" ")
 
-  fun isValidMnemonic(phrase: String): Boolean =
-    runCatching { mnemonicValidate(normalizeMnemonic(phrase)) }.getOrDefault(false)
+  fun isValidMnemonic(phrase: String): Boolean = runCatching {
+    mnemonicValidate(normalizeMnemonic(phrase))
+  }
+    .getOrDefault(false)
 
   /** The key at [DERIVATION_PATH], as `0x` and 64 lower-case hex digits. */
   fun privateKeyFromMnemonic(phrase: String): String {
     require(isValidMnemonic(phrase)) { "Invalid recovery phrase" }
     val key =
       try {
-        mnemonicDerivePrivateKey(normalizeMnemonic(phrase), "", SignatureScheme.SECP256K1, DERIVATION_PATH)
+        mnemonicDerivePrivateKey(
+          normalizeMnemonic(phrase),
+          "",
+          SignatureScheme.SECP256K1,
+          DERIVATION_PATH,
+        )
       } catch (error: Exception) {
         throw IllegalArgumentException("The recovery phrase couldn’t be read")
       }

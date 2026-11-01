@@ -4,38 +4,38 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
-import xyz.mcxross.flare.core.ReadOperation
-import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
-import xyz.mcxross.flare.core.readBackoffMs
-import xyz.mcxross.flare.core.isReadAccessFailure
-import xyz.mcxross.flare.core.readAccessMessage
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.isReadAccessFailure
+import xyz.mcxross.flare.core.readAccessMessage
+import xyz.mcxross.flare.core.readBackoffMs
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
-import xyz.mcxross.flare.data.SetupNeed
-import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
@@ -164,61 +164,92 @@ class OrdersViewModel(
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), OrdersUiState())
 
   suspend fun followHistoryWhileVisible() {
-    data class Context(val section: OrdersSection, val owner: String?, val api: String?, val account: String?)
-    combine(local.map { it.section }.distinctUntilChanged(), wallets.profile,
-      accounts.snapshot.map { it.account }.distinctUntilChanged()) { section, wallet, account ->
-      Context(section, wallet.ownerAddress, wallet.apiWalletAddress, account)
-    }.distinctUntilChanged().collectLatest { context ->
-      val history = context.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP)
-      accounts.setHistoryVisible(history)
-      local.update { it.copy(readUnavailable = false, readAccessError = null) }
-      try {
-        if (context.account == null || context.owner == null && context.api == null) awaitCancellation()
-        var failures = 0
-        var first = true
-        while (currentCoroutineContext().isActive) {
-          val snapshot = accounts.snapshot.value
-          val priorHistory = accounts.history.value
-          val needsRead = snapshot.stale || snapshot.error != null ||
-            history && (first || priorHistory.stale || priorHistory.error != null)
-          if (needsRead) {
-            val generation = wallets.authorizationGeneration
-            val result = withTimeoutOrNull(10_000) { runSuspendCatching {
-              wallets.requireAuthorization(generation)
-              if (snapshot.stale || snapshot.error != null) accounts.restoreTrading()
-              else if (history) accounts.refreshHistory()
-            } }
-            currentCoroutineContext().ensureActive()
-            if (wallets.authorizationGeneration != generation) awaitCancellation()
-            val current = accounts.snapshot.value
-            val currentHistory = accounts.history.value
-            val failed = result == null || result.isFailure || current.stale || current.error != null ||
-              history && (currentHistory.stale || currentHistory.error != null)
-            if (failed) {
-              failures++
-              ReadRecoveryDiagnostics.failed(ReadOperation.ACTIVITY, failures, result?.exceptionOrNull(), result == null)
-              val access = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
-              local.update { it.copy(readUnavailable = failures >= 3 || access != null, readAccessError = access?.readAccessMessage()) }
-            } else {
-              failures = 0
-              ReadRecoveryDiagnostics.recovered(ReadOperation.ACTIVITY)
-              local.update { it.copy(readUnavailable = false, readAccessError = null) }
-            }
-          }
-          first = false
-          delay(if (failures > 0) readBackoffMs(failures) else 15_000)
-        }
-      } finally {
-        accounts.setHistoryVisible(false)
+    data class Context(
+      val section: OrdersSection,
+      val owner: String?,
+      val api: String?,
+      val account: String?,
+    )
+    combine(
+        local.map { it.section }.distinctUntilChanged(),
+        wallets.profile,
+        accounts.snapshot.map { it.account }.distinctUntilChanged(),
+      ) { section, wallet, account ->
+        Context(section, wallet.ownerAddress, wallet.apiWalletAddress, account)
       }
-    }
+      .distinctUntilChanged()
+      .collectLatest { context ->
+        val history = context.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP)
+        accounts.setHistoryVisible(history)
+        local.update { it.copy(readUnavailable = false, readAccessError = null) }
+        try {
+          if (context.account == null || context.owner == null && context.api == null)
+            awaitCancellation()
+          var failures = 0
+          var first = true
+          while (currentCoroutineContext().isActive) {
+            val snapshot = accounts.snapshot.value
+            val priorHistory = accounts.history.value
+            val needsRead =
+              snapshot.stale ||
+                snapshot.error != null ||
+                history && (first || priorHistory.stale || priorHistory.error != null)
+            if (needsRead) {
+              val generation = wallets.authorizationGeneration
+              val result =
+                withTimeoutOrNull(10_000) {
+                  runSuspendCatching {
+                    wallets.requireAuthorization(generation)
+                    if (snapshot.stale || snapshot.error != null) accounts.restoreTrading()
+                    else if (history) accounts.refreshHistory()
+                  }
+                }
+              currentCoroutineContext().ensureActive()
+              if (wallets.authorizationGeneration != generation) awaitCancellation()
+              val current = accounts.snapshot.value
+              val currentHistory = accounts.history.value
+              val failed =
+                result == null ||
+                  result.isFailure ||
+                  current.stale ||
+                  current.error != null ||
+                  history && (currentHistory.stale || currentHistory.error != null)
+              if (failed) {
+                failures++
+                ReadRecoveryDiagnostics.failed(
+                  ReadOperation.ACTIVITY,
+                  failures,
+                  result?.exceptionOrNull(),
+                  result == null,
+                )
+                val access = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
+                local.update {
+                  it.copy(
+                    readUnavailable = failures >= 3 || access != null,
+                    readAccessError = access?.readAccessMessage(),
+                  )
+                }
+              } else {
+                failures = 0
+                ReadRecoveryDiagnostics.recovered(ReadOperation.ACTIVITY)
+                local.update { it.copy(readUnavailable = false, readAccessError = null) }
+              }
+            }
+            first = false
+            delay(if (failures > 0) readBackoffMs(failures) else 15_000)
+          }
+        } finally {
+          accounts.setHistoryVisible(false)
+        }
+      }
   }
 
   fun onIntent(intent: OrdersIntent) {
     when (intent) {
-      OrdersIntent.RetryAccount -> viewModelScope.launch {
-        runSuspendCatching { accounts.restoreTrading() }
-      }
+      OrdersIntent.RetryAccount ->
+        viewModelScope.launch {
+          runSuspendCatching { accounts.restoreTrading() }
+        }
       is OrdersIntent.SelectSection -> {
         local.update { it.copy(section = intent.section) }
         if (intent.section == OrdersSection.TWAP) {
@@ -228,8 +259,7 @@ class OrdersViewModel(
       OrdersIntent.LoadMore -> loadMore()
       is OrdersIntent.Cancel ->
         cancel(intent.market, intent.orderId, intent.isTpSl, FeePayment.SPONSORED)
-      is OrdersIntent.CancelTwap ->
-        cancelTwap(intent.market, intent.twapId, FeePayment.SPONSORED)
+      is OrdersIntent.CancelTwap -> cancelTwap(intent.market, intent.twapId, FeePayment.SPONSORED)
       OrdersIntent.CancelAll -> cancelAll()
       OrdersIntent.ConfirmSelfPay -> {
         val state = local.value
@@ -257,7 +287,8 @@ class OrdersViewModel(
     launchAction("More activity couldn’t be loaded.") {
       val kind =
         when (local.value.section) {
-          OrdersSection.OPEN, OrdersSection.TWAP -> return@launchAction
+          OrdersSection.OPEN,
+          OrdersSection.TWAP -> return@launchAction
           OrdersSection.ORDERS -> AccountHistoryKind.ORDERS
           OrdersSection.TRADES -> AccountHistoryKind.TRADES
           OrdersSection.FUNDING -> AccountHistoryKind.FUNDING
@@ -280,10 +311,8 @@ class OrdersViewModel(
         )
       }
       val isSpot =
-        markets.catalog.value.quotes
-          .firstOrNull { it.market.id == market }
-          ?.market
-          ?.kind == MarketKind.SPOT
+        markets.catalog.value.quotes.firstOrNull { it.market.id == market }?.market?.kind ==
+          MarketKind.SPOT
       trading
         .execute(
           if (isTpSl) {
@@ -308,7 +337,8 @@ class OrdersViewModel(
         is ActionState.Failed -> {
           if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp ->
+            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp
+              ->
               local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
             }
           }
@@ -363,7 +393,8 @@ class OrdersViewModel(
         is ActionState.Failed -> {
           if (state.selfPay == null) error(state.message)
           if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp ->
+            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp
+              ->
               local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
             }
           }
@@ -381,7 +412,10 @@ class OrdersViewModel(
       if (capabilities.batchCancel) {
         trading
           .execute(
-            TradeAction.CancelOrders(subaccount, openOrders.map { OpenOrderRef(it.marketId, it.orderId) }),
+            TradeAction.CancelOrders(
+              subaccount,
+              openOrders.map { OpenOrderRef(it.marketId, it.orderId) },
+            ),
             VaultPrompt("Cancel all orders", "Confirm your identity"),
             FeePayment.SPONSORED,
           )

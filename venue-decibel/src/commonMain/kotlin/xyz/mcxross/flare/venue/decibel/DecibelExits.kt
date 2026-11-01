@@ -33,7 +33,9 @@ internal val OpenOrder.exitTrigger: Double?
  * trigger, else its limit, as Flare places exits with their limit at the trigger. Null otherwise.
  */
 internal fun OpenOrder.ownTrigger(): Double? {
-  conditionPrice(triggerCondition)?.let { return it }
+  conditionPrice(triggerCondition)?.let {
+    return it
+  }
   if (!reduceOnly) return null
   return when (exitKind) {
     ExitKind.TAKE_PROFIT -> takeProfit?.triggerPrice ?: price
@@ -43,11 +45,18 @@ internal fun OpenOrder.ownTrigger(): Double? {
 }
 
 private fun conditionPrice(condition: String): Double? =
-  Regex("""\d[\d,]*(?:\.\d+)?""").findAll(condition).lastOrNull()
-    ?.value?.replace(",", "")?.toDoubleOrNull()?.takeIf { it > 0.0 }
+  Regex("""\d[\d,]*(?:\.\d+)?""")
+    .findAll(condition)
+    .lastOrNull()
+    ?.value
+    ?.replace(",", "")
+    ?.toDoubleOrNull()
+    ?.takeIf { it > 0.0 }
 
 /** Marks the exits Decibel holds as set for a whole position, by the ids the positions name. */
-internal fun List<OpenOrder>.withWholePositionExits(positions: List<DecibelPosition>): List<OpenOrder> {
+internal fun List<OpenOrder>.withWholePositionExits(
+  positions: List<DecibelPosition>,
+): List<OpenOrder> {
   val ids = positions.flatMap { listOfNotNull(it.takeProfitOrderId, it.stopLossOrderId) }.toSet()
   return map { if (!it.coversPosition && it.orderId in ids) it.copy(coversPosition = true) else it }
 }
@@ -59,13 +68,19 @@ internal fun List<OpenOrder>.withWholePositionExits(positions: List<DecibelPosit
  */
 internal fun List<OpenOrder>.exitsFor(market: String, closesWithBuy: Boolean): List<OpenOrder> =
   filter {
-    it.kind == MarketKind.PERP && it.marketId.equals(market, ignoreCase = true) && it.reduceOnly &&
-      it.isBuy == closesWithBuy && it.exitKind != null
+    it.kind == MarketKind.PERP &&
+      it.marketId.equals(market, ignoreCase = true) &&
+      it.reduceOnly &&
+      it.isBuy == closesWithBuy &&
+      it.exitKind != null
   }
 
 /** The trigger of the latest exit of [kind]. */
-internal fun List<OpenOrder>.latestTrigger(kind: ExitKind): Double? =
-  filter { it.exitKind == kind }.maxByOrNull(OpenOrder::timeMs)?.exitTrigger
+internal fun List<OpenOrder>.latestTrigger(kind: ExitKind): Double? = filter {
+  it.exitKind == kind
+}
+  .maxByOrNull(OpenOrder::timeMs)
+  ?.exitTrigger
 
 /**
  * Replaces a position's exits: places the new ones, then cancels the earlier ones they replace,
@@ -87,13 +102,12 @@ internal class ExitReplacement(
     val committed = placed as? ActionState.Committed ?: return@flow
     if (earlier == null) return@flow emit(committed.withNote(EARLIER_EXITS_UNCHECKED))
     if (earlier.isEmpty()) return@flow emit(committed)
-    val cancelled =
-      runSuspendCatching {
-          // An earlier exit the new ones already took the place of is gone, and isn't cancelled.
-          val stillOpen = openExits().map(OpenOrder::orderId).toSet()
-          earlier.filter { it.orderId in stillOpen }.all { cancel(it) is ActionState.Committed }
-        }
-        .getOrDefault(false)
+    val cancelled = runSuspendCatching {
+      // An earlier exit the new ones already took the place of is gone, and isn't cancelled.
+      val stillOpen = openExits().map(OpenOrder::orderId).toSet()
+      earlier.filter { it.orderId in stillOpen }.all { cancel(it) is ActionState.Committed }
+    }
+      .getOrDefault(false)
     emit(if (cancelled) committed else committed.withNote(EARLIER_EXITS_OPEN))
   }
 

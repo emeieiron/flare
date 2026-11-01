@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -88,7 +87,11 @@ internal fun LeverageControl(state: TradeUiState, margin: Double?, onChange: (In
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Text("Leverage", color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+      Text(
+        "Leverage",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodyMedium,
+      )
       if (adjustable) {
         LeverageStepper(
           value = state.leverage,
@@ -128,7 +131,9 @@ internal fun LeverageControl(state: TradeUiState, margin: Double?, onChange: (In
       enter = expandVertically() + fadeIn(),
       exit = shrinkVertically() + fadeOut(),
     ) {
-      LeverageScale(state.leverage, maximum, enabled) { change(it, HapticFeedbackType.SegmentFrequentTick) }
+      LeverageScale(state.leverage, maximum, enabled) {
+        change(it, HapticFeedbackType.SegmentFrequentTick)
+      }
     }
     if (state.positionLeverage != null)
       Text(
@@ -162,7 +167,9 @@ private fun LeverageStepper(
     },
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    StepperButton(FlareIcons.Remove, "Decrease leverage", enabled && value > 1) { onStep(value - 1) }
+    StepperButton(FlareIcons.Remove, "Decrease leverage", enabled && value > 1) {
+      onStep(value - 1)
+    }
     Text(
       "$value×",
       Modifier.fillMaxHeight()
@@ -179,12 +186,19 @@ private fun LeverageStepper(
       color = if (enabled) FlareColors.Positive else FlareColors.TextDisabled,
       textAlign = TextAlign.Center,
     )
-    StepperButton(FlareIcons.Add, "Increase leverage", enabled && value < maximum) { onStep(value + 1) }
+    StepperButton(FlareIcons.Add, "Increase leverage", enabled && value < maximum) {
+      onStep(value + 1)
+    }
   }
 }
 
 @Composable
-private fun StepperButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+private fun StepperButton(
+  icon: ImageVector,
+  description: String,
+  enabled: Boolean,
+  onClick: () -> Unit,
+) {
   Box(
     Modifier.size(width = 36.dp, height = 48.dp)
       .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -205,8 +219,9 @@ private val ScaleInset = 10.dp
 /** Round, evenly spaced stops that never crowd the 1× origin. */
 internal fun leverageStops(maximum: Int): List<Int> {
   if (maximum <= 1) return listOf(1)
-  val step = listOf(1, 2, 5, 10, 15, 20, 25, 50).firstOrNull { maximum / it.toDouble() <= 5 }
-    ?: ((maximum + 4) / 5)
+  val step =
+    listOf(1, 2, 5, 10, 15, 20, 25, 50).firstOrNull { maximum / it.toDouble() <= 5 }
+      ?: ((maximum + 4) / 5)
   val span = (maximum - 1).toDouble()
   val stops = mutableListOf(1)
   var value = step
@@ -214,7 +229,8 @@ internal fun leverageStops(maximum: Int): List<Int> {
     if ((value - stops.last()) / span >= MIN_STOP_GAP) stops += value
     value += step
   }
-  if (stops.size > 1 && (maximum - stops.last()) / span < MIN_STOP_GAP) stops.removeAt(stops.lastIndex)
+  if (stops.size > 1 && (maximum - stops.last()) / span < MIN_STOP_GAP)
+    stops.removeAt(stops.lastIndex)
   stops += maximum
   return stops
 }
@@ -243,7 +259,8 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
           if (!enabled) return@pointerInput
           fun select(x: Float) {
             val inset = ScaleInset.toPx()
-            val fraction = ((x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
+            val fraction =
+              ((x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
             update((1 + fraction * (maximum - 1)).roundToInt())
           }
           detectTapGestures { select(it.x) }
@@ -254,10 +271,13 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
             change.consume()
             val inset = ScaleInset.toPx()
             val fraction =
-              ((change.position.x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
+              ((change.position.x - inset) / (size.width - 2 * inset).coerceAtLeast(1f)).coerceIn(
+                0f,
+                1f,
+              )
             update((1 + fraction * (maximum - 1)).roundToInt())
           }
-        }
+        },
     ) {
       val inset = ScaleInset.toPx()
       val end = size.width - inset
@@ -265,14 +285,16 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
       fun xOf(v: Int) = inset + (end - inset) * (v - 1) / (maximum - 1)
       drawLine(FlareColors.BorderSubtle, Offset(inset, y), Offset(end, y), 2.dp.toPx())
       drawLine(active, Offset(inset, y), Offset(xOf(value), y), 2.dp.toPx())
-      stops.filter { it != value }.forEach { stop ->
-        drawDiamond(
-          Offset(xOf(stop), y),
-          3.5.dp.toPx(),
-          if (stop <= value) active else FlareColors.BorderDefault,
-          1.5.dp.toPx(),
-        )
-      }
+      stops
+        .filter { it != value }
+        .forEach { stop ->
+          drawDiamond(
+            Offset(xOf(stop), y),
+            3.5.dp.toPx(),
+            if (stop <= value) active else FlareColors.BorderDefault,
+            1.5.dp.toPx(),
+          )
+        }
       drawDiamond(Offset(xOf(value), y), 7.dp.toPx(), active, 2.dp.toPx())
     }
     Layout(
@@ -282,7 +304,11 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
           Text(
             "$stop×",
             Modifier.clip(RoundedCornerShape(4.dp))
-              .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Set leverage to $stop×") {
+              .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = "Set leverage to $stop×",
+              ) {
                 update(stop)
               }
               .padding(horizontal = 4.dp, vertical = 2.dp),
@@ -298,7 +324,10 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
       layout(width, placeables.maxOfOrNull { it.height } ?: 0) {
         placeables.forEachIndexed { index, placeable ->
           val center = inset + (width - 2 * inset) * (stops[index] - 1f) / (maximum - 1)
-          val x = (center - placeable.width / 2f).roundToInt().coerceIn(0, (width - placeable.width).coerceAtLeast(0))
+          val x =
+            (center - placeable.width / 2f)
+              .roundToInt()
+              .coerceIn(0, (width - placeable.width).coerceAtLeast(0))
           placeable.placeRelative(x, 0)
         }
       }
@@ -307,14 +336,20 @@ private fun LeverageScale(value: Int, maximum: Int, enabled: Boolean, onChange: 
 }
 
 /** A square turned on its point: black inside, outlined in [stroke]. */
-private fun DrawScope.drawDiamond(center: Offset, radius: Float, stroke: Color, strokeWidth: Float) {
-  val path = Path().apply {
-    moveTo(center.x, center.y - radius)
-    lineTo(center.x + radius, center.y)
-    lineTo(center.x, center.y + radius)
-    lineTo(center.x - radius, center.y)
-    close()
-  }
+private fun DrawScope.drawDiamond(
+  center: Offset,
+  radius: Float,
+  stroke: Color,
+  strokeWidth: Float,
+) {
+  val path =
+    Path().apply {
+      moveTo(center.x, center.y - radius)
+      lineTo(center.x + radius, center.y)
+      lineTo(center.x, center.y + radius)
+      lineTo(center.x - radius, center.y)
+      close()
+    }
   drawPath(path, FlareColors.Canvas)
   drawPath(path, stroke, style = Stroke(strokeWidth, join = StrokeJoin.Round))
 }

@@ -73,8 +73,7 @@ class StreamDataTest {
 
   @Test
   fun decodesAccountStreams() {
-    val clearinghouse =
-      assertIs<StreamData.Clearinghouse>(decode(Fixtures.WS_CLEARINGHOUSE_STATE))
+    val clearinghouse = assertIs<StreamData.Clearinghouse>(decode(Fixtures.WS_CLEARINGHOUSE_STATE))
     assertEquals(Fixtures.USER, clearinghouse.user)
     assertEquals("104966.305173", clearinghouse.state.marginSummary.accountValue)
 
@@ -157,11 +156,11 @@ class StreamDataTest {
     assertIs<StreamData.Malformed>(decodeStreamData("l2Book", parse("""{"coin":"BTC"}"""), json))
     assertIs<StreamData.Malformed>(decodeStreamData("trades", parse("""{"coin":"BTC"}"""), json))
     assertIs<StreamData.Malformed>(
-      decodeStreamData("userFills", parse("""{"user":"x","fills":[{"coin":1}]}"""), json)
+      decodeStreamData("userFills", parse("""{"user":"x","fills":[{"coin":1}]}"""), json),
     )
     assertIs<StreamData.Malformed>(decodeStreamData("allMids", null, json))
     assertIs<StreamData.Malformed>(
-      decodeStreamData("candle", kotlinx.serialization.json.JsonNull, json)
+      decodeStreamData("candle", kotlinx.serialization.json.JsonNull, json),
     )
     assertIs<StreamData.Malformed>(decodeStreamData("allMids", JsonPrimitive("x"), json))
   }

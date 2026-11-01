@@ -21,11 +21,14 @@ interface GasSponsorshipRepository {
     request: ExternalFeePayerRequest,
     authorization: String,
   ): AptosResult<String> =
-    AptosResult.Failure(xyz.mcxross.kaptos.model.AptosError.Validation("Swap sponsorship is unavailable"))
+    AptosResult.Failure(
+      xyz.mcxross.kaptos.model.AptosError.Validation("Swap sponsorship is unavailable"),
+    )
 }
 
 /** Every Decibel command is sponsored by default, on the Worker route of the key that signs it. */
-internal fun GasSponsorshipRepository.submitterFor(command: DecibelCommand): ExternalFeePayerSubmitter =
-  ExternalFeePayerSubmitter { request ->
-    submit(request, ownerOnly = command.requiredSigner() == TradingSigner.OWNER)
-  }
+internal fun GasSponsorshipRepository.submitterFor(
+  command: DecibelCommand,
+): ExternalFeePayerSubmitter = ExternalFeePayerSubmitter { request ->
+  submit(request, ownerOnly = command.requiredSigner() == TradingSigner.OWNER)
+}

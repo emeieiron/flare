@@ -20,7 +20,11 @@ class HyperliquidOrderRulesTest {
   private val hype = HyperliquidOrderRules("@1035", "HYPE", MarketKind.SPOT, szDecimals = 2)
   private val gmt = HyperliquidOrderRules("GMT", "GMT", MarketKind.PERP, szDecimals = 0)
   private val book =
-    OrderBook("BTC", bids = listOf(OrderBookLevel("83108.0", "1")), asks = listOf(OrderBookLevel("83109.0", "1")))
+    OrderBook(
+      "BTC",
+      bids = listOf(OrderBookLevel("83108.0", "1")),
+      asks = listOf(OrderBookLevel("83109.0", "1")),
+    )
 
   @Test
   fun pricesAllowFiveSignificantFiguresAndTheMarketsDecimals() {
@@ -30,9 +34,15 @@ class HyperliquidOrderRulesTest {
     assertValid(btc.check(limit("0.001", "83108")))
     // An integer price is always accepted, however many figures it has.
     assertValid(btc.check(limit("0.001", "123456")))
-    assertInvalid(btc.check(limit("0.001", "83108.5")), "Price can have at most 5 significant figures and 1 decimals")
+    assertInvalid(
+      btc.check(limit("0.001", "83108.5")),
+      "Price can have at most 5 significant figures and 1 decimals",
+    )
     assertValid(sol.check(limit("10", "1.2345")))
-    assertInvalid(sol.check(limit("100000", "0.00012")), "Price can have at most 5 significant figures and 4 decimals")
+    assertInvalid(
+      sol.check(limit("100000", "0.00012")),
+      "Price can have at most 5 significant figures and 4 decimals",
+    )
     assertValid(hype.check(limit("100000", "0.000123")))
   }
 
@@ -61,13 +71,20 @@ class HyperliquidOrderRulesTest {
     val sell = assertValid(btc.check(market(OrderSide.SELL, "0.001"), book))
     // 83108 × 0.995 = 82692.46.
     assertEquals("82693", sell.price)
-    assertInvalid(btc.check(market(OrderSide.BUY, "0.001"), null), "A reliable best bid and ask are required")
-    assertInvalid(sol.check(market(OrderSide.BUY, "1"), book), "A reliable best bid and ask are required")
+    assertInvalid(
+      btc.check(market(OrderSide.BUY, "0.001"), null),
+      "A reliable best bid and ask are required",
+    )
+    assertInvalid(
+      sol.check(market(OrderSide.BUY, "1"), book),
+      "A reliable best bid and ask are required",
+    )
   }
 
   @Test
   fun aCheckedOrderCarriesItsCanonicalDecimals() {
-    val order = assertValid(btc.check(limit("0.00100", "83108.0").copy(takeProfitTrigger = "90000.0")))
+    val order =
+      assertValid(btc.check(limit("0.00100", "83108.0").copy(takeProfitTrigger = "90000.0")))
 
     assertEquals("0.001", order.size)
     assertEquals("83108", order.price)
@@ -86,16 +103,24 @@ class HyperliquidOrderRulesTest {
 
   @Test
   fun aTwapRunsForWholeMinutesUpToADay() {
-    val twap = OrderRequest("BTC", OrderSide.BUY, OrderType.TWAP, "0.5", twap = TwapSchedule(30, 1_800))
+    val twap =
+      OrderRequest("BTC", OrderSide.BUY, OrderType.TWAP, "0.5", twap = TwapSchedule(30, 1_800))
 
     assertEquals("0.5", assertValid(btc.check(twap, book)).size)
-    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 180)), book), HyperliquidOrderRules.TWAP_DURATION)
-    assertInvalid(btc.check(twap.copy(twap = TwapSchedule(30, 90_000)), book), HyperliquidOrderRules.TWAP_DURATION)
+    assertInvalid(
+      btc.check(twap.copy(twap = TwapSchedule(30, 180)), book),
+      HyperliquidOrderRules.TWAP_DURATION,
+    )
+    assertInvalid(
+      btc.check(twap.copy(twap = TwapSchedule(30, 90_000)), book),
+      HyperliquidOrderRules.TWAP_DURATION,
+    )
   }
 
   @Test
   fun aTwapIsWorthAtLeastAHundredDollarsAtTheMidPrice() {
-    val twap = OrderRequest("BTC", OrderSide.SELL, OrderType.TWAP, "0.0012", twap = TwapSchedule(30, 600))
+    val twap =
+      OrderRequest("BTC", OrderSide.SELL, OrderType.TWAP, "0.0012", twap = TwapSchedule(30, 600))
 
     // 0.0012 × 83,108.5 = $99.73
     assertInvalid(btc.check(twap, book), "Minimum TWAP value is $100")
@@ -114,5 +139,4 @@ class HyperliquidOrderRulesTest {
 
   private fun assertInvalid(check: OrderCheck, message: String) =
     assertEquals(listOf(message), assertIs<OrderCheck.Invalid>(check).errors)
-
 }

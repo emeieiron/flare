@@ -15,6 +15,6 @@ object VenueEntry {
       DecibelRuntimeConfig(
         workerBaseUrl = context.getString(R.string.flare_worker_url),
         defaultBuilderAddress = context.getString(R.string.flare_builder_address),
-      )
+      ),
     )
 }

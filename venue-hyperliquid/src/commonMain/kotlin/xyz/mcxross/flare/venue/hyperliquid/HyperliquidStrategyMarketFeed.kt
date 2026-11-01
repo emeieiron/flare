@@ -23,11 +23,15 @@ class HyperliquidStrategyMarketFeed(
     require(key.venueId == descriptor.id && key.network == descriptor.network.name.lowercase()) {
       "Signal venue or network does not match this feed"
     }
-    val timeframe = ChartTimeframe.entries.firstOrNull { it.durationMs == key.timeframeMs }
-      ?: error("Unsupported signal timeframe")
-    require(timeframe != ChartTimeframe.ONE_MONTH) { "Calendar months are not fixed signal intervals" }
-    val listed = client.info.perpMeta().universe.any { !it.isDelisted && it.name == key.marketId } ||
-      client.info.spotMeta().universe.any { it.name == key.marketId }
+    val timeframe =
+      ChartTimeframe.entries.firstOrNull { it.durationMs == key.timeframeMs }
+        ?: error("Unsupported signal timeframe")
+    require(timeframe != ChartTimeframe.ONE_MONTH) {
+      "Calendar months are not fixed signal intervals"
+    }
+    val listed =
+      client.info.perpMeta().universe.any { !it.isDelisted && it.name == key.marketId } ||
+        client.info.spotMeta().universe.any { it.name == key.marketId }
     require(listed) { "Market is not listed" }
     val now = nowMs()
     val start = (now - key.timeframeMs * 200).coerceAtLeast(0)
@@ -39,15 +43,32 @@ class HyperliquidStrategyMarketFeed(
     val book = runSuspendCatching {
       val raw = client.info.l2Book(key.marketId)
       require(raw.coin == key.marketId) { "Order book market mismatch" }
-      StrategyBook(raw.bids.map { StrategyBookLevel(it.px, it.sz) },
-        raw.asks.map { StrategyBookLevel(it.px, it.sz) }, raw.time)
-    }.getOrNull()
-    return StrategyMarketSnapshot(key, now,
-      candles.filter { it.openTimeMs >= start && it.openTimeMs <= now }
-        .sortedBy { it.openTimeMs }.map { it.strategyCandle() }, book)
+      StrategyBook(
+        raw.bids.map { StrategyBookLevel(it.px, it.sz) },
+        raw.asks.map { StrategyBookLevel(it.px, it.sz) },
+        raw.time,
+      )
+    }
+      .getOrNull()
+    return StrategyMarketSnapshot(
+      key,
+      now,
+      candles
+        .filter { it.openTimeMs >= start && it.openTimeMs <= now }
+        .sortedBy { it.openTimeMs }
+        .map { it.strategyCandle() },
+      book,
+    )
   }
 }
 
-internal fun Candle.strategyCandle() = StrategyCandle(
-  openTimeMs, closeTimeMs, open.toDouble(), high.toDouble(), low.toDouble(), close.toDouble(), volume.toDouble(),
-)
+internal fun Candle.strategyCandle() =
+  StrategyCandle(
+    openTimeMs,
+    closeTimeMs,
+    open.toDouble(),
+    high.toDouble(),
+    low.toDouble(),
+    close.toDouble(),
+    volume.toDouble(),
+  )

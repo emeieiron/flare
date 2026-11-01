@@ -94,7 +94,8 @@ fun formatQuantity(value: Double, decimals: Int = 8): String {
 }
 
 /** A whole count with its thousands grouped, like a points total. Counts are never negative. */
-fun formatCount(value: Double): String = if (!value.isFinite()) "—" else groupDigits(fixed(abs(value), 0))
+fun formatCount(value: Double): String =
+  if (!value.isFinite()) "—" else groupDigits(fixed(abs(value), 0))
 
 private fun groupDigits(number: String): String {
   val parts = number.split('.')

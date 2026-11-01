@@ -262,7 +262,7 @@ internal object PortfolioPointSerializer : KSerializer<PortfolioPoint> {
       buildJsonArray {
         add(JsonPrimitive(value.timeMs))
         add(JsonPrimitive(value.value))
-      }
+      },
     )
   }
 }
@@ -278,7 +278,7 @@ internal object PortfolioSerializer : KSerializer<Portfolio> {
         val pair = entry.jsonArray
         pair[0].jsonPrimitive.content to
           json.decodeFromJsonElement(PortfolioPeriod.serializer(), pair[1])
-      }
+      },
     )
   }
 
@@ -291,8 +291,8 @@ internal object PortfolioSerializer : KSerializer<Portfolio> {
             add(JsonPrimitive(period))
             add(json.encodeToJsonElement(PortfolioPeriod.serializer(), data))
           }
-        }
-      )
+        },
+      ),
     )
   }
 }
@@ -536,8 +536,8 @@ internal object TwapStatesSerializer : KSerializer<List<Pair<Long, TwapState>>> 
             add(JsonPrimitive(id))
             add(json.encodeToJsonElement(TwapState.serializer(), state))
           }
-        }
-      )
+        },
+      ),
     )
   }
 }

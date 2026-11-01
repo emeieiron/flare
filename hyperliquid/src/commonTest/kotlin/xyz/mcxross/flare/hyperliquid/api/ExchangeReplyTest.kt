@@ -31,7 +31,7 @@ class ExchangeReplyTest {
           "waitingForTrigger",
           "somethingNew",
           {"partial":{}}
-        ]}}}"""
+        ]}}}""",
       )
 
     assertEquals(
@@ -52,8 +52,8 @@ class ExchangeReplyTest {
             OrderStatus.WaitingForTrigger,
             OrderStatus.Unrecognized("somethingNew"),
             OrderStatus.Unrecognized("partial"),
-          )
-        )
+          ),
+        ),
       ),
       outcome,
     )
@@ -75,12 +75,12 @@ class ExchangeReplyTest {
           listOf(
             CancelStatus.Success,
             CancelStatus.Error("Order was never placed, already canceled, or filled."),
-          )
-        )
+          ),
+        ),
       ),
       parse(
         """{"status":"ok","response":{"type":"cancel","data":{"statuses":["success",
-          {"error":"Order was never placed, already canceled, or filled."}]}}}"""
+          {"error":"Order was never placed, already canceled, or filled."}]}}}""",
       ),
     )
   }
@@ -91,16 +91,16 @@ class ExchangeReplyTest {
       ExchangeOutcome.Accepted(ExchangeResponse.TwapPlaced(TwapOrderStatus.Running(77738308L))),
       parse(
         """{"status":"ok","response":{"type":"twapOrder",
-          "data":{"status":{"running":{"twapId":77738308}}}}}"""
+          "data":{"status":{"running":{"twapId":77738308}}}}}""",
       ),
     )
     assertEquals(
       ExchangeOutcome.Accepted(
-        ExchangeResponse.TwapPlaced(TwapOrderStatus.Error("Invalid TWAP duration: 1 min(s)"))
+        ExchangeResponse.TwapPlaced(TwapOrderStatus.Error("Invalid TWAP duration: 1 min(s)")),
       ),
       parse(
         """{"status":"ok","response":{"type":"twapOrder",
-          "data":{"status":{"error":"Invalid TWAP duration: 1 min(s)"}}}}"""
+          "data":{"status":{"error":"Invalid TWAP duration: 1 min(s)"}}}}""",
       ),
     )
     assertEquals(
@@ -110,12 +110,12 @@ class ExchangeReplyTest {
     assertEquals(
       ExchangeOutcome.Accepted(
         ExchangeResponse.TwapCanceled(
-          CancelStatus.Error("TWAP was never placed, already canceled, or filled.")
-        )
+          CancelStatus.Error("TWAP was never placed, already canceled, or filled."),
+        ),
       ),
       parse(
         """{"status":"ok","response":{"type":"twapCancel",
-          "data":{"status":{"error":"TWAP was never placed, already canceled, or filled."}}}}"""
+          "data":{"status":{"error":"TWAP was never placed, already canceled, or filled."}}}}""",
       ),
     )
   }
@@ -127,11 +127,11 @@ class ExchangeReplyTest {
         ExchangeResponse.Other(
           "createSubAccount",
           JsonPrimitive("0x1d9470d4b963f552e6f671a81619d395877bf409"),
-        )
+        ),
       ),
       parse(
         """{"status":"ok","response":{"type":"createSubAccount",
-          "data":"0x1d9470d4b963f552e6f671a81619d395877bf409"}}"""
+          "data":"0x1d9470d4b963f552e6f671a81619d395877bf409"}}""",
       ),
     )
   }

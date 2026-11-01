@@ -41,10 +41,10 @@ import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.design.AssetIcon
+import xyz.mcxross.flare.design.DeltaLabel
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.PriceChartSkeleton
-import xyz.mcxross.flare.design.DeltaLabel
 import xyz.mcxross.flare.design.resolveMarketIdentity
 import xyz.mcxross.flare.venue.model.MarketKind
 
@@ -74,33 +74,39 @@ internal fun TradeSurfaceLayout(
   var totalHeight by remember { mutableIntStateOf(0) }
   var footerHeight by remember { mutableIntStateOf(0) }
   val currentStage by rememberUpdatedState(stage)
-  val target by remember(density) {
-    derivedStateOf {
-      val remaining = (totalHeight - footerHeight).coerceAtLeast(0)
-      if (remaining == 0) return@derivedStateOf null
-      val marketCap = minOf(
-        with(density) { MarketContextLimit.roundToPx() },
-        (remaining * MARKET_CONTEXT_FRACTION).roundToInt(),
-      )
-      if (currentStage == TradeStage.MARKET) return@derivedStateOf currentStage to marketCap
-      // Until the new body has measured itself, hold the chart where it is.
-      val natural = naturalBodyHeight().takeIf { it > 0 } ?: return@derivedStateOf null
-      val floor = minOf(with(density) { MinContext.roundToPx() }, remaining / 3)
-      currentStage to (remaining - natural).coerceIn(floor, maxOf(floor, marketCap))
+  val target by
+    remember(density) {
+      derivedStateOf {
+        val remaining = (totalHeight - footerHeight).coerceAtLeast(0)
+        if (remaining == 0) return@derivedStateOf null
+        val marketCap =
+          minOf(
+            with(density) { MarketContextLimit.roundToPx() },
+            (remaining * MARKET_CONTEXT_FRACTION).roundToInt(),
+          )
+        if (currentStage == TradeStage.MARKET) return@derivedStateOf currentStage to marketCap
+        // Until the new body has measured itself, hold the chart where it is.
+        val natural = naturalBodyHeight().takeIf { it > 0 } ?: return@derivedStateOf null
+        val floor = minOf(with(density) { MinContext.roundToPx() }, remaining / 3)
+        currentStage to (remaining - natural).coerceIn(floor, maxOf(floor, marketCap))
+      }
     }
-  }
   val contextHeight = remember { Animatable(-1f) }
   LaunchedEffect(contextHeight) {
     var lastStage: TradeStage? = null
-    snapshotFlow { target }.filterNotNull().collectLatest { (targetStage, height) ->
-      when {
-        contextHeight.value < 0f -> contextHeight.snapTo(height.toFloat())
-        // Stage changes share the pull and page timing; content growing in place follows on a spring.
-        targetStage != lastStage -> contextHeight.animateTo(height.toFloat(), tween(280))
-        else -> contextHeight.animateTo(height.toFloat(), spring(stiffness = Spring.StiffnessMediumLow))
+    snapshotFlow { target }
+      .filterNotNull()
+      .collectLatest { (targetStage, height) ->
+        when {
+          contextHeight.value < 0f -> contextHeight.snapTo(height.toFloat())
+          // Stage changes share the pull and page timing; content growing in place follows on a
+          // spring.
+          targetStage != lastStage -> contextHeight.animateTo(height.toFloat(), tween(280))
+          else ->
+            contextHeight.animateTo(height.toFloat(), spring(stiffness = Spring.StiffnessMediumLow))
+        }
+        lastStage = targetStage
       }
-      lastStage = targetStage
-    }
   }
   Layout(
     modifier = modifier.fillMaxWidth().clipToBounds().onSizeChanged { totalHeight = it.height },
@@ -112,13 +118,15 @@ internal fun TradeSurfaceLayout(
   ) { measurables, constraints ->
     val width = constraints.maxWidth
     val height = constraints.maxHeight
-    val footer = measurables[2].measure(Constraints(minWidth = width, maxWidth = width, maxHeight = height))
+    val footer =
+      measurables[2].measure(Constraints(minWidth = width, maxWidth = width, maxHeight = height))
     val remaining = (height - footer.height).coerceAtLeast(0)
     val contextHeightPx =
       if (contextHeight.value >= 0f) contextHeight.value.roundToInt()
       else minOf(MarketContextLimit.roundToPx(), (remaining * MARKET_CONTEXT_FRACTION).roundToInt())
     val contextH = contextHeightPx.coerceIn(0, remaining)
-    // A pull grows the chart and slides the body down without resizing it, so the form never reflows.
+    // A pull grows the chart and slides the body down without resizing it, so the form never
+    // reflows.
     val pull = pullOffset().roundToInt().coerceIn(0, remaining - contextH)
     val header = measurables[0].measure(Constraints.fixed(width, contextH + pull))
     val content = measurables[1].measure(Constraints.fixed(width, remaining - contextH))
@@ -143,14 +151,19 @@ internal fun MarketContext(
   // Only the text keeps the screen gutter; the chart runs to the screen edges.
   BoxWithConstraints(Modifier.fillMaxSize()) {
     val contextHeight = maxHeight
-    val expansion by animateFloatAsState(
-      if (stage == TradeStage.MARKET && contextHeight >= 280.dp) 1f else 0f,
-      tween(240), label = "assetHeaderExpansion",
-    )
+    val expansion by
+      animateFloatAsState(
+        if (stage == TradeStage.MARKET && contextHeight >= 280.dp) 1f else 0f,
+        tween(240),
+        label = "assetHeaderExpansion",
+      )
     val identity = resolveMarketIdentity(quote.market, assets[assetKey(quote.market.symbol)])
     Column(Modifier.fillMaxSize()) {
       Row(
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp).height((72 * expansion).dp).clipToBounds()
+        Modifier.fillMaxWidth()
+          .padding(horizontal = 24.dp)
+          .height((72 * expansion).dp)
+          .clipToBounds()
           .graphicsLayer { alpha = expansion },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -158,30 +171,47 @@ internal fun MarketContext(
         AssetIcon(identity, 44.dp)
         Column(Modifier.weight(1f)) {
           Text(identity.name, style = MaterialTheme.typography.titleLarge, maxLines = 1)
-          Text(identity.symbol, color = FlareColors.TextSecondary, style = MaterialTheme.typography.labelMedium)
+          Text(
+            identity.symbol,
+            color = FlareColors.TextSecondary,
+            style = MaterialTheme.typography.labelMedium,
+          )
         }
         InstrumentBadge(if (quote.market.kind == MarketKind.SPOT) "SPOT" else "PERP")
       }
-      Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(formatPrice(quote.markPrice), modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge,
-          fontSize = (24 + 16 * expansion).sp, maxLines = 1)
+      Row(
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Text(
+          formatPrice(quote.markPrice),
+          modifier = Modifier.weight(1f),
+          style = MaterialTheme.typography.titleLarge,
+          fontSize = (24 + 16 * expansion).sp,
+          maxLines = 1,
+        )
         DeltaLabel(formatPercent(quote.changePercent24h), positive = quote.changePercent24h >= 0)
       }
       Box(
-        Modifier.fillMaxWidth().weight(1f).clipToBounds().then(
-          if (stage == TradeStage.MARKET) Modifier.onDoubleTap(onToggleStyle) else Modifier
-        )
+        Modifier.fillMaxWidth()
+          .weight(1f)
+          .clipToBounds()
+          .then(
+            if (stage == TradeStage.MARKET) Modifier.onDoubleTap(onToggleStyle) else Modifier,
+          ),
       ) {
-        if (state.chartLoading) PriceChartSkeleton(Modifier.fillMaxSize(), chartStyle = state.chartStyle)
-        else FlarePriceChart(
-          state.candles,
-          state.chartStyle,
-          rising = quote.changePercent24h >= 0,
-          window = window,
-          modifier = Modifier.fillMaxSize(),
-          onReachHistoryStart = onReachHistoryStart,
-        )
+        if (state.chartLoading)
+          PriceChartSkeleton(Modifier.fillMaxSize(), chartStyle = state.chartStyle)
+        else
+          FlarePriceChart(
+            state.candles,
+            state.chartStyle,
+            rising = quote.changePercent24h >= 0,
+            window = window,
+            modifier = Modifier.fillMaxSize(),
+            onReachHistoryStart = onReachHistoryStart,
+          )
       }
     }
   }

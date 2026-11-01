@@ -74,7 +74,7 @@ class DefaultAssetCatalogRepository(
       val refreshedAtMs = Clock.System.now().toEpochMilliseconds()
       if (cache.revision() == manifest.revision) {
         cache.upsertSync(
-          AssetCatalogSyncEntity(revision = manifest.revision, refreshedAtMs = refreshedAtMs)
+          AssetCatalogSyncEntity(revision = manifest.revision, refreshedAtMs = refreshedAtMs),
         )
         return@withLock
       }

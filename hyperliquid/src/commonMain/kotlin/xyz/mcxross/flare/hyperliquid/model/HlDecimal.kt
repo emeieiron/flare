@@ -29,9 +29,9 @@ enum class HlRounding {
  * non-negative scale, so equal values are equal objects and [toString] is Hyperliquid's wire form.
  *
  * Hyperliquid sends and accepts every price and size as a decimal string. This keeps them exact
- * without `Double` and without a big-number dependency. Values are limited to 18 significant
- * digits and 18 decimal places, far beyond any Hyperliquid price, size or notional; arithmetic that
- * would exceed that throws [ArithmeticException] instead of losing precision.
+ * without `Double` and without a big-number dependency. Values are limited to 18 significant digits
+ * and 18 decimal places, far beyond any Hyperliquid price, size or notional; arithmetic that would
+ * exceed that throws [ArithmeticException] instead of losing precision.
  */
 class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Comparable<HlDecimal> {
 
@@ -167,7 +167,7 @@ class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Compar
   fun toWire(): String {
     if (scale > WIRE_MAX_DECIMALS) {
       throw IllegalArgumentException(
-        "$this has more than $WIRE_MAX_DECIMALS decimal places and cannot be sent"
+        "$this has more than $WIRE_MAX_DECIMALS decimal places and cannot be sent",
       )
     }
     return toString()
@@ -176,8 +176,7 @@ class HlDecimal private constructor(val unscaled: Long, val scale: Int) : Compar
   private fun absoluteUnscaled(): ULong = absolute(unscaled)
 
   private fun rescaled(targetScale: Int): Long =
-    if (targetScale == scale) unscaled
-    else multiplyExact(unscaled, powerOfTen(targetScale - scale))
+    if (targetScale == scale) unscaled else multiplyExact(unscaled, powerOfTen(targetScale - scale))
 
   companion object {
     /** The most decimal places a value may carry. */

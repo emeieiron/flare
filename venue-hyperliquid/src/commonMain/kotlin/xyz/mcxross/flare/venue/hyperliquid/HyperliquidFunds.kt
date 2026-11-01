@@ -83,7 +83,10 @@ class HyperliquidFunds(
       "This account shares one balance between perps and spot, so there’s nothing to move"
     }
     val subAccount = actions.vaultFor(account)
-    ownerSigned(UsdClassTransfer(usdc, toPerp, subAccount), prompt.copy(requireFreshAuthorization = true)) { lapses ->
+    ownerSigned(
+      UsdClassTransfer(usdc, toPerp, subAccount),
+      prompt.copy(requireFreshAuthorization = true),
+    ) { lapses ->
       JournaledAction.MovePerpSpot(account, usdc.toWire(), toPerp, lapses)
     }
   }
@@ -113,18 +116,19 @@ class HyperliquidFunds(
     }
     val sentAt = clockMs()
     var journaled: JournaledAction? = null
-    val result =
-      sending {
-        actions.sendAsAgent(
-          VaultTransfer.ofUsdc(vault, isDeposit, usdc),
-          prompt,
-          record = { lapses ->
-            JournaledAction.VaultTransfer(account, vault, isDeposit, usdc.toWire(), lapses).also { journaled = it }
-          },
-        ) { response, reference ->
-          HyperliquidResults.default(response, reference)
-        }
+    val result = sending {
+      actions.sendAsAgent(
+        VaultTransfer.ofUsdc(vault, isDeposit, usdc),
+        prompt,
+        record = { lapses ->
+          JournaledAction.VaultTransfer(account, vault, isDeposit, usdc.toWire(), lapses).also {
+            journaled = it
+          }
+        },
+      ) { response, reference ->
+        HyperliquidResults.default(response, reference)
       }
+    }
     withLedgerHash(result, journaled, sentAt)
   }
 
@@ -136,12 +140,11 @@ class HyperliquidFunds(
   ): ActionState {
     val sentAt = clockMs()
     var journaled: JournaledAction? = null
-    val result =
-      sending {
-        actions.sendAsOwner(action, prompt) { nonce ->
-          record(nonce + HyperliquidActions.NONCE_WINDOW_MS).also { journaled = it }
-        }
+    val result = sending {
+      actions.sendAsOwner(action, prompt) { nonce ->
+        record(nonce + HyperliquidActions.NONCE_WINDOW_MS).also { journaled = it }
       }
+    }
     return withLedgerHash(result, journaled, sentAt)
   }
 
@@ -156,13 +159,19 @@ class HyperliquidFunds(
     }
 
   /** The committed move under its ledger hash, once the ledger lists it; a short wait at most. */
-  private suspend fun withLedgerHash(state: ActionState, action: JournaledAction?, sentAtMs: Long): ActionState {
+  private suspend fun withLedgerHash(
+    state: ActionState,
+    action: JournaledAction?,
+    sentAtMs: Long,
+  ): ActionState {
     if (state !is ActionState.Committed || action == null) return state
     repeat(LEDGER_ATTEMPTS) { attempt ->
       if (attempt > 0) delay(LEDGER_RETRY_MS)
       runSuspendCatching { actions.ledgerEntry(action, state.reference, sentAtMs) }
         .getOrNull()
-        ?.let { return state.copy(reference = it.hash) }
+        ?.let {
+          return state.copy(reference = it.hash)
+        }
     }
     return state
   }
@@ -171,13 +180,17 @@ class HyperliquidFunds(
     preferences.values.first().ownerAddress ?: error("Use a device that holds the owner key")
 
   private suspend fun requireMainAccount(account: String, what: String) {
-    require(actions.vaultFor(account) == null) { "$what go from your main account. Select it first." }
+    require(actions.vaultFor(account) == null) {
+      "$what go from your main account. Select it first."
+    }
   }
 
   private fun usdc(amount: String): HlDecimal {
     val value = HlDecimal.parseOrNull(amount.trim())
     require(value != null && value.signum > 0) { "Enter an amount greater than zero" }
-    require(value.decimalPlaces <= USDC_DECIMALS) { "USDC amounts have at most $USDC_DECIMALS decimals" }
+    require(value.decimalPlaces <= USDC_DECIMALS) {
+      "USDC amounts have at most $USDC_DECIMALS decimals"
+    }
     return value
   }
 
@@ -207,17 +220,21 @@ internal object HyperliquidLedger {
           (delta.nonce?.let { nonce != null && (it == nonce || it == nonce * 1_000) }
             ?: sameAmount(delta.usdc, action.amount, delta.fee))
       is JournaledAction.SendUsdc ->
-        (delta.type == "internalTransfer" || (delta.type == "send" && (delta.token ?: USDC) == USDC)) &&
+        (delta.type == "internalTransfer" ||
+          (delta.type == "send" && (delta.token ?: USDC) == USDC)) &&
           delta.destination.sameAs(action.destination) &&
           (delta.user == null || delta.user.sameAs(action.account)) &&
-          (delta.nonce?.let { it == nonce } ?: sameAmount(delta.usdc ?: delta.amount, action.amount, delta.fee))
+          (delta.nonce?.let { it == nonce }
+            ?: sameAmount(delta.usdc ?: delta.amount, action.amount, delta.fee))
       is JournaledAction.MovePerpSpot ->
         delta.type == "accountClassTransfer" &&
           delta.toPerp == action.toPerp &&
           sameAmount(delta.usdc, action.amount, null)
       is JournaledAction.VaultTransfer ->
         if (action.isDeposit) {
-          delta.type == "vaultDeposit" && delta.vault.sameAs(action.vault) && sameAmount(delta.usdc, action.amount, null)
+          delta.type == "vaultDeposit" &&
+            delta.vault.sameAs(action.vault) &&
+            sameAmount(delta.usdc, action.amount, null)
         } else {
           delta.type == "vaultWithdraw" &&
             delta.vault.sameAs(action.vault) &&
@@ -227,7 +244,9 @@ internal object HyperliquidLedger {
     }
   }
 
-  /** Whether [entry] is the TWAP [action] placed, which started no earlier than [sentAtMs] allows. */
+  /**
+   * Whether [entry] is the TWAP [action] placed, which started no earlier than [sentAtMs] allows.
+   */
   fun isTwap(entry: TwapHistoryEntry, action: JournaledAction.PlaceTwap, sentAtMs: Long): Boolean {
     val state = entry.state
     return state.coin == action.coin &&

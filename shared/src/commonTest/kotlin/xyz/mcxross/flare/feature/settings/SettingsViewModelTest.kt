@@ -11,56 +11,56 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.BareCapabilities
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.RewardsRepository
-import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.CredentialFormat
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.OwnerBackup
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletBalanceRepository
-import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.WalletTokenBalance
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
-import xyz.mcxross.flare.core.ReadOperation
-import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.WithdrawalTerms
-import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.RewardPoints
-import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SelfPayOffer
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TwapOrder
@@ -99,41 +99,62 @@ class SettingsViewModelTest {
     override val authorizationGeneration: Long = 0L
 
     override fun requireAuthorization(generation: Long) {}
+
     override suspend fun createOwner(prompt: VaultPrompt): OwnerBackup =
       OwnerBackup("0xowner", emptyList())
+
     override suspend fun importOwner(phrase: String, prompt: VaultPrompt): String = "0xowner"
+
     override suspend fun confirmOwnerBackup() {}
+
     override suspend fun createApiWallet(prompt: VaultPrompt): String = "0xapi"
+
     override suspend fun importApiWallet(
       key: String,
       prompt: VaultPrompt,
       verify: suspend (address: String) -> Unit,
     ): String = "0xapi"
+
     override suspend fun exportOwnerMnemonic(prompt: VaultPrompt): String = "word1 word2"
+
     override suspend fun exportApiWallet(prompt: VaultPrompt): String = "key"
+
     val removed = mutableListOf<String>()
+
     override suspend fun removeOwner(prompt: VaultPrompt) {
       removed += "owner"
     }
+
     override suspend fun removeApiWallet(prompt: VaultPrompt) {
       removed += "api"
     }
+
     override fun lock() {}
   }
 
   private class FakeSessionRepository : SessionRepository {
     override val status: StateFlow<SessionStatus?> = MutableStateFlow(null)
+
     override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> = operation
+
     override suspend fun accessToken(): String = "token"
-    override suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus =
-      SessionStatus(SessionRole.OWNER, "0xowner", subaccount, 1_000_000L)
+
+    override suspend fun authenticateOwner(
+      subaccount: String?,
+      prompt: VaultPrompt,
+    ): SessionStatus = SessionStatus(SessionRole.OWNER, "0xowner", subaccount, 1_000_000L)
+
     override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
       SessionStatus(SessionRole.API, "0xapi", subaccount, 1_000_000L)
+
     override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus =
       SessionStatus(SessionRole.API, "0xapi", subaccount, 1_000_000L)
+
     override suspend fun useAnonymous(): SessionStatus =
       SessionStatus(SessionRole.ANONYMOUS, null, null, 1_000_000L)
+
     var invalidations = 0
+
     override suspend fun invalidate() {
       invalidations++
     }
@@ -141,7 +162,8 @@ class SettingsViewModelTest {
 
   private class FakeAccountRepository : AccountRepository, VaultsRepository, RewardsRepository {
     override val snapshot: StateFlow<AccountSnapshot> = MutableStateFlow(AccountSnapshot())
-    override val history: StateFlow<AccountHistorySnapshot> = MutableStateFlow(AccountHistorySnapshot())
+    override val history: StateFlow<AccountHistorySnapshot> =
+      MutableStateFlow(AccountHistorySnapshot())
     var withdrawCallCount = 0
     var lastWithdrawAmount = ""
     var lastWithdrawDestination: String? = null
@@ -152,24 +174,48 @@ class SettingsViewModelTest {
     var tradingAccounts: List<TradingAccount> = emptyList()
 
     override suspend fun delegations(): List<TradingKey> = emptyList()
+
     override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState =
       ActionState.Committed("0x")
-    override suspend fun restoreTrading() { restores++ }
+
+    override suspend fun restoreTrading() {
+      restores++
+    }
+
     override suspend fun importTradingKey(key: String, subaccount: String, prompt: VaultPrompt) {}
-    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> = emptyList()
+
+    override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> =
+      emptyList()
+
     override suspend fun subaccounts(owner: String): List<TradingAccount> {
       subaccountReads++
       return tradingAccounts
     }
-    override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) { selections++ }
-    override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
-      ActionState.Committed("0xsub")
+
+    override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
+      selections++
+    }
+
+    override suspend fun createSubaccount(
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): ActionState = ActionState.Committed("0xsub")
+
     override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0xsub"
-    override suspend fun delegateApiWallet(prompt: VaultPrompt, feePayment: FeePayment): ActionState =
-      ActionState.Committed("0xdel")
+
+    override suspend fun delegateApiWallet(
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): ActionState = ActionState.Committed("0xdel")
+
     override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}
-    override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> =
-      flowOf(ActionState.Committed("0xdep"))
+
+    override fun depositUsdc(
+      amount: String,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+    ): Flow<ActionState> = flowOf(ActionState.Committed("0xdep"))
+
     override fun withdrawUsdc(
       amount: String,
       destination: String?,
@@ -184,10 +230,15 @@ class SettingsViewModelTest {
 
     val transfers = mutableListOf<Pair<String, String>>()
 
-    override fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> {
+    override fun transferUsdc(
+      amount: String,
+      destination: String,
+      prompt: VaultPrompt,
+    ): Flow<ActionState> {
       transfers += amount to destination
       return flowOf(ActionState.Committed("0xsend"))
     }
+
     override suspend fun approveBuilderFee(
       builderAddress: String,
       feeBps: UInt,
@@ -198,42 +249,57 @@ class SettingsViewModelTest {
       approvals += feePayment
       return approveResult(feePayment)
     }
+
     val approvals = mutableListOf<FeePayment>()
     var approveResult: (FeePayment) -> ActionState = { ActionState.Committed("0x") }
+
     override suspend fun revokeBuilderFee(
       builderAddress: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
       product: MarketKind,
     ): ActionState = ActionState.Committed("0x")
+
     override suspend fun refresh() {}
+
     override suspend fun refreshHistory() {}
+
     override suspend fun loadMoreHistory(kind: AccountHistoryKind) {}
+
     override suspend fun portfolioChart(
       range: PortfolioChartRange,
       metric: PortfolioMetric,
     ): List<SeriesPoint> = emptyList()
+
     override suspend fun rewards(): Rewards {
       rewardReads++
       return Rewards(points = RewardPoints(total = 120.0))
     }
+
     override suspend fun redeemReferralCode(code: String): Boolean = true
+
     override suspend fun activeTwaps(): List<TwapOrder> = emptyList()
+
     override suspend fun twapHistory(limit: Int): List<TwapOrder> = emptyList()
+
     override suspend fun vaults(limit: Int): List<VaultSummary> = emptyList()
+
     override suspend fun vaultPositions(): List<VaultPosition> = emptyList()
+
     override fun contribute(
       vaultAddress: String,
       amount: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): Flow<ActionState> = flowOf(ActionState.Committed("0xvault"))
+
     override fun redeem(
       vaultAddress: String,
       shares: String,
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): Flow<ActionState> = flowOf(ActionState.Committed("0xvault"))
+
     override fun startLive() {}
   }
 
@@ -292,11 +358,17 @@ class SettingsViewModelTest {
   @Test
   fun aSendOnTheVenueIsATransferAndAWithdrawalNamesItsNetwork() = runTest {
     val fakeAccounts = FakeAccountRepository()
-    val venue = testVenue().copy(withdrawal = WithdrawalTerms("Arbitrum", "1", internalTransfers = true))
+    val venue =
+      testVenue().copy(withdrawal = WithdrawalTerms("Arbitrum", "1", internalTransfers = true))
     val vm =
       SettingsViewModel(
-        AppPreferences(MemoryPreferences()), FakeWalletRepository(), fakeAccounts, FakeSessionRepository(),
-        fakeAccounts, venue, AddressCredentials,
+        AppPreferences(MemoryPreferences()),
+        FakeWalletRepository(),
+        fakeAccounts,
+        FakeSessionRepository(),
+        fakeAccounts,
+        venue,
+        AddressCredentials,
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
@@ -407,7 +479,15 @@ class SettingsViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
     val vm =
-      SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, accounts, testVenue(), AddressCredentials)
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        accounts,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     vm.onIntent(SettingsIntent.SetBuilderFeeBps(MarketKind.PERP, 5))
@@ -432,7 +512,12 @@ class SettingsViewModelTest {
     }
     val vm =
       SettingsViewModel(
-        AppPreferences(MemoryPreferences()), FakeWalletRepository(), accounts, null, accounts, testVenue(),
+        AppPreferences(MemoryPreferences()),
+        FakeWalletRepository(),
+        accounts,
+        null,
+        accounts,
+        testVenue(),
         AddressCredentials,
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
@@ -449,9 +534,20 @@ class SettingsViewModelTest {
   @Test
   fun renamingUsesTheCapturedTargetAndNeverSwitchesOrRestoresAccounts() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"),
+    )
     val accounts = FakeAccountRepository()
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     vm.onIntent(SettingsIntent.RenameWallet("first"))
@@ -463,7 +559,9 @@ class SettingsViewModelTest {
 
     vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
     vm.onIntent(SettingsIntent.ChangeAccountName("BTC strategy"))
-    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x2", selectedSubaccount = "0x4"))
+    preferences.registerProfile(
+      AccountProfile("second", ownerAddress = "0x2", selectedSubaccount = "0x4"),
+    )
     vm.onIntent(SettingsIntent.SaveAccountName)
 
     val saved = preferences.values.first()
@@ -481,8 +579,19 @@ class SettingsViewModelTest {
   @Test
   fun cancellingAndInvalidNamesLeaveSavedNamesUntouched() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", walletName = "Main wallet"))
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null, testVenue(), AddressCredentials)
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", walletName = "Main wallet"),
+    )
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        FakeAccountRepository(),
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(SettingsIntent.RenameWallet("first"))
     vm.onIntent(SettingsIntent.ChangeAccountName(" "))
@@ -500,7 +609,16 @@ class SettingsViewModelTest {
     val store = MemoryPreferences()
     val preferences = AppPreferences(store)
     preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null, testVenue(), AddressCredentials)
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        FakeAccountRepository(),
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(SettingsIntent.RenameWallet("first"))
     vm.onIntent(SettingsIntent.ChangeAccountName("Main wallet"))
@@ -518,19 +636,34 @@ class SettingsViewModelTest {
   @Test
   fun usingTheVenueNameOnlyClearsTheLocalNicknameAfterSave() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"),
+    )
     preferences.renameTradingAccount("first", "0x3", "BTC strategy")
-    val accounts = FakeAccountRepository().apply {
-      tradingAccounts = listOf(TradingAccount("0x3", "0x1", label = "Primary account"))
-    }
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    val accounts =
+      FakeAccountRepository().apply {
+        tradingAccounts = listOf(TradingAccount("0x3", "0x1", label = "Primary account"))
+      }
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
     assertEquals("BTC strategy", vm.uiState.value.nameEditor?.name)
     vm.onIntent(SettingsIntent.UseDefaultAccountName)
     assertEquals("Primary account", vm.uiState.value.nameEditor?.name)
     vm.onIntent(SettingsIntent.DismissAccountName)
-    assertEquals("BTC strategy", preferences.values.first().profiles.single().tradingAccountNames["0x3"])
+    assertEquals(
+      "BTC strategy",
+      preferences.values.first().profiles.single().tradingAccountNames["0x3"],
+    )
     vm.onIntent(SettingsIntent.RenameTradingAccount("first", "0x3"))
     vm.onIntent(SettingsIntent.UseDefaultAccountName)
     vm.onIntent(SettingsIntent.SaveAccountName)
@@ -542,7 +675,10 @@ class SettingsViewModelTest {
   private class FakeWalletBalances : WalletBalanceRepository {
     override val symbols = listOf("APT", "USDC")
     val reads = mutableListOf<Pair<String, String>>()
-    var read: suspend (String, String) -> String = { _, symbol -> if (symbol == "APT") "8.67285184" else "0" }
+    var read: suspend (String, String) -> String = { _, symbol ->
+      if (symbol == "APT") "8.67285184" else "0"
+    }
+
     override suspend fun balance(address: String, symbol: String): String {
       reads += address to symbol
       return read(address, symbol)
@@ -550,18 +686,34 @@ class SettingsViewModelTest {
   }
 
   private fun balanceViewModel(preferences: AppPreferences, balances: WalletBalanceRepository) =
-    SettingsViewModel(preferences, FakeWalletRepository(), FakeAccountRepository(), null, null,
-      testVenue(), AddressCredentials, walletBalances = balances)
+    SettingsViewModel(
+      preferences,
+      FakeWalletRepository(),
+      FakeAccountRepository(),
+      null,
+      null,
+      testVenue(),
+      AddressCredentials,
+      walletBalances = balances,
+    )
 
   @Test
   fun walletBalancesUseTheWalletAddressAndOnlyPollWhileTheAccountRouteIsVisible() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", apiWalletAddress = "0x2", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile(
+        "first",
+        ownerAddress = "0x1",
+        apiWalletAddress = "0x2",
+        selectedSubaccount = "0x3",
+      ),
+    )
     val balances = FakeWalletBalances()
     val vm = balanceViewModel(preferences, balances)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     assertEquals(0, balances.reads.size)
-    val visible = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
+    val visible =
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
     runCurrent()
     assertEquals(listOf("0x1", "0x1"), balances.reads.map { it.first })
     assertEquals("8.67285184", vm.uiState.value.walletBalances.first().amount)
@@ -583,9 +735,10 @@ class SettingsViewModelTest {
   fun aFailedTokenReadDoesNotHideAnotherTokenOrInventZeroAndCanRetry() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
-    val balances = FakeWalletBalances().apply {
-      read = { _, symbol -> if (symbol == "APT") "8.67285184" else error("Offline") }
-    }
+    val balances =
+      FakeWalletBalances().apply {
+        read = { _, symbol -> if (symbol == "APT") "8.67285184" else error("Offline") }
+      }
     val vm = balanceViewModel(preferences, balances)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
@@ -601,12 +754,21 @@ class SettingsViewModelTest {
     assertEquals(true, vm.uiState.value.walletBalances.first().unavailable)
     assertEquals("0.00", vm.uiState.value.walletBalances.last().displayAmount)
     assertFalse(vm.uiState.value.walletBalances.last().unavailable)
-    assertFalse(ReadRecoveryDiagnostics.events.value.last { it.operation == ReadOperation.WALLET_BALANCES }.recovered)
+    assertFalse(
+      ReadRecoveryDiagnostics.events.value
+        .last { it.operation == ReadOperation.WALLET_BALANCES }
+        .recovered,
+    )
 
     balances.read = { _, _ -> "1" }
-    advanceTimeBy(15_001); runCurrent()
+    advanceTimeBy(15_001)
+    runCurrent()
     assertTrue(vm.uiState.value.walletBalances.none { it.unavailable })
-    assertTrue(ReadRecoveryDiagnostics.events.value.last { it.operation == ReadOperation.WALLET_BALANCES }.recovered)
+    assertTrue(
+      ReadRecoveryDiagnostics.events.value
+        .last { it.operation == ReadOperation.WALLET_BALANCES }
+        .recovered,
+    )
   }
 
   @Test
@@ -614,14 +776,22 @@ class SettingsViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1"))
     val release = CompletableDeferred<Unit>()
-    val balances = FakeWalletBalances().apply {
-      read = { address, _ ->
-        if (address == "0x1") withContext(NonCancellable) { release.await(); "999" } else "2"
+    val balances =
+      FakeWalletBalances().apply {
+        read = { address, _ ->
+          if (address == "0x1")
+            withContext(NonCancellable) {
+              release.await()
+              "999"
+            }
+          else "2"
+        }
       }
-    }
     val vm = balanceViewModel(preferences, balances)
     val observed = mutableListOf<SettingsUiState>()
-    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect { observed += it } }
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+      vm.uiState.collect { observed += it }
+    }
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.followWalletBalances() }
     runCurrent()
     preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4"))
@@ -636,7 +806,9 @@ class SettingsViewModelTest {
   @Test
   fun anApiOnlyWalletUsesItsOwnAddressAndRemovingItClearsTheBalances() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("api", apiWalletAddress = "0x2", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile("api", apiWalletAddress = "0x2", selectedSubaccount = "0x3"),
+    )
     val balances = FakeWalletBalances()
     val vm = balanceViewModel(preferences, balances)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
@@ -659,7 +831,10 @@ class SettingsViewModelTest {
     assertEquals("10.00", WalletTokenBalance("APT", "9.99999999").displayAmount)
     assertEquals("0.01", WalletTokenBalance("APT", "0.01").displayAmount)
     assertEquals("0.00", WalletTokenBalance("APT", "0").displayAmount)
-    assertEquals("184467440737.10", WalletTokenBalance("APT", "184467440737.09551615").displayAmount)
+    assertEquals(
+      "184467440737.10",
+      WalletTokenBalance("APT", "184467440737.09551615").displayAmount,
+    )
     assertEquals("1.23", WalletTokenBalance("USDC", "1.234567").displayAmount)
     assertEquals("0.00", WalletTokenBalance("USDC", "0").displayAmount)
     assertEquals("—", WalletTokenBalance("USDC").displayAmount)
@@ -668,25 +843,48 @@ class SettingsViewModelTest {
   @Test
   fun withdrawalCompletionDoesNotWaitForRefreshOrBecomeAFailureIfRefreshFails() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"),
+    )
     val gate = CompletableDeferred<Unit>()
     var refreshStarted = false
-    val accounts = object : AccountRepository by FakeAccountRepository() {
-      override fun withdrawUsdc(amount: String, destination: String?, prompt: VaultPrompt, feePayment: FeePayment) =
-        flowOf(ActionState.Committed("confirmed"))
-      override suspend fun restoreTrading() { refreshStarted = true; gate.await(); error("Refresh failed") }
-    }
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    val accounts =
+      object : AccountRepository by FakeAccountRepository() {
+        override fun withdrawUsdc(
+          amount: String,
+          destination: String?,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ) = flowOf(ActionState.Committed("confirmed"))
+
+        override suspend fun restoreTrading() {
+          refreshStarted = true
+          gate.await()
+          error("Refresh failed")
+        }
+      }
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     runCurrent()
     vm.onIntent(SettingsIntent.OpenWithdraw)
     vm.onIntent(SettingsIntent.ChangeWithdrawDestination("0x1"))
     vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1"))
-    vm.onIntent(SettingsIntent.SubmitWithdraw); runCurrent()
+    vm.onIntent(SettingsIntent.SubmitWithdraw)
+    runCurrent()
     kotlin.test.assertIs<ActionState.Committed>(vm.uiState.value.withdrawTransaction)
     kotlin.test.assertTrue(refreshStarted)
     assertFalse(vm.uiState.value.withdrawing)
-    gate.complete(Unit); runCurrent()
+    gate.complete(Unit)
+    runCurrent()
     assertNull(vm.uiState.value.withdrawError)
     kotlin.test.assertIs<ActionState.Committed>(vm.uiState.value.withdrawTransaction)
   }
@@ -694,30 +892,52 @@ class SettingsViewModelTest {
   @Test
   fun withdrawalFeesResolveImmediatelyForMaxAndRejectOldAccountResults() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"))
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0x3"),
+    )
     val gate = CompletableDeferred<Unit>()
     val reads = mutableListOf<String>()
-    val accounts = object : AccountRepository by FakeAccountRepository() {
-      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
-        reads += amount
-        if (amount == "2") withContext(NonCancellable) { gate.await() }
-        return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+    val accounts =
+      object : AccountRepository by FakeAccountRepository() {
+        override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+          reads += amount
+          if (amount == "2") withContext(NonCancellable) { gate.await() }
+          return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+        }
       }
-    }
-    val vm = SettingsViewModel(preferences, FakeWalletRepository(), accounts, null, null, testVenue(), AddressCredentials)
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        null,
+        testVenue(),
+        AddressCredentials,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     runCurrent()
     vm.onIntent(SettingsIntent.OpenWithdraw)
-    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1", immediate = true)); runCurrent()
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1", immediate = true))
+    runCurrent()
     assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.withdrawNetworkFee)
-    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1.0")); runCurrent()
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("1.0"))
+    runCurrent()
     assertEquals(listOf("1"), reads)
-    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("2")); advanceTimeBy(176); runCurrent()
-    preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4", selectedSubaccount = "0x5")); runCurrent()
-    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("3", immediate = true)); runCurrent()
-    gate.complete(Unit); runCurrent()
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("2"))
+    advanceTimeBy(176)
+    runCurrent()
+    preferences.registerProfile(
+      AccountProfile("second", ownerAddress = "0x4", selectedSubaccount = "0x5"),
+    )
+    runCurrent()
+    vm.onIntent(SettingsIntent.ChangeWithdrawAmount("3", immediate = true))
+    runCurrent()
+    gate.complete(Unit)
+    runCurrent()
     assertEquals(NetworkFee(300uL, 5_000uL), vm.uiState.value.withdrawNetworkFee)
-    vm.onIntent(SettingsIntent.DismissWithdraw); runCurrent()
+    vm.onIntent(SettingsIntent.DismissWithdraw)
+    runCurrent()
     assertNull(vm.uiState.value.withdrawNetworkFee)
   }
 

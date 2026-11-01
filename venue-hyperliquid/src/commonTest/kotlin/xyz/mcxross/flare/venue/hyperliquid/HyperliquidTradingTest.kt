@@ -30,11 +30,10 @@ import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TimeInForce
 import xyz.mcxross.flare.venue.model.TradeAction
-import xyz.mcxross.flare.venue.model.TwapSchedule
 
 /**
- * Orders, exits, cancels and leverage as sent: the wire JSON of each is what
- * hyperliquid-python-sdk 0.24.0 builds for the same order (see the SDK's SdkOrderShapesTest).
+ * Orders, exits, cancels and leverage as sent: the wire JSON of each is what hyperliquid-python-sdk
+ * 0.24.0 builds for the same order (see the SDK's SdkOrderShapesTest).
  */
 class HyperliquidTradingTest {
   private val prompt = VaultPrompt("Confirm order", "Confirm your identity")
@@ -48,13 +47,20 @@ class HyperliquidTradingTest {
       check(
         BTC,
         OrderRequest(
-          "BTC", OrderSide.BUY, OrderType.MARKET, "0.01", slippageBps = 50,
-          builderAddress = BUILDER, builderFeeBps = 5,
+          "BTC",
+          OrderSide.BUY,
+          OrderType.MARKET,
+          "0.01",
+          slippageBps = 50,
+          builderAddress = BUILDER,
+          builderFeeBps = 5,
         ),
         book,
       )
     harness.submitter.outcome = {
-      ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Filled("0.01", "65010.5", 123L, CLOID))))
+      ExchangeOutcome.Accepted(
+        ExchangeResponse.Orders(listOf(OrderStatus.Filled("0.01", "65010.5", 123L, CLOID))),
+      )
     }
     var journaled: String? = null
     harness.submitter.beforeSigning = { journaled = harness.journal.find(CLOID.hex)?.operationName }
@@ -85,7 +91,8 @@ class HyperliquidTradingTest {
     val last =
       harness.place(
         BTC,
-        limit("BTC", OrderSide.SELL, "0.01", "64000", TimeInForce.IMMEDIATE_OR_CANCEL).copy(reduceOnly = true),
+        limit("BTC", OrderSide.SELL, "0.01", "64000", TimeInForce.IMMEDIATE_OR_CANCEL)
+          .copy(reduceOnly = true),
       )
 
     assertEquals(
@@ -117,18 +124,25 @@ class HyperliquidTradingTest {
     val harness = harness()
     harness.submitter.outcome = {
       ExchangeOutcome.Accepted(
-        ExchangeResponse.Orders(listOf(OrderStatus.Resting(5L, CLOID), OrderStatus.WaitingForFill, OrderStatus.WaitingForFill))
+        ExchangeResponse.Orders(
+          listOf(
+            OrderStatus.Resting(5L, CLOID),
+            OrderStatus.WaitingForFill,
+            OrderStatus.WaitingForFill,
+          ),
+        ),
       )
     }
     val order =
-      limit("BTC", OrderSide.BUY, "0.01", "65000").copy(
-        takeProfitTrigger = "70000",
-        takeProfitLimit = "70000",
-        stopLossTrigger = "60000",
-        stopLossLimit = "60000",
-        builderAddress = BUILDER,
-        builderFeeBps = 5,
-      )
+      limit("BTC", OrderSide.BUY, "0.01", "65000")
+        .copy(
+          takeProfitTrigger = "70000",
+          takeProfitLimit = "70000",
+          stopLossTrigger = "60000",
+          stopLossLimit = "60000",
+          builderAddress = BUILDER,
+          builderFeeBps = 5,
+        )
 
     val result = harness.place(BTC, order)
 
@@ -153,29 +167,51 @@ class HyperliquidTradingTest {
     fun orders(vararg statuses: OrderStatus) = ExchangeResponse.Orders(statuses.toList())
 
     assertEquals(
-      ActionState.Committed("5", "Your order is on the book. Not set: take profit: Invalid TP/SL price."),
+      ActionState.Committed(
+        "5",
+        "Your order is on the book. Not set: take profit: Invalid TP/SL price.",
+      ),
       HyperliquidResults.orders(
-        orders(OrderStatus.Resting(5L), OrderStatus.Error("Invalid TP/SL price."), OrderStatus.WaitingForFill),
+        orders(
+          OrderStatus.Resting(5L),
+          OrderStatus.Error("Invalid TP/SL price."),
+          OrderStatus.WaitingForFill,
+        ),
         "ref",
         labels,
       ),
     )
     val failed =
-      HyperliquidResults.orders(orders(OrderStatus.Error("Insufficient margin")), "ref", labels.take(1))
+      HyperliquidResults.orders(
+        orders(OrderStatus.Error("Insufficient margin")),
+        "ref",
+        labels.take(1),
+      )
     assertEquals(ActionState.Failed("Insufficient margin", "ref", committed = true), failed)
-    assertNull(HyperliquidResults.orders(orders(OrderStatus.Unrecognized("x")), "ref", labels.take(1)))
+    assertNull(
+      HyperliquidResults.orders(orders(OrderStatus.Unrecognized("x")), "ref", labels.take(1)),
+    )
     assertNull(HyperliquidResults.orders(ExchangeResponse.Default, "ref", labels))
     assertEquals(
-      ActionState.Committed("ref", "Canceled 1 of 2. Order was never placed, already canceled, or filled."),
+      ActionState.Committed(
+        "ref",
+        "Canceled 1 of 2. Order was never placed, already canceled, or filled.",
+      ),
       HyperliquidResults.cancels(
         ExchangeResponse.Cancels(
-          listOf(CancelStatus.Success, CancelStatus.Error("Order was never placed, already canceled, or filled."))
+          listOf(
+            CancelStatus.Success,
+            CancelStatus.Error("Order was never placed, already canceled, or filled."),
+          ),
         ),
         "ref",
       ),
     )
     assertIs<ActionState.Failed>(
-      HyperliquidResults.cancels(ExchangeResponse.Cancels(listOf(CancelStatus.Error("gone"))), "ref")
+      HyperliquidResults.cancels(
+        ExchangeResponse.Cancels(listOf(CancelStatus.Error("gone"))),
+        "ref",
+      ),
     )
   }
 
@@ -204,7 +240,9 @@ class HyperliquidTradingTest {
   @Test
   fun aLostOrderResolvesOnceItsExpiryHasPassed() = runTest {
     val harness = harness()
-    harness.answer = { type, _ -> if (type == "orderStatus") """{"status":"unknownOid"}""" else assets(type) }
+    harness.answer = { type, _ ->
+      if (type == "orderStatus") """{"status":"unknownOid"}""" else assets(type)
+    }
     harness.submitter.outcome = { ExchangeOutcome.Unknown("timed out") }
 
     harness.place(BTC, limit("BTC", OrderSide.BUY, "0.01", "65000"))
@@ -217,7 +255,9 @@ class HyperliquidTradingTest {
   @Test
   fun aRejectedOrderFailsAndLeavesNothingToReconcile() = runTest {
     val harness = harness()
-    harness.submitter.outcome = { ExchangeOutcome.Rejected("Must deposit before performing actions.") }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Rejected("Must deposit before performing actions.")
+    }
 
     val failed = harness.place(BTC, limit("BTC", OrderSide.BUY, "0.01", "65000"))
 
@@ -234,7 +274,10 @@ class HyperliquidTradingTest {
 
     // Past the rules' check, so only the order's own validation stops it.
     val failed =
-      harness.place(BTC, OrderRequest("BTC", OrderSide.BUY, OrderType.LIMIT, "0.000001", price = "65000"))
+      harness.place(
+        BTC,
+        OrderRequest("BTC", OrderSide.BUY, OrderType.LIMIT, "0.000001", price = "65000"),
+      )
 
     assertTrue(assertIs<ActionState.Failed>(failed).definitelyNotSubmitted)
     assertTrue(harness.submitter.sent.isEmpty())
@@ -245,16 +288,30 @@ class HyperliquidTradingTest {
   fun cancelsGoByOidInOneBatchAndByCloidWhereThatsAllThereIs() = runTest {
     val harness = harness()
     harness.submitter.outcome = {
-      ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success, CancelStatus.Success)))
+      ExchangeOutcome.Accepted(
+        ExchangeResponse.Cancels(listOf(CancelStatus.Success, CancelStatus.Success)),
+      )
     }
 
     val batch =
       harness.trading
-        .execute(TradeAction.CancelOrders(owner, listOf(OpenOrderRef("BTC", "123456"), OpenOrderRef("@107", "789"))), prompt)
+        .execute(
+          TradeAction.CancelOrders(
+            owner,
+            listOf(OpenOrderRef("BTC", "123456"), OpenOrderRef("@107", "789")),
+          ),
+          prompt,
+        )
         .toList()
         .last()
-    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success))) }
-    val byCloid = harness.trading.execute(TradeAction.CancelOrder(owner, "BTC", CLOID.hex), prompt).toList().last()
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success)))
+    }
+    val byCloid =
+      harness.trading
+        .execute(TradeAction.CancelOrder(owner, "BTC", CLOID.hex), prompt)
+        .toList()
+        .last()
 
     assertEquals(
       listOf(
@@ -274,7 +331,11 @@ class HyperliquidTradingTest {
     harness.answer = { type, _ -> if (type == "frontendOpenOrders") open else assets(type) }
     harness.submitter.outcome = { ExchangeOutcome.Unknown("timed out") }
 
-    val pending = harness.trading.execute(TradeAction.CancelOrder(owner, "ETH", "62467226234"), prompt).toList().last()
+    val pending =
+      harness.trading
+        .execute(TradeAction.CancelOrder(owner, "ETH", "62467226234"), prompt)
+        .toList()
+        .last()
 
     assertIs<ActionState.Pending>(pending)
     assertEquals(1, harness.actions.reconcile().unresolved)
@@ -317,7 +378,10 @@ class HyperliquidTradingTest {
     val changed = harness.configure("BTC", MarginMode.CROSS, 5)
 
     assertEquals(ActionState.Committed("", "Leverage is already 10×."), unchanged)
-    assertEquals(listOf("""{"type":"updateLeverage","asset":0,"isCross":false,"leverage":5}"""), harness.wires())
+    assertEquals(
+      listOf("""{"type":"updateLeverage","asset":0,"isCross":false,"leverage":5}"""),
+      harness.wires(),
+    )
     assertIs<ActionState.Committed>(changed)
     assertTrue(harness.journal.entries.value.isEmpty())
   }
@@ -364,7 +428,9 @@ class HyperliquidTradingTest {
     harness.submitter.outcome = { action ->
       if (action.type == "order")
         ExchangeOutcome.Accepted(
-          ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger, OrderStatus.WaitingForTrigger))
+          ExchangeResponse.Orders(
+            listOf(OrderStatus.WaitingForTrigger, OrderStatus.WaitingForTrigger),
+          ),
         )
       else ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success)))
     }
@@ -373,8 +439,12 @@ class HyperliquidTradingTest {
       harness.trading
         .execute(
           TradeAction.SetPositionTpSl(
-            owner, BTC, takeProfitTrigger = "60000", takeProfitLimit = "60000",
-            stopLossTrigger = "70000", stopLossLimit = "70000",
+            owner,
+            BTC,
+            takeProfitTrigger = "60000",
+            takeProfitLimit = "60000",
+            stopLossTrigger = "70000",
+            stopLossLimit = "70000",
           ),
           prompt,
         )
@@ -404,7 +474,9 @@ class HyperliquidTradingTest {
     harness.submitter.outcome = { action ->
       if (action.type == "order")
         ExchangeOutcome.Accepted(
-          ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger, OrderStatus.WaitingForTrigger))
+          ExchangeResponse.Orders(
+            listOf(OrderStatus.WaitingForTrigger, OrderStatus.WaitingForTrigger),
+          ),
         )
       else ExchangeOutcome.Accepted(ExchangeResponse.Cancels(List(3) { CancelStatus.Success }))
     }
@@ -413,8 +485,12 @@ class HyperliquidTradingTest {
       harness.trading
         .execute(
           TradeAction.SetPositionTpSl(
-            owner, BTC, takeProfitTrigger = "60000", takeProfitLimit = "60000",
-            stopLossTrigger = "70000", stopLossLimit = "70000",
+            owner,
+            BTC,
+            takeProfitTrigger = "60000",
+            takeProfitLimit = "60000",
+            stopLossTrigger = "70000",
+            stopLossLimit = "70000",
           ),
           prompt,
         )
@@ -443,7 +519,8 @@ class HyperliquidTradingTest {
       }
     }
     harness.submitter.outcome = { action ->
-      if (action.type == "order") ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger)))
+      if (action.type == "order")
+        ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.WaitingForTrigger)))
       else ExchangeOutcome.Accepted(ExchangeResponse.Cancels(List(2) { CancelStatus.Success }))
     }
 
@@ -451,7 +528,10 @@ class HyperliquidTradingTest {
       .execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "70000"), prompt)
       .toList()
 
-    assertEquals("""{"type":"cancel","cancels":[{"a":0,"o":12},{"a":0,"o":571747466629}]}""", harness.wires().last())
+    assertEquals(
+      """{"type":"cancel","cancels":[{"a":0,"o":12},{"a":0,"o":571747466629}]}""",
+      harness.wires().last(),
+    )
   }
 
   @Test
@@ -465,11 +545,16 @@ class HyperliquidTradingTest {
       }
     }
     harness.submitter.outcome = {
-      ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Error("Insufficient margin"))))
+      ExchangeOutcome.Accepted(
+        ExchangeResponse.Orders(listOf(OrderStatus.Error("Insufficient margin"))),
+      )
     }
 
     val result =
-      harness.trading.execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "70000"), prompt).toList().last()
+      harness.trading
+        .execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "70000"), prompt)
+        .toList()
+        .last()
 
     assertIs<ActionState.Failed>(result)
     assertEquals(1, harness.wires().size, "nothing canceled")
@@ -478,10 +563,15 @@ class HyperliquidTradingTest {
   @Test
   fun positionExitsNeedAnOpenPosition() = runTest {
     val harness = harness()
-    harness.answer = { type, _ -> if (type == "clearinghouseState") Fixtures.CLEARINGHOUSE_STATE_EMPTY else assets(type) }
+    harness.answer = { type, _ ->
+      if (type == "clearinghouseState") Fixtures.CLEARINGHOUSE_STATE_EMPTY else assets(type)
+    }
 
     val failed =
-      harness.trading.execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "60000"), prompt).toList().last()
+      harness.trading
+        .execute(TradeAction.SetPositionTpSl(owner, BTC, stopLossTrigger = "60000"), prompt)
+        .toList()
+        .last()
 
     assertTrue(assertIs<ActionState.Failed>(failed).definitelyNotSubmitted)
     assertTrue(harness.submitter.sent.isEmpty())
@@ -490,10 +580,15 @@ class HyperliquidTradingTest {
   @Test
   fun aPositionsExitIsCanceledByOid() = runTest {
     val harness = harness()
-    harness.submitter.outcome = { ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success))) }
+    harness.submitter.outcome = {
+      ExchangeOutcome.Accepted(ExchangeResponse.Cancels(listOf(CancelStatus.Success)))
+    }
 
     val result =
-      harness.trading.execute(TradeAction.CancelPositionTpSl(owner, "BTC", "571747466629"), prompt).toList().last()
+      harness.trading
+        .execute(TradeAction.CancelPositionTpSl(owner, "BTC", "571747466629"), prompt)
+        .toList()
+        .last()
 
     assertEquals("""{"type":"cancel","cancels":[{"a":0,"o":571747466629}]}""", harness.wire())
     assertIs<ActionState.Committed>(result)
@@ -503,12 +598,21 @@ class HyperliquidTradingTest {
   fun closingIsAReduceOnlyIocForTheWholeSizeAtTheSlippageBound() = runTest {
     val harness = harness()
     harness.submitter.outcome = {
-      ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Filled("0.76666", "64990", 9L))))
+      ExchangeOutcome.Accepted(
+        ExchangeResponse.Orders(listOf(OrderStatus.Filled("0.76666", "64990", 9L))),
+      )
     }
     val close =
       check(
         BTC,
-        OrderRequest("BTC", OrderSide.SELL, OrderType.MARKET, "0.76666", reduceOnly = true, slippageBps = 50),
+        OrderRequest(
+          "BTC",
+          OrderSide.SELL,
+          OrderType.MARKET,
+          "0.76666",
+          reduceOnly = true,
+          slippageBps = 50,
+        ),
         book(bid = "64990", ask = "65000"),
       )
 
@@ -524,7 +628,14 @@ class HyperliquidTradingTest {
   @Test
   fun newJournaledActionsSurviveARestart() {
     val cancel = JournaledAction.CancelOrders(owner, listOf("123", CLOID.hex), 5L)
-    val leverage = JournaledAction.UpdateLeverage(owner, "xyz:ABC/USD", isCross = false, leverage = 3, lapsesAtMs = 6L)
+    val leverage =
+      JournaledAction.UpdateLeverage(
+        owner,
+        "xyz:ABC/USD",
+        isCross = false,
+        leverage = 3,
+        lapsesAtMs = 6L,
+      )
 
     assertEquals(cancel, JournaledAction.decode(JournaledAction.encode(cancel)))
     assertEquals(leverage, JournaledAction.decode(JournaledAction.encode(leverage)))
@@ -533,20 +644,30 @@ class HyperliquidTradingTest {
   private class Harness(val setup: SetupHarness) {
     /** The market's leverage setting as `activeAssetData` reports it; null fails the read. */
     var leverage: String? = """{"type":"cross","value":20}"""
-    val submitter get() = setup.submitter
-    val journal get() = setup.journal
-    val actions get() = setup.actions
-    val wallet get() = setup.wallet
+    val submitter
+      get() = setup.submitter
+
+    val journal
+      get() = setup.journal
+
+    val actions
+      get() = setup.actions
+
+    val wallet
+      get() = setup.wallet
+
     var now: Long
       get() = setup.now
       set(value) {
         setup.now = value
       }
+
     var answer: (String, kotlinx.serialization.json.JsonObject) -> String?
       get() = setup.answer
       set(value) {
         setup.answer = value
       }
+
     val trading =
       HyperliquidTradingRepository(
         setup.client,
@@ -562,11 +683,20 @@ class HyperliquidTradingTest {
     fun wire(): String = wires().last()
 
     suspend fun place(market: Market, order: OrderRequest): ActionState =
-      trading.execute(TradeAction.PlaceOrder(SetupHarness.OWNER, market, order), VaultPrompt("Order", "")).toList().last()
+      trading
+        .execute(
+          TradeAction.PlaceOrder(SetupHarness.OWNER, market, order),
+          VaultPrompt("Order", ""),
+        )
+        .toList()
+        .last()
 
     suspend fun configure(coin: String, mode: MarginMode, leverage: Int): ActionState =
       trading
-        .execute(TradeAction.ConfigureMarket(SetupHarness.OWNER, coin, mode, leverage), VaultPrompt("Leverage", ""))
+        .execute(
+          TradeAction.ConfigureMarket(SetupHarness.OWNER, coin, mode, leverage),
+          VaultPrompt("Leverage", ""),
+        )
         .toList()
         .last()
   }
@@ -576,7 +706,8 @@ class HyperliquidTradingTest {
     setup.preferences.setApiWallet(AGENT)
     val harness = Harness(setup)
     setup.answer = { type, body ->
-      if (type == "activeAssetData") harness.leverage?.let { activeAssetData(body["coin"]!!.jsonPrimitive.content, it) }
+      if (type == "activeAssetData")
+        harness.leverage?.let { activeAssetData(body["coin"]!!.jsonPrimitive.content, it) }
       else assets(type)
     }
     return harness
@@ -601,7 +732,11 @@ class HyperliquidTradingTest {
     )
 
   private fun book(bid: String, ask: String) =
-    OrderBook("BTC", bids = listOf(OrderBookLevel(bid, "1")), asks = listOf(OrderBookLevel(ask, "1")))
+    OrderBook(
+      "BTC",
+      bids = listOf(OrderBookLevel(bid, "1")),
+      asks = listOf(OrderBookLevel(ask, "1")),
+    )
 
   private fun resting(oid: Long) =
     ExchangeOutcome.Accepted(ExchangeResponse.Orders(listOf(OrderStatus.Resting(oid, CLOID))))
@@ -617,7 +752,8 @@ class HyperliquidTradingTest {
     const val SPOT_META =
       """{"universe":[{"tokens":[1,0],"name":"@107","index":107}],"tokens":[{"name":"USDC","szDecimals":8,"weiDecimals":8,"index":0,"tokenId":"0x6d1e7cde53ba9467b783cb7c530ce054"},{"name":"HYPE","szDecimals":2,"weiDecimals":8,"index":1,"tokenId":"0x7317beb7cceed72ef0b346074cc8e7ab"}]}"""
 
-    val SHORT_BTC = Fixtures.CLEARINGHOUSE_STATE.replace("\"szi\":\"0.76666\"", "\"szi\":\"-0.76666\"")
+    val SHORT_BTC =
+      Fixtures.CLEARINGHOUSE_STATE.replace("\"szi\":\"0.76666\"", "\"szi\":\"-0.76666\"")
     val OLD_BTC_STOP =
       """[{"coin":"BTC","side":"B","limitPx":"77000","sz":"0.0","oid":571747466629,"timestamp":1791784718318,"triggerCondition":"Price above 70000","isTrigger":true,"triggerPx":"70000.0","children":[],"isPositionTpsl":true,"reduceOnly":true,"orderType":"Stop Market","origSz":"0.0","tif":null,"cloid":null}]"""
 
@@ -628,7 +764,8 @@ class HyperliquidTradingTest {
     val MIXED_BTC_EXITS =
       """[{"coin":"BTC","side":"B","limitPx":"66000","sz":"0.76666","oid":11,"timestamp":1,"triggerCondition":"Price below 60000","isTrigger":true,"triggerPx":"60000.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Take Profit Market","origSz":"0.76666","tif":null,"cloid":null},""" +
         """{"coin":"BTC","side":"B","limitPx":"77000","sz":"0.76666","oid":12,"timestamp":1,"triggerCondition":"Price above 70000","isTrigger":true,"triggerPx":"70000.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Stop Market","origSz":"0.76666","tif":null,"cloid":null},""" +
-        OLD_BTC_STOP.removePrefix("[").removeSuffix("]") + "," +
+        OLD_BTC_STOP.removePrefix("[").removeSuffix("]") +
+        "," +
         """{"coin":"ETH","side":"B","limitPx":"3000","sz":"1","oid":13,"timestamp":1,"triggerCondition":"Price above 2900","isTrigger":true,"triggerPx":"2900.0","children":[],"isPositionTpsl":false,"reduceOnly":true,"orderType":"Stop Market","origSz":"1","tif":null,"cloid":null},""" +
         """{"coin":"BTC","side":"B","limitPx":"60000","sz":"0.1","oid":14,"timestamp":1,"triggerCondition":"N/A","isTrigger":false,"triggerPx":"0.0","children":[],"isPositionTpsl":false,"reduceOnly":false,"orderType":"Limit","origSz":"0.1","tif":"Gtc","cloid":null}]"""
 
@@ -639,7 +776,18 @@ class HyperliquidTradingTest {
 
     fun market(coin: String, symbol: String, kind: MarketKind, szDecimals: Int): Market {
       val rules = HyperliquidOrderRules(coin, symbol, kind, szDecimals)
-      return Market(coin, symbol, "$symbol/USD", kind, "crypto", rules.maxPriceDecimals, szDecimals, 40, false, rules)
+      return Market(
+        coin,
+        symbol,
+        "$symbol/USD",
+        kind,
+        "crypto",
+        rules.maxPriceDecimals,
+        szDecimals,
+        40,
+        false,
+        rules,
+      )
     }
 
     fun assets(type: String): String? =

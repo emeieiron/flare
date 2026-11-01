@@ -16,7 +16,8 @@ import xyz.mcxross.flare.store.androidPreferencesDataStore
 
 class MainActivity : FragmentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
-    // One splash on every Android version. The app's first frame repeats it exactly, so the splash is
+    // One splash on every Android version. The app's first frame repeats it exactly, so the splash
+    // is
     // removed at once instead of fading out through black before the app appears.
     installSplashScreen().setOnExitAnimationListener { splash -> splash.remove() }
     enableEdgeToEdge()

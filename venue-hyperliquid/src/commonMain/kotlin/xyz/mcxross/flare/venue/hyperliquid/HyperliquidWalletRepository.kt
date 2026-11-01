@@ -43,7 +43,7 @@ class HyperliquidWalletRepository(
     val id = "owner_$address"
     storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), phrase, prompt)
     preferences.registerProfile(
-      AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false, createdInApp = true)
+      AccountProfile(id, ownerAddress = address, ownerBackupConfirmed = false, createdInApp = true),
     )
     return OwnerBackup(address, phrase.split(' '))
   }
@@ -55,7 +55,7 @@ class HyperliquidWalletRepository(
     val id = saved?.id ?: "owner_$address"
     storeText(WalletSecretSlot.OWNER_MNEMONIC.forProfile(id), credential, prompt)
     preferences.registerProfile(
-      (saved ?: AccountProfile(id)).copy(ownerAddress = address, ownerBackupConfirmed = true)
+      (saved ?: AccountProfile(id)).copy(ownerAddress = address, ownerBackupConfirmed = true),
     )
     return address
   }
@@ -79,9 +79,10 @@ class HyperliquidWalletRepository(
     prompt: VaultPrompt,
     verify: suspend (address: String) -> Unit,
   ): String {
-    val normalized =
-      runCatching { EvmKeys.normalizePrivateKey(key) }
-        .getOrElse { throw IllegalArgumentException("Enter the API wallet’s private key.") }
+    val normalized = runCatching {
+      EvmKeys.normalizePrivateKey(key)
+    }
+      .getOrElse { throw IllegalArgumentException("Enter the API wallet’s private key.") }
     val address = EvmKeys.address(normalized)
     verify(address)
     val saved =
@@ -96,16 +97,29 @@ class HyperliquidWalletRepository(
   }
 
   override suspend fun discardApiWallet(prompt: VaultPrompt) {
-    vault.remove(slot(WalletSecretSlot.API_PRIVATE_KEY), prompt.copy(requireFreshAuthorization = false))
+    vault.remove(
+      slot(WalletSecretSlot.API_PRIVATE_KEY),
+      prompt.copy(requireFreshAuthorization = false),
+    )
     preferences.setOnboardingComplete(false)
     preferences.setApiWallet(null)
   }
 
-  override suspend fun <T> withOwnerSigner(prompt: VaultPrompt, block: suspend (EvmSigner) -> T): T =
-    withSigner(WalletSecretSlot.OWNER_MNEMONIC, prompt, HyperliquidCredentialParser::ownerKey, block)
+  override suspend fun <T> withOwnerSigner(
+    prompt: VaultPrompt,
+    block: suspend (EvmSigner) -> T,
+  ): T =
+    withSigner(
+      WalletSecretSlot.OWNER_MNEMONIC,
+      prompt,
+      HyperliquidCredentialParser::ownerKey,
+      block,
+    )
 
-  override suspend fun <T> withAgentSigner(prompt: VaultPrompt, block: suspend (EvmSigner) -> T): T =
-    withSigner(WalletSecretSlot.API_PRIVATE_KEY, prompt, EvmKeys::normalizePrivateKey, block)
+  override suspend fun <T> withAgentSigner(
+    prompt: VaultPrompt,
+    block: suspend (EvmSigner) -> T,
+  ): T = withSigner(WalletSecretSlot.API_PRIVATE_KEY, prompt, EvmKeys::normalizePrivateKey, block)
 
   /** Backgrounding cancels the block, so a key can never sign for an unattended app. */
   private suspend fun <T> withSigner(
@@ -135,12 +149,18 @@ class HyperliquidWalletRepository(
 
   /** Removing every key of a profile forgets it, and the next stored profile becomes active. */
   override suspend fun removeOwner(prompt: VaultPrompt) {
-    vault.remove(slot(WalletSecretSlot.OWNER_MNEMONIC), prompt.copy(requireFreshAuthorization = true))
+    vault.remove(
+      slot(WalletSecretSlot.OWNER_MNEMONIC),
+      prompt.copy(requireFreshAuthorization = true),
+    )
     preferences.setOwnerWallet(null, backupConfirmed = false)
   }
 
   override suspend fun removeApiWallet(prompt: VaultPrompt) {
-    vault.remove(slot(WalletSecretSlot.API_PRIVATE_KEY), prompt.copy(requireFreshAuthorization = true))
+    vault.remove(
+      slot(WalletSecretSlot.API_PRIVATE_KEY),
+      prompt.copy(requireFreshAuthorization = true),
+    )
     preferences.setOnboardingComplete(false)
     preferences.setApiWallet(null)
   }

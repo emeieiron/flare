@@ -77,12 +77,12 @@ class WorkerSessionRepositoryIosTest {
               signature,
             )
           respondJson(
-            """{"token":"owner-token","expiresAt":$tokenExpiry,"role":"owner","walletAddress":"$address"}"""
+            """{"token":"owner-token","expiresAt":$tokenExpiry,"role":"owner","walletAddress":"$address"}""",
           )
         }
         "/v1/session/anonymous" ->
           respondJson(
-            """{"token":"anonymous-token","expiresAt":${now + 55 * 60_000},"role":"anonymous"}"""
+            """{"token":"anonymous-token","expiresAt":${now + 55 * 60_000},"role":"anonymous"}""",
           )
         "/v1/session/revoke" -> {
           assertEquals("Bearer owner-token", request.headers[HttpHeaders.Authorization])

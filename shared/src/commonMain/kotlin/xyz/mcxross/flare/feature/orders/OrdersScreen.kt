@@ -1,31 +1,33 @@
 package xyz.mcxross.flare.feature.orders
 
-import xyz.mcxross.flare.design.UnavailableNotice
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.valentinilk.shimmer.shimmer
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
@@ -33,28 +35,26 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatRelativeTime
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.CompactActionButton
-import xyz.mcxross.flare.design.FlareSkeletonBox
-import xyz.mcxross.flare.design.rememberFlareShimmer
-import com.valentinilk.shimmer.shimmer
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import xyz.mcxross.flare.design.EmptyState
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareSegmentedControl
+import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.UnavailableNotice
+import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.FundingPayment
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
-import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun OrdersRoute(
@@ -79,53 +79,77 @@ fun OrdersScreen(
   onOpenSetup: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  var historySelected by rememberSaveable { mutableStateOf(state.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP)) }
+  var historySelected by rememberSaveable {
+    mutableStateOf(state.section !in listOf(OrdersSection.OPEN, OrdersSection.TWAP))
+  }
   Column(
     modifier =
-      modifier
-        .fillMaxSize()
-        .verticalScroll(rememberScrollState())
-        .padding(horizontal = 24.dp)
+      modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
   ) {
     FlareTopBar("Activity")
     FlareSegmentedControl(
-      listOf(false, true), historySelected,
+      listOf(false, true),
+      historySelected,
       { history ->
         historySelected = history
-        onIntent(OrdersIntent.SelectSection(if (history) OrdersSection.ORDERS else OrdersSection.OPEN))
-      }, { if (it) "History" else "Open" }, Modifier.padding(bottom = 12.dp),
+        onIntent(
+          OrdersIntent.SelectSection(if (history) OrdersSection.ORDERS else OrdersSection.OPEN),
+        )
+      },
+      { if (it) "History" else "Open" },
+      Modifier.padding(bottom = 12.dp),
     )
-    val sections = (if (historySelected)
-      listOf(OrdersSection.ORDERS, OrdersSection.TRADES, OrdersSection.FUNDING, OrdersSection.TRANSFERS, OrdersSection.TWAP)
-      else listOf(OrdersSection.OPEN, OrdersSection.TWAP))
-      .filter { it != OrdersSection.TWAP || state.capabilities.twap }
+    val sections =
+      (if (historySelected)
+          listOf(
+            OrdersSection.ORDERS,
+            OrdersSection.TRADES,
+            OrdersSection.FUNDING,
+            OrdersSection.TRANSFERS,
+            OrdersSection.TWAP,
+          )
+        else listOf(OrdersSection.OPEN, OrdersSection.TWAP))
+        .filter { it != OrdersSection.TWAP || state.capabilities.twap }
     FlareFilterChips(
       labels = sections.map { if (it == OrdersSection.OPEN) "Orders" else it.label },
       selectedIndex = sections.indexOf(state.section).coerceAtLeast(0),
       onSelect = { onIntent(OrdersIntent.SelectSection(sections[it])) },
       modifier = Modifier.padding(bottom = 12.dp),
     )
-    val hasReadData = when (state.section) {
-      OrdersSection.OPEN -> state.account.openOrders.isNotEmpty()
-      OrdersSection.TWAP -> state.activeTwaps.isNotEmpty() || state.twapHistory.isNotEmpty()
-      OrdersSection.ORDERS -> state.history.orders.isNotEmpty()
-      OrdersSection.TRADES -> state.history.trades.isNotEmpty()
-      OrdersSection.FUNDING -> state.history.funding.isNotEmpty()
-      OrdersSection.TRANSFERS -> state.history.transfers.isNotEmpty()
+    val hasReadData =
+      when (state.section) {
+        OrdersSection.OPEN -> state.account.openOrders.isNotEmpty()
+        OrdersSection.TWAP -> state.activeTwaps.isNotEmpty() || state.twapHistory.isNotEmpty()
+        OrdersSection.ORDERS -> state.history.orders.isNotEmpty()
+        OrdersSection.TRADES -> state.history.trades.isNotEmpty()
+        OrdersSection.FUNDING -> state.history.funding.isNotEmpty()
+        OrdersSection.TRANSFERS -> state.history.transfers.isNotEmpty()
+      }
+    state.readAccessError?.let {
+      ActionNotice(it, Modifier.padding(bottom = 8.dp), NoticeTone.ALERT)
     }
-    state.readAccessError?.let { ActionNotice(it, Modifier.padding(bottom = 8.dp), NoticeTone.ALERT) }
-    if (state.readUnavailable && hasReadData && state.readAccessError == null) Text("Last updated earlier",
-      Modifier.padding(bottom = 8.dp), color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
+    if (state.readUnavailable && hasReadData && state.readAccessError == null)
+      Text(
+        "Last updated earlier",
+        Modifier.padding(bottom = 8.dp),
+        color = FlareColors.TextTertiary,
+        style = MaterialTheme.typography.bodySmall,
+      )
     state.error?.let { ActionNotice(it, Modifier.padding(bottom = 12.dp), NoticeTone.ALERT) }
     val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
-    val twapUnavailable = actionsUnavailable ?: state.capabilities.unavailableReason(ActionKind.TWAP)
-    val unavailableNotice = when {
-      historySelected -> null
-      state.section == OrdersSection.TWAP && state.activeTwaps.isNotEmpty() -> twapUnavailable
-      state.section == OrdersSection.OPEN && state.account.openOrders.isNotEmpty() -> actionsUnavailable
-      else -> null
+    val twapUnavailable =
+      actionsUnavailable ?: state.capabilities.unavailableReason(ActionKind.TWAP)
+    val unavailableNotice =
+      when {
+        historySelected -> null
+        state.section == OrdersSection.TWAP && state.activeTwaps.isNotEmpty() -> twapUnavailable
+        state.section == OrdersSection.OPEN && state.account.openOrders.isNotEmpty() ->
+          actionsUnavailable
+        else -> null
+      }
+    unavailableNotice?.let {
+      UnavailableNotice(it, state.setupNeed, Modifier.padding(bottom = 12.dp))
     }
-    unavailableNotice?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(bottom = 12.dp)) }
     state.selfPayEstimate?.let { estimate ->
       val chain = LocalVenue.current.chain
       ActionNotice(
@@ -209,7 +233,9 @@ fun OrdersScreen(
                   text = if (cancelling) "Cancelling…" else "Cancel",
                   positive = false,
                   onClick = {
-                    onIntent(OrdersIntent.Cancel(order.marketId, order.orderId, order.isPositionTpSl))
+                    onIntent(
+                      OrdersIntent.Cancel(order.marketId, order.orderId, order.isPositionTpSl),
+                    )
                   },
                   enabled = !state.busy && actionsUnavailable == null,
                 )
@@ -219,10 +245,15 @@ fun OrdersScreen(
           }
           state.profile.ownerAddress != null || state.profile.apiWalletAddress != null -> {
             if (state.account.stale && !state.readUnavailable) ActivitySkeleton()
-            else EmptyState(
-              title = if (state.account.stale || state.account.error != null) "Orders unavailable" else "No open orders",
-              message = if (state.account.stale || state.account.error != null) "" else "Working orders will appear here after submission.",
-            )
+            else
+              EmptyState(
+                title =
+                  if (state.account.stale || state.account.error != null) "Orders unavailable"
+                  else "No open orders",
+                message =
+                  if (state.account.stale || state.account.error != null) ""
+                  else "Working orders will appear here after submission.",
+              )
           }
           else ->
             EmptyState(
@@ -234,7 +265,8 @@ fun OrdersScreen(
         }
       OrdersSection.TWAP ->
         when {
-          (!historySelected && state.activeTwaps.isNotEmpty()) || (historySelected && state.twapHistory.isNotEmpty()) -> {
+          (!historySelected && state.activeTwaps.isNotEmpty()) ||
+            (historySelected && state.twapHistory.isNotEmpty()) -> {
             if (!historySelected && state.activeTwaps.isNotEmpty()) {
               Text(
                 "Active TWAPs",
@@ -334,12 +366,19 @@ fun OrdersScreen(
                   )
                   OrderConditions(order)
                   if (order.coversPosition) {
-                    Text("Entire position", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
-                  } else order.originalSize?.let { size ->
-                    Text("${formatQuantity(size)} ordered · ${order.remainingSize?.let { formatQuantity(it) } ?: "—"} remaining",
-                      style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
-                  }
-
+                    Text(
+                      "Entire position",
+                      style = MaterialTheme.typography.labelSmall,
+                      color = FlareColors.TextSecondary,
+                    )
+                  } else
+                    order.originalSize?.let { size ->
+                      Text(
+                        "${formatQuantity(size)} ordered · ${order.remainingSize?.let { formatQuantity(it) } ?: "—"} remaining",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FlareColors.TextSecondary,
+                      )
+                    }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                   Text(order.price?.let(::formatPrice) ?: "Market")
@@ -384,8 +423,7 @@ fun OrdersScreen(
                     Text(
                       signedAmount(trade.realizedPnl),
                       color =
-                        if (trade.realizedPnl > 0) FlareColors.Positive
-                        else FlareColors.Negative,
+                        if (trade.realizedPnl > 0) FlareColors.Positive else FlareColors.Negative,
                       style = MaterialTheme.typography.labelMedium,
                     )
                   Text(
@@ -420,9 +458,7 @@ fun OrdersScreen(
               Column(horizontalAlignment = Alignment.End) {
                 Text(
                   signedAmount(payment.amount),
-                  color =
-                    if (payment.amount >= 0) FlareColors.Positive
-                    else FlareColors.Negative,
+                  color = if (payment.amount >= 0) FlareColors.Positive else FlareColors.Negative,
                 )
                 Text(
                   formatRelativeTime(payment.timeMs),
@@ -475,7 +511,8 @@ fun OrdersScreen(
     }
     val canLoadMore =
       when (state.section) {
-        OrdersSection.OPEN, OrdersSection.TWAP -> false
+        OrdersSection.OPEN,
+        OrdersSection.TWAP -> false
         OrdersSection.ORDERS -> state.history.ordersHasMore
         OrdersSection.TRADES -> state.history.tradesHasMore
         OrdersSection.FUNDING -> state.history.fundingHasMore
@@ -497,32 +534,39 @@ fun OrdersScreen(
 @Composable
 private fun HistoryEmpty(stale: Boolean, unavailable: Boolean, title: String) {
   if (stale && !unavailable) ActivitySkeleton()
-  else EmptyState(
-    title = if (stale) "History unavailable" else title,
-    message = if (stale) "" else "Completed account activity will appear here.",
-  )
+  else
+    EmptyState(
+      title = if (stale) "History unavailable" else title,
+      message = if (stale) "" else "Completed account activity will appear here.",
+    )
 }
 
 @Composable
 private fun ActivitySkeleton() {
-  Column(Modifier.fillMaxWidth().shimmer(rememberFlareShimmer()).semantics { contentDescription = "Loading activity" },
-    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+  Column(
+    Modifier.fillMaxWidth().shimmer(rememberFlareShimmer()).semantics {
+      contentDescription = "Loading activity"
+    },
+    verticalArrangement = Arrangement.spacedBy(16.dp),
+  ) {
     repeat(3) { FlareSkeletonBox(Modifier.fillMaxWidth().height(48.dp)) }
   }
 }
 
-/** An open order's side, size and prices, as its row reads: `Sell 0.01 · at market · trigger $35,000.00`. */
-fun openOrderSummary(order: OpenOrder): String =
-  buildList {
-      add(
-        "${if (order.isBuy) "Buy" else "Sell"} " +
-          if (order.coversPosition) "entire position"
-          else order.remainingSize?.let { formatQuantity(it) } ?: "—"
-      )
-      add(order.price?.let { "at ${formatPrice(it)}" } ?: "at market")
-      order.triggerPrice?.let { add("trigger ${formatPrice(it)}") }
-    }
-    .joinToString(" · ")
+/**
+ * An open order's side, size and prices, as its row reads: `Sell 0.01 · at market · trigger
+ * $35,000.00`.
+ */
+fun openOrderSummary(order: OpenOrder): String = buildList {
+  add(
+    "${if (order.isBuy) "Buy" else "Sell"} " +
+      if (order.coversPosition) "entire position"
+      else order.remainingSize?.let { formatQuantity(it) } ?: "—",
+  )
+  add(order.price?.let { "at ${formatPrice(it)}" } ?: "at market")
+  order.triggerPrice?.let { add("trigger ${formatPrice(it)}") }
+}
+  .joinToString(" · ")
 
 private fun signedAmount(value: Double): String =
   (if (value > 0) "+" else "") + formatBalance(value)
@@ -554,16 +598,19 @@ private fun fundMovementLabel(kind: FundMovementKind): String =
 @Composable
 private fun OrderConditions(order: OpenOrder) {
   val conditions = openOrderConditions(order)
-  if (conditions.isNotEmpty()) Text(conditions,
-    style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
+  if (conditions.isNotEmpty())
+    Text(
+      conditions,
+      style = MaterialTheme.typography.labelSmall,
+      color = FlareColors.TextSecondary,
+    )
 }
 
 /** An order's kind, attached exits and flags, as its row reads: `stop market · Reduce only`. */
-fun openOrderConditions(order: OpenOrder): String =
-  buildList {
-      order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
-      order.takeProfit?.let { add("TP ${formatPrice(it.triggerPrice)}") }
-      order.stopLoss?.let { add("SL ${formatPrice(it.triggerPrice)}") }
-      if (order.reduceOnly) add("Reduce only")
-    }
-    .joinToString(" · ")
+fun openOrderConditions(order: OpenOrder): String = buildList {
+  order.orderType.takeIf { it.isNotBlank() }?.let { add(it.lowercase().replace('_', ' ')) }
+  order.takeProfit?.let { add("TP ${formatPrice(it.triggerPrice)}") }
+  order.stopLoss?.let { add("SL ${formatPrice(it.triggerPrice)}") }
+  if (order.reduceOnly) add("Reduce only")
+}
+  .joinToString(" · ")

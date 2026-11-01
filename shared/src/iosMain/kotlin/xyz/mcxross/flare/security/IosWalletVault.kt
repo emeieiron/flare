@@ -152,7 +152,9 @@ class IosWalletVault : WalletVault {
       if (!canEvaluate) {
         if (continuation.isActive)
           continuation.resumeWith(
-            Result.failure(WalletVaultException.Unavailable("A device passcode must be configured"))
+            Result.failure(
+              WalletVaultException.Unavailable("A device passcode must be configured"),
+            ),
           )
         return@suspendCancellableCoroutine
       }

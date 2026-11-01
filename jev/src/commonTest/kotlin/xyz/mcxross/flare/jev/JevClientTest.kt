@@ -17,25 +17,25 @@ class JevClientTest {
       buildJsonObject { put("rsi", 42) },
       mapOf(
         "direction" to
-          DecisionQuestion.Choice("Direction?", mapOf("buy" to "Up", "wait" to "Unclear"))
+          DecisionQuestion.Choice("Direction?", mapOf("buy" to "Up", "wait" to "Unclear")),
       ),
     )
   private val good =
     """{"model":"jev-1.13.0","answers":{"direction":{"type":"choice","choice":"buy","probabilities":{"buy":0.8,"wait":0.2},"confidence":0.6}}}"""
 
   private fun testEngine(
-    handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData
+    handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
   ) =
     MockEngine(
       MockEngineConfig().apply {
         dispatcher = Dispatchers.Unconfined
         addHandler(handler)
-      }
+      },
     )
 
   private fun mock(body: String, status: HttpStatusCode = HttpStatusCode.OK) =
     HttpClient(
-      testEngine { respond(body, status, headersOf(HttpHeaders.ContentType, "application/json")) }
+      testEngine { respond(body, status, headersOf(HttpHeaders.ContentType, "application/json")) },
     )
 
   @Test
@@ -49,10 +49,14 @@ class JevClientTest {
           assertEquals("jev-1.13.0", body["model"]!!.jsonPrimitive.content)
           assertEquals(
             "choice",
-            body["questions"]!!.jsonObject["direction"]!!.jsonObject["type"]!!.jsonPrimitive.content,
+            body["questions"]!!
+              .jsonObject["direction"]!!
+              .jsonObject["type"]!!
+              .jsonPrimitive
+              .content,
           )
           respond(good, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-        }
+        },
       )
     val client = JevClient(transport)
     try {
@@ -149,7 +153,7 @@ class JevClientTest {
               status,
               headersOf(HttpHeaders.Location, "https://evil.example"),
             )
-          }
+          },
         )
       val client = JevClient(transport)
       try {
@@ -177,7 +181,7 @@ class JevClientTest {
             if (calls == 1) HttpStatusCode.TooManyRequests
             else if (calls == 2) HttpStatusCode(529, "Overloaded") else HttpStatusCode.OK,
           )
-        }
+        },
       )
     val client = JevClient(transport)
     try {
@@ -197,7 +201,7 @@ class JevClientTest {
         testEngine {
           calls++
           respond("sensitive", HttpStatusCode.TooManyRequests)
-        }
+        },
       )
     val client = JevClient(transport)
     try {
@@ -235,7 +239,7 @@ class JevClientTest {
         testEngine {
           delay(5000)
           respond(good)
-        }
+        },
       )
     val client = JevClient(transport, 100)
     try {

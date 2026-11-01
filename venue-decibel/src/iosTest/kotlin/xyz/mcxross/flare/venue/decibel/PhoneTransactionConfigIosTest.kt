@@ -24,7 +24,7 @@ class PhoneTransactionConfigIosTest {
         AptosConfig(
           network = Network.MAINNET,
           transactionDefaults = DecibelRuntimeConfig().transactionDefaults,
-        )
+        ),
       )
     try {
       val before = Clock.System.now().epochSeconds.toULong()
@@ -42,7 +42,7 @@ class PhoneTransactionConfigIosTest {
       assertEquals(50_000uL, transaction.rawTransaction.maxGasAmount)
       val after = Clock.System.now().epochSeconds.toULong()
       assertTrue(
-        transaction.rawTransaction.expirationTimestampSecs in (before + 60uL)..(after + 60uL)
+        transaction.rawTransaction.expirationTimestampSecs in (before + 60uL)..(after + 60uL),
       )
     } finally {
       aptos.close()

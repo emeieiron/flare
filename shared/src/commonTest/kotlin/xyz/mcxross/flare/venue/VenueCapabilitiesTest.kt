@@ -30,7 +30,7 @@ class VenueCapabilitiesTest {
     val capabilities =
       BareCapabilities.copy(
         unavailableActions =
-          mapOf(ActionKind.TRADING to "Orders come later", ActionKind.FUNDS to "Transfers too")
+          mapOf(ActionKind.TRADING to "Orders come later", ActionKind.FUNDS to "Transfers too"),
       )
 
     assertEquals("Orders come later", capabilities.unavailableReason(ActionKind.TRADING))
@@ -41,13 +41,19 @@ class VenueCapabilitiesTest {
   @Test
   fun actionsAreSortedIntoTradingFundsAndSetup() {
     assertEquals(ActionKind.TRADING, TradeAction.CancelOrder("0xa", "BTC", "1").actionKind)
-    assertEquals(ActionKind.TRADING, TradeAction.ConfigureMarket("0xa", "BTC", MarginMode.CROSS, 3).actionKind)
+    assertEquals(
+      ActionKind.TRADING,
+      TradeAction.ConfigureMarket("0xa", "BTC", MarginMode.CROSS, 3).actionKind,
+    )
     assertEquals(ActionKind.FUNDS, TradeAction.Withdraw("0xa", "1").actionKind)
     assertEquals(ActionKind.FUNDS, TradeAction.VaultDeposit("0xa", "0xv", "1").actionKind)
     assertEquals(ActionKind.FUNDS, TradeAction.MovePerpSpot("0xa", "1", toSpot = true).actionKind)
     assertEquals(ActionKind.SETUP, TradeAction.EnableTrading("0xa", "0xk").actionKind)
     assertEquals(ActionKind.SETUP, TradeAction.RevokeTrading("0xa", "0xk").actionKind)
-    assertEquals(ActionKind.SETUP, TradeAction.ApproveBuilderFee("0xa", "0xb", 10, MarketKind.PERP).actionKind)
+    assertEquals(
+      ActionKind.SETUP,
+      TradeAction.ApproveBuilderFee("0xa", "0xb", 10, MarketKind.PERP).actionKind,
+    )
     assertEquals(ActionKind.SETUP, TradeAction.RevokeBuilderFee("0xa", "0xb").actionKind)
     assertEquals(ActionKind.SETUP, TradeAction.CreateTradingAccount.actionKind)
   }
@@ -55,15 +61,30 @@ class VenueCapabilitiesTest {
   @Test
   fun twapsAreTheirOwnKindOfAction() {
     val market =
-      Market("BTC", "BTC", "BTC/USD", MarketKind.PERP, "crypto", 1, 5, 40, false, AcceptingOrderRules)
+      Market(
+        "BTC",
+        "BTC",
+        "BTC/USD",
+        MarketKind.PERP,
+        "crypto",
+        1,
+        5,
+        40,
+        false,
+        AcceptingOrderRules,
+      )
     fun order(type: OrderType) =
-      TradeAction.PlaceOrder("0xa", market, OrderRequest("BTC", OrderSide.BUY, type, "1")).actionKind
+      TradeAction.PlaceOrder("0xa", market, OrderRequest("BTC", OrderSide.BUY, type, "1"))
+        .actionKind
 
     assertEquals(ActionKind.TWAP, order(OrderType.TWAP))
     assertEquals(ActionKind.TRADING, order(OrderType.MARKET))
     assertEquals(ActionKind.TRADING, order(OrderType.LIMIT))
     assertEquals(ActionKind.TWAP, TradeAction.CancelTwapOrder("0xa", "BTC", "7").actionKind)
-    assertEquals(ActionKind.TRADING, TradeAction.CancelOrders("0xa", listOf(OpenOrderRef("BTC", "1"))).actionKind)
+    assertEquals(
+      ActionKind.TRADING,
+      TradeAction.CancelOrders("0xa", listOf(OpenOrderRef("BTC", "1"))).actionKind,
+    )
     assertEquals(false, BareCapabilities.batchCancel)
   }
 

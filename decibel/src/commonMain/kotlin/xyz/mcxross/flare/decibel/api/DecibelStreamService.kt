@@ -12,7 +12,6 @@ import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -21,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,6 +70,7 @@ interface DecibelStreamService {
 
 internal interface StreamSocket {
   suspend fun send(message: String)
+
   suspend fun receive(): String?
 }
 
@@ -93,13 +94,16 @@ private class KtorStreamTransport(
       },
     ) {
       val session = this
-      block(object : StreamSocket {
-        override suspend fun send(message: String) = session.send(message)
-        override suspend fun receive(): String? {
-          for (frame in session.incoming) if (frame is Frame.Text) return frame.readText()
-          return null
-        }
-      })
+      block(
+        object : StreamSocket {
+          override suspend fun send(message: String) = session.send(message)
+
+          override suspend fun receive(): String? {
+            for (frame in session.incoming) if (frame is Frame.Text) return frame.readText()
+            return null
+          }
+        },
+      )
     }
   }
 }
@@ -115,22 +119,34 @@ internal class DefaultDecibelStreamService(
   private val serviceJob = SupervisorJob()
   private val scope = CoroutineScope(parentContext + serviceJob)
   private val activeConnection = MutableStateFlow<Job?>(null)
+
   private class Subscriber(
     val topics: Set<DecibelStreamTopic>,
     val token: String?,
   ) {
     val events = Channel<StreamEvent>(64)
-    val privateAccount = topics.filterIsInstance<AccountStreamTopic>()
-      .map { it.wireValue.substringAfter(':') }.distinct().singleOrNull()
+    val privateAccount =
+      topics
+        .filterIsInstance<AccountStreamTopic>()
+        .map { it.wireValue.substringAfter(':') }
+        .distinct()
+        .singleOrNull()
   }
 
   private sealed interface Command {
     data class Add(val subscriber: Subscriber) : Command
+
     data class Remove(val subscriber: Subscriber) : Command
+
     data object StateChanged : Command
+
     data class Idle(val generation: Long) : Command
-    data class Opened(val generation: Long, val token: String?, val outgoing: Channel<String>) : Command
+
+    data class Opened(val generation: Long, val token: String?, val outgoing: Channel<String>) :
+      Command
+
     data class Received(val generation: Long, val text: String) : Command
+
     data class Closed(val generation: Long, val reason: String) : Command
   }
 
@@ -147,11 +163,20 @@ internal class DefaultDecibelStreamService(
   override fun subscribe(topics: Set<DecibelStreamTopic>): Flow<StreamEvent> = channelFlow {
     require(topics.isNotEmpty()) { "At least one Decibel topic is required" }
     require(topics.size <= 150) { "Decibel permits at most 150 topics per connection" }
-    require(topics.filterIsInstance<AccountStreamTopic>()
-      .map { it.wireValue.substringAfter(':') }.distinct().size <= 1) {
+    require(
+      topics
+        .filterIsInstance<AccountStreamTopic>()
+        .map { it.wireValue.substringAfter(':') }
+        .distinct()
+        .size <= 1,
+    ) {
       "An account subscription must use one authenticated account"
     }
-    val subscriber = Subscriber(topics.toSet(), if (topics.any { it is AccountStreamTopic }) config.accessToken() else null)
+    val subscriber =
+      Subscriber(
+        topics.toSet(),
+        if (topics.any { it is AccountStreamTopic }) config.accessToken() else null,
+      )
     try {
       commands.send(Command.Add(subscriber))
       for (event in subscriber.events) send(event)
@@ -185,7 +210,8 @@ internal class DefaultDecibelStreamService(
     var connectionToken: String? = null
     var active = enabled.value
 
-    fun topics(): Set<DecibelStreamTopic> = subscribers.flatMap { it.topics }.distinctBy { it.wireValue }.toSet()
+    fun topics(): Set<DecibelStreamTopic> =
+      subscribers.flatMap { it.topics }.distinctBy { it.wireValue }.toSet()
 
     fun stopConnection() {
       generation++
@@ -213,13 +239,13 @@ internal class DefaultDecibelStreamService(
         subscriber.events.send(event)
       } catch (cancelled: CancellationException) {
         if (!currentCoroutineContext().isActive) throw cancelled
-      } catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) {
-      }
+      } catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) {}
     }
 
     suspend fun broadcast(event: StreamEvent, topic: DecibelStreamTopic? = null) {
       for (subscriber in subscribers) {
-        if (topic == null || subscriber.topics.any { it.wireValue == topic.wireValue }) deliver(subscriber, event)
+        if (topic == null || subscriber.topics.any { it.wireValue == topic.wireValue })
+          deliver(subscriber, event)
       }
     }
 
@@ -245,11 +271,12 @@ internal class DefaultDecibelStreamService(
             val previous = topics()
             val subscriber = command.subscriber
             val retained = subscribers.filter {
-              subscriber.privateAccount == null || it.privateAccount == null ||
+              subscriber.privateAccount == null ||
+                it.privateAccount == null ||
                 it.privateAccount == subscriber.privateAccount
             }
-            val prospective = (retained.flatMap { it.topics } + subscriber.topics)
-              .distinctBy { it.wireValue }
+            val prospective =
+              (retained.flatMap { it.topics } + subscriber.topics).distinctBy { it.wireValue }
             if (prospective.size > 150) {
               subscriber.events.close(IllegalArgumentException("Maximum active topic count is 150"))
               continue
@@ -258,14 +285,21 @@ internal class DefaultDecibelStreamService(
               val replaced = subscribers.filter {
                 it.privateAccount != null && it.privateAccount != subscriber.privateAccount
               }
-              replaced.forEach { subscribers.remove(it); it.events.close() }
-              if (replaced.isNotEmpty() || (connection != null && connectionToken != subscriber.token)) {
+              replaced.forEach {
+                subscribers.remove(it)
+                it.events.close()
+              }
+              if (
+                replaced.isNotEmpty() || (connection != null && connectionToken != subscriber.token)
+              ) {
                 stopConnection()
               }
             }
             subscribers += subscriber
             if (outgoing != null) {
-              topics().filter { added -> previous.none { it.wireValue == added.wireValue } }.forEach { sendSubscription("subscribe", it) }
+              topics()
+                .filter { added -> previous.none { it.wireValue == added.wireValue } }
+                .forEach { sendSubscription("subscribe", it) }
               deliver(subscriber, StreamEvent.Connected(subscriber.topics))
             }
             startConnection(subscriber.token)
@@ -274,53 +308,96 @@ internal class DefaultDecibelStreamService(
             val previous = topics()
             subscribers -= command.subscriber
             val remaining = topics()
-            previous.filter { removed -> remaining.none { it.wireValue == removed.wireValue } }.forEach {
-              sendSubscription("unsubscribe", it)
-              lastSequenceByTopic.remove(it.wireValue)
-            }
+            previous
+              .filter { removed -> remaining.none { it.wireValue == removed.wireValue } }
+              .forEach {
+                sendSubscription("unsubscribe", it)
+                lastSequenceByTopic.remove(it.wireValue)
+              }
             if (subscribers.isEmpty()) {
               val currentGeneration = generation
               idle?.cancel()
-              idle = scope.launch { delay(2_000L); commands.send(Command.Idle(currentGeneration)) }
-            }
-          }
-          is Command.Idle -> if (command.generation == generation && subscribers.isEmpty()) stopConnection()
-          is Command.Opened -> if (command.generation == generation && active) {
-            outgoing = command.outgoing
-            connectionToken = command.token
-            lastSequenceByTopic.clear()
-            topics().forEach { sendSubscription("subscribe", it) }
-            subscribers.forEach { deliver(it, StreamEvent.Connected(it.topics)) }
-          }
-          is Command.Closed -> if (command.generation == generation) {
-            outgoing = null
-            broadcast(StreamEvent.Disconnected(command.reason))
-          }
-          is Command.Received -> if (command.generation == generation && active) {
-            // A malformed envelope must not terminate the broker for every feed.
-            val payload = runCatching { json.parseToJsonElement(command.text) as? JsonObject }.getOrNull() ?: continue
-            val rawTopic = payload["topic"]?.let { it as? kotlinx.serialization.json.JsonPrimitive }?.contentOrNull
-            val topic = topics().firstOrNull { it.wireValue == rawTopic }
-            val success = payload["success"]?.let { it as? kotlinx.serialization.json.JsonPrimitive }?.booleanOrNull
-            if (success != null) {
-              if (!success) broadcast(StreamEvent.Rejected(topic,
-                payload["error"]?.let { it as? kotlinx.serialization.json.JsonPrimitive }?.contentOrNull ?: "Decibel rejected the subscription"), topic)
-              continue
-            }
-            if (topic == null) continue
-            val sequence = (payload["sequence_number"] ?: payload["sequence"])
-              ?.let { it as? kotlinx.serialization.json.JsonPrimitive }?.contentOrNull?.toULongOrNull()
-            if (sequence != null) {
-              when (classifySequence(lastSequenceByTopic[rawTopic], sequence)) {
-                SequenceDisposition.STALE -> continue
-                SequenceDisposition.GAP -> broadcast(StreamEvent.SequenceGap(topic,
-                  checkNotNull(lastSequenceByTopic[rawTopic]) + 1uL, sequence), topic)
-                else -> Unit
+              idle = scope.launch {
+                delay(2_000L)
+                commands.send(Command.Idle(currentGeneration))
               }
-              lastSequenceByTopic[topic.wireValue] = sequence
             }
-            broadcast(StreamEvent.Message(topic, payload, sequence, decodeStreamData(topic, payload, json)), topic)
           }
+          is Command.Idle ->
+            if (command.generation == generation && subscribers.isEmpty()) stopConnection()
+          is Command.Opened ->
+            if (command.generation == generation && active) {
+              outgoing = command.outgoing
+              connectionToken = command.token
+              lastSequenceByTopic.clear()
+              topics().forEach { sendSubscription("subscribe", it) }
+              subscribers.forEach { deliver(it, StreamEvent.Connected(it.topics)) }
+            }
+          is Command.Closed ->
+            if (command.generation == generation) {
+              outgoing = null
+              broadcast(StreamEvent.Disconnected(command.reason))
+            }
+          is Command.Received ->
+            if (command.generation == generation && active) {
+              // A malformed envelope must not terminate the broker for every feed.
+              val payload =
+                runCatching { json.parseToJsonElement(command.text) as? JsonObject }.getOrNull()
+                  ?: continue
+              val rawTopic =
+                payload["topic"]
+                  ?.let { it as? kotlinx.serialization.json.JsonPrimitive }
+                  ?.contentOrNull
+              val topic = topics().firstOrNull { it.wireValue == rawTopic }
+              val success =
+                payload["success"]
+                  ?.let { it as? kotlinx.serialization.json.JsonPrimitive }
+                  ?.booleanOrNull
+              if (success != null) {
+                if (!success)
+                  broadcast(
+                    StreamEvent.Rejected(
+                      topic,
+                      payload["error"]
+                        ?.let { it as? kotlinx.serialization.json.JsonPrimitive }
+                        ?.contentOrNull ?: "Decibel rejected the subscription",
+                    ),
+                    topic,
+                  )
+                continue
+              }
+              if (topic == null) continue
+              val sequence =
+                (payload["sequence_number"] ?: payload["sequence"])
+                  ?.let { it as? kotlinx.serialization.json.JsonPrimitive }
+                  ?.contentOrNull
+                  ?.toULongOrNull()
+              if (sequence != null) {
+                when (classifySequence(lastSequenceByTopic[rawTopic], sequence)) {
+                  SequenceDisposition.STALE -> continue
+                  SequenceDisposition.GAP ->
+                    broadcast(
+                      StreamEvent.SequenceGap(
+                        topic,
+                        checkNotNull(lastSequenceByTopic[rawTopic]) + 1uL,
+                        sequence,
+                      ),
+                      topic,
+                    )
+                  else -> Unit
+                }
+                lastSequenceByTopic[topic.wireValue] = sequence
+              }
+              broadcast(
+                StreamEvent.Message(
+                  topic,
+                  payload,
+                  sequence,
+                  decodeStreamData(topic, payload, json),
+                ),
+                topic,
+              )
+            }
           Command.StateChanged -> Unit
         }
       }
@@ -340,7 +417,7 @@ internal class DefaultDecibelStreamService(
       try {
         val token = if (first && initialToken != null) initialToken else config.accessToken()
         first = false
-        transport.connect(token) socket@ {
+        transport.connect(token) socket@{
           connectedAt = TimeSource.Monotonic.markNow()
           coroutineScope {
             val socket = this@socket
@@ -354,7 +431,10 @@ internal class DefaultDecibelStreamService(
                 val message = socket.receive() ?: break
                 commands.send(Command.Received(generation, message))
               }
-            } finally { writer.cancel(); outgoing.close() }
+            } finally {
+              writer.cancel()
+              outgoing.close()
+            }
           }
         }
         commands.send(Command.Closed(generation, "WebSocket closed"))
@@ -363,7 +443,11 @@ internal class DefaultDecibelStreamService(
       } catch (error: Throwable) {
         commands.send(Command.Closed(generation, error.message ?: "Live connection unavailable"))
       }
-      delay(reconnectBackoff.nextDelay(connectedAt?.elapsedNow()?.inWholeMilliseconds ?: 0L).milliseconds)
+      delay(
+        reconnectBackoff
+          .nextDelay(connectedAt?.elapsedNow()?.inWholeMilliseconds ?: 0L)
+          .milliseconds,
+      )
     }
   }
 }

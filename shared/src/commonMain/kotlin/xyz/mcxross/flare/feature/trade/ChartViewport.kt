@@ -27,7 +27,11 @@ internal fun candleSlots(candles: List<Candle>): List<Long> {
  * The candles whose slots fall in [visible], including partly visible ones so their wicks stay
  * inside the vertical viewport. Before the chart first draws, the latest [initialCount].
  */
-internal fun visibleCandleIndices(slots: List<Long>, visible: LongRange?, initialCount: Int): IntRange {
+internal fun visibleCandleIndices(
+  slots: List<Long>,
+  visible: LongRange?,
+  initialCount: Int,
+): IntRange {
   if (slots.isEmpty()) return IntRange.EMPTY
   if (visible == null) return (slots.size - initialCount).coerceAtLeast(0)..slots.lastIndex
   val first = slots.binarySearch(visible.first).let { if (it >= 0) it else -it - 1 }

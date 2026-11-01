@@ -23,7 +23,7 @@ fun interface NonceSource {
  */
 @OptIn(ExperimentalAtomicApi::class)
 class ClockNonceSource(
-  private val clockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() }
+  private val clockMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : NonceSource {
   private val last = AtomicLong(0L)
 

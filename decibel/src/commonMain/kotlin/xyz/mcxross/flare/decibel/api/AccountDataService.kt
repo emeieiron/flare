@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import xyz.mcxross.flare.decibel.model.AccountOverview
+import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.AssetType
@@ -14,22 +15,21 @@ import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.FundHistory
 import xyz.mcxross.flare.decibel.model.FundMovement
 import xyz.mcxross.flare.decibel.model.FundingPayment
+import xyz.mcxross.flare.decibel.model.GlobalPointsStats
 import xyz.mcxross.flare.decibel.model.MarketTrade
 import xyz.mcxross.flare.decibel.model.Order
+import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.ReferralCodeInfo
 import xyz.mcxross.flare.decibel.model.ReferralRedemptionRequest
 import xyz.mcxross.flare.decibel.model.ReferralRedemptionResponse
+import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
 import xyz.mcxross.flare.decibel.model.TradingStreak
 import xyz.mcxross.flare.decibel.model.TwapOrder
-import xyz.mcxross.flare.decibel.model.AccountReferralInfo
-import xyz.mcxross.flare.decibel.model.GlobalPointsStats
-import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
-import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.VaultInfo
 
@@ -200,22 +200,32 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
     account: String,
     timeRange: String,
     metric: String,
-  ): List<PortfolioChartPoint> =
-    run {
-      val rangeParam = when (timeRange.uppercase()) {
-        "1D", "DAY", "DAY_1", "24H" -> "24h"
-        "1W", "WEEK", "WEEK_1", "7D" -> "7d"
-        "1M", "MONTH", "MONTH_1", "30D" -> "30d"
-        "90D", "3M" -> "90d"
+  ): List<PortfolioChartPoint> = run {
+    val rangeParam =
+      when (timeRange.uppercase()) {
+        "1D",
+        "DAY",
+        "DAY_1",
+        "24H" -> "24h"
+        "1W",
+        "WEEK",
+        "WEEK_1",
+        "7D" -> "7d"
+        "1M",
+        "MONTH",
+        "MONTH_1",
+        "30D" -> "30d"
+        "90D",
+        "3M" -> "90d"
         else -> "all"
       }
-      val dataType = if (metric.contains("pnl", ignoreCase = true)) "pnl" else "account_value"
-      api.get<List<PortfolioChartPoint>>("portfolio_chart") {
-        parameter("account", account)
-        parameter("range", rangeParam)
-        parameter("data_type", dataType)
-      }
+    val dataType = if (metric.contains("pnl", ignoreCase = true)) "pnl" else "account_value"
+    api.get<List<PortfolioChartPoint>>("portfolio_chart") {
+      parameter("account", account)
+      parameter("range", rangeParam)
+      parameter("data_type", dataType)
     }
+  }
 
   override suspend fun fundHistory(
     account: String,
@@ -261,32 +271,35 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
 
   override suspend fun activeTwaps(account: String): List<TwapOrder> =
     runCatching<List<TwapOrder>> {
-      val element = api.get<JsonElement>("active_twaps") { parameter("account", account) }
-      when (element) {
-        is JsonArray -> api.json.decodeFromJsonElement<List<TwapOrder>>(element)
-        is JsonObject -> {
-          val items = element["items"] ?: element["twaps"] ?: JsonArray(emptyList())
-          api.json.decodeFromJsonElement<List<TwapOrder>>(items)
+        val element = api.get<JsonElement>("active_twaps") { parameter("account", account) }
+        when (element) {
+          is JsonArray -> api.json.decodeFromJsonElement<List<TwapOrder>>(element)
+          is JsonObject -> {
+            val items = element["items"] ?: element["twaps"] ?: JsonArray(emptyList())
+            api.json.decodeFromJsonElement<List<TwapOrder>>(items)
+          }
+          else -> emptyList()
         }
-        else -> emptyList()
       }
-    }.getOrElse { emptyList() }
+      .getOrElse { emptyList() }
 
   override suspend fun twapHistory(account: String, limit: Int): List<TwapOrder> =
     runCatching<List<TwapOrder>> {
-      val element = api.get<JsonElement>("twap_history") {
-        parameter("account", account)
-        parameter("limit", limit.coerceIn(1, 200))
-      }
-      when (element) {
-        is JsonArray -> api.json.decodeFromJsonElement<List<TwapOrder>>(element)
-        is JsonObject -> {
-          val items = element["items"] ?: element["twaps"] ?: JsonArray(emptyList())
-          api.json.decodeFromJsonElement<List<TwapOrder>>(items)
+        val element =
+          api.get<JsonElement>("twap_history") {
+            parameter("account", account)
+            parameter("limit", limit.coerceIn(1, 200))
+          }
+        when (element) {
+          is JsonArray -> api.json.decodeFromJsonElement<List<TwapOrder>>(element)
+          is JsonObject -> {
+            val items = element["items"] ?: element["twaps"] ?: JsonArray(emptyList())
+            api.json.decodeFromJsonElement<List<TwapOrder>>(items)
+          }
+          else -> emptyList()
         }
-        else -> emptyList()
       }
-    }.getOrElse { emptyList() }
+      .getOrElse { emptyList() }
 
   override suspend fun referrerStats(owner: String): ReferrerStats? =
     try {
@@ -313,26 +326,27 @@ internal class DefaultAccountDataService(private val api: DecibelApi) : AccountD
       parameter("pagination", "true")
     }
 
-  override suspend fun vaults(limit: Int): List<VaultInfo> =
-    run {
-      val element = api.get<JsonElement>("vaults") {
+  override suspend fun vaults(limit: Int): List<VaultInfo> = run {
+    val element =
+      api.get<JsonElement>("vaults") {
         parameter("limit", limit.coerceIn(1, 100))
       }
-      when (element) {
-        is JsonArray -> api.json.decodeFromJsonElement<List<VaultInfo>>(element)
-        is JsonObject -> {
-          val items = element["items"] ?: element["vaults"] ?: JsonArray(emptyList())
-          api.json.decodeFromJsonElement<List<VaultInfo>>(items)
-        }
-        else -> emptyList()
+    when (element) {
+      is JsonArray -> api.json.decodeFromJsonElement<List<VaultInfo>>(element)
+      is JsonObject -> {
+        val items = element["items"] ?: element["vaults"] ?: JsonArray(emptyList())
+        api.json.decodeFromJsonElement<List<VaultInfo>>(items)
       }
+      else -> emptyList()
     }
+  }
 
   override suspend fun accountVaultPerformance(account: String): List<AccountVaultPerformance> =
     run {
-      val element = api.get<JsonElement>("account_vault_performance") {
-        parameter("account", account)
-      }
+      val element =
+        api.get<JsonElement>("account_vault_performance") {
+          parameter("account", account)
+        }
       when (element) {
         is JsonArray -> api.json.decodeFromJsonElement<List<AccountVaultPerformance>>(element)
         is JsonObject -> {

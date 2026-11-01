@@ -6,19 +6,19 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import kotlinx.serialization.json.Json
-import xyz.mcxross.flare.decibel.model.ReferralRedemptionRequest
-import xyz.mcxross.flare.decibel.model.ReferralRedemptionResponse
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertNotNull
-import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionRequest
+import xyz.mcxross.flare.decibel.model.ReferralRedemptionResponse
 
 class ServiceContractTest {
   @Test
@@ -29,9 +29,9 @@ class ServiceContractTest {
         MockEngine { request ->
           query = request.url.encodedQuery
           respondJson(
-            """{"items":[{"asset_type":"perp","account":"0x1","market":"0x2","action":"OpenLong","source":"OrderFill","trade_id":"7","size":0.25,"price":50000.0,"is_profit":false,"realized_pnl_amount":0.0,"realized_funding_amount":0.0,"is_rebate":false,"fee_amount":0.1,"order_id":"9","client_order_id":"","transaction_unix_ms":1735758000000,"transaction_version":42,"counter_party_account":"0x3"}],"total_count":1}"""
+            """{"items":[{"asset_type":"perp","account":"0x1","market":"0x2","action":"OpenLong","source":"OrderFill","trade_id":"7","size":0.25,"price":50000.0,"is_profit":false,"realized_pnl_amount":0.0,"realized_funding_amount":0.0,"is_rebate":false,"fee_amount":0.1,"order_id":"9","client_order_id":"","transaction_unix_ms":1735758000000,"transaction_version":42,"counter_party_account":"0x3"}],"total_count":1}""",
           )
-        }
+        },
       )
     val service = DefaultMarketDataService(api(http))
 
@@ -47,9 +47,9 @@ class ServiceContractTest {
       HttpClient(
         MockEngine {
           respondJson(
-            """[{"subaccount_address":"0x11","primary_account_address":"0x22","custom_label":"Trading","is_primary":false,"is_active":true}]"""
+            """[{"subaccount_address":"0x11","primary_account_address":"0x22","custom_label":"Trading","is_primary":false,"is_active":true}]""",
           )
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -67,7 +67,7 @@ class ServiceContractTest {
         MockEngine { request ->
           query = request.url.encodedQuery
           respondJson("""{"items":[],"total_count":0}""")
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -84,7 +84,7 @@ class ServiceContractTest {
         MockEngine { request ->
           query = request.url.encodedQuery
           respondJson("""{"items":[],"total_count":0}""")
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -101,7 +101,7 @@ class ServiceContractTest {
         MockEngine { request ->
           query = request.url.encodedQuery
           respondJson("""{"items":[],"total_count":0}""")
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -116,9 +116,9 @@ class ServiceContractTest {
       HttpClient(
         MockEngine {
           respondJson(
-            """[{"timestamp":1735758000000,"data_points":1250.5}]"""
+            """[{"timestamp":1735758000000,"data_points":1250.5}]""",
           )
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -136,9 +136,9 @@ class ServiceContractTest {
         MockEngine { request ->
           query = request.url.encodedQuery
           respondJson(
-            """{"funds":[{"movement_type":"withdrawal","amount":25.0,"balance_after":475.0,"timestamp":1760338800000,"transaction_version":6912345700},{"movement_type":"deposit","amount":500.0,"balance_after":500.0,"timestamp":1760335200000,"transaction_version":6912345678}],"total":2}"""
+            """{"funds":[{"movement_type":"withdrawal","amount":25.0,"balance_after":475.0,"timestamp":1760338800000,"transaction_version":6912345700},{"movement_type":"deposit","amount":500.0,"balance_after":500.0,"timestamp":1760335200000,"transaction_version":6912345678}],"total":2}""",
           )
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 
@@ -163,9 +163,9 @@ class ServiceContractTest {
           // `/streaks/account` answers in camelCase, unlike the rest of the API.
           respondJson(
             """{"owner":"0x22","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
-              """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
+              """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}""",
           )
-        }
+        },
       )
     val streakService = DefaultAccountDataService(api(httpStreak))
     val streak = assertNotNull(streakService.streak("0x22"))
@@ -179,9 +179,9 @@ class ServiceContractTest {
       HttpClient(
         MockEngine {
           respondJson(
-            """{"total_amps":1500.0,"trading_amps":1000.0,"referral_amps":500.0,"daily_amps":50.0,"rank":42}"""
+            """{"total_amps":1500.0,"trading_amps":1000.0,"referral_amps":500.0,"daily_amps":50.0,"rank":42}""",
           )
-        }
+        },
       )
     val ampsService = DefaultAccountDataService(api(httpAmps))
     val amps = ampsService.amps("0xowner")
@@ -192,12 +192,19 @@ class ServiceContractTest {
   @Test
   fun referralRedemptionUsesTheDocumentedWalletAndCodeContract() {
     val json = Json
-    assertEquals("""{"account":"0x1","referral_code":"OC9E6E"}""",
-      json.encodeToString(ReferralRedemptionRequest("0x1", "OC9E6E")))
-    val receipt = json.decodeFromString<ReferralRedemptionResponse>("""{"account":"0x1","referral_code":"OC9E6E"}""")
+    assertEquals(
+      """{"account":"0x1","referral_code":"OC9E6E"}""",
+      json.encodeToString(ReferralRedemptionRequest("0x1", "OC9E6E")),
+    )
+    val receipt =
+      json.decodeFromString<ReferralRedemptionResponse>(
+        """{"account":"0x1","referral_code":"OC9E6E"}""",
+      )
     assertEquals("0x1", receipt.account)
     assertEquals("OC9E6E", receipt.code)
-    assertFailsWith<kotlinx.serialization.SerializationException> { json.decodeFromString<ReferralRedemptionResponse>("{}") }
+    assertFailsWith<kotlinx.serialization.SerializationException> {
+      json.decodeFromString<ReferralRedemptionResponse>("{}")
+    }
   }
 
   @Test
@@ -206,9 +213,9 @@ class ServiceContractTest {
       HttpClient(
         MockEngine {
           respondJson(
-            """{"referral_code":"FLARE2026","is_valid":true,"is_active":true}"""
+            """{"referral_code":"FLARE2026","is_valid":true,"is_active":true}""",
           )
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
     val info = service.verifyReferralCode("FLARE2026")
@@ -219,16 +226,30 @@ class ServiceContractTest {
 
   @Test
   fun unavailableRewardsDoNotBecomeDefaultBalancesOrTiers() = runTest {
-    val missing = DefaultAccountDataService(api(HttpClient(MockEngine {
-      respondJson("{}", HttpStatusCode.NotFound)
-    })))
+    val missing =
+      DefaultAccountDataService(
+        api(
+          HttpClient(
+            MockEngine {
+              respondJson("{}", HttpStatusCode.NotFound)
+            },
+          ),
+        ),
+      )
     assertNull(missing.streak("0x22"))
     assertNull(missing.tier("0x22"))
     assertNull(missing.referrerStats("0x22"))
     assertNull(missing.accountReferral("0x22"))
-    val denied = DefaultAccountDataService(api(HttpClient(MockEngine {
-      respondJson("{}", HttpStatusCode.Forbidden)
-    })))
+    val denied =
+      DefaultAccountDataService(
+        api(
+          HttpClient(
+            MockEngine {
+              respondJson("{}", HttpStatusCode.Forbidden)
+            },
+          ),
+        ),
+      )
     assertFailsWith<DecibelApiError> { denied.amps("0xowner") }
     assertFailsWith<DecibelApiError> { denied.streak("0x22") }
     assertFailsWith<DecibelApiError> { denied.tier("0x22") }
@@ -246,15 +267,15 @@ class ServiceContractTest {
           if ("referrals/stats/" in request.url.encodedPath) {
             respondJson(
               """{"referrer_account":"0x22","total_referrals":3,"total_codes_created":1,""" +
-                """"is_affiliate":false,"codes":[],"volume_threshold_met":false}"""
+                """"is_affiliate":false,"codes":[],"volume_threshold_met":false}""",
             )
           } else {
             respondJson(
               """{"account":"0x22","referrer_account":"0x33","referral_code":"FRIEND",""" +
-                """"is_affiliate_referral":false,"referred_at_ms":1735758000000,"is_active":true}"""
+                """"is_affiliate_referral":false,"referred_at_ms":1735758000000,"is_active":true}""",
             )
           }
-        }
+        },
       )
     val service = DefaultAccountDataService(api(http))
 

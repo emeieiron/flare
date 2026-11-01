@@ -14,7 +14,7 @@ class DecibelCollateralTest {
     val collateral =
       json.decodeFromString<SecondaryCollateral>(
         """{"asset_type":"0xdlp","amount":1200.5,"haircut_bps":1000,"nav_per_unit":1.0423,""" +
-          """"value_in_usdc":1251.28,"withdrawable_amount":900.0}"""
+          """"value_in_usdc":1251.28,"withdrawable_amount":900.0}""",
       )
     // Decibel stores the discount; a person is told what still counts.
     assertEquals(90.0, collateral.creditPercent)

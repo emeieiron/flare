@@ -1,7 +1,5 @@
 package xyz.mcxross.flare.venue.decibel
 
-import kotlinx.coroutines.test.runTest
-import kotlin.test.assertFalse
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -10,12 +8,14 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
 import org.koin.core.Koin
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
@@ -99,8 +99,13 @@ class DecibelVenueTest {
     assertEquals(Network.MAINNET, descriptor.network)
     with(descriptor.capabilities) {
       assertTrue(
-        spot && twap && subaccounts && !referralCodes && sponsoredFees && networkFeeTopUp &&
-          inAppDeposit
+        spot &&
+          twap &&
+          subaccounts &&
+          !referralCodes &&
+          sponsoredFees &&
+          networkFeeTopUp &&
+          inAppDeposit,
       )
     }
   }

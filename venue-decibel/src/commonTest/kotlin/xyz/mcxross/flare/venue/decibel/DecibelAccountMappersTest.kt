@@ -1,22 +1,28 @@
 package xyz.mcxross.flare.venue.decibel
 
-import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.datetime.LocalDate
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.model.AccountFees
+import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
 import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
 import xyz.mcxross.flare.decibel.model.FundHistory
+import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
+import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
+import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
 import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
+import xyz.mcxross.flare.decibel.model.TwapOrder as DecibelTwapOrder
 import xyz.mcxross.flare.decibel.model.VaultInfo
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.Balances
@@ -26,18 +32,16 @@ import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovement
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.FundingPayment
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
-import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.RewardPointsSource
-import xyz.mcxross.flare.venue.model.VaultFactValue
-import xyz.mcxross.flare.venue.model.VaultKind
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.SpotReservation
@@ -46,12 +50,8 @@ import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
-import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
-import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
-import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
-import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
-import xyz.mcxross.flare.decibel.model.TwapOrder as DecibelTwapOrder
+import xyz.mcxross.flare.venue.model.VaultFactValue
+import xyz.mcxross.flare.venue.model.VaultKind
 
 // Shapes from :decibel's own fixtures where it has them (ServiceContractTest, DecibelJsonTest), and
 // otherwise in the field names its account models declare.
@@ -60,9 +60,12 @@ class DecibelAccountMappersTest {
 
   @Test
   fun mainnetOverviewAcceptsNullSecondaryCollateral() {
-    val overview = json.decodeFromString<DecibelAccountOverview>(
-      """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0,"secondary_collateral":null,"spot":{"positions":[],"in_flight_orders":[],"total_usd":0}}"""
-    ).toAccountOverview()
+    val overview =
+      json
+        .decodeFromString<DecibelAccountOverview>(
+          """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0,"secondary_collateral":null,"spot":{"positions":[],"in_flight_orders":[],"total_usd":0}}""",
+        )
+        .toAccountOverview()
 
     assertEquals(100.0, overview.equity)
     assertTrue(overview.secondaryCollateral.isEmpty())
@@ -84,7 +87,7 @@ class DecibelAccountMappersTest {
             """"spot":{"positions":[{"asset_addr":"0xa","asset_symbol":"APT","amount":10.0,""" +
             """"usd_value":58.66}],"in_flight_orders":[{"market_addr":"0x26f","order_id":"7",""" +
             """"is_bid":true,"reserved_asset":"0xusdc","reserved_amount":5.0,""" +
-            """"reserved_usd_value":5.0}],"total_usd":63.66}}"""
+            """"reserved_usd_value":5.0}],"total_usd":63.66}}""",
         )
         .toAccountOverview()
 
@@ -121,7 +124,7 @@ class DecibelAccountMappersTest {
         .decodeFromString<DecibelAccountOverview>(
           """{"perp_equity_balance":100,"unrealized_pnl":0,"unrealized_funding_cost":0,""" +
             """"cross_margin_ratio":0,"maintenance_margin":0,"total_margin":0,""" +
-            """"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}"""
+            """"usdc_cross_withdrawable_balance":100,"usdc_isolated_withdrawable_balance":0}""",
         )
         .toAccountOverview()
 
@@ -140,7 +143,7 @@ class DecibelAccountMappersTest {
             """"entry_price":100.0,"is_isolated":false,"is_deleted":false,""" +
             """"unrealized_funding":0.0,""" +
             """"estimated_liquidation_price":50.0,"transaction_version":1,""" +
-            """"has_fixed_sized_tpsls":false,"tp_trigger_price":120.0,"sl_trigger_price":90.0}"""
+            """"has_fixed_sized_tpsls":false,"tp_trigger_price":120.0,"sl_trigger_price":90.0}""",
         )
         .toPosition()
 
@@ -172,7 +175,7 @@ class DecibelAccountMappersTest {
           """"is_reduce_only":true,"is_tpsl":true,"transaction_version":9,""" +
           """"unix_ms":1735758000000,""" +
           """"price":100.5,"orig_size":2.0,"remaining_size":1.5,"tp_trigger_price":110.0,""" +
-          """"tp_limit_price":109.5,"sl_trigger_price":95.0}"""
+          """"tp_limit_price":109.5,"sl_trigger_price":95.0}""",
       )
 
     val open = order.toOpenOrder()
@@ -214,13 +217,16 @@ class DecibelAccountMappersTest {
           """"is_buy":true,"is_reduce_only":false,"details":"Insufficient margin to update position",""" +
           """"is_tpsl":false,"cancellation_reason":"ClearinghouseSettleViolation",""" +
           """"transaction_version":38487864,"unix_ms":1760281080000,"price":2536.0,""" +
-          """"orig_size":0.01,"remaining_size":0.0}"""
+          """"orig_size":0.01,"remaining_size":0.0}""",
       )
 
     assertEquals("Cancelled: insufficient margin", unfunded.toOrderHistoryEntry().status)
     assertEquals(
       "Cancelled",
-      unfunded.copy(details = "", cancellationReason = "OrderCancelledByUser").toOrderHistoryEntry().status,
+      unfunded
+        .copy(details = "", cancellationReason = "OrderCancelledByUser")
+        .toOrderHistoryEntry()
+        .status,
     )
     assertEquals(
       "Cancelled: couldn’t fill immediately",
@@ -228,7 +234,10 @@ class DecibelAccountMappersTest {
     )
     assertEquals(
       "Cancelled: max fill limit violation",
-      unfunded.copy(details = "", cancellationReason = "MaxFillLimitViolation").toOrderHistoryEntry().status,
+      unfunded
+        .copy(details = "", cancellationReason = "MaxFillLimitViolation")
+        .toOrderHistoryEntry()
+        .status,
     )
     assertEquals("Filled", unfunded.copy(status = "Filled").toOrderHistoryEntry().status)
   }
@@ -238,7 +247,7 @@ class DecibelAccountMappersTest {
     val order =
       json
         .decodeFromString<Order>(
-          """{"market":"0x1","order_id":"1","is_buy":false,"transaction_version":1,"unix_ms":5}"""
+          """{"market":"0x1","order_id":"1","is_buy":false,"transaction_version":1,"unix_ms":5}""",
         )
         .toOpenOrder()
 
@@ -257,7 +266,7 @@ class DecibelAccountMappersTest {
           """"realized_pnl_amount":0.0,"realized_funding_amount":0.0,"is_rebate":false,""" +
           """"fee_amount":0.1,"order_id":"9","client_order_id":"",""" +
           """"transaction_unix_ms":1735758000000,""" +
-          """"transaction_version":42,"counter_party_account":"0x3"}],"total_count":1}"""
+          """"transaction_version":42,"counter_party_account":"0x3"}],"total_count":1}""",
       )
 
     assertEquals(
@@ -303,16 +312,33 @@ class DecibelAccountMappersTest {
       json.decodeFromString<Page<DecibelFundingPayment>>(
         """{"items":[{"market":"0x1","action":"Close Long","size":1.0,""" +
           """"realized_funding_amount":-15.5,"is_rebate":false,"fee_amount":0.01,""" +
-          """"transaction_unix_ms":1735758000000}],"total_count":7}"""
+          """"transaction_unix_ms":1735758000000}],"total_count":7}""",
       )
     assertEquals(
-      FundingPayment("0x1", "Close Long", 1.0, -15.5, 0.01, 1735758000000, FillDirection.CLOSE_LONG),
+      FundingPayment(
+        "0x1",
+        "Close Long",
+        1.0,
+        -15.5,
+        0.01,
+        1735758000000,
+        FillDirection.CLOSE_LONG,
+      ),
       funding.items.single().toFundingPayment(),
     )
     val payment = funding.items.single()
-    assertEquals(FillDirection.CLOSE_LONG, payment.copy(action = "CloseLong").toFundingPayment().direction)
-    assertEquals(FillDirection.OPEN_SHORT, payment.copy(action = "OpenShort").toFundingPayment().direction)
-    assertEquals(FillDirection.OTHER, payment.copy(action = "Liquidation").toFundingPayment().direction)
+    assertEquals(
+      FillDirection.CLOSE_LONG,
+      payment.copy(action = "CloseLong").toFundingPayment().direction,
+    )
+    assertEquals(
+      FillDirection.OPEN_SHORT,
+      payment.copy(action = "OpenShort").toFundingPayment().direction,
+    )
+    assertEquals(
+      FillDirection.OTHER,
+      payment.copy(action = "Liquidation").toFundingPayment().direction,
+    )
 
     val transfers =
       json.decodeFromString<FundHistory>(
@@ -321,7 +347,7 @@ class DecibelAccountMappersTest {
           """{"movement_type":"withdrawal","amount":25.0,"balance_after":475.0,""" +
           """"timestamp":1735759000000,"transaction_version":43},""" +
           """{"movement_type":"reward","amount":1.5,"balance_after":476.5,""" +
-          """"timestamp":1735760000000,"transaction_version":44}],"total":3}"""
+          """"timestamp":1735760000000,"transaction_version":44}],"total":3}""",
       )
     assertEquals(
       listOf(
@@ -337,7 +363,7 @@ class DecibelAccountMappersTest {
   fun portfolioPointsUseWhicheverValueDecibelSent() {
     val documented =
       json.decodeFromString<List<PortfolioChartPoint>>(
-        """[{"timestamp":1735758000000,"data_points":1250.5}]"""
+        """[{"timestamp":1735758000000,"data_points":1250.5}]""",
       )
     assertEquals(
       SeriesPoint(1735758000000, 1250.5),
@@ -351,12 +377,12 @@ class DecibelAccountMappersTest {
     assertEquals(3.0, plain.toPortfolioPoint(PortfolioMetric.PNL).value)
     val withSpot =
       json.decodeFromString<List<PortfolioChartPoint>>(
-        """[{"timestamp":1735758000000,"data_points":366.1,"spot_value":17.02,"vault_equity":null}]"""
+        """[{"timestamp":1735758000000,"data_points":366.1,"spot_value":17.02,"vault_equity":null}]""",
       )
     assertEquals(383.12, withSpot.single().toPortfolioPoint(PortfolioMetric.EQUITY).value, 1e-9)
     val pnl =
       json.decodeFromString<List<PortfolioChartPoint>>(
-        """[{"timestamp":1735758000000,"data_points":-3.5,"spot_pnl":0.4,"spot_value":null}]"""
+        """[{"timestamp":1735758000000,"data_points":-3.5,"spot_pnl":0.4,"spot_value":null}]""",
       )
     assertEquals(-3.5, pnl.single().toPortfolioPoint(PortfolioMetric.PNL).value)
     assertEquals("account_value", PortfolioMetric.EQUITY.decibelWireValue)
@@ -367,7 +393,7 @@ class DecibelAccountMappersTest {
   fun feesTwapsAndKeysBecomeNeutral() {
     val fees =
       json.decodeFromString<AccountFees>(
-        """{"perp":{"user_maker_rate":0.0001,"user_taker_rate":0.00035}}"""
+        """{"perp":{"user_maker_rate":0.0001,"user_taker_rate":0.00035}}""",
       )
     assertEquals(TradingFees(perp = FeeRates(0.0001, 0.00035)), fees.toTradingFees())
 
@@ -377,14 +403,17 @@ class DecibelAccountMappersTest {
           """"start_unix_ms":1735758000000,"frequency_s":60,"duration_s":3600,""" +
           """"orig_size":10.0,"remaining_size":7.5,"status":"Activated",""" +
           """"client_order_id":"","transaction_unix_ms":1735758000000,""" +
-          """"transaction_version":123}"""
+          """"transaction_version":123}""",
       )
-    assertEquals(TwapOrder("t1", "0x2", false, 10.0, 2.5, "Activated", 3600, 60), twap.toTwapOrder())
+    assertEquals(
+      TwapOrder("t1", "0x2", false, 10.0, 2.5, "Activated", 3600, 60),
+      twap.toTwapOrder(),
+    )
 
     val delegation =
       json.decodeFromString<Delegation>(
         """{"delegated_account":"0x33","expiration_time_s":1736326800,""" +
-          """"permission_type":"TradePerpsAllMarkets","permission_market":null}"""
+          """"permission_type":"TradePerpsAllMarkets","permission_market":null}""",
       )
     assertEquals(
       TradingKey("0x33", TradingKeyScope.PERP_MARKETS, null, 1736326800000),
@@ -405,13 +434,14 @@ class DecibelAccountMappersTest {
     val perps = Delegation("0x33", null, "TradePerpsAllMarkets", null)
     val keys =
       listOf(
-        perps,
-        perps.copy(permissionType = "TradeVaultTokens"),
-        perps.copy(delegate = "0X33", permissionType = "TradeSpotAllMarkets"),
-        Delegation("0x44", 1736326800, "TradeSpotAllMarkets", null),
-        Delegation("0x55", null, "TradePerpsOnMarket", "0x1"),
-        Delegation("0x66", null, "SubDelegate", null),
-      ).toTradingKeys()
+          perps,
+          perps.copy(permissionType = "TradeVaultTokens"),
+          perps.copy(delegate = "0X33", permissionType = "TradeSpotAllMarkets"),
+          Delegation("0x44", 1736326800, "TradeSpotAllMarkets", null),
+          Delegation("0x55", null, "TradePerpsOnMarket", "0x1"),
+          Delegation("0x66", null, "SubDelegate", null),
+        )
+        .toTradingKeys()
 
     assertEquals(
       listOf(
@@ -431,7 +461,7 @@ class DecibelAccountMappersTest {
           """"total_shares":1000.0,"share_price":1.05,"tvl":500000.0,"profit_share":10.0,""" +
           """"lockdown_period_s":86400,"status":"active","vault_type":"protocol",""" +
           """"depositors":42,"manager_cash_pct":56.9,"apr":18.4,"past_month_return":6.2,""" +
-          """"all_time_return":23.4,"max_drawdown":8.1,"sharpe_ratio":1.42,"volume_30d":912000.0,"weekly_win_rate_12w":0.75}"""
+          """"all_time_return":23.4,"max_drawdown":8.1,"sharpe_ratio":1.42,"volume_30d":912000.0,"weekly_win_rate_12w":0.75}""",
       )
     val summary = vault.toVaultSummary()
     assertEquals("0xdlp", summary.address)
@@ -445,8 +475,16 @@ class DecibelAccountMappersTest {
     assertEquals(42, summary.depositorCount)
     // Decibel's own measures, in its order; APR is a fraction and the returns are percentages.
     assertEquals(
-      listOf("APR", "Past month", "All time", "Max drawdown", "Sharpe ratio", "Weekly win rate",
-        "30-day volume", "Held in cash"),
+      listOf(
+        "APR",
+        "Past month",
+        "All time",
+        "Max drawdown",
+        "Sharpe ratio",
+        "Weekly win rate",
+        "30-day volume",
+        "Held in cash",
+      ),
       summary.performance.map { it.label },
     )
     // The win rate is a fraction where the returns are percentages.
@@ -464,9 +502,19 @@ class DecibelAccountMappersTest {
     // A vault Decibel measures nothing for shows no performance section at all.
     assertEquals(
       emptyList(),
-      vault.copy(apr = null, pastMonthReturn = null, allTimeReturn = null, maxDrawdown = null,
-        sharpeRatio = null, volume30d = null, weeklyWinRate12w = null, managerCashPct = null)
-        .toVaultSummary().performance,
+      vault
+        .copy(
+          apr = null,
+          pastMonthReturn = null,
+          allTimeReturn = null,
+          maxDrawdown = null,
+          sharpeRatio = null,
+          volume30d = null,
+          weeklyWinRate12w = null,
+          managerCashPct = null,
+        )
+        .toVaultSummary()
+        .performance,
     )
     // Decibel's zero lockup means none; a missing one is unknown.
     assertEquals(0L, vault.copy(lockdownPeriodS = 0).toVaultSummary().lockupSeconds)
@@ -478,7 +526,7 @@ class DecibelAccountMappersTest {
           """{"vault":{"address":"0xdlp","name":"DLP","share_price":1.05},""" +
             """"current_num_shares":10000000,"current_value_of_shares":10.6,""" +
             """"all_time_return":5.0,"total_deposited":20.0,"total_withdrawn":12.0,""" +
-            """"all_time_earned":2.6}"""
+            """"all_time_earned":2.6}""",
         )
         .toVaultPosition()
     // Decibel reports raw share units; ten shares are 10,000,000 of them.
@@ -498,12 +546,12 @@ class DecibelAccountMappersTest {
       json.decodeFromString<DecibelTradingStreak>(
         // `/streaks/account` answers in camelCase, unlike the rest of the API.
         """{"owner":"0x1","currentStreak":5,"graceDaysAvailable":2,"graceDaysUsed":1,""" +
-          """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}"""
+          """"qualifyingDates":["2026-09-20","2026-09-21"],"streakAmpsEstimate":12.0}""",
       )
     val amps =
       json.decodeFromString<AmpsBreakdown>(
         """{"total_amps":1500.0,"trading_amps":1000.0,"referral_amps":500.0,"daily_amps":50.0,""" +
-          """"rank":42}"""
+          """"rank":42}""",
       )
     val rewards =
       decibelRewards(
@@ -553,18 +601,30 @@ class DecibelAccountMappersTest {
         ReferrerStats(totalReferrals = 2, volumeThresholdMet = false),
         AccountReferralInfo(referralCode = "FRIEND", referrerAccount = "0x33", isActive = true),
       )
-    assertEquals(ReferralSummary(referredBy = "FRIEND", referredCount = 2, codeUnlocked = false), gated)
+    assertEquals(
+      ReferralSummary(referredBy = "FRIEND", referredCount = 2, codeUnlocked = false),
+      gated,
+    )
 
     val unlocked =
-      decibelReferral(ReferrerStats(codes = listOf("MINE"), totalReferrals = 5, volumeThresholdMet = true), null)
+      decibelReferral(
+        ReferrerStats(codes = listOf("MINE"), totalReferrals = 5, volumeThresholdMet = true),
+        null,
+      )
     assertEquals(ReferralSummary(code = "MINE", referredCount = 5, codeUnlocked = true), unlocked)
 
     // An affiliate sees its codes whatever it has traded.
     val affiliate = decibelReferral(ReferrerStats(codes = listOf("AFF"), isAffiliate = true), null)
-    assertEquals(ReferralSummary(code = "AFF", referredCount = 0, codeUnlocked = true, affiliate = true), affiliate)
+    assertEquals(
+      ReferralSummary(code = "AFF", referredCount = 0, codeUnlocked = true, affiliate = true),
+      affiliate,
+    )
 
     // No record at all means the count is unknown, which is not the same as none.
-    assertEquals(ReferralSummary(referredCount = null, codeUnlocked = false), decibelReferral(null, null))
+    assertEquals(
+      ReferralSummary(referredCount = null, codeUnlocked = false),
+      decibelReferral(null, null),
+    )
   }
 
   @Test

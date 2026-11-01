@@ -3,8 +3,10 @@ package xyz.mcxross.flare.venue.hyperliquid
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.hyperliquid.model.AssetDirectory
+import xyz.mcxross.flare.hyperliquid.model.Candle as HyperliquidCandle
 import xyz.mcxross.flare.hyperliquid.model.CandleInterval
 import xyz.mcxross.flare.hyperliquid.model.L2Book
+import xyz.mcxross.flare.hyperliquid.model.MarketTrade as HyperliquidTrade
 import xyz.mcxross.flare.hyperliquid.model.PerpMetaAndContexts
 import xyz.mcxross.flare.hyperliquid.model.Side
 import xyz.mcxross.flare.hyperliquid.model.SpotMetaAndContexts
@@ -16,8 +18,6 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.MarketTrade
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderBookLevel
-import xyz.mcxross.flare.hyperliquid.model.Candle as HyperliquidCandle
-import xyz.mcxross.flare.hyperliquid.model.MarketTrade as HyperliquidTrade
 
 // Hyperliquid's market data as the app's exchange-neutral models. Market.id is the coin: `BTC`,
 // `PURR/USDC`, `@107`.
@@ -163,7 +163,9 @@ internal fun ChartTimeframe.toCandleInterval(): CandleInterval =
     ChartTimeframe.ONE_MONTH -> CandleInterval.ONE_MONTH
   }
 
-/** The timeframe of a Hyperliquid wire interval such as `1M`, or null for one Flare doesn't show. */
+/**
+ * The timeframe of a Hyperliquid wire interval such as `1M`, or null for one Flare doesn't show.
+ */
 internal fun chartTimeframeOf(wireInterval: String): ChartTimeframe? =
   ChartTimeframe.entries.firstOrNull { it.toCandleInterval().wireValue == wireInterval }
 
@@ -226,8 +228,8 @@ internal fun List<HyperliquidTrade>.toRecentTrades(
   limit: Int = RECENT_TRADES,
   earlier: List<MarketTrade> = emptyList(),
 ): List<MarketTrade> =
-  (sortedByDescending { it.time }.distinctBy { it.tid }.map { it.toMarketTrade() } + earlier)
-    .take(limit)
+  (sortedByDescending { it.time }.distinctBy { it.tid }.map { it.toMarketTrade() } + earlier).take(
+    limit,
+  )
 
 internal const val RECENT_TRADES = 40
-

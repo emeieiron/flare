@@ -23,12 +23,12 @@ import xyz.mcxross.flare.decibel.api.AllSpotMids
 import xyz.mcxross.flare.decibel.api.DecibelStreamData
 import xyz.mcxross.flare.decibel.api.StreamEvent
 import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.MarketCacheDao
 import xyz.mcxross.flare.store.MarketEntity
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
-import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
 
 /**
  * A market quote as the market cache stores it: Decibel's market as Decibel sends it. Its JSON
@@ -117,15 +117,17 @@ class DefaultMarketsRepository(
       .onSuccess { cachedQuotes ->
         val updatedAtMs = Clock.System.now().toEpochMilliseconds()
         lastSnapshotAtMs = updatedAtMs
-        val rows = withContext(Dispatchers.Default) {
-          cachedQuotes.map { quote ->
-            MarketEntity(
-              marketAddress = quote.market.address,
-              payloadJson = DecibelClient.DefaultJson.encodeToString(quote.copy(favorite = false)),
-              updatedAtMs = updatedAtMs,
-            )
+        val rows =
+          withContext(Dispatchers.Default) {
+            cachedQuotes.map { quote ->
+              MarketEntity(
+                marketAddress = quote.market.address,
+                payloadJson =
+                  DecibelClient.DefaultJson.encodeToString(quote.copy(favorite = false)),
+                updatedAtMs = updatedAtMs,
+              )
+            }
           }
-        }
         cache.clearMarkets()
         cache.upsertMarkets(rows)
         val quotes = cachedQuotes.map(CachedMarketQuote::toMarketQuote)
@@ -134,7 +136,7 @@ class DefaultMarketsRepository(
             loading = false,
             quotes =
               quotes.sortedWith(
-                compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol }
+                compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol },
               ),
             stale = false,
             updatedAtMs = updatedAtMs,
@@ -157,15 +159,16 @@ class DefaultMarketsRepository(
   private suspend fun loadCachedMarkets() {
     val rows = cache.markets()
     // Decoding every cached market is real work; it stays off the main thread during launch.
-    val cachedQuotes = withContext(Dispatchers.Default) {
-      rows.mapNotNull { row ->
-        runCatching {
-          DecibelClient.DefaultJson.decodeFromString<CachedMarketQuote>(row.payloadJson)
+    val cachedQuotes =
+      withContext(Dispatchers.Default) {
+        rows.mapNotNull { row ->
+          runCatching {
+            DecibelClient.DefaultJson.decodeFromString<CachedMarketQuote>(row.payloadJson)
+          }
+            .getOrNull()
+            ?.toMarketQuote()
         }
-          .getOrNull()
-          ?.toMarketQuote()
       }
-    }
     seedDefaultWatchlist(cachedQuotes.map { it.market })
     val quotes = cachedQuotes.map { quote ->
       quote.copy(favorite = quote.market.id in favorites)
@@ -176,7 +179,7 @@ class DefaultMarketsRepository(
           loading = false,
           quotes =
             quotes.sortedWith(
-              compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol }
+              compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol },
             ),
           stale = true,
           updatedAtMs = rows.maxOfOrNull(MarketEntity::updatedAtMs),
@@ -320,8 +323,8 @@ class DefaultMarketsRepository(
               }
             }
             .sortedWith(
-              compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol }
-            )
+              compareByDescending<MarketQuote> { it.favorite }.thenBy { it.market.symbol },
+            ),
       )
     }
   }

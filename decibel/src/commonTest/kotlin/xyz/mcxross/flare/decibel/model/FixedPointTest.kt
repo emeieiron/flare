@@ -178,7 +178,7 @@ class FixedPointTest {
     assertTrue(
       result.errors.any {
         it is OrderValidationError.BelowMinimum && it.field == "stop-loss trigger"
-      }
+      },
     )
   }
 }

@@ -8,10 +8,10 @@ enum class AssetKind {
 /**
  * One tradable asset with its wire identifiers and precision rules.
  *
- * Hyperliquid accepts a price with at most five significant figures and at most
- * `maxDecimals - szDecimals` decimal places (`maxDecimals` is 6 for perps, 8 for spot); an integer
- * price is always accepted. Sizes carry at most [szDecimals] places. An order must be worth at
- * least [MIN_ORDER_VALUE_USDC].
+ * Hyperliquid accepts a price with at most five significant figures and at most `maxDecimals -
+ * szDecimals` decimal places (`maxDecimals` is 6 for perps, 8 for spot); an integer price is always
+ * accepted. Sizes carry at most [szDecimals] places. An order must be worth at least
+ * [MIN_ORDER_VALUE_USDC].
  */
 data class HyperliquidAsset(
   /** The `a` field of an order: the perp's index, or `10000 + index` for a spot pair. */
@@ -31,8 +31,9 @@ data class HyperliquidAsset(
   val quoteToken: SpotToken? = null,
 ) {
   val maxPriceDecimals: Int
-    get() = ((if (kind == AssetKind.SPOT) SPOT_MAX_DECIMALS else PERP_MAX_DECIMALS) - szDecimals)
-      .coerceAtLeast(0)
+    get() =
+      ((if (kind == AssetKind.SPOT) SPOT_MAX_DECIMALS else PERP_MAX_DECIMALS) - szDecimals)
+        .coerceAtLeast(0)
 
   fun isValidPrice(price: HlDecimal): Boolean =
     price.signum > 0 &&

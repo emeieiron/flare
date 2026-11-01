@@ -48,7 +48,7 @@ class FastKryptoSignerTest {
     assertEquals(
       signer.address,
       EvmAddress.fromPublicKey(
-        xyz.mcxross.fastkrypto.secp256k1RecoverPublicKeyKeccak256(input, recoverable)
+        xyz.mcxross.fastkrypto.secp256k1RecoverPublicKeyKeccak256(input, recoverable),
       ),
     )
     assertEquals("EvmSignature(<redacted>)", signature.toString())
@@ -61,7 +61,7 @@ class FastKryptoSignerTest {
     val input =
       decodeHex(
         "1901f2cee375fa42b42143804025fc449deafd50cc031ca257e0b194a650a912090f" +
-          "c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e"
+          "c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e",
       )
 
     val signature = signer.signTypedData(input)

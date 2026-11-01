@@ -333,7 +333,7 @@ fun PriceChartSkeleton(
         .height(280.dp)
         .then(shimmerModifier)
         .background(FlareColors.Surface, RoundedCornerShape(12.dp))
-        .padding(16.dp)
+        .padding(16.dp),
   ) {
     when (chartStyle) {
       ChartStyle.LINE -> LineChartSkeletonCanvas(Modifier.fillMaxSize())
@@ -400,7 +400,7 @@ fun AppStartupSkeleton(modifier: Modifier = Modifier) {
         .fillMaxSize()
         .background(FlareColors.Canvas)
         .padding(horizontal = 24.dp)
-        .shimmer(shimmer)
+        .shimmer(shimmer),
   ) {
     Spacer(Modifier.height(24.dp))
     FlareSkeletonBox(Modifier.height(36.dp).width(130.dp), RoundedCornerShape(6.dp))

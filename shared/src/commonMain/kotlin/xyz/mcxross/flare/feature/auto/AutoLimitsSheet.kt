@@ -44,16 +44,33 @@ internal fun AutoLimitsSheet(
   var leverage by remember { mutableStateOf(config.leverage.toString()) }
   var confidence by remember { mutableStateOf((config.minConfidence * 100).toString()) }
   val candidate = runCatching {
-    config.copy(orderSize = orderSize, maxPositionSize = maxPosition, maxTotalNotional = maxNotional,
-      maxOrders = maxOrders.toInt(), durationMinutes = duration.toInt(), cooldownSeconds = cooldown.toInt(),
-      slippageBps = slippage.toInt(), leverage = leverage.toInt(), minConfidence = confidence.toDouble() / 100)
-  }.getOrNull()
-  val validation = if (candidate == null) "Enter valid amounts and whole-number limits." else AutoRisk.validate(candidate)
+    config.copy(
+      orderSize = orderSize,
+      maxPositionSize = maxPosition,
+      maxTotalNotional = maxNotional,
+      maxOrders = maxOrders.toInt(),
+      durationMinutes = duration.toInt(),
+      cooldownSeconds = cooldown.toInt(),
+      slippageBps = slippage.toInt(),
+      leverage = leverage.toInt(),
+      minConfidence = confidence.toDouble() / 100,
+    )
+  }
+    .getOrNull()
+  val validation =
+    if (candidate == null) "Enter valid amounts and whole-number limits."
+    else AutoRisk.validate(candidate)
   val valid = candidate != null && validation == null
   FlareSheet("Auto trading limits", onDismiss, heightFraction = 0.94f) {
-    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-      Text("Limits apply to this run. The order-value budget reserves each submitted order’s value and excludes fees.",
-        color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+    Column(
+      Modifier.weight(1f).verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Text(
+        "Limits apply to this run. The order-value budget reserves each submitted order’s value and excludes fees.",
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+      )
       LimitInput("Order size ($symbol)", orderSize, { orderSize = it })
       LimitInput("Maximum position ($symbol)", maxPosition, { maxPosition = it })
       LimitInput("Order-value budget ($quoteAsset)", maxNotional, { maxNotional = it })
@@ -61,18 +78,46 @@ internal fun AutoLimitsSheet(
       LimitInput("Duration (minutes)", duration, { duration = it }, integer = true)
       LimitInput("Cooldown (seconds)", cooldown, { cooldown = it }, integer = true)
       LimitInput("Slippage (basis points)", slippage, { slippage = it }, integer = true)
-      LimitInput("Leverage", leverage, { leverage = it }, integer = true, enabled = config.mode == AutoRunMode.REAL)
-      if (config.mode == AutoRunMode.SIMULATION) Text("Simulation uses 1× leverage.",
-        color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+      LimitInput(
+        "Leverage",
+        leverage,
+        { leverage = it },
+        integer = true,
+        enabled = config.mode == AutoRunMode.REAL,
+      )
+      if (config.mode == AutoRunMode.SIMULATION)
+        Text(
+          "Simulation uses 1× leverage.",
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodySmall,
+        )
       LimitInput("Minimum Jev confidence (%)", confidence, { confidence = it })
       validation?.let { ActionNotice(it) }
     }
-    FlareButton("Save limits", { candidate?.let(onSave) }, Modifier.fillMaxWidth().padding(top = 16.dp), enabled = valid)
+    FlareButton(
+      "Save limits",
+      { candidate?.let(onSave) },
+      Modifier.fillMaxWidth().padding(top = 16.dp),
+      enabled = valid,
+    )
   }
 }
 
 @Composable
-private fun LimitInput(label: String, value: String, onChange: (String) -> Unit, integer: Boolean = false, enabled: Boolean = true) {
-  FlareTextField(value, onChange, Modifier.fillMaxWidth(), label = label, enabled = enabled,
-    keyboardOptions = KeyboardOptions(keyboardType = if (integer) KeyboardType.Number else KeyboardType.Decimal))
+private fun LimitInput(
+  label: String,
+  value: String,
+  onChange: (String) -> Unit,
+  integer: Boolean = false,
+  enabled: Boolean = true,
+) {
+  FlareTextField(
+    value,
+    onChange,
+    Modifier.fillMaxWidth(),
+    label = label,
+    enabled = enabled,
+    keyboardOptions =
+      KeyboardOptions(keyboardType = if (integer) KeyboardType.Number else KeyboardType.Decimal),
+  )
 }

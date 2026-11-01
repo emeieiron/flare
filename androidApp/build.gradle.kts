@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // The decibel flavor's settings: the Flare Worker it talks to and the builder that receives
 // Flare's fee.
@@ -34,11 +34,13 @@ val flareVersionName: String =
     .map { Properties().apply { load(it.reader()) }.getProperty("FLARE_VERSION").orEmpty().trim() }
     .get()
 val flareVersionCode: Int =
-  Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""")
-    .matchEntire(flareVersionName)
-    ?.destructured
-    ?.let { (major, minor, patch) -> major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt() }
-    ?: error("FLARE_VERSION in version.properties must look like 1.2.3 with minor and patch below 100, got '$flareVersionName'")
+  Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""").matchEntire(flareVersionName)?.destructured?.let {
+    (major, minor, patch) ->
+    major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
+  }
+    ?: error(
+      "FLARE_VERSION in version.properties must look like 1.2.3 with minor and patch below 100, got '$flareVersionName'",
+    )
 
 plugins {
   alias(libs.plugins.androidApplication)
@@ -60,7 +62,8 @@ dependencies {
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.fragment)
   implementation(libs.androidx.room3.runtime)
-  // Hands the shipped baseline profile to ART on installs that don't apply it themselves, like sideloads.
+  // Hands the shipped baseline profile to ART on installs that don't apply it themselves, like
+  // sideloads.
   implementation(libs.androidx.profileinstaller)
   baselineProfile(project(":baselineprofile"))
 
@@ -131,7 +134,8 @@ android {
       }
       // Phones only: 64- and 32-bit ARM. The x86 and obsolete ABIs some libraries carry add ~14 MB.
       ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-      // R8 shrinks, optimises and obfuscates the release build; resources nothing references go too.
+      // R8 shrinks, optimises and obfuscates the release build; resources nothing references go
+      // too.
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(
@@ -167,7 +171,9 @@ androidComponents {
       variant.flavorName == "decibel" &&
         variant.buildType in setOf("nonMinifiedRelease", "benchmarkRelease")
     ) {
-      variant.sources.manifests.addStaticManifestFile(file("src/benchmark/AndroidManifest.xml").path)
+      variant.sources.manifests.addStaticManifestFile(
+        file("src/benchmark/AndroidManifest.xml").path,
+      )
     }
   }
 }

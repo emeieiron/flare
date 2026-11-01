@@ -31,9 +31,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * The size of the mark on the launch splash. The Android splash (androidApp's splash_mark.xml) and the
- * iOS launch screen draw it at this size in the middle of the screen, and so does the app's first
- * frame, so the handoff from the system to the app can't be seen.
+ * The size of the mark on the launch splash. The Android splash (androidApp's splash_mark.xml) and
+ * the iOS launch screen draw it at this size in the middle of the screen, and so does the app's
+ * first frame, so the handoff from the system to the app can't be seen.
  */
 val SplashMarkSize = 72.dp
 
@@ -49,13 +49,19 @@ private fun barStroke(size: Size) = size.width * 0.105f
 /** The three bars of the Flare mark, filling this draw scope. */
 internal fun DrawScope.drawFlareMark(color: Color) {
   val stroke = barStroke(size)
-  for (bar in 0..2) drawLine(color, barStart(bar, size), barEnd(bar, size), stroke, cap = StrokeCap.Round)
+  for (bar in 0..2) drawLine(
+    color,
+    barStart(bar, size),
+    barEnd(bar, size),
+    stroke,
+    cap = StrokeCap.Round,
+  )
 }
 
 /**
  * The mark and its light, in a square of [markSize] at this scope's origin. Each bar has its own
- * [color] and glows on its own, as strongly as [glow] says: 0 is unlit, 1 is lit, and past 1 the bar
- * runs hot for a moment, its core whitening as it flares.
+ * [color] and glows on its own, as strongly as [glow] says: 0 is unlit, 1 is lit, and past 1 the
+ * bar runs hot for a moment, its core whitening as it flares.
  */
 internal fun DrawScope.drawLitFlareMark(
   markSize: Size,
@@ -68,7 +74,8 @@ internal fun DrawScope.drawLitFlareMark(
     if (level <= 0f) continue
     // A halo of stacked translucent strokes, each wider than the last, draws the same on every
     // platform, which a blur doesn't. Crowding the layers close to the bar makes the light fall off
-    // fast and then trail away, the way a lit tube glows, rather than fusing the bars into one slab.
+    // fast and then trail away, the way a lit tube glows, rather than fusing the bars into one
+    // slab.
     val halo = color(bar).copy(alpha = (HALO_ALPHA * level).coerceAtMost(1f))
     for (layer in 1..HALO_LAYERS) {
       val reach = layer.toFloat() / HALO_LAYERS
@@ -77,7 +84,13 @@ internal fun DrawScope.drawLitFlareMark(
     }
   }
   for (bar in 0..2) {
-    drawLine(color(bar), barStart(bar, markSize), barEnd(bar, markSize), stroke, cap = StrokeCap.Round)
+    drawLine(
+      color(bar),
+      barStart(bar, markSize),
+      barEnd(bar, markSize),
+      stroke,
+      cap = StrokeCap.Round,
+    )
   }
   for (bar in 0..2) {
     val heat = (glow(bar) - 1f).coerceIn(0f, 1f)
@@ -93,8 +106,8 @@ internal fun DrawScope.drawLitFlareMark(
 }
 
 /**
- * The Flare mark and its light; see [drawLitFlareMark]. [barColor] and [glow] are read while drawing,
- * so an animation redraws the mark without recomposing anything.
+ * The Flare mark and its light; see [drawLitFlareMark]. [barColor] and [glow] are read while
+ * drawing, so an animation redraws the mark without recomposing anything.
  */
 @Composable
 fun FlareMark(
@@ -190,15 +203,16 @@ fun rememberAfterglowBreath(): () -> Float {
       .animateFloat(
         initialValue = 0.78f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(4_200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        animationSpec =
+          infiniteRepeatable(tween(4_200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "Afterglow breath",
       )
   return { breath.value }
 }
 
 /**
- * The app's first frame: the mark alone on black, exactly as the launch splash draws it. It stays up
- * while Flare loads and while the account unlocks.
+ * The app's first frame: the mark alone on black, exactly as the launch splash draws it. It stays
+ * up while Flare loads and while the account unlocks.
  */
 @Composable
 fun FlareSplashScreen(modifier: Modifier = Modifier, glow: (bar: Int) -> Float = { 0f }) {

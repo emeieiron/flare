@@ -7,26 +7,26 @@ import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 import xyz.mcxross.flare.core.FlareRuntimeConfig
-import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.CredentialParser
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.TradingRepository
-import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.VaultsRepository
-import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.WalletBalanceRepository
+import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.DecibelConfig
 import xyz.mcxross.flare.decibel.DecibelDeployment
+import xyz.mcxross.flare.strategies.StrategyMarketFeed
 import xyz.mcxross.flare.venue.Network
 import xyz.mcxross.flare.venue.ProtocolVaultTerms
-import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VaultMinimums
 import xyz.mcxross.flare.venue.VaultTerms
+import xyz.mcxross.flare.venue.Venue
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.VenueDescriptor
@@ -73,7 +73,8 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
         VaultTerms(
           protocolVault =
             ProtocolVaultTerms(
-              summary = "Decibel's own vault. It quotes both sides of every market and backstops liquidations.",
+              summary =
+                "Decibel's own vault. It quotes both sides of every market and backstops liquidations.",
               risk =
                 "As the backstop it absorbs liquidated positions the order book can't take, and " +
                   "shares can be burned to cover them. Contributions are locked for 72 hours.",
@@ -106,8 +107,8 @@ class DecibelVenue(private val config: DecibelRuntimeConfig = DecibelRuntimeConf
 
 /**
  * Decibel's repositories: markets, charts, market details, accounts, trading, the wallet, the
- * Worker session and gas sponsorship. They read the common bindings from `flareModule`: the [HttpClient], [FlareRuntimeConfig], storage and
- * the wallet vault.
+ * Worker session and gas sponsorship. They read the common bindings from `flareModule`: the
+ * [HttpClient], [FlareRuntimeConfig], storage and the wallet vault.
  */
 private fun decibelModule(config: DecibelRuntimeConfig) = module {
   includes(decibelReferralsModule())
@@ -137,26 +138,27 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
                 HttpHeaders.Authorization to "Bearer ${sessionRepository.accessToken()}",
                 HttpHeaders.Origin to runtime.appOrigin,
               )
-            }
+            },
           ),
         transport = get<HttpClient>().asAptosTransport(),
-      )
+      ),
     )
   }
   single {
     val runtime = get<FlareRuntimeConfig>()
     val sessionRepository = get<SessionRepository>()
     DecibelClient(
-      httpClient = get(),
-      aptosClient = get(),
-      config =
-        DecibelConfig(
-          deployment = DecibelDeployment.Mainnet,
-          restBaseUrl = config.decibelRestUrl,
-          webSocketUrl = config.decibelWebSocketUrl,
-          accessToken = { sessionRepository.accessToken() },
-        ),
-    ).also { it.stream.setEnabled(false) }
+        httpClient = get(),
+        aptosClient = get(),
+        config =
+          DecibelConfig(
+            deployment = DecibelDeployment.Mainnet,
+            restBaseUrl = config.decibelRestUrl,
+            webSocketUrl = config.decibelWebSocketUrl,
+            accessToken = { sessionRepository.accessToken() },
+          ),
+      )
+      .also { it.stream.setEnabled(false) }
   }
   single { FundingFeeMetadata(get()) }
   singleOf(::DefaultMarketsRepository) { bind<MarketsRepository>() }
@@ -172,12 +174,29 @@ private fun decibelModule(config: DecibelRuntimeConfig) = module {
   single<xyz.mcxross.flare.aptos.swap.SwapProvider> {
     val sessions = get<SessionRepository>()
     xyz.mcxross.flare.aptos.swap.PanoraSwapProvider(
-      get(), get(), config.workerBaseUrl, { sessions.accessToken() },
+      get(),
+      get(),
+      config.workerBaseUrl,
+      { sessions.accessToken() },
       get<FlareRuntimeConfig>().appOrigin,
     )
   }
   single<xyz.mcxross.flare.data.SwapRepository> {
-    AptosSwapRepository(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), feeMetadata = get())
+    AptosSwapRepository(
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      get(),
+      feeMetadata = get(),
+    )
   }
   singleOf(::DefaultTradingRepository) {
     bind<TradingRepository>()

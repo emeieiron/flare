@@ -14,8 +14,8 @@ import xyz.mcxross.flare.hyperliquid.signing.NonceSource
 
 /**
  * Entry point to Hyperliquid's API. [httpClient] needs the WebSockets plugin installed for
- * [stream]; reads need no credentials. [exchange] signs with the caller's keys and takes its
- * nonces from [nonces], which must be strictly increasing for each signer.
+ * [stream]; reads need no credentials. [exchange] signs with the caller's keys and takes its nonces
+ * from [nonces], which must be strictly increasing for each signer.
  */
 class HyperliquidClient(
   httpClient: HttpClient,

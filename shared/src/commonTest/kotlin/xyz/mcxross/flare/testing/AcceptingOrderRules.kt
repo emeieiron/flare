@@ -14,8 +14,10 @@ object AcceptingOrderRules : OrderRules {
   override fun check(order: OrderRequest, orderBook: OrderBook?): OrderCheck =
     OrderCheck.Valid(
       if (order.type == OrderType.MARKET) {
-        order.copy(price = if (order.side == OrderSide.BUY) orderBook?.bestAsk else orderBook?.bestBid)
-      } else order
+        order.copy(
+          price = if (order.side == OrderSide.BUY) orderBook?.bestAsk else orderBook?.bestBid,
+        )
+      } else order,
     )
 
   override fun checkExitPrices(takeProfit: String?, stopLoss: String?): String? = null

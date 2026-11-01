@@ -57,9 +57,7 @@ fun PortfolioPerformanceChart(
   error: String? = null,
 ) {
   Column(
-    modifier =
-      modifier
-        .fillMaxWidth(),
+    modifier = modifier.fillMaxWidth(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     var choosingMetric by remember { mutableStateOf(false) }
@@ -68,18 +66,24 @@ fun PortfolioPerformanceChart(
       TextButton({ choosingMetric = true }) { Text("${metric.label} ▾") }
       DropdownMenu(choosingMetric, { choosingMetric = false }) {
         PortfolioMetric.entries.forEach { option ->
-          DropdownMenuItem(text = { Text(option.label) }, onClick = {
-            choosingMetric = false
-            onMetricSelect(option)
-          })
+          DropdownMenuItem(
+            text = { Text(option.label) },
+            onClick = {
+              choosingMetric = false
+              onMetricSelect(option)
+            },
+          )
         }
       }
     }
-    if (values.isNotEmpty()) Text(formatBalance(values.last()), style = MaterialTheme.typography.displaySmall)
-    if (error != null && points.isNotEmpty()) Text(
-      "Last known value",
-      color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall,
-    )
+    if (values.isNotEmpty())
+      Text(formatBalance(values.last()), style = MaterialTheme.typography.displaySmall)
+    if (error != null && points.isNotEmpty())
+      Text(
+        "Last known value",
+        color = FlareColors.TextTertiary,
+        style = MaterialTheme.typography.bodySmall,
+      )
     FlareLineChart(
       points = points,
       lineColor =
@@ -96,9 +100,11 @@ fun PortfolioPerformanceChart(
     )
     TimeRangeSelector(PortfolioChartRange.entries, range, { it.label }, onRangeSelect)
     Text(
-      if (metric == PortfolioMetric.EQUITY) "Net deposits and realized P&L. Excludes unrealized P&L."
+      if (metric == PortfolioMetric.EQUITY)
+        "Net deposits and realized P&L. Excludes unrealized P&L."
       else "Realized P&L from completed trades.",
-      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+      Modifier.padding(top = 12.dp),
+      color = FlareColors.TextSecondary,
       style = MaterialTheme.typography.bodySmall,
     )
   }
@@ -120,8 +126,10 @@ fun FlareLineChart(
   Column(modifier.fillMaxWidth()) {
     val values = points.map { it.value }
     if (points.isEmpty() && loading && error == null) {
-      Column(Modifier.fillMaxWidth().height(height).shimmer(rememberFlareShimmer()),
-        verticalArrangement = Arrangement.spacedBy(24.dp)) {
+      Column(
+        Modifier.fillMaxWidth().height(height).shimmer(rememberFlareShimmer()),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+      ) {
         FlareSkeletonBox(Modifier.fillMaxWidth(0.45f).height(40.dp))
         FlareSkeletonBox(Modifier.fillMaxWidth().height(160.dp))
       }
@@ -131,7 +139,7 @@ fun FlareLineChart(
           CartesianChartModel(
             LineCartesianLayerModel.build {
               series(x = points.indices.toList(), y = values)
-            }
+            },
           )
         }
 
@@ -139,9 +147,10 @@ fun FlareLineChart(
         rememberDefaultCartesianMarker(
           label =
             rememberTextComponent(
-              style = MaterialTheme.typography.bodySmall.copy(color = FlareColors.TextPrimary)
+              style = MaterialTheme.typography.bodySmall.copy(color = FlareColors.TextPrimary),
             ),
-          guideline = rememberLineComponent(fill = Fill(FlareColors.BorderStrong), thickness = 1.dp),
+          guideline =
+            rememberLineComponent(fill = Fill(FlareColors.BorderStrong), thickness = 1.dp),
         )
 
       CartesianChartHost(
@@ -150,23 +159,37 @@ fun FlareLineChart(
             rememberLineCartesianLayer(
               lineProvider =
                 LineCartesianLayer.LineProvider.series(
-                  LineCartesianLayer.Line(fill = LineCartesianLayer.LineFill.single(Fill(lineColor)))
-                )
+                  LineCartesianLayer.Line(
+                    fill = LineCartesianLayer.LineFill.single(Fill(lineColor)),
+                  ),
+                ),
             ),
             marker = marker,
-            bottomAxis = HorizontalAxis.rememberBottom(label = null, tick = null, guideline = null, line = null),
-            endAxis = VerticalAxis.rememberEnd(label = null, tick = null, guideline = null, line = null),
+            bottomAxis =
+              HorizontalAxis.rememberBottom(
+                label = null,
+                tick = null,
+                guideline = null,
+                line = null,
+              ),
+            endAxis =
+              VerticalAxis.rememberEnd(label = null, tick = null, guideline = null, line = null),
           ),
         model = model,
         scrollState = rememberVicoScrollState(scrollEnabled = false),
-        modifier = (if (fullBleed) Modifier.fullBleed() else Modifier.fillMaxWidth()).height(height),
+        modifier =
+          (if (fullBleed) Modifier.fullBleed() else Modifier.fillMaxWidth()).height(height),
       )
     } else {
       Box(
         modifier = Modifier.fillMaxWidth().height(height),
         contentAlignment = Alignment.Center,
       ) {
-        Text(emptyText, color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
+        Text(
+          emptyText,
+          color = FlareColors.TextTertiary,
+          style = MaterialTheme.typography.bodySmall,
+        )
       }
     }
   }

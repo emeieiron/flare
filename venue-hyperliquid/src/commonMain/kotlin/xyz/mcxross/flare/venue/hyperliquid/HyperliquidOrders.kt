@@ -38,14 +38,23 @@ class HyperliquidAssets(private val client: HyperliquidClient) {
   private var directory: AssetDirectory? = null
 
   suspend fun asset(coin: String): HyperliquidAsset {
-    mutex.withLock { directory }?.byCoin(coin)?.let { return it }
-    return mutex.withLock {
-      AssetDirectory(client.info.perpMeta(), client.info.spotMeta()).also { directory = it }
-    }.byCoin(coin) ?: throw IllegalArgumentException("Hyperliquid doesn’t list $coin")
+    mutex
+      .withLock { directory }
+      ?.byCoin(coin)
+      ?.let {
+        return it
+      }
+    return mutex
+      .withLock {
+        AssetDirectory(client.info.perpMeta(), client.info.spotMeta()).also { directory = it }
+      }
+      .byCoin(coin) ?: throw IllegalArgumentException("Hyperliquid doesn’t list $coin")
   }
 }
 
-/** Builds the `order` actions Flare sends. Prices and sizes stay decimal text until they're wired. */
+/**
+ * Builds the `order` actions Flare sends. Prices and sizes stay decimal text until they're wired.
+ */
 internal object HyperliquidOrders {
   /**
    * Hyperliquid's app sends a market trigger with a limit price 10% past its trigger, so it fills
@@ -62,7 +71,8 @@ internal object HyperliquidOrders {
     require(order.type != OrderType.TWAP) { "A TWAP isn’t an order Hyperliquid places this way" }
     val isBuy = order.side == OrderSide.BUY
     val size = validSize(asset, order.size)
-    val price = validPrice(asset, "Price", order.price ?: throw IllegalArgumentException("Enter a price"))
+    val price =
+      validPrice(asset, "Price", order.price ?: throw IllegalArgumentException("Enter a price"))
     val timeInForce =
       if (order.type == OrderType.MARKET) WireTimeInForce.IOC
       else
@@ -72,13 +82,23 @@ internal object HyperliquidOrders {
           TimeInForce.IMMEDIATE_OR_CANCEL -> WireTimeInForce.IOC
         }
     val entry =
-      WireOrder(asset.id, isBuy, price, size, order.reduceOnly, WireOrderType.Limit(timeInForce), cloid)
+      WireOrder(
+        asset.id,
+        isBuy,
+        price,
+        size,
+        order.reduceOnly,
+        WireOrderType.Limit(timeInForce),
+        cloid,
+      )
     val exits =
       listOfNotNull(
         order.takeProfitTrigger?.let {
           exit(asset, !isBuy, size, TpSl.TAKE_PROFIT, it, order.takeProfitLimit)
         },
-        order.stopLossTrigger?.let { exit(asset, !isBuy, size, TpSl.STOP_LOSS, it, order.stopLossLimit) },
+        order.stopLossTrigger?.let {
+          exit(asset, !isBuy, size, TpSl.STOP_LOSS, it, order.stopLossLimit)
+        },
       )
     require(exits.isEmpty() || asset.kind == AssetKind.PERP) {
       "Spot orders can’t carry a take profit or stop loss"
@@ -104,8 +124,12 @@ internal object HyperliquidOrders {
     require(asset.kind == AssetKind.PERP) { "Only perpetual positions have exits" }
     val orders =
       listOfNotNull(
-        takeProfit?.let { exit(asset, closesWithBuy, it.size(asset), TpSl.TAKE_PROFIT, it.trigger, it.limit) },
-        stopLoss?.let { exit(asset, closesWithBuy, it.size(asset), TpSl.STOP_LOSS, it.trigger, it.limit) },
+        takeProfit?.let {
+          exit(asset, closesWithBuy, it.size(asset), TpSl.TAKE_PROFIT, it.trigger, it.limit)
+        },
+        stopLoss?.let {
+          exit(asset, closesWithBuy, it.size(asset), TpSl.STOP_LOSS, it.trigger, it.limit)
+        },
       )
     require(orders.isNotEmpty()) { "Enter a take-profit or stop-loss price" }
     return PlaceOrders(
@@ -138,7 +162,8 @@ internal object HyperliquidOrders {
 
   /** An exit as entered; no [size] means the whole position. */
   data class Exit(val trigger: String, val limit: String? = null, val size: String? = null) {
-    fun size(asset: HyperliquidAsset): HlDecimal = size?.let { validSize(asset, it) } ?: HlDecimal.ZERO
+    fun size(asset: HyperliquidAsset): HlDecimal =
+      size?.let { validSize(asset, it) } ?: HlDecimal.ZERO
   }
 
   /**
@@ -171,7 +196,8 @@ internal object HyperliquidOrders {
   /** The worst price a market trigger may fill at, rounded to stay inside the bound. */
   fun triggerBound(asset: HyperliquidAsset, trigger: HlDecimal, isBuy: Boolean): HlDecimal {
     val factor = if (isBuy) HlDecimal.ONE + TRIGGER_SLIPPAGE else HlDecimal.ONE - TRIGGER_SLIPPAGE
-    val bound = asset.roundPrice(trigger * factor, if (isBuy) HlRounding.FLOOR else HlRounding.CEILING)
+    val bound =
+      asset.roundPrice(trigger * factor, if (isBuy) HlRounding.FLOOR else HlRounding.CEILING)
     require(bound.signum > 0) { "That trigger price is too small" }
     return bound
   }
@@ -201,7 +227,9 @@ internal object HyperliquidOrders {
 
   fun requireKind(asset: HyperliquidAsset, kind: MarketKind) {
     val expected = if (kind == MarketKind.SPOT) AssetKind.SPOT else AssetKind.PERP
-    require(asset.kind == expected) { "${asset.displayName} isn’t a ${kind.name.lowercase()} market" }
+    require(asset.kind == expected) {
+      "${asset.displayName} isn’t a ${kind.name.lowercase()} market"
+    }
   }
 }
 
@@ -209,17 +237,16 @@ internal object HyperliquidOrders {
 internal object HyperliquidResults {
   /**
    * The answer to an `order` action whose orders are [labels], in order. The first order decides
-   * the outcome; an exit that failed beside it is said in the detail. An order resting or filled
-   * is committed under its oid.
+   * the outcome; an exit that failed beside it is said in the detail. An order resting or filled is
+   * committed under its oid.
    */
   fun orders(response: ExchangeResponse, reference: String, labels: List<String>): ActionState? {
     val statuses = (response as? ExchangeResponse.Orders)?.statuses ?: return null
     if (statuses.isEmpty() || statuses.size > labels.size) return null
     if (statuses.any { it is OrderStatus.Unrecognized }) return null
-    val failures =
-      statuses.mapIndexedNotNull { index, status ->
-        (status as? OrderStatus.Error)?.let { "${labels[index]}: ${it.message}" }
-      }
+    val failures = statuses.mapIndexedNotNull { index, status ->
+      (status as? OrderStatus.Error)?.let { "${labels[index]}: ${it.message}" }
+    }
     if (failures.size == statuses.size) {
       return ActionState.Failed(
         (statuses.first() as OrderStatus.Error).message,
@@ -235,7 +262,8 @@ internal object HyperliquidResults {
       when (first) {
         is OrderStatus.Resting -> first.oid.toString() to "Your order is on the book."
         is OrderStatus.Filled ->
-          first.oid.toString() to "Filled ${first.totalSize} at ${first.averagePrice.toDoubleOrNull()?.let(::formatPrice) ?: first.averagePrice}."
+          first.oid.toString() to
+            "Filled ${first.totalSize} at ${first.averagePrice.toDoubleOrNull()?.let(::formatPrice) ?: first.averagePrice}."
         else -> reference to null
       }
     val problems = failures.takeIf { it.isNotEmpty() }?.joinToString(" ", prefix = "Not set: ")

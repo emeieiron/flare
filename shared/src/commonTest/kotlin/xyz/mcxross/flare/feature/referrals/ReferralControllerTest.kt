@@ -1,17 +1,17 @@
 package xyz.mcxross.flare.feature.referrals
 
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.TestScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.security.VaultPrompt
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -23,7 +23,8 @@ class ReferralControllerTest {
 
     assertEquals("FLARE", controller.state.value.input)
     assertTrue(controller.state.value.editable)
-    advanceTimeBy(300); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
     assertTrue(controller.state.value.canApply)
 
     controller.change("")
@@ -37,7 +38,8 @@ class ReferralControllerTest {
     val repo = FakeReferralRepository(suggested = "FLARE")
     val controller = visibleController(repo)
     controller.change("")
-    advanceTimeBy(30_000); runCurrent()
+    advanceTimeBy(30_000)
+    runCurrent()
 
     assertEquals("", controller.state.value.input)
     assertEquals(2, repo.programCalls)
@@ -46,17 +48,22 @@ class ReferralControllerTest {
   @Test
   fun typingCancelsLateValidationResponse() = runTest {
     val firstValidation = CompletableDeferred<Boolean>()
-    val repo = FakeReferralRepository(validateResult = { code ->
-      if (code == "OLD") withContext(NonCancellable) { firstValidation.await() } else true
-    })
+    val repo =
+      FakeReferralRepository(
+        validateResult = { code ->
+          if (code == "OLD") withContext(NonCancellable) { firstValidation.await() } else true
+        },
+      )
     val controller = visibleController(repo)
     controller.change("OLD")
-    advanceTimeBy(300); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
     controller.change("NEW")
     firstValidation.complete(false)
     runCurrent()
     assertFalse(controller.state.value.valid)
-    advanceTimeBy(300); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
     assertTrue(controller.state.value.valid)
     assertTrue(controller.state.value.canApply)
     assertEquals("NEW", controller.state.value.input)
@@ -66,11 +73,14 @@ class ReferralControllerTest {
   fun changingOwnerAndProfileDiscardsStaleReads() = runTest {
     val oldStatus = CompletableDeferred<ReferralStatus>()
     var ownerBReads = 0
-    val repo = FakeReferralRepository(statusResult = { owner ->
-      if (owner == "owner-a") withContext(NonCancellable) { oldStatus.await() }
-      else if (++ownerBReads == 1) ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
-      else ReferralStatus(owner, ReferralEligibility.BOUND, "CURRENT")
-    })
+    val repo =
+      FakeReferralRepository(
+        statusResult = { owner ->
+          if (owner == "owner-a") withContext(NonCancellable) { oldStatus.await() }
+          else if (++ownerBReads == 1) ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
+          else ReferralStatus(owner, ReferralEligibility.BOUND, "CURRENT")
+        },
+      )
     val controller = ReferralController(repo, backgroundScope)
     controller.context("profile-a", "owner-a")
     controller.setVisible(true)
@@ -92,7 +102,8 @@ class ReferralControllerTest {
     val repo = FakeReferralRepository()
     val controller = visibleController(repo)
     controller.setVisible(false)
-    advanceTimeBy(60_000); runCurrent()
+    advanceTimeBy(60_000)
+    runCurrent()
 
     assertEquals(1, repo.programCalls)
     assertEquals(1, repo.statusOwners.size)
@@ -102,19 +113,28 @@ class ReferralControllerTest {
   fun invalidAndUnavailableValidationNeverEnableApply() = runTest {
     val invalidRepo = FakeReferralRepository(suggested = "BAD", validateResult = { false })
     val invalid = visibleController(invalidRepo)
-    advanceTimeBy(300); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
     assertFalse(invalid.state.value.canApply)
 
     var attempts = 0
-    val unavailableRepo = FakeReferralRepository(suggested = "MAYBE", validateResult = {
-      attempts++
-      error("offline")
-    })
+    val unavailableRepo =
+      FakeReferralRepository(
+        suggested = "MAYBE",
+        validateResult = {
+          attempts++
+          error("offline")
+        },
+      )
     val unavailable = visibleController(unavailableRepo)
-    advanceTimeBy(300); runCurrent()
-    advanceTimeBy(1_000); runCurrent()
-    advanceTimeBy(2_000); runCurrent()
-    advanceTimeBy(4_000); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
+    advanceTimeBy(1_000)
+    runCurrent()
+    advanceTimeBy(2_000)
+    runCurrent()
+    advanceTimeBy(4_000)
+    runCurrent()
     assertEquals(4, attempts)
     assertFalse(unavailable.state.value.canApply)
     assertEquals("Referrals unavailable", unavailable.state.value.error)
@@ -122,7 +142,10 @@ class ReferralControllerTest {
 
   @Test
   fun disabledProgramClearsSuggestionAndAllowsContinuation() = runTest {
-    val repo = FakeReferralRepository(programResult = ReferralProgram(enabled = false, suggestedCode = "OLD"))
+    val repo =
+      FakeReferralRepository(
+        programResult = ReferralProgram(enabled = false, suggestedCode = "OLD"),
+      )
     val controller = visibleController(repo)
 
     assertFalse(controller.state.value.enabled)
@@ -133,17 +156,21 @@ class ReferralControllerTest {
 
   @Test
   fun pendingStatusPollsWithoutApplyingUntilExplicitApply() = runTest {
-    val repo = FakeReferralRepository(
-      pendingCodeResult = "PENDING",
-      statusResult = { ReferralStatus(it, ReferralEligibility.PENDING, "PENDING") },
-      applyResult = { owner, _, _ -> ReferralStatus(owner, ReferralEligibility.PENDING, "PENDING") },
-    )
+    val repo =
+      FakeReferralRepository(
+        pendingCodeResult = "PENDING",
+        statusResult = { ReferralStatus(it, ReferralEligibility.PENDING, "PENDING") },
+        applyResult = { owner, _, _ ->
+          ReferralStatus(owner, ReferralEligibility.PENDING, "PENDING")
+        },
+      )
     val controller = visibleController(repo)
 
     assertTrue(controller.state.value.pending)
     assertEquals("PENDING", controller.state.value.input)
     assertFalse(controller.state.value.canContinue)
-    advanceTimeBy(30_000); runCurrent()
+    advanceTimeBy(30_000)
+    runCurrent()
     assertEquals(0, repo.applyCalls)
     assertTrue(repo.statusOwners.size >= 2)
 
@@ -155,24 +182,28 @@ class ReferralControllerTest {
   fun hidingAndShowingDuringApplyResetsAndReconcilesWithoutApplyingAgain() = runTest {
     val applyGate = CompletableDeferred<Unit>()
     var bound = false
-    val repo = FakeReferralRepository(
-      suggested = "FLARE",
-      statusResult = { owner ->
-        if (bound) ReferralStatus(owner, ReferralEligibility.BOUND, "FLARE")
-        else ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
-      },
-      validateResult = { true },
-      applyResult = { owner, _, _ ->
-        applyGate.await()
-        bound = true
-        ReferralStatus(owner, ReferralEligibility.BOUND, "FLARE")
-      },
-    )
+    val repo =
+      FakeReferralRepository(
+        suggested = "FLARE",
+        statusResult = { owner ->
+          if (bound) ReferralStatus(owner, ReferralEligibility.BOUND, "FLARE")
+          else ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
+        },
+        validateResult = { true },
+        applyResult = { owner, _, _ ->
+          applyGate.await()
+          bound = true
+          ReferralStatus(owner, ReferralEligibility.BOUND, "FLARE")
+        },
+      )
     val controller = visibleController(repo)
-    advanceTimeBy(300); runCurrent()
+    advanceTimeBy(300)
+    runCurrent()
     assertTrue(controller.state.value.canApply)
 
-    val applying = async { controller.apply(VaultPrompt("Apply referral", "Confirm your identity")) }
+    val applying = async {
+      controller.apply(VaultPrompt("Apply referral", "Confirm your identity"))
+    }
     runCurrent()
     assertTrue(controller.state.value.applying)
 
@@ -192,9 +223,12 @@ class ReferralControllerTest {
 
   @Test
   fun pendingStatusWithVerifiedTradingAccountAllowsContinuation() = runTest {
-    val repo = FakeReferralRepository(statusResult = {
-      ReferralStatus(it, ReferralEligibility.PENDING, "FLARE", tradingAccount = "account-1")
-    })
+    val repo =
+      FakeReferralRepository(
+        statusResult = {
+          ReferralStatus(it, ReferralEligibility.PENDING, "FLARE", tradingAccount = "account-1")
+        },
+      )
     val controller = visibleController(repo)
 
     assertTrue(controller.state.value.pending)
@@ -211,16 +245,18 @@ class ReferralControllerTest {
   }
 
   private class FakeReferralRepository(
-    private val programResult: ReferralProgram = ReferralProgram(enabled = true, suggestedCode = ""),
+    private val programResult: ReferralProgram =
+      ReferralProgram(enabled = true, suggestedCode = ""),
     private val statusResult: suspend (String) -> ReferralStatus = {
       ReferralStatus(it, ReferralEligibility.ELIGIBLE)
     },
     private val suggested: String = programResult.suggestedCode,
     private val pendingCodeResult: String? = null,
     private val validateResult: suspend (String) -> Boolean = { true },
-    private val applyResult: suspend (String, String, VaultPrompt) -> ReferralStatus = { owner, code, _ ->
-      ReferralStatus(owner, ReferralEligibility.BOUND, code)
-    },
+    private val applyResult: suspend (String, String, VaultPrompt) -> ReferralStatus =
+      { owner, code, _ ->
+        ReferralStatus(owner, ReferralEligibility.BOUND, code)
+      },
   ) : ReferralRepository {
     var programCalls = 0
     var applyCalls = 0

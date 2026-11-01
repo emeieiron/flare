@@ -8,7 +8,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import xyz.mcxross.flare.data.CredentialFormat
 
-/** The checks that need no cryptography; key derivation is tested on iOS and in :hyperliquid's JVM tests. */
+/**
+ * The checks that need no cryptography; key derivation is tested on iOS and in :hyperliquid's JVM
+ * tests.
+ */
 class HyperliquidCredentialParserTest {
   private val parser = HyperliquidCredentialParser
 
@@ -44,9 +47,14 @@ class HyperliquidCredentialParserTest {
       parser.sameAddress(
         "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
         "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-      )
+      ),
     )
-    assertFalse(parser.sameAddress("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"))
+    assertFalse(
+      parser.sameAddress(
+        "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      ),
+    )
     assertFalse(parser.sameAddress("0x1", "0x1"))
   }
 }

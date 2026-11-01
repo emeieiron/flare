@@ -34,8 +34,8 @@ interface VaultsRepository {
   ): Flow<ActionState>
 
   /**
-   * How much of this vault's shares the account may pledge as margin and already has, or null
-   * where the venue doesn't take vault shares as collateral.
+   * How much of this vault's shares the account may pledge as margin and already has, or null where
+   * the venue doesn't take vault shares as collateral.
    */
   suspend fun collateral(vaultAddress: String): VaultCollateral? = null
 
@@ -51,6 +51,6 @@ interface VaultsRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): Flow<ActionState> =
     flowOf(
-      ActionState.Failed("Vault shares aren't collateral here", definitelyNotSubmitted = true)
+      ActionState.Failed("Vault shares aren't collateral here", definitelyNotSubmitted = true),
     )
 }

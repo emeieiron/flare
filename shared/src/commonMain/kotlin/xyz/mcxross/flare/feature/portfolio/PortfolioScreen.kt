@@ -1,19 +1,9 @@
 package xyz.mcxross.flare.feature.portfolio
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
-import kotlin.time.Clock
-import kotlinx.datetime.DatePeriod
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.minus
-import kotlinx.datetime.toLocalDateTime
-import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.LocalFinishSetup
-import xyz.mcxross.flare.design.UnavailableNotice
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,13 +21,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,30 +50,42 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import com.valentinilk.shimmer.shimmer
 import kotlin.math.abs
+import kotlin.time.Clock
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatCalendarDateTime
-import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatCount
+import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatSignedBalance
 import xyz.mcxross.flare.data.formatTokenBalance
+import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
-import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlarePageTransition
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
-import xyz.mcxross.flare.design.rememberFlareShimmer
+import xyz.mcxross.flare.design.LocalFinishSetup
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.SwipeAction
+import xyz.mcxross.flare.design.UnavailableNotice
+import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.CampaignRewards
 import xyz.mcxross.flare.venue.model.ClaimState
 import xyz.mcxross.flare.venue.model.FeeTier
@@ -95,7 +96,6 @@ import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultSummary
-import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun PortfolioRoute(
@@ -109,22 +109,37 @@ fun PortfolioRoute(
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val lifecycleOwner = LocalLifecycleOwner.current
   LaunchedEffect(lifecycleOwner, viewModel) {
-    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.refreshWhileVisible() }
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      viewModel.refreshWhileVisible()
+    }
   }
-  PortfolioScreen(state, viewModel::onIntent, onOpenSetup, onMarketClick, onPositionClick, modifier, reselections)
+  PortfolioScreen(
+    state,
+    viewModel::onIntent,
+    onOpenSetup,
+    onMarketClick,
+    onPositionClick,
+    modifier,
+    reselections,
+  )
 }
 
 private enum class PortfolioPage(val title: String) {
-  OVERVIEW("Portfolio"), POSITIONS("Positions"), HOLDINGS("Holdings"),
-  VAULTS("Vaults"), VAULT_DETAIL("Vault details"),
-  HISTORY("Performance"), REWARDS("Rewards");
+  OVERVIEW("Portfolio"),
+  POSITIONS("Positions"),
+  HOLDINGS("Holdings"),
+  VAULTS("Vaults"),
+  VAULT_DETAIL("Vault details"),
+  HISTORY("Performance"),
+  REWARDS("Rewards");
 
   val depth: Int
-    get() = when (this) {
-      OVERVIEW -> 0
-      VAULT_DETAIL -> 2
-      else -> 1
-    }
+    get() =
+      when (this) {
+        OVERVIEW -> 0
+        VAULT_DETAIL -> 2
+        else -> 1
+      }
 }
 
 @Composable
@@ -145,14 +160,16 @@ fun PortfolioScreen(
   var showBalance by rememberSaveable { mutableStateOf(false) }
   var vaultAddress by rememberSaveable { mutableStateOf<String?>(null) }
   val savedPages = rememberSaveableStateHolder()
-  val inspectedVault = state.accountVaults.firstOrNull { it.vault.address == vaultAddress }?.vault
-    ?: state.vaults.firstOrNull { it.address == vaultAddress }
+  val inspectedVault =
+    state.accountVaults.firstOrNull { it.vault.address == vaultAddress }?.vault
+      ?: state.vaults.firstOrNull { it.address == vaultAddress }
   val back: () -> Unit = {
     if (!state.busy) {
-      page = when (page) {
-        PortfolioPage.VAULT_DETAIL -> PortfolioPage.VAULTS
-        else -> PortfolioPage.OVERVIEW
-      }
+      page =
+        when (page) {
+          PortfolioPage.VAULT_DETAIL -> PortfolioPage.VAULTS
+          else -> PortfolioPage.OVERVIEW
+        }
     }
   }
   NavigationBackHandler(
@@ -171,10 +188,11 @@ fun PortfolioScreen(
   FlarePageTransition(page, { it.depth }, modifier) { displayedPage ->
     Column(Modifier.fillMaxSize()) {
       if (displayedPage != PortfolioPage.OVERVIEW) {
-        val title = when (displayedPage) {
-          PortfolioPage.VAULT_DETAIL -> inspectedVault?.name ?: displayedPage.title
-          else -> displayedPage.title
-        }
+        val title =
+          when (displayedPage) {
+            PortfolioPage.VAULT_DETAIL -> inspectedVault?.name ?: displayedPage.title
+            else -> displayedPage.title
+          }
         BackBar(title, back)
       }
       savedPages.SaveableStateProvider(displayedPage) {
@@ -189,55 +207,102 @@ fun PortfolioScreen(
             item {
               FlareTopBar("Portfolio")
               Text("Your portfolio starts here", style = MaterialTheme.typography.headlineMedium)
-              Text("Connect a wallet to view your assets and positions.",
-                Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary)
-              FlareButton("Create or import wallet", onOpenSetup, Modifier.fillMaxWidth().padding(top = 24.dp))
+              Text(
+                "Connect a wallet to view your assets and positions.",
+                Modifier.padding(top = 12.dp),
+                color = FlareColors.TextSecondary,
+              )
+              FlareButton(
+                "Create or import wallet",
+                onOpenSetup,
+                Modifier.fillMaxWidth().padding(top = 24.dp),
+              )
             }
             return@LazyColumn
           }
           when (displayedPage) {
-            PortfolioPage.OVERVIEW -> item {
-              PortfolioOverview(state, showBalance, { showBalance = !showBalance }, onIntent) { page = it }
-            }
-            PortfolioPage.POSITIONS -> {
-              val positions = state.account.positions.sortedByDescending { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
-              if (positions.size > 8 || query.isNotEmpty()) item {
-                FlareSearchField(query, { query = it }, "Search positions", FlareIcons.Search,
-                  Modifier.padding(bottom = 16.dp))
+            PortfolioPage.OVERVIEW ->
+              item {
+                PortfolioOverview(state, showBalance, { showBalance = !showBalance }, onIntent) {
+                  page = it
+                }
               }
-              val visible = positions.filter { (state.marketSymbols[it.marketId] ?: it.marketId).contains(query, true) }
+            PortfolioPage.POSITIONS -> {
+              val positions =
+                state.account.positions.sortedByDescending {
+                  abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice
+                }
+              if (positions.size > 8 || query.isNotEmpty())
+                item {
+                  FlareSearchField(
+                    query,
+                    { query = it },
+                    "Search positions",
+                    FlareIcons.Search,
+                    Modifier.padding(bottom = 16.dp),
+                  )
+                }
+              val visible = positions.filter {
+                (state.marketSymbols[it.marketId] ?: it.marketId).contains(query, true)
+              }
               if (positions.isEmpty()) item { PositionsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
               items(visible, key = { it.marketId }) { position ->
-                SwipeAction("Close", { closeTarget = position.marketId },
-                  enabled = !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null) {
-                  PositionRow(position, state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
-                    state.markPrices[position.marketId], !state.busy, { onPositionClick(position.marketId) })
+                SwipeAction(
+                  "Close",
+                  { closeTarget = position.marketId },
+                  enabled =
+                    !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
+                ) {
+                  PositionRow(
+                    position,
+                    state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
+                    state.markPrices[position.marketId],
+                    !state.busy,
+                    { onPositionClick(position.marketId) },
+                  )
                 }
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
             }
             PortfolioPage.HOLDINGS -> {
-              if (state.spotHoldings.size > 8 || query.isNotEmpty()) item {
-                FlareSearchField(query, { query = it }, "Search holdings", FlareIcons.Search,
-                  Modifier.padding(bottom = 16.dp))
-              }
-              val visible = state.spotHoldings.filter { it.symbol.contains(query, true) || it.name.contains(query, true) }
+              if (state.spotHoldings.size > 8 || query.isNotEmpty())
+                item {
+                  FlareSearchField(
+                    query,
+                    { query = it },
+                    "Search holdings",
+                    FlareIcons.Search,
+                    Modifier.padding(bottom = 16.dp),
+                  )
+                }
+              val visible =
+                state.spotHoldings.filter {
+                  it.symbol.contains(query, true) || it.name.contains(query, true)
+                }
               if (state.spotHoldings.isEmpty()) item { HoldingsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching holdings") }
               items(visible) { holding ->
-                HoldingRow(holding, holding.marketAddress != null && !state.busy, { holding.marketAddress?.let(onMarketClick) })
+                HoldingRow(
+                  holding,
+                  holding.marketAddress != null && !state.busy,
+                  { holding.marketAddress?.let(onMarketClick) },
+                )
                 HorizontalDivider(color = FlareColors.BorderSubtle)
               }
             }
-            PortfolioPage.HISTORY -> item {
-              PortfolioPerformanceChart(
-                points = state.chartPoints, range = state.chartRange, metric = state.chartMetric,
-                loading = state.chartLoading || (!state.chartLoaded && state.chartError == null), error = state.chartError,
-                onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
-                onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
-              )
-            }
+            PortfolioPage.HISTORY ->
+              item {
+                PortfolioPerformanceChart(
+                  points = state.chartPoints,
+                  range = state.chartRange,
+                  metric = state.chartMetric,
+                  loading = state.chartLoading || (!state.chartLoaded && state.chartError == null),
+                  error = state.chartError,
+                  onRangeSelect = { onIntent(PortfolioIntent.SelectChartRange(it)) },
+                  onMetricSelect = { onIntent(PortfolioIntent.SelectChartMetric(it)) },
+                )
+              }
             PortfolioPage.VAULTS -> {
               val owned = state.accountVaults.map { it.vault.address }.toSet()
               val available = state.vaults.filter { it.address !in owned }.distinctBy { it.address }
@@ -245,21 +310,41 @@ fun PortfolioScreen(
               val availableMatches = available.filter { it.name.contains(query, true) }
               item {
                 Text("Invested in vaults", color = FlareColors.TextSecondary)
-                if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(balance = true)
-                else Text(if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
-                  Modifier.padding(top = 8.dp), style = MaterialTheme.typography.displaySmall)
+                if (!state.vaultsLoaded && state.vaultsError == null)
+                  PortfolioShimmer(balance = true)
+                else
+                  Text(
+                    if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value })
+                    else "—",
+                    Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.displaySmall,
+                  )
                 if (state.vaultsLoaded && state.vaultsError != null) {
-                  Text("Last updated earlier", Modifier.padding(top = 4.dp),
-                    color = FlareColors.TextTertiary, style = MaterialTheme.typography.bodySmall)
+                  Text(
+                    "Last updated earlier",
+                    Modifier.padding(top = 4.dp),
+                    color = FlareColors.TextTertiary,
+                    style = MaterialTheme.typography.bodySmall,
+                  )
                 } else if (state.vaultsError != null) QuietPortfolioMessage("Vaults unavailable")
-                if (state.vaults.size > 8 || query.isNotEmpty()) FlareSearchField(query, { query = it }, "Search vaults", FlareIcons.Search,
-                  Modifier.padding(top = 20.dp))
+                if (state.vaults.size > 8 || query.isNotEmpty())
+                  FlareSearchField(
+                    query,
+                    { query = it },
+                    "Search vaults",
+                    FlareIcons.Search,
+                    Modifier.padding(top = 20.dp),
+                  )
                 if (ownedMatches.isNotEmpty()) SectionLabel("Your deposits")
-                else if (state.vaultsLoaded && owned.isEmpty() && query.isBlank()) QuietPortfolioMessage("No vault deposits yet")
+                else if (state.vaultsLoaded && owned.isEmpty() && query.isBlank())
+                  QuietPortfolioMessage("No vault deposits yet")
               }
               items(ownedMatches, key = { "owned:${it.vault.address}" }) { position ->
-                VaultSummaryRow(position.vault.name, formatBalance(position.value),
-                  "${formatTokenBalance(position.shares)} shares") {
+                VaultSummaryRow(
+                  position.vault.name,
+                  formatBalance(position.value),
+                  "${formatTokenBalance(position.shares)} shares",
+                ) {
                   vaultAddress = position.vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
@@ -275,29 +360,38 @@ fun PortfolioScreen(
               }
               if (userMatches.isNotEmpty()) item { SectionLabel("Discover") }
               items(userMatches, key = { it.address }) { vault ->
-                VaultSummaryRow(vault.name, formatBalance(vault.totalValue),
-                  "Assets managed · ${managerFeeRate(vault.fee)} fee") {
+                VaultSummaryRow(
+                  vault.name,
+                  formatBalance(vault.totalValue),
+                  "Assets managed · ${managerFeeRate(vault.fee)} fee",
+                ) {
                   vaultAddress = vault.address
                   page = PortfolioPage.VAULT_DETAIL
                 }
               }
               if (!state.vaultsLoaded && state.vaultsError == null) item { PortfolioShimmer() }
-              else if (ownedMatches.isEmpty() && availableMatches.isEmpty()) item {
-                if (query.isNotBlank()) QuietPortfolioMessage("No matching vaults")
-                else if (state.vaultsLoaded) QuietPortfolioMessage("No vaults available")
+              else if (ownedMatches.isEmpty() && availableMatches.isEmpty())
+                item {
+                  if (query.isNotBlank()) QuietPortfolioMessage("No matching vaults")
+                  else if (state.vaultsLoaded) QuietPortfolioMessage("No vaults available")
+                }
+            }
+            PortfolioPage.VAULT_DETAIL ->
+              item {
+                if (inspectedVault != null) Column { VaultDetails(state, inspectedVault, onIntent) }
+                else QuietPortfolioMessage("This vault is no longer available")
               }
-            }
-            PortfolioPage.VAULT_DETAIL -> item {
-              if (inspectedVault != null) Column { VaultDetails(state, inspectedVault, onIntent) }
-              else QuietPortfolioMessage("This vault is no longer available")
-            }
-            PortfolioPage.REWARDS -> item {
-              val rewards = state.rewards
-              if (rewards != null && !rewards.isEmpty) {
-                Column { RewardsDetails(state) }
-              } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
-              else QuietPortfolioMessage(if (state.rewardsError) "Rewards unavailable" else "No rewards yet")
-            }
+            PortfolioPage.REWARDS ->
+              item {
+                val rewards = state.rewards
+                if (rewards != null && !rewards.isEmpty) {
+                  Column { RewardsDetails(state) }
+                } else if (!state.rewardsLoaded && !state.rewardsError) PortfolioShimmer()
+                else
+                  QuietPortfolioMessage(
+                    if (state.rewardsError) "Rewards unavailable" else "No rewards yet",
+                  )
+              }
           }
         }
       }
@@ -305,7 +399,8 @@ fun PortfolioScreen(
   }
   closeTarget?.let { market ->
     val position = state.account.positions.firstOrNull { it.marketId == market }
-    if (position != null) ClosePositionSheet(state, position, onIntent, { closeTarget = null }, { closeTarget = null })
+    if (position != null)
+      ClosePositionSheet(state, position, onIntent, { closeTarget = null }, { closeTarget = null })
     else LaunchedEffect(market) { closeTarget = null }
   }
   if (state.fundingMode != null) FundingSheet(state, onIntent)
@@ -322,29 +417,62 @@ private fun PortfolioOverview(
 ) {
   val overview = state.account.overview
   FlareTopBar("Portfolio")
-  Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (expanded) "Collapse balance breakdown" else "Expand balance breakdown", onClick = onExpand)) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween) {
-      Text("Account value", style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
-      Icon(if (expanded) FlareIcons.ChevronUp else FlareIcons.ChevronDown,
-        contentDescription = null, tint = FlareColors.TextSecondary)
+  Column(
+    Modifier.fillMaxWidth()
+      .clickable(
+        role = Role.Button,
+        onClickLabel = if (expanded) "Collapse balance breakdown" else "Expand balance breakdown",
+        onClick = onExpand,
+      ),
+  ) {
+    Row(
+      Modifier.fillMaxWidth().padding(vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text(
+        "Account value",
+        style = MaterialTheme.typography.bodyMedium,
+        color = FlareColors.TextSecondary,
+      )
+      Icon(
+        if (expanded) FlareIcons.ChevronUp else FlareIcons.ChevronDown,
+        contentDescription = null,
+        tint = FlareColors.TextSecondary,
+      )
     }
-    if (overview == null && state.account.error == null) PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
-    else Text(if (!state.balanceIncomplete && (overview != null || state.spotHoldings.isNotEmpty())) formatBalance(state.totalBalance) else "—",
-      style = MaterialTheme.typography.displayMedium)
+    if (overview == null && state.account.error == null)
+      PortfolioShimmer(Modifier.padding(vertical = 8.dp), balance = true)
+    else
+      Text(
+        if (!state.balanceIncomplete && (overview != null || state.spotHoldings.isNotEmpty()))
+          formatBalance(state.totalBalance)
+        else "—",
+        style = MaterialTheme.typography.displayMedium,
+      )
   }
   if (overview == null && state.account.error != null) QuietPortfolioMessage("Account unavailable")
   else if (overview != null && (state.account.stale || state.balanceIncomplete)) {
-    Text("Last known data", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
-      color = FlareColors.TextTertiary)
+    Text(
+      "Last known data",
+      Modifier.padding(top = 4.dp),
+      style = MaterialTheme.typography.bodySmall,
+      color = FlareColors.TextTertiary,
+    )
   }
   AnimatedVisibility(expanded) {
     Column(Modifier.padding(top = 12.dp)) {
       DetailRow("Trading equity", overview?.equity?.let(::formatBalance) ?: "—")
       DetailRow("Trading collateral", overview?.balances?.collateral?.let(::formatBalance) ?: "—")
-      if (state.capabilities.spot) DetailRow("Spot assets",
-        if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty()) formatBalance(state.totalSpotValue) else "—")
-      if (state.vaultsAvailable) DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
+      if (state.capabilities.spot)
+        DetailRow(
+          "Spot assets",
+          if (overview?.balances?.spot != null || state.spotHoldings.isNotEmpty())
+            formatBalance(state.totalSpotValue)
+          else "—",
+        )
+      if (state.vaultsAvailable)
+        DetailRow("Free vault equity", overview?.vaultEquity?.let(::formatBalance) ?: "—")
       // Collateral the venue credits below full value states the credit, not a figure we derived.
       overview?.secondaryCollateral.orEmpty().forEach { collateral ->
         DetailRow(
@@ -352,78 +480,168 @@ private fun PortfolioOverview(
           "${formatBalance(collateral.valueUsd)} · counts at ${formatQuantity(collateral.creditPercent, 2)}%",
         )
       }
-      DetailRow("Margin ratio", overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—")
-      Text("Trading collateral is included in trading equity.", Modifier.padding(top = 12.dp),
-        style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      DetailRow(
+        "Margin ratio",
+        overview?.let { "${formatQuantity(it.marginRatio * 100, 2)}%" } ?: "—",
+      )
+      Text(
+        "Trading collateral is included in trading equity.",
+        Modifier.padding(top = 12.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = FlareColors.TextSecondary,
+      )
     }
   }
-  Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-    PortfolioMetric("Available to trade", overview?.availableToTrade?.let(::formatBalance) ?: "—", Modifier.weight(1f))
-    PortfolioMetric("Unrealized P&L", overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—", Modifier.weight(1f))
+  Row(
+    Modifier.fillMaxWidth().padding(top = 20.dp),
+    horizontalArrangement = Arrangement.spacedBy(24.dp),
+  ) {
+    PortfolioMetric(
+      "Available to trade",
+      overview?.availableToTrade?.let(::formatBalance) ?: "—",
+      Modifier.weight(1f),
+    )
+    PortfolioMetric(
+      "Unrealized P&L",
+      overview?.unrealizedPnl?.let(::formatSignedBalance) ?: "—",
+      Modifier.weight(1f),
+    )
   }
-  Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+  Row(
+    Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
     val setupNeed = state.setupNeed
     val finishSetup = LocalFinishSetup.current
-    if (setupNeed != null) FlareButton(setupNeed.actionLabel, { finishSetup(setupNeed) }, Modifier.weight(1f))
-    else if (state.profile.ownerAddress != null && state.capabilities.unavailableReason(ActionKind.FUNDS) == null) FlareButton("Transfer",
-      { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) }, Modifier.weight(1f))
-    FlareButton("Performance", { onPage(PortfolioPage.HISTORY) }, Modifier.weight(1f), style = FlareButtonStyle.OUTLINE)
+    if (setupNeed != null)
+      FlareButton(setupNeed.actionLabel, { finishSetup(setupNeed) }, Modifier.weight(1f))
+    else if (
+      state.profile.ownerAddress != null &&
+        state.capabilities.unavailableReason(ActionKind.FUNDS) == null
+    )
+      FlareButton(
+        "Transfer",
+        { onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT)) },
+        Modifier.weight(1f),
+      )
+    FlareButton(
+      "Performance",
+      { onPage(PortfolioPage.HISTORY) },
+      Modifier.weight(1f),
+      style = FlareButtonStyle.OUTLINE,
+    )
   }
-  val position = state.account.positions.maxByOrNull { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
-  PortfolioDestination("Positions", state.account.positions.size.takeIf { overview != null }?.toString(),
-    { onPage(PortfolioPage.POSITIONS) }) {
+  val position =
+    state.account.positions.maxByOrNull { abs(it.size.toDoubleOrNull() ?: 0.0) * it.entryPrice }
+  PortfolioDestination(
+    "Positions",
+    state.account.positions.size.takeIf { overview != null }?.toString(),
+    { onPage(PortfolioPage.POSITIONS) },
+  ) {
     if (position != null) {
       val size = position.size.toDoubleOrNull()
-      val pnl = state.markPrices[position.marketId]?.let { mark -> size?.let { (mark - position.entryPrice) * it } }
-      PreviewValue(state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
+      val pnl =
+        state.markPrices[position.marketId]?.let { mark ->
+          size?.let { (mark - position.entryPrice) * it }
+        }
+      PreviewValue(
+        state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
         pnl?.let(::formatSignedBalance) ?: "—",
         "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))}",
-        valueColor = when {
-          pnl == null || abs(pnl) < FLAT_PNL -> FlareColors.TextSecondary
-          pnl > 0 -> FlareColors.Positive
-          else -> FlareColors.Negative
-        })
+        valueColor =
+          when {
+            pnl == null || abs(pnl) < FLAT_PNL -> FlareColors.TextSecondary
+            pnl > 0 -> FlareColors.Positive
+            else -> FlareColors.Negative
+          },
+      )
     } else PositionsEmptyState(state)
   }
-  val assets = state.spotHoldings.filter { it.quantity > 0 }.map { it.symbol.uppercase() }.distinct().size
-  PortfolioDestination("Holdings", if (overview != null) "$assets ${if (assets == 1) "asset" else "assets"}" else null,
-    { onPage(PortfolioPage.HOLDINGS) }) {
+  val assets =
+    state.spotHoldings.filter { it.quantity > 0 }.map { it.symbol.uppercase() }.distinct().size
+  PortfolioDestination(
+    "Holdings",
+    if (overview != null) "$assets ${if (assets == 1) "asset" else "assets"}" else null,
+    { onPage(PortfolioPage.HOLDINGS) },
+  ) {
     when (val preview = state.holdingsPreview) {
       HoldingsPreview.Loading -> PortfolioShimmer(rows = 1)
       HoldingsPreview.NoneHeld -> QuietPortfolioMessage("No assets held")
-      is HoldingsPreview.Holding -> PreviewValue(preview.symbol, preview.valueUsd?.let(::formatBalance) ?: "—", preview.subtitle)
+      is HoldingsPreview.Holding ->
+        PreviewValue(
+          preview.symbol,
+          preview.valueUsd?.let(::formatBalance) ?: "—",
+          preview.subtitle,
+        )
     }
   }
-  if (state.vaultsAvailable) PortfolioDestination("Vaults",
-    state.accountVaults.size.takeIf { it > 0 }?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
-    { onPage(PortfolioPage.VAULTS) }) {
-    if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
-    else PreviewValue("Invested", if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
-      if (state.vaultsLoaded && state.vaultsError != null) "Last updated earlier" else null)
-  }
+  if (state.vaultsAvailable)
+    PortfolioDestination(
+      "Vaults",
+      state.accountVaults.size
+        .takeIf { it > 0 }
+        ?.let { "$it ${if (it == 1) "vault" else "vaults"}" },
+      { onPage(PortfolioPage.VAULTS) },
+    ) {
+      if (!state.vaultsLoaded && state.vaultsError == null) PortfolioShimmer(rows = 1)
+      else
+        PreviewValue(
+          "Invested",
+          if (state.vaultsLoaded) formatBalance(state.accountVaults.sumOf { it.value }) else "—",
+          if (state.vaultsLoaded && state.vaultsError != null) "Last updated earlier" else null,
+        )
+    }
   if (state.rewardsAvailable && state.rewardPointsName == null) {
     // Without reward points, the card is the account's fee tier.
     val feeTier = state.rewards?.feeTier
     PortfolioDestination("Fees & referrals", feeTier?.name, { onPage(PortfolioPage.REWARDS) }) {
       if (!state.rewardsLoaded && !state.rewardsError && feeTier == null) PortfolioShimmer(rows = 1)
-      else PreviewValue("Taker · maker", feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
-        null)
+      else
+        PreviewValue(
+          "Taker · maker",
+          feeTier?.let { "${feeRate(it.perp.takerRate)} · ${feeRate(it.perp.makerRate)}" } ?: "—",
+          null,
+        )
     }
-  } else if (state.rewardsAvailable) PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
-    val points = state.rewards?.points
-    if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
-    else PreviewValue(state.rewardPointsName ?: "Points", points?.let { formatCount(it.total) } ?: "—",
-      null)
-  }
+  } else if (state.rewardsAvailable)
+    PortfolioDestination("Rewards", state.rewards?.tier?.name, { onPage(PortfolioPage.REWARDS) }) {
+      val points = state.rewards?.points
+      if (!state.rewardsLoaded && !state.rewardsError && points == null) PortfolioShimmer(rows = 1)
+      else
+        PreviewValue(
+          state.rewardPointsName ?: "Points",
+          points?.let { formatCount(it.total) } ?: "—",
+          null,
+        )
+    }
 }
 
 @Composable
-private fun PortfolioDestination(title: String, count: String?, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-  Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "View $title", onClick = onClick).padding(vertical = 20.dp)) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun PortfolioDestination(
+  title: String,
+  count: String?,
+  onClick: () -> Unit,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  Column(
+    Modifier.fillMaxWidth()
+      .clickable(role = Role.Button, onClickLabel = "View $title", onClick = onClick)
+      .padding(vertical = 20.dp),
+  ) {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
       Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-      if (count != null) Text(count, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-      Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+      if (count != null)
+        Text(count, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      Icon(
+        FlareIcons.ChevronRight,
+        null,
+        tint = FlareColors.TextTertiary,
+        modifier = Modifier.size(20.dp),
+      )
     }
     Spacer(Modifier.height(12.dp))
     content()
@@ -441,7 +659,12 @@ private fun PreviewValue(
   Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
     Column(Modifier.weight(1f)) {
       Text(label, style = MaterialTheme.typography.bodyMedium)
-      if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      if (subtitle != null)
+        Text(
+          subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = FlareColors.TextSecondary,
+        )
     }
     Text(value, style = MaterialTheme.typography.labelLarge, color = valueColor)
   }
@@ -449,13 +672,22 @@ private fun PreviewValue(
 
 @Composable
 private fun SectionLabel(title: String) {
-  Text(title, Modifier.padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
+  Text(
+    title,
+    Modifier.padding(top = 24.dp, bottom = 8.dp),
+    style = MaterialTheme.typography.titleMedium,
+  )
 }
 
 @Composable
-private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent: (PortfolioIntent) -> Unit) {
+private fun VaultDetails(
+  state: PortfolioUiState,
+  vault: VaultSummary,
+  onIntent: (PortfolioIntent) -> Unit,
+) {
   val position = state.accountVaults.firstOrNull { it.vault.address == vault.address }
-  if (vault.description.isNotBlank()) Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
+  if (vault.description.isNotBlank())
+    Text(vault.description, Modifier.padding(bottom = 20.dp), color = FlareColors.TextSecondary)
   val stakeInUsdc = LocalVenue.current.vaultTerms.stakeInUsdc
   position?.let {
     SectionLabel("Your stake")
@@ -463,9 +695,11 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
     if (!stakeInUsdc) DetailRow("Shares", formatTokenBalance(it.shares))
     DetailRow("Return", signedPercent(it.returnPercent), valueColor = amountColor(it.returnPercent))
     it.deposited?.let { amount -> DetailRow("You put in", formatBalance(amount)) }
-    it.withdrawn?.takeIf { amount -> amount > 0.0 }?.let { amount ->
-      DetailRow("You took out", formatBalance(amount))
-    }
+    it.withdrawn
+      ?.takeIf { amount -> amount > 0.0 }
+      ?.let { amount ->
+        DetailRow("You took out", formatBalance(amount))
+      }
     it.earned?.let { amount ->
       DetailRow("Earned", formatSignedBalance(amount), valueColor = amountColor(amount))
     }
@@ -486,8 +720,12 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
     }
   }
   managerFeeNote(vault.fee)?.let {
-    Text(it, Modifier.padding(top = 16.dp), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall)
+    Text(
+      it,
+      Modifier.padding(top = 16.dp),
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
   if (vault.kind == VaultKind.PROTOCOL) {
     LocalVenue.current.vaultTerms.protocolVault?.let {
@@ -496,33 +734,59 @@ private fun VaultDetails(state: PortfolioUiState, vault: VaultSummary, onIntent:
   }
   val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.FUNDS)
   val lockedUntil = position?.lockedUntil()
-  Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-    FlareButton("Deposit", { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
-      Modifier.weight(1f), enabled = !state.busy && actionsUnavailable == null)
-    if (position != null && position.shares > 0) FlareButton("Redeem",
-      { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
-      Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
-      enabled = !state.busy && actionsUnavailable == null && lockedUntil == null)
+  Row(
+    Modifier.fillMaxWidth().padding(top = 24.dp),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    FlareButton(
+      "Deposit",
+      { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.DEPOSIT)) },
+      Modifier.weight(1f),
+      enabled = !state.busy && actionsUnavailable == null,
+    )
+    if (position != null && position.shares > 0)
+      FlareButton(
+        "Redeem",
+        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.REDEEM)) },
+        Modifier.weight(1f),
+        style = FlareButtonStyle.OUTLINE,
+        enabled = !state.busy && actionsUnavailable == null && lockedUntil == null,
+      )
   }
   state.collateralFor(vault.address)?.let { collateral ->
     SectionLabel("As margin")
     DetailRow("Pledged", "${formatTokenBalance(collateral.pledged)} shares")
     DetailRow("Free to pledge", "${formatTokenBalance(collateral.pledgeable)} shares")
     collateral.creditPercent?.let { DetailRow("Counts at", "${formatQuantity(it, 2)}%") }
-    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      if (collateral.pledgeable > 0.0) FlareButton("Use as margin",
-        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE)) },
-        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
-        enabled = !state.busy && actionsUnavailable == null)
-      if (collateral.pledged > 0.0) FlareButton("Release",
-        { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE)) },
-        Modifier.weight(1f), style = FlareButtonStyle.OUTLINE,
-        enabled = !state.busy && actionsUnavailable == null)
+    Row(
+      Modifier.fillMaxWidth().padding(top = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      if (collateral.pledgeable > 0.0)
+        FlareButton(
+          "Use as margin",
+          { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.PLEDGE)) },
+          Modifier.weight(1f),
+          style = FlareButtonStyle.OUTLINE,
+          enabled = !state.busy && actionsUnavailable == null,
+        )
+      if (collateral.pledged > 0.0)
+        FlareButton(
+          "Release",
+          { onIntent(PortfolioIntent.OpenVaultAction(vault, VaultActionMode.RELEASE)) },
+          Modifier.weight(1f),
+          style = FlareButtonStyle.OUTLINE,
+          enabled = !state.busy && actionsUnavailable == null,
+        )
     }
   }
   lockedUntil?.let {
-    Text("Your latest deposit is locked until ${formatCalendarDateTime(it)}.", Modifier.padding(top = 12.dp),
-      color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+    Text(
+      "Your latest deposit is locked until ${formatCalendarDateTime(it)}.",
+      Modifier.padding(top = 12.dp),
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
   actionsUnavailable?.let { UnavailableNotice(it, state.setupNeed, Modifier.padding(top = 12.dp)) }
 }
@@ -576,7 +840,11 @@ private fun PointsHistory(pointsName: String, history: List<SeriesPoint>) {
 @Composable
 private fun RewardsHeadline(label: String, value: String) {
   Text(label, color = FlareColors.TextSecondary)
-  Text(value, Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.displayMedium)
+  Text(
+    value,
+    Modifier.padding(top = 8.dp, bottom = 24.dp),
+    style = MaterialTheme.typography.displayMedium,
+  )
 }
 
 /** What the venue owes the account: what is claimable now, and when each allocation lapses. */
@@ -586,12 +854,19 @@ private fun CampaignDetails(rewards: CampaignRewards) {
   DetailRow("Ready to claim", "${rewards.readyToClaim} ${rewards.assetSymbol}")
   DetailRow("Earned all time", "${rewards.lifetimeEarned} ${rewards.assetSymbol}")
   rewards.campaigns.forEach { campaign ->
-    DetailRow(campaign.title, claimStateText(campaign), valueColor = claimStateColor(campaign.state))
+    DetailRow(
+      campaign.title,
+      claimStateText(campaign),
+      valueColor = claimStateColor(campaign.state),
+    )
   }
   if (rewards.campaigns.any { it.state == ClaimState.READY }) {
-    Text("Claim these in the ${LocalVenue.current.displayName} app; Flare can't claim them yet.",
-      Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall)
+    Text(
+      "Claim these in the ${LocalVenue.current.displayName} app; Flare can't claim them yet.",
+      Modifier.padding(top = 12.dp),
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
 }
 
@@ -616,16 +891,20 @@ private fun StreakDetails(streak: TradingStreak) {
 private fun StreakWeek(qualifying: Set<LocalDate>) {
   val today = Clock.System.now().toLocalDateTime(TimeZone.UTC).date
   val days = (6 downTo 0).map { today.minus(DatePeriod(days = it)) }
-  Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+  Row(
+    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
     days.forEach { day ->
       val traded = day in qualifying
       Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-          Modifier.fillMaxWidth().height(36.dp)
+          Modifier.fillMaxWidth()
+            .height(36.dp)
             .background(
               if (traded) FlareColors.Positive else FlareColors.Surface,
               RoundedCornerShape(6.dp),
-            )
+            ),
         )
         Text(
           day.dayOfWeek.name.take(1),
@@ -645,7 +924,8 @@ private fun PointsStandingRows(pointsName: String, points: RewardPoints) {
   points.rank?.let { rank ->
     DetailRow(
       "Rank",
-      if (standing == null) "#$rank" else "#${formatCount(rank.toDouble())} of ${formatCount(standing.holders.toDouble())}",
+      if (standing == null) "#$rank"
+      else "#${formatCount(rank.toDouble())} of ${formatCount(standing.holders.toDouble())}",
     )
     standing?.topPercent(rank)?.let { DetailRow("Standing", "Top ${formatQuantity(it, 2)}%") }
   }
@@ -691,32 +971,52 @@ private fun ReferralDetails(referral: ReferralSummary, gate: String?) {
   referral.referredBy?.let { DetailRow("Referred with", it) }
   referral.earnedUsd?.let { DetailRow("Earned", formatBalance(it)) }
   if (locked && gate != null) {
-    Text(gate, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall)
+    Text(
+      gate,
+      Modifier.padding(top = 12.dp),
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
 }
 
 /** A fee rate as a percentage of notional, with a rebate shown as negative. */
-private fun feeRate(rate: Double): String = (if (rate < 0) "−" else "") + formatQuantity(abs(rate) * 100, 4) + "%"
+private fun feeRate(rate: Double): String =
+  (if (rate < 0) "−" else "") + formatQuantity(abs(rate) * 100, 4) + "%"
 
 @Composable
 private fun QuietPortfolioMessage(message: String) {
-  Text(message, Modifier.fillMaxWidth().padding(vertical = 12.dp), color = FlareColors.TextSecondary,
-    style = MaterialTheme.typography.bodyMedium)
+  Text(
+    message,
+    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+    color = FlareColors.TextSecondary,
+    style = MaterialTheme.typography.bodyMedium,
+  )
 }
 
 @Composable
-private fun PortfolioShimmer(modifier: Modifier = Modifier, balance: Boolean = false, rows: Int = 2) {
-  Column(modifier.fillMaxWidth().shimmer(rememberFlareShimmer())
-    .semantics { contentDescription = "Loading portfolio data" },
-    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun PortfolioShimmer(
+  modifier: Modifier = Modifier,
+  balance: Boolean = false,
+  rows: Int = 2,
+) {
+  Column(
+    modifier.fillMaxWidth().shimmer(rememberFlareShimmer()).semantics {
+      contentDescription = "Loading portfolio data"
+    },
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
     if (balance) FlareSkeletonBox(Modifier.width(200.dp).height(56.dp))
-    else repeat(rows) {
-      Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        FlareSkeletonBox(Modifier.width(120.dp).height(20.dp))
-        FlareSkeletonBox(Modifier.width(72.dp).height(20.dp))
+    else
+      repeat(rows) {
+        Row(
+          Modifier.fillMaxWidth().padding(vertical = 10.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          FlareSkeletonBox(Modifier.width(120.dp).height(20.dp))
+          FlareSkeletonBox(Modifier.width(72.dp).height(20.dp))
+        }
       }
-    }
   }
 }
 
@@ -732,7 +1032,8 @@ private fun PositionsEmptyState(state: PortfolioUiState) {
 @Composable
 private fun HoldingsEmptyState(state: PortfolioUiState) {
   when {
-    state.holdingsError != null || state.account.error != null -> QuietPortfolioMessage("Holdings unavailable")
+    state.holdingsError != null || state.account.error != null ->
+      QuietPortfolioMessage("Holdings unavailable")
     state.account.stale || state.account.overview == null -> PortfolioShimmer()
     else -> QuietPortfolioMessage("No assets held")
   }
@@ -742,23 +1043,42 @@ private fun HoldingsEmptyState(state: PortfolioUiState) {
 @Composable
 private fun ProtocolVaultCard(vault: VaultSummary, summary: String?, onClick: () -> Unit) {
   Column(
-    Modifier.fillMaxWidth().padding(top = 20.dp)
+    Modifier.fillMaxWidth()
+      .padding(top = 20.dp)
       .border(BorderStroke(1.dp, FlareColors.BorderSubtle), RoundedCornerShape(12.dp))
       .background(FlareColors.Surface, RoundedCornerShape(12.dp))
       .clickable(role = Role.Button, onClickLabel = "View ${vault.name}", onClick = onClick)
-      .padding(16.dp)
+      .padding(16.dp),
   ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Text(vault.name.ifBlank { "Protocol vault" }, Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium)
-      Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        vault.name.ifBlank { "Protocol vault" },
+        Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+      )
+      Icon(
+        FlareIcons.ChevronRight,
+        null,
+        tint = FlareColors.TextTertiary,
+        modifier = Modifier.size(18.dp),
+      )
     }
     summary?.let {
-      Text(it, Modifier.padding(top = 6.dp), color = FlareColors.TextSecondary,
-        style = MaterialTheme.typography.bodySmall)
+      Text(
+        it,
+        Modifier.padding(top = 6.dp),
+        color = FlareColors.TextSecondary,
+        style = MaterialTheme.typography.bodySmall,
+      )
     }
-    Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Row(
+      Modifier.fillMaxWidth().padding(top = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
       PortfolioMetric("Assets managed", formatBalance(vault.totalValue), Modifier.weight(1f))
       PortfolioMetric("Fee", managerFeeRate(vault.fee), Modifier.weight(1f))
     }
@@ -767,14 +1087,24 @@ private fun ProtocolVaultCard(vault: VaultSummary, summary: String?, onClick: ()
 
 @Composable
 private fun VaultSummaryRow(name: String, value: String, subtitle: String, onClick: () -> Unit) {
-  Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 18.dp),
-    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+  Row(
+    Modifier.fillMaxWidth()
+      .clickable(role = Role.Button, onClick = onClick)
+      .padding(vertical = 18.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
     Column(Modifier.weight(1f)) {
       Text(name.ifBlank { "Vault" }, style = MaterialTheme.typography.bodyLarge)
       Text(subtitle, color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
     }
     Text(value, style = MaterialTheme.typography.labelLarge)
-    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(18.dp))
+    Icon(
+      FlareIcons.ChevronRight,
+      null,
+      tint = FlareColors.TextTertiary,
+      modifier = Modifier.size(18.dp),
+    )
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
 }
@@ -870,11 +1200,12 @@ private fun HoldingRow(
         if (holding.markPrice > 0 || holding.isCollateral) formatBalance(holding.valueUsd) else "—",
         style = MaterialTheme.typography.labelLarge,
       )
-      if (holding.reservedQuantity > 0) Text(
-        "${formatTokenBalance(holding.reservedQuantity)} reserved",
-        color = FlareColors.TextSecondary,
-        style = MaterialTheme.typography.labelSmall,
-      )
+      if (holding.reservedQuantity > 0)
+        Text(
+          "${formatTokenBalance(holding.reservedQuantity)} reserved",
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.labelSmall,
+        )
       Text(
         "${formatTokenBalance(holding.quantity)} ${holding.symbol}",
         color = FlareColors.TextSecondary,

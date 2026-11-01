@@ -120,7 +120,7 @@ class DecibelTradingPayloadTest {
         service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, -1L)).success()
       assertEquals("ffffffffffffffff", minusOne.argumentHex().last())
       assertIs<AptosResult.Failure>(
-        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, 0L))
+        service.payload(DecibelCommand.PledgeCollateral(SUBACCOUNT, MARKET, 0L)),
       )
     }
   }
@@ -250,7 +250,7 @@ class DecibelTradingPayloadTest {
               stopLossTrigger = 31uL,
               stopLossLimit = 32uL,
               stopLossSize = 33uL,
-            )
+            ),
           )
           .success()
 
@@ -290,7 +290,7 @@ class DecibelTradingPayloadTest {
               SUBACCOUNT,
               DELEGATE,
               0x0102030405060708uL,
-            )
+            ),
           )
           .success()
           .argumentHex(),
@@ -304,7 +304,7 @@ class DecibelTradingPayloadTest {
               MARKET,
               MarginMode.ISOLATED,
               100u,
-            )
+            ),
           )
           .success()
           .argumentHex(),
@@ -331,7 +331,7 @@ class DecibelTradingPayloadTest {
     withService { service ->
       val invalidAddress =
         assertIs<AptosResult.Failure>(
-          service.payload(DecibelCommand.Deposit("not-an-address", ASSET, 1uL))
+          service.payload(DecibelCommand.Deposit("not-an-address", ASSET, 1uL)),
         )
       assertIs<AptosError.Validation>(invalidAddress.error)
 
@@ -343,8 +343,8 @@ class DecibelTradingPayloadTest {
               MARKET,
               MarginMode.CROSS,
               101u,
-            )
-          )
+            ),
+          ),
         )
       assertIs<AptosError.Validation>(invalidLeverage.error)
     }

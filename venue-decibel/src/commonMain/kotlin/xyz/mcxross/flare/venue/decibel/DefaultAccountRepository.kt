@@ -29,9 +29,11 @@ import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SessionRole
 import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.data.SetupTransactionException
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.AccountOpenOrders
 import xyz.mcxross.flare.decibel.api.AccountOverviewTopic
@@ -44,15 +46,19 @@ import xyz.mcxross.flare.decibel.api.StreamEvent
 import xyz.mcxross.flare.decibel.api.UserTrades
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.DecimalInput
+import xyz.mcxross.flare.decibel.model.FundMovement as DecibelFundMovement
+import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
+import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.Page
 import xyz.mcxross.flare.decibel.model.Position
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
 import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.toChainUnits
-import xyz.mcxross.flare.data.RewardsRepository
-import xyz.mcxross.flare.data.VaultsRepository
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.WithdrawalContinuation
@@ -62,10 +68,8 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.ReferralSummary
-import xyz.mcxross.flare.feature.referrals.ReferralRepository
-import xyz.mcxross.flare.feature.referrals.ReferralEligibility
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
@@ -76,15 +80,11 @@ import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
 import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.AptosResult
-import xyz.mcxross.flare.decibel.model.FundMovement as DecibelFundMovement
-import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
-import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
-import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
 
 /**
  * Decibel's account, read through the Flare Worker: REST snapshots refreshed by the account stream,
- * mapped to the neutral models. Setup and funding actions run through [DecibelTrading], signed
- * by the owner or the device trading key.
+ * mapped to the neutral models. Setup and funding actions run through [DecibelTrading], signed by
+ * the owner or the device trading key.
  */
 class DefaultAccountRepository(
   private val client: DecibelClient,
@@ -100,7 +100,8 @@ class DefaultAccountRepository(
   private val accountRefresh = RefreshCoordinator<String>()
   private val readSessionMutex = Mutex()
   private val historyMutex = Mutex()
-  private val historyRefresh = RefreshCoordinator<Pair<String, Set<AccountHistoryKind>>>(historyMutex)
+  private val historyRefresh =
+    RefreshCoordinator<Pair<String, Set<AccountHistoryKind>>>(historyMutex)
   private val foreground = MutableStateFlow(true)
   private val historyVisible = MutableStateFlow(false)
   // Scoped to the reviewed create-and-enable operation, never a general owner unlock.
@@ -108,7 +109,8 @@ class DefaultAccountRepository(
   private val withdrawalMutex = Mutex()
   private val tradingWalletSetup = TradingWalletSetup()
   private var streamJob: Job? = null
-  // Positions as Decibel last sent them, so exits read from open orders can be joined to them again.
+  // Positions as Decibel last sent them, so exits read from open orders can be joined to them
+  // again.
   private var venuePositions: List<Position> = emptyList()
   private var streamingAccount: String? = null
   override val snapshot: StateFlow<AccountSnapshot> = mutableSnapshot.asStateFlow()
@@ -162,9 +164,14 @@ class DefaultAccountRepository(
       startLive()
     } catch (error: Exception) {
       if (error is kotlinx.coroutines.CancellationException) throw error
-      val message = "Account access could not be restored. Check the selected wallet and trading account."
-      mutableSnapshot.update { it.copy(account = subaccount, loading = false, stale = true, error = message) }
-      mutableHistory.update { it.copy(account = subaccount, loading = false, stale = true, error = message) }
+      val message =
+        "Account access could not be restored. Check the selected wallet and trading account."
+      mutableSnapshot.update {
+        it.copy(account = subaccount, loading = false, stale = true, error = message)
+      }
+      mutableHistory.update {
+        it.copy(account = subaccount, loading = false, stale = true, error = message)
+      }
       throw error
     }
   }
@@ -189,9 +196,11 @@ class DefaultAccountRepository(
     client.accounts.subaccounts(owner).filter(Subaccount::isActive).map { it.toTradingAccount() }
 
   override suspend fun tradingAccountStatus(address: String): TradingAccountStatus? =
-    runSuspendCatching { (client.subaccounts.status(address) as? AptosResult.Success)?.value }
-      .getOrNull()
-      ?.toTradingAccountStatus()
+    runSuspendCatching {
+      (client.subaccounts.status(address) as? AptosResult.Success)?.value
+    }
+    .getOrNull()
+    ?.toTradingAccountStatus()
 
   override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
     require(subaccount.isNotBlank()) { "Select a trading account" }
@@ -220,7 +229,8 @@ class DefaultAccountRepository(
       // An earlier attempt may have gone through after its journal entry settled, so the chain has
       // the last word before anything is created again.
       val resolved = trading.transactionStatus(reference)
-      val isPending = trading.pendingTransactions.first().any { it.operation == "CREATE_SUBACCOUNT" }
+      val isPending =
+        trading.pendingTransactions.first().any { it.operation == "CREATE_SUBACCOUNT" }
       when {
         resolved is ActionState.Committed -> {
           preferences.setTradingAccountOpened(saved.activeProfileId)
@@ -266,17 +276,23 @@ class DefaultAccountRepository(
     return withContext(ConfirmedSetup()) { block() }
   }
 
-  private suspend fun insideConfirmedSetup(): Boolean = currentCoroutineContext()[ConfirmedSetup] != null
+  private suspend fun insideConfirmedSetup(): Boolean =
+    currentCoroutineContext()[ConfirmedSetup] != null
 
   override suspend fun openTradingAccount(prompt: VaultPrompt): String {
     val saved = preferences.values.first()
-    saved.selectedSubaccount?.let { return it }
+    saved.selectedSubaccount?.let {
+      return it
+    }
     val owner = saved.ownerAddress ?: error("An owner key is required")
     val profile = saved.profiles.first { it.id == saved.activeProfileId }
-    // A wallet Flare made can't have an account it didn't open, so an account on chain is the one an
+    // A wallet Flare made can't have an account it didn't open, so an account on chain is the one
+    // an
     // earlier attempt opened. A first attempt has nothing to look for.
     if (profile.tradingAccountOpened || profile.creationReference != null) {
-      subaccounts(owner).firstOrNull()?.let { return it.address }
+      subaccounts(owner).firstOrNull()?.let {
+        return it.address
+      }
     }
     if (!profile.tradingAccountOpened) {
       val result = createSubaccount(prompt, FeePayment.SPONSORED)
@@ -285,11 +301,18 @@ class DefaultAccountRepository(
     return awaitSubaccount(owner)
   }
 
-  /** Decibel lists a new account a moment after it's opened; this waits, patiently, for it to appear. */
+  /**
+   * Decibel lists a new account a moment after it's opened; this waits, patiently, for it to
+   * appear.
+   */
   private suspend fun awaitSubaccount(owner: String): String {
     var wait = 1_000L
     repeat(OPENED_ACCOUNT_CHECKS) {
-      runSuspendCatching { subaccounts(owner).firstOrNull()?.address }.getOrNull()?.let { return it }
+      runSuspendCatching { subaccounts(owner).firstOrNull()?.address }
+        .getOrNull()
+        ?.let {
+          return it
+        }
       delay(wait)
       wait = (wait * 2).coerceAtMost(8_000L)
     }
@@ -353,7 +376,7 @@ class DefaultAccountRepository(
 
         override suspend fun verifyTradingKey() =
           this@DefaultAccountRepository.verifyTradingKey(subaccount, prompt)
-      }
+      },
     )
   }
 
@@ -361,12 +384,13 @@ class DefaultAccountRepository(
     val trimmed = builderAddress.trim()
     if (trimmed.isBlank()) return trimmed
     return runCatching {
-      val subaccounts = client.accounts.subaccounts(trimmed)
-      subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
-        ?: subaccounts.firstOrNull { it.isActive }?.address
-        ?: subaccounts.firstOrNull()?.address
-        ?: trimmed
-    }.getOrDefault(trimmed)
+        val subaccounts = client.accounts.subaccounts(trimmed)
+        subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
+          ?: subaccounts.firstOrNull { it.isActive }?.address
+          ?: subaccounts.firstOrNull()?.address
+          ?: trimmed
+      }
+      .getOrDefault(trimmed)
   }
 
   override suspend fun approveBuilderFee(
@@ -384,7 +408,8 @@ class DefaultAccountRepository(
     val command =
       when (product) {
         MarketKind.PERP -> DecibelCommand.ApproveMaxBuilderFee(subaccount, resolvedBuilder, units)
-        MarketKind.SPOT -> DecibelCommand.ApproveMaxSpotBuilderFee(subaccount, resolvedBuilder, units)
+        MarketKind.SPOT ->
+          DecibelCommand.ApproveMaxSpotBuilderFee(subaccount, resolvedBuilder, units)
       }
     var terminal: ActionState = ActionState.Failed("Approval transaction did not start")
     trading
@@ -430,7 +455,8 @@ class DefaultAccountRepository(
         feePayment = feePayment,
       )
       .collect { state -> terminal = state }
-    // The rate stays: it still applies to the other product, and returns if this one is approved again.
+    // The rate stays: it still applies to the other product, and returns if this one is approved
+    // again.
     if (terminal is ActionState.Committed) {
       when (product) {
         MarketKind.PERP -> preferences.setBuilderApproved(false)
@@ -442,13 +468,18 @@ class DefaultAccountRepository(
 
   override suspend fun warmFundingFees() = trading.warmFundingFees()
 
-  override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? {
+  override suspend fun estimateFundingFee(
+    amount: String,
+    withdrawing: Boolean,
+  ): xyz.mcxross.flare.venue.model.NetworkFee? {
     val subaccount = preferences.values.first().selectedSubaccount ?: return null
     val units = DecimalInput(amount).toChainUnits("USDC amount", USDC_DECIMALS).getOrThrow()
     if (units == 0uL) return null
     val asset = client.config.deployment.usdcMetadataAddress
-    return trading.estimateCommandFee(if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
-      else DecibelCommand.Deposit(subaccount, asset, units))
+    return trading.estimateCommandFee(
+      if (withdrawing) DecibelCommand.Withdraw(subaccount, asset, units)
+      else DecibelCommand.Deposit(subaccount, asset, units),
+    )
   }
 
   override fun depositUsdc(
@@ -471,7 +502,7 @@ class DefaultAccountRepository(
             ),
           prompt = prompt.copy(requireFreshAuthorization = true),
           feePayment = feePayment,
-        )
+        ),
       )
     } finally {
       invalidateFundingBalances(saved.activeProfileId, subaccount)
@@ -497,7 +528,7 @@ class DefaultAccountRepository(
         pending == null ||
           (pending.subaccount.sameAptosAddress(subaccount) &&
             pending.destination.sameAptosAddress(target) &&
-            pending.amount == amount)
+            pending.amount == amount),
       ) {
         "Continue the previous withdrawal before starting another"
       }
@@ -509,7 +540,7 @@ class DefaultAccountRepository(
         val current = preferences.values.first()
         check(
           current.activeProfileId == saved.activeProfileId &&
-            current.selectedSubaccount == subaccount
+            current.selectedSubaccount == subaccount,
         ) {
           "The selected account changed. Review the withdrawal again."
         }
@@ -609,7 +640,7 @@ class DefaultAccountRepository(
             ),
             prompt.copy(
               requireFreshAuthorization =
-                !approvedThisVisit || wallets.authorizationGeneration != approvalGeneration
+                !approvedThisVisit || wallets.authorizationGeneration != approvalGeneration,
             ),
             feePayment,
             onPrepared = {
@@ -620,9 +651,7 @@ class DefaultAccountRepository(
           .collect { state ->
             if (state is ActionState.Committed)
               preferences.setWithdrawal(saved.activeProfileId, null)
-            if (
-              state is ActionState.Failed && (state.definitelyNotSubmitted || state.committed)
-            ) {
+            if (state is ActionState.Failed && (state.definitelyNotSubmitted || state.committed)) {
               progress = progress.copy(transferReference = null)
               save()
             }
@@ -665,31 +694,35 @@ class DefaultAccountRepository(
     return sessions.bind(status, flow { emit(trading.transactionStatus(reference)) }).first()
   }
 
-  private suspend fun ensureReadSession(account: String): SessionStatus = readSessionMutex.withLock {
-    val saved = preferences.values.first()
-    val current = sessions.status.value
-    // Reading an owned account must not depend on a device trading key's delegation.
-    val expectedRole = if (saved.ownerAddress != null) SessionRole.OWNER else SessionRole.API
-    val expected = saved.ownerAddress ?: saved.apiWalletAddress
-    if (
-      expected != null && current?.role == expectedRole &&
-        current.walletAddress?.sameAptosAddress(expected) == true &&
-        current.subaccount?.sameAptosAddress(account) == true &&
-        current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
-    )
-      return@withLock current
-    wallets.requireAuthorization(wallets.authorizationGeneration)
-    val prompt = VaultPrompt("Open Flare", "Confirm your identity")
-    if (saved.ownerAddress != null) sessions.ensureOwner(account, prompt)
-    else sessions.ensureTrading(account, prompt)
-  }
+  private suspend fun ensureReadSession(account: String): SessionStatus =
+    readSessionMutex.withLock {
+      val saved = preferences.values.first()
+      val current = sessions.status.value
+      // Reading an owned account must not depend on a device trading key's delegation.
+      val expectedRole = if (saved.ownerAddress != null) SessionRole.OWNER else SessionRole.API
+      val expected = saved.ownerAddress ?: saved.apiWalletAddress
+      if (
+        expected != null &&
+          current?.role == expectedRole &&
+          current.walletAddress?.sameAptosAddress(expected) == true &&
+          current.subaccount?.sameAptosAddress(account) == true &&
+          current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+      )
+        return@withLock current
+      wallets.requireAuthorization(wallets.authorizationGeneration)
+      val prompt = VaultPrompt("Open Flare", "Confirm your identity")
+      if (saved.ownerAddress != null) sessions.ensureOwner(account, prompt)
+      else sessions.ensureTrading(account, prompt)
+    }
 
   private suspend fun <T> readAccount(account: String, request: suspend () -> T): T {
     val session = ensureReadSession(account)
     return sessions.bind(session, flow { emit(request()) }).first()
   }
 
-  override suspend fun refresh() { refreshAccount(shareInFlight = false) }
+  override suspend fun refresh() {
+    refreshAccount(shareInFlight = false)
+  }
 
   private suspend fun refreshAccount(maxAgeMs: Long = 0L, shareInFlight: Boolean = true) {
     val account = preferences.values.first().selectedSubaccount
@@ -702,7 +735,8 @@ class DefaultAccountRepository(
       if (readSession == null) {
         mutableSnapshot.update {
           (if (it.account == account) it else AccountSnapshot(account = account)).copy(
-            loading = false, stale = true,
+            loading = false,
+            stale = true,
             error = "Account access is unavailable. Check the selected wallet and trading account.",
           )
         }
@@ -713,19 +747,27 @@ class DefaultAccountRepository(
         current.copy(loading = current.overview == null, error = null)
       }
       val result = runSuspendCatching {
-        sessions.bind(readSession, flow {
-          emit(coroutineScope {
-            val overview = async { client.accounts.overview(account) }
-            val positions = async { client.accounts.positions(account) }
-            val orders = async { client.accounts.openOrders(account) }
-            Triple(overview.await(), positions.await(), orders.await())
-          })
-        }).first()
+        sessions
+          .bind(
+            readSession,
+            flow {
+              emit(
+                coroutineScope {
+                  val overview = async { client.accounts.overview(account) }
+                  val positions = async { client.accounts.positions(account) }
+                  val orders = async { client.accounts.openOrders(account) }
+                  Triple(overview.await(), positions.await(), orders.await())
+                },
+              )
+            },
+          )
+          .first()
       }
         .onSuccess { (overview, positions, orders) ->
           if (preferences.values.first().selectedSubaccount != account) return@onSuccess
           venuePositions = positions.filterNot(Position::isDeleted)
-          val openOrders = orders.items.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
+          val openOrders =
+            orders.items.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
           mutableSnapshot.value =
             AccountSnapshot(
               account = account,
@@ -764,58 +806,125 @@ class DefaultAccountRepository(
     }
     historyRefresh.run(account to kinds, maxAgeMs, shareInFlight) {
       val fullRefresh = kinds.size == AccountHistoryKind.entries.size
-      if (fullRefresh) mutableHistory.update {
-        val current = if (it.account == account) it else AccountHistorySnapshot(account = account)
-        current.copy(loading = current.stale, error = null)
-      }
+      if (fullRefresh)
+        mutableHistory.update {
+          val current = if (it.account == account) it else AccountHistorySnapshot(account = account)
+          current.copy(loading = current.stale, error = null)
+        }
       val result = runSuspendCatching {
         val readSession = ensureReadSession(account)
-        sessions.bind(readSession, flow {
-          emit(coroutineScope {
-            kinds.map { kind -> async {
-              when (kind) {
-                AccountHistoryKind.ORDERS -> HistoryResult.Orders(client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0))
-                AccountHistoryKind.TRADES -> HistoryResult.Trades(client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0))
-                AccountHistoryKind.FUNDING -> HistoryResult.Funding(client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0))
-                AccountHistoryKind.TRANSFERS -> HistoryResult.Transfers(client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0))
-              }
-            } }.map { it.await() }
-          })
-        }).first()
-      }
-      result.onSuccess { pages ->
-        if (preferences.values.first().selectedSubaccount != account) return@onSuccess
-        mutableHistory.update { current ->
-          pages.fold(if (current.account == account) current else AccountHistorySnapshot(account = account)) { state, page ->
-            when (page) {
-              is HistoryResult.Orders -> {
-                val window = refreshedHistoryWindow(state.orders, page.page.items.map { it.toOrderHistoryEntry() }, state.ordersHasMore, page.page.hasMore(0)) { it.order.orderId to it.order.marketId }
-                state.copy(orders = window.items, ordersHasMore = window.hasMore)
-              }
-              is HistoryResult.Trades -> {
-                val window = refreshedHistoryWindow(state.trades, page.page.items.map { it.toFill() }, state.tradesHasMore, page.page.hasMore(0), key = Fill::id)
-                state.copy(trades = window.items, tradesHasMore = window.hasMore)
-              }
-              is HistoryResult.Funding -> {
-                val window = refreshedHistoryWindow(state.funding, page.page.items.map { it.toFundingPayment() }, state.fundingHasMore, page.page.hasMore(0)) { it.marketId to it.timeMs }
-                state.copy(funding = window.items, fundingHasMore = window.hasMore)
-              }
-              is HistoryResult.Transfers -> {
-                val window = refreshedHistoryWindow(state.transfers, page.page.items.map { it.toFundMovement() }, state.transfersHasMore, page.page.hasMore(0)) { listOf(it.reference, it.kind, it.timeMs, it.amount) }
-                state.copy(transfers = window.items, transfersHasMore = window.hasMore)
-              }
-            }
-          }.copy(
-            loading = false,
-            stale = if (fullRefresh) false else current.stale,
-            error = if (fullRefresh) null else current.error,
+        sessions
+          .bind(
+            readSession,
+            flow {
+              emit(
+                coroutineScope {
+                  kinds
+                    .map { kind ->
+                      async {
+                        when (kind) {
+                          AccountHistoryKind.ORDERS ->
+                            HistoryResult.Orders(
+                              client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, 0),
+                            )
+                          AccountHistoryKind.TRADES ->
+                            HistoryResult.Trades(
+                              client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, 0),
+                            )
+                          AccountHistoryKind.FUNDING ->
+                            HistoryResult.Funding(
+                              client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, 0),
+                            )
+                          AccountHistoryKind.TRANSFERS ->
+                            HistoryResult.Transfers(
+                              client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, 0),
+                            )
+                        }
+                      }
+                    }
+                    .map { it.await() }
+                },
+              )
+            },
           )
-        }
-      }.onFailure { error ->
-        if (preferences.values.first().selectedSubaccount == account) mutableHistory.update {
-          it.copy(loading = false, stale = true, error = error.message ?: "Account history is unavailable")
-        }
+          .first()
       }
+      result
+        .onSuccess { pages ->
+          if (preferences.values.first().selectedSubaccount != account) return@onSuccess
+          mutableHistory.update { current ->
+            pages
+              .fold(
+                if (current.account == account) current
+                else AccountHistorySnapshot(account = account),
+              ) { state, page ->
+                when (page) {
+                  is HistoryResult.Orders -> {
+                    val window =
+                      refreshedHistoryWindow(
+                        state.orders,
+                        page.page.items.map { it.toOrderHistoryEntry() },
+                        state.ordersHasMore,
+                        page.page.hasMore(0),
+                      ) {
+                        it.order.orderId to it.order.marketId
+                      }
+                    state.copy(orders = window.items, ordersHasMore = window.hasMore)
+                  }
+                  is HistoryResult.Trades -> {
+                    val window =
+                      refreshedHistoryWindow(
+                        state.trades,
+                        page.page.items.map { it.toFill() },
+                        state.tradesHasMore,
+                        page.page.hasMore(0),
+                        key = Fill::id,
+                      )
+                    state.copy(trades = window.items, tradesHasMore = window.hasMore)
+                  }
+                  is HistoryResult.Funding -> {
+                    val window =
+                      refreshedHistoryWindow(
+                        state.funding,
+                        page.page.items.map { it.toFundingPayment() },
+                        state.fundingHasMore,
+                        page.page.hasMore(0),
+                      ) {
+                        it.marketId to it.timeMs
+                      }
+                    state.copy(funding = window.items, fundingHasMore = window.hasMore)
+                  }
+                  is HistoryResult.Transfers -> {
+                    val window =
+                      refreshedHistoryWindow(
+                        state.transfers,
+                        page.page.items.map { it.toFundMovement() },
+                        state.transfersHasMore,
+                        page.page.hasMore(0),
+                      ) {
+                        listOf(it.reference, it.kind, it.timeMs, it.amount)
+                      }
+                    state.copy(transfers = window.items, transfersHasMore = window.hasMore)
+                  }
+                }
+              }
+              .copy(
+                loading = false,
+                stale = if (fullRefresh) false else current.stale,
+                error = if (fullRefresh) null else current.error,
+              )
+          }
+        }
+        .onFailure { error ->
+          if (preferences.values.first().selectedSubaccount == account)
+            mutableHistory.update {
+              it.copy(
+                loading = false,
+                stale = true,
+                error = error.message ?: "Account history is unavailable",
+              )
+            }
+        }
       result.isSuccess
     }
   }
@@ -836,19 +945,19 @@ class DefaultAccountRepository(
       when (kind) {
         AccountHistoryKind.ORDERS ->
           HistoryResult.Orders(
-            client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, current.orders.size)
+            client.accounts.orderHistory(account, HISTORY_PAGE_SIZE, current.orders.size),
           )
         AccountHistoryKind.TRADES ->
           HistoryResult.Trades(
-            client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, current.trades.size)
+            client.accounts.tradeHistory(account, HISTORY_PAGE_SIZE, current.trades.size),
           )
         AccountHistoryKind.FUNDING ->
           HistoryResult.Funding(
-            client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, current.funding.size)
+            client.accounts.fundingHistory(account, HISTORY_PAGE_SIZE, current.funding.size),
           )
         AccountHistoryKind.TRANSFERS ->
           HistoryResult.Transfers(
-            client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, current.transfers.size)
+            client.accounts.fundHistory(account, HISTORY_PAGE_SIZE, current.transfers.size),
           )
       }
     }
@@ -979,7 +1088,8 @@ class DefaultAccountRepository(
               }
             }
             is DecibelStreamData.AccountOpenOrdersValue -> {
-              val openOrders = data.values.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
+              val openOrders =
+                data.values.map { it.toOpenOrder() }.withWholePositionExits(venuePositions)
               mutableSnapshot.update {
                 it.copy(
                   positions = venuePositions.map { position -> position.toPosition(openOrders) },
@@ -1065,8 +1175,10 @@ class DefaultAccountRepository(
     return decibelRewards(streak, amps, tier, campaigns, referral, global = global)
   }
 
-  override suspend fun pointsHistory(): List<SeriesPoint> =
-    readOwner { client.accounts.dailyAmps(it).toPointsHistory() }.orEmpty()
+  override suspend fun pointsHistory(): List<SeriesPoint> = readOwner {
+    client.accounts.dailyAmps(it).toPointsHistory()
+  }
+    .orEmpty()
 
   private suspend fun accountCampaigns(): UserCampaigns? {
     val account = preferences.values.first().selectedSubaccount ?: return null
@@ -1074,37 +1186,55 @@ class DefaultAccountRepository(
   }
 
   /**
-   * Runs a read the venue scopes by `owner`: points, the streak and the tier are the wallet's,
-   * not a subaccount's, and need the wallet's own session to pass the proxy's scope check.
+   * Runs a read the venue scopes by `owner`: points, the streak and the tier are the wallet's, not
+   * a subaccount's, and need the wallet's own session to pass the proxy's scope check.
    */
   private suspend fun <T> readOwner(block: suspend (owner: String) -> T): T? {
-    val owner = wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
+    val owner =
+      wallets.profile.first().ownerAddress ?: preferences.values.first().ownerAddress ?: return null
     val account = preferences.values.first().selectedSubaccount
     val current = sessions.status.value
-    val session = if (current?.role == SessionRole.OWNER &&
-      current.walletAddress?.sameAptosAddress(owner) == true &&
-      current.subaccount == account &&
-      current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
-    ) current else sessions.authenticateOwner(
-      account, VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
-    )
+    val session =
+      if (
+        current?.role == SessionRole.OWNER &&
+          current.walletAddress?.sameAptosAddress(owner) == true &&
+          current.subaccount == account &&
+          current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+      )
+        current
+      else
+        sessions.authenticateOwner(
+          account,
+          VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
+        )
     return sessions.bind(session, flow { emit(block(owner)) }).first()
   }
 
-  private suspend fun tradingStreak(): DecibelTradingStreak? =
-    readOwner { client.accounts.streak(it) }
+  private suspend fun tradingStreak(): DecibelTradingStreak? = readOwner {
+    client.accounts.streak(it)
+  }
 
   private suspend fun ampsBreakdown(): AmpsBreakdown? = readOwner { client.accounts.amps(it) }
 
   private suspend fun tierInfo(): TierInfo? = readOwner { client.accounts.tier(it) }
 
-  private suspend fun referralSummary(): ReferralSummary? =
-    readOwner { decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it)) }
+  private suspend fun referralSummary(): ReferralSummary? = readOwner {
+    decibelReferral(client.accounts.referrerStats(it), client.accounts.accountReferral(it))
+  }
 
   override suspend fun redeemReferralCode(code: String): Boolean {
     val owner = preferences.values.first().ownerAddress ?: return false
     val repository = referrals ?: return false
-    return repository.apply(owner, code, VaultPrompt("Apply referral code", "Confirm your identity", requireFreshAuthorization = true))
+    return repository
+      .apply(
+        owner,
+        code,
+        VaultPrompt(
+          "Apply referral code",
+          "Confirm your identity",
+          requireFreshAuthorization = true,
+        ),
+      )
       .eligibility == ReferralEligibility.BOUND
   }
 
@@ -1151,7 +1281,7 @@ class DefaultAccountRepository(
             ),
           prompt = prompt.copy(requireFreshAuthorization = true),
           feePayment = feePayment,
-        )
+        ),
       )
     } finally {
       runSuspendCatching { restoreTrading() }
@@ -1179,7 +1309,7 @@ class DefaultAccountRepository(
             ),
           prompt = prompt.copy(requireFreshAuthorization = true),
           feePayment = feePayment,
-        )
+        ),
       )
     } finally {
       runSuspendCatching { restoreTrading() }
@@ -1231,7 +1361,7 @@ class DefaultAccountRepository(
             ),
           prompt = prompt.copy(requireFreshAuthorization = true),
           feePayment = feePayment,
-        )
+        ),
       )
     } finally {
       runSuspendCatching { restoreTrading() }
@@ -1276,7 +1406,9 @@ private fun <T> Page<T>.hasMore(offset: Int): Boolean {
 
 private const val OPENED_ACCOUNT_CHECKS = 8
 
-/** Marks the setup steps a person confirmed as one action; see [AccountRepository.confirmedSetup]. */
+/**
+ * Marks the setup steps a person confirmed as one action; see [AccountRepository.confirmedSetup].
+ */
 private class ConfirmedSetup : AbstractCoroutineContextElement(ConfirmedSetup) {
   companion object Key : CoroutineContext.Key<ConfirmedSetup>
 }

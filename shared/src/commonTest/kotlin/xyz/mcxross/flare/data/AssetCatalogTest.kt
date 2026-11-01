@@ -17,7 +17,7 @@ class AssetCatalogTest {
       ignoreUnknownKeys = true
     }
       .decodeFromString<AssetManifest>(
-        """{"schemaVersion":1,"revision":"abc","ignored":true,"assets":[{"symbol":"BTC","name":"Bitcoin","kind":"crypto","icon":"/assets/btc.svg","sha256":"hash"},{"symbol":"AAPL","name":"Apple","kind":"equity","icon":null}]}"""
+        """{"schemaVersion":1,"revision":"abc","ignored":true,"assets":[{"symbol":"BTC","name":"Bitcoin","kind":"crypto","icon":"/assets/btc.svg","sha256":"hash"},{"symbol":"AAPL","name":"Apple","kind":"equity","icon":null}]}""",
       )
 
     assertEquals("abc", manifest.revision)
@@ -58,7 +58,19 @@ class AssetCatalogTest {
   fun aPairWithAnUnusualQuoteIsNamedAsThePair() {
     val hype = AssetMetadata("HYPE", "Hyperliquid", "crypto", null, null)
     fun spot(id: String, pair: String, quote: String?) =
-      Market(id, "HYPE", pair, MarketKind.SPOT, "crypto", 4, 2, 1, false, AcceptingOrderRules, quoteAsset = quote)
+      Market(
+        id,
+        "HYPE",
+        pair,
+        MarketKind.SPOT,
+        "crypto",
+        4,
+        2,
+        1,
+        false,
+        AcceptingOrderRules,
+        quoteAsset = quote,
+      )
 
     assertEquals("Hyperliquid", resolveMarketIdentity(spot("@1", "HYPE/USDC", null), hype).name)
     assertEquals("HYPE/TZERO", resolveMarketIdentity(spot("@2", "HYPE/TZERO", "TZERO"), hype).name)

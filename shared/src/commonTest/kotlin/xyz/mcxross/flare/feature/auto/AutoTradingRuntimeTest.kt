@@ -234,17 +234,45 @@ class AutoTradingRuntimeTest {
   ): Fixture {
     val store = MemoryPreferences()
     val preferences = AppPreferences(store)
-    if (real) preferences.registerProfile(AccountProfile("profile", apiWalletAddress = "api", selectedSubaccount = "account", onboardingComplete = true))
+    if (real)
+      preferences.registerProfile(
+        AccountProfile(
+          "profile",
+          apiWalletAddress = "api",
+          selectedSubaccount = "account",
+          onboardingComplete = true,
+        ),
+      )
     preferences.setConfirmTransactions(confirm)
     val wallet = TestWallet(real)
-    val accounts = object : SetupAccounts() {
-      override val snapshot = MutableStateFlow(AccountSnapshot(account = "account", stale = false,
-        positions = listOf(Position("BTC", "0", 1, 100.0, false))))
-    }
+    val accounts =
+      object : SetupAccounts() {
+        override val snapshot =
+          MutableStateFlow(
+            AccountSnapshot(
+              account = "account",
+              stale = false,
+              positions = listOf(Position("BTC", "0", 1, 100.0, false)),
+            ),
+          )
+      }
     val trading = TestTrading()
     val credentials = JevCredentials(ForegroundWalletVault(UnavailableWalletVault()), preferences)
-    val config = limits(AutoRunConfig(StrategyKind.MACD_CROSSOVER, if (real) AutoRunMode.REAL else AutoRunMode.SIMULATION,
-      "1", "1000", "10000", 10, 30, 0, 50, 1))
+    val config =
+      limits(
+        AutoRunConfig(
+          StrategyKind.MACD_CROSSOVER,
+          if (real) AutoRunMode.REAL else AutoRunMode.SIMULATION,
+          "1",
+          "1000",
+          "10000",
+          10,
+          30,
+          0,
+          50,
+          1,
+        ),
+      )
     val f = Fixture(store, preferences, wallet, trading, credentials)
     val now = { BASE + startOffset + testScheduler.currentTime }
     val feed = StrategyMarketFeed { key ->
@@ -253,17 +281,50 @@ class AutoTradingRuntimeTest {
       // The exchange answers with every candle open at answer time, the last one still forming.
       val answered = now()
       val last = answered / TIMEFRAME
-      val candles = (last - 59..last).map { index ->
-        val close = 100.0 + if (index % 2 == 0L) 5.0 else -5.0
-        StrategyCandle(index * TIMEFRAME, (index + 1) * TIMEFRAME, close, close + 1, close - 1, close, 10.0)
-      }
-      StrategyMarketSnapshot(key, fetched, candles,
-        StrategyBook(listOf(StrategyBookLevel("99", "100")), listOf(StrategyBookLevel("100", "100")), answered))
+      val candles =
+        (last - 59..last).map { index ->
+          val close = 100.0 + if (index % 2 == 0L) 5.0 else -5.0
+          StrategyCandle(
+            index * TIMEFRAME,
+            (index + 1) * TIMEFRAME,
+            close,
+            close + 1,
+            close - 1,
+            close,
+            10.0,
+          )
+        }
+      StrategyMarketSnapshot(
+        key,
+        fetched,
+        candles,
+        StrategyBook(
+          listOf(StrategyBookLevel("99", "100")),
+          listOf(StrategyBookLevel("100", "100")),
+          answered,
+        ),
+      )
     }
-    f.runtime = AutoTradingRuntime(feed, preferences, credentials, wallet, accounts, trading, model, testVenue(),
-      AccountSetupGate(preferences, accounts), CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job])), POLL, now)
+    f.runtime =
+      AutoTradingRuntime(
+        feed,
+        preferences,
+        credentials,
+        wallet,
+        accounts,
+        trading,
+        model,
+        testVenue(),
+        AccountSetupGate(preferences, accounts),
+        CoroutineScope(
+          backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]),
+        ),
+        POLL,
+        now,
+      )
     runCurrent()
-    val market = Market("BTC", "BTC", "BTC/USDC", MarketKind.PERP, "crypto", 2, 2, 20, false, TestRules)
+    val market =
+      Market("BTC", "BTC", "BTC/USDC", MarketKind.PERP, "crypto", 2, 2, 20, false, TestRules)
     f.runtime.onIntent(AutoTradingIntent.Bind(market, TIMEFRAME, if (real) "account" else null))
     f.runtime.onIntent(AutoTradingIntent.Configure(config))
     runCurrent()
@@ -278,8 +339,11 @@ class AutoTradingRuntimeTest {
     val credentials: JevCredentials,
   ) {
     lateinit var runtime: AutoTradingRuntime
-    val state get() = runtime.uiState.value
-    val decided get() = state.activity.map { it.closedAtMs }
+    val state
+      get() = runtime.uiState.value
+
+    val decided
+      get() = state.activity.map { it.closedAtMs }
   }
 
   private fun TestScope.start(f: Fixture) {
@@ -289,20 +353,36 @@ class AutoTradingRuntimeTest {
   }
 
   private class TestWallet(real: Boolean) : WalletRepository by SetupWallets() {
-    override val profile = MutableStateFlow(WalletProfile(apiWalletAddress = if (real) "api" else null))
+    override val profile =
+      MutableStateFlow(WalletProfile(apiWalletAddress = if (real) "api" else null))
     var authorizations = 0
     override val authorizationGeneration = 0L
-    override fun requireAuthorization(generation: Long) { check(generation == 0L) }
-    override suspend fun confirmIdentity(prompt: VaultPrompt) { authorizations++ }
+
+    override fun requireAuthorization(generation: Long) {
+      check(generation == 0L)
+    }
+
+    override suspend fun confirmIdentity(prompt: VaultPrompt) {
+      authorizations++
+    }
   }
 
   private class TestTrading : TradingRepository by SetupTrading {
     val sent = mutableListOf<TradeAction>()
     var unresolved = 0
     var outcome: ActionState = ActionState.Committed("confirmed")
+
     override suspend fun reconcilePending() = ReconciliationResult(0, unresolved)
-    override suspend fun assetBalanceDecimal(accountAddress: String, symbol: String) = ExactAssetBalance("100000", "100000")
-    override fun execute(action: TradeAction, prompt: VaultPrompt, feePayment: FeePayment, onPrepared: suspend (String) -> Unit): Flow<ActionState> = flow {
+
+    override suspend fun assetBalanceDecimal(accountAddress: String, symbol: String) =
+      ExactAssetBalance("100000", "100000")
+
+    override fun execute(
+      action: TradeAction,
+      prompt: VaultPrompt,
+      feePayment: FeePayment,
+      onPrepared: suspend (String) -> Unit,
+    ): Flow<ActionState> = flow {
       sent += action
       emit(outcome)
     }
@@ -310,7 +390,10 @@ class AutoTradingRuntimeTest {
 
   private object TestRules : OrderRules {
     override val minimumSize = "0.01"
-    override fun check(order: OrderRequest, orderBook: OrderBook?) = OrderCheck.Valid(order.copy(price = orderBook!!.bestAsk))
+
+    override fun check(order: OrderRequest, orderBook: OrderBook?) =
+      OrderCheck.Valid(order.copy(price = orderBook!!.bestAsk))
+
     override fun checkExitPrices(takeProfit: String?, stopLoss: String?) = null
   }
 

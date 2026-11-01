@@ -15,8 +15,7 @@ object DecibelCredentialParser : CredentialParser {
     return when {
       value.startsWith("ed25519-priv-") ||
         value.startsWith("secp256k1-priv-") ||
-        value.matches(Regex("(?:0[xX])?[0-9a-fA-F]{64}")) ->
-        CredentialFormat.PRIVATE_KEY
+        value.matches(Regex("(?:0[xX])?[0-9a-fA-F]{64}")) -> CredentialFormat.PRIVATE_KEY
       value.split(Regex("\\s+")).size in listOf(12, 15, 18, 21, 24) ->
         CredentialFormat.RECOVERY_PHRASE
       else -> CredentialFormat.UNKNOWN
@@ -36,7 +35,7 @@ object DecibelCredentialParser : CredentialParser {
       }
       CredentialFormat.UNKNOWN ->
         throw IllegalArgumentException(
-          "Enter a valid recovery phrase or private key."
+          "Enter a valid recovery phrase or private key.",
         )
     }
 
@@ -44,8 +43,10 @@ object DecibelCredentialParser : CredentialParser {
     if (detect(input) != CredentialFormat.PRIVATE_KEY) null
     else runCatching { keyAccount(normalize(input)).accountAddress.toString() }.getOrNull()
 
-  override fun sameAddress(first: String, second: String): Boolean =
-    runCatching { first.sameAptosAddress(second) }.getOrDefault(false)
+  override fun sameAddress(first: String, second: String): Boolean = runCatching {
+    first.sameAptosAddress(second)
+  }
+    .getOrDefault(false)
 
   /** An Aptos account address: `0x` and up to 64 hex digits. */
   override fun isAddress(input: String): Boolean = AptosAddress.matches(input.trim())

@@ -9,6 +9,10 @@ import androidx.compose.ui.platform.LocalContext
 actual fun rememberReducedMotion(): Boolean {
   val context = LocalContext.current
   return remember(context) {
-    Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    Settings.Global.getFloat(
+      context.contentResolver,
+      Settings.Global.ANIMATOR_DURATION_SCALE,
+      1f,
+    ) == 0f
   }
 }

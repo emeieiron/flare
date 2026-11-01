@@ -8,10 +8,9 @@ class StrategyEngineTest {
   private val key = StrategyMarketKey("test", "mainnet", "BTC", 1000)
   private val engine = StrategyEngine()
 
-  private fun candles(closes: List<Double>) =
-    closes.mapIndexed { index, close ->
-      StrategyCandle(index * 1000L, (index + 1) * 1000L, close, close + 1, close - 1, close, 10.0)
-    }
+  private fun candles(closes: List<Double>) = closes.mapIndexed { index, close ->
+    StrategyCandle(index * 1000L, (index + 1) * 1000L, close, close + 1, close - 1, close, 10.0)
+  }
 
   private fun evaluate(closes: List<Double>): StrategyEvaluation {
     val data = candles(closes)
@@ -89,7 +88,7 @@ class StrategyEngineTest {
         snapshot.copy(candles = data.filterIndexed { index, _ -> index != 15 }),
         snapshot.copy(candles = data.toMutableList().also { it[15] = it[14] }),
         snapshot.copy(
-          candles = data.toMutableList().also { it[15] = it[15].copy(close = Double.NaN) }
+          candles = data.toMutableList().also { it[15] = it[15].copy(close = Double.NaN) },
         ),
         snapshot.copy(candles = data.toMutableList().also { it[15] = it[15].copy(volume = -1.0) }),
         snapshot.copy(key = key.copy(timeframeMs = 0)),
@@ -149,7 +148,7 @@ class StrategyEngineTest {
         "jev-1.13.0",
         mapOf(
           "direction" to
-            DecisionAnswer.Choice("buy", mapOf("buy" to 0.8, "sell" to 0.1, "wait" to 0.1), 0.55)
+            DecisionAnswer.Choice("buy", mapOf("buy" to 0.8, "sell" to 0.1, "wait" to 0.1), 0.55),
         ),
       )
     }

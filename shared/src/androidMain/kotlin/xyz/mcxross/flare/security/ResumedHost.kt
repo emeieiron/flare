@@ -23,7 +23,7 @@ internal class ResumedHost<T : Any> {
         override fun onPause(owner: LifecycleOwner) {
           resumed.compareAndSet(host, null)
         }
-      }
+      },
     )
   }
 

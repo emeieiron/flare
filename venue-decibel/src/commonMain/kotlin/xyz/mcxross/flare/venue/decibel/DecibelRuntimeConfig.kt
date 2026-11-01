@@ -20,7 +20,7 @@ data class DecibelRuntimeConfig(
   init {
     require(
       workerBaseUrl.startsWith("https://") ||
-        LocalDevelopmentWorker.matches(workerBaseUrl.trimEnd('/'))
+        LocalDevelopmentWorker.matches(workerBaseUrl.trimEnd('/')),
     ) {
       "The Flare Worker must use HTTPS outside local development"
     }

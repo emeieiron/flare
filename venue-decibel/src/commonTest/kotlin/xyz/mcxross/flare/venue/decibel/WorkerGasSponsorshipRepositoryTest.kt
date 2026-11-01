@@ -16,8 +16,8 @@ import kotlin.test.assertIs
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.data.SessionRepository
 import xyz.mcxross.flare.data.SessionRole
@@ -28,37 +28,76 @@ import xyz.mcxross.kaptos.model.AptosResult
 class WorkerGasSponsorshipRepositoryTest {
   @Test
   fun availabilityIsReadOnlyAndUnconfirmedSponsorshipSelectsSelfPay() = runTest {
-    for ((body, status, expected) in listOf(
-      Triple("""{"available":true}""", HttpStatusCode.OK, true),
-      Triple("""{"available":false}""", HttpStatusCode.OK, false),
-      Triple("{}", HttpStatusCode.OK, false),
-      Triple("unavailable", HttpStatusCode.ServiceUnavailable, false),
-    )) {
-      val client = HttpClient(MockEngine(MockEngineConfig().apply {
-        dispatcher = StandardTestDispatcher(testScheduler)
-        addHandler { request ->
-        assertEquals("GET", request.method.value)
-        assertEquals("/gas/sponsor/swap-availability", request.url.encodedPath)
-        assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
-        respond(body, status, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+    for ((body, status, expected) in
+      listOf(
+        Triple("""{"available":true}""", HttpStatusCode.OK, true),
+        Triple("""{"available":false}""", HttpStatusCode.OK, false),
+        Triple("{}", HttpStatusCode.OK, false),
+        Triple("unavailable", HttpStatusCode.ServiceUnavailable, false),
+      )) {
+      val client =
+        HttpClient(
+          MockEngine(
+            MockEngineConfig().apply {
+              dispatcher = StandardTestDispatcher(testScheduler)
+              addHandler { request ->
+                assertEquals("GET", request.method.value)
+                assertEquals("/gas/sponsor/swap-availability", request.url.encodedPath)
+                assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+                respond(
+                  body,
+                  status,
+                  headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+              }
+            },
+          ),
+        ) {
+          install(ContentNegotiation) { json() }
         }
-      })) { install(ContentNegotiation) { json() } }
       try {
-        val repository = WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), DecibelRuntimeConfig(), TestSessionRepository)
+        val repository =
+          WorkerGasSponsorshipRepository(
+            client,
+            FlareRuntimeConfig(),
+            DecibelRuntimeConfig(),
+            TestSessionRepository,
+          )
         assertEquals(expected, repository.canSponsorSwap())
-      } finally { client.close() }
+      } finally {
+        client.close()
+      }
     }
   }
 
   @Test
   fun aStalledAvailabilityReadFallsBackBeforeAnySubmission() = runTest {
-    val client = HttpClient(MockEngine {
-      kotlinx.coroutines.delay(60_000)
-      respond("""{"available":true}""", headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
-    }) { install(ContentNegotiation) { json() } }
+    val client =
+      HttpClient(
+        MockEngine {
+          kotlinx.coroutines.delay(60_000)
+          respond(
+            """{"available":true}""",
+            headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+          )
+        },
+      ) {
+        install(ContentNegotiation) { json() }
+      }
     try {
-      assertEquals(false, WorkerGasSponsorshipRepository(client, FlareRuntimeConfig(), DecibelRuntimeConfig(), TestSessionRepository).canSponsorSwap())
-    } finally { client.close() }
+      assertEquals(
+        false,
+        WorkerGasSponsorshipRepository(
+            client,
+            FlareRuntimeConfig(),
+            DecibelRuntimeConfig(),
+            TestSessionRepository,
+          )
+          .canSponsorSwap(),
+      )
+    } finally {
+      client.close()
+    }
   }
 
   @Test
@@ -67,14 +106,38 @@ class WorkerGasSponsorshipRepositoryTest {
     val forbidden = HttpStatusCode.Forbidden
     val cases =
       listOf(
-        Triple(unavailable, """{"code":"gas_station_not_configured","error":"unavailable"}""", "gas_station_not_configured"),
-        Triple(unavailable, """{"code":"gas_station_credentials_rejected","error":"unavailable"}""", "gas_station_credentials_rejected"),
-        Triple(forbidden, """{"code":"gas_station_transaction_not_allowed","error":"Entry function is outside the sponsorship route allowlist"}""", "gas_station_transaction_not_allowed"),
-        Triple(unavailable, """{"code":"gas_station_transaction_not_allowed","error":"unavailable"}""", "gas_station_http_503"),
-        Triple(forbidden, """{"code":"gas_station_not_configured","error":"forbidden"}""", "gas_station_http_403"),
+        Triple(
+          unavailable,
+          """{"code":"gas_station_not_configured","error":"unavailable"}""",
+          "gas_station_not_configured",
+        ),
+        Triple(
+          unavailable,
+          """{"code":"gas_station_credentials_rejected","error":"unavailable"}""",
+          "gas_station_credentials_rejected",
+        ),
+        Triple(
+          forbidden,
+          """{"code":"gas_station_transaction_not_allowed","error":"Entry function is outside the sponsorship route allowlist"}""",
+          "gas_station_transaction_not_allowed",
+        ),
+        Triple(
+          unavailable,
+          """{"code":"gas_station_transaction_not_allowed","error":"unavailable"}""",
+          "gas_station_http_503",
+        ),
+        Triple(
+          forbidden,
+          """{"code":"gas_station_not_configured","error":"forbidden"}""",
+          "gas_station_http_403",
+        ),
         Triple(forbidden, """{"error":"Owner authorization required"}""", "gas_station_http_403"),
         Triple(unavailable, """{"code":"unknown","error":"unavailable"}""", "gas_station_http_503"),
-        Triple(unavailable, """{"error":"Unable to journal sponsored transaction"}""", "gas_station_http_503"),
+        Triple(
+          unavailable,
+          """{"error":"Unable to journal sponsored transaction"}""",
+          "gas_station_http_503",
+        ),
         Triple(unavailable, "upstream unavailable", "gas_station_http_503"),
       )
     for ((status, body, expected) in cases) {
@@ -88,7 +151,7 @@ class WorkerGasSponsorshipRepositoryTest {
               status,
               headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )
-          }
+          },
         ) {
           install(ContentNegotiation) { json() }
         }
@@ -97,7 +160,10 @@ class WorkerGasSponsorshipRepositoryTest {
         val error = assertIs<xyz.mcxross.kaptos.model.AptosError.Api>(failure.error)
         assertEquals(expected, error.errorCode, body)
         if (!expected.startsWith("gas_station_http_")) {
-          assertEquals("Fee sponsorship is unavailable. You can choose to pay fees with APT.", error.message)
+          assertEquals(
+            "Fee sponsorship is unavailable. You can choose to pay fees with APT.",
+            error.message,
+          )
         }
       } finally {
         client.close()
@@ -107,9 +173,10 @@ class WorkerGasSponsorshipRepositoryTest {
 
   @Test
   fun transportFailureIsNeverReportedAsDefinite() = runTest {
-    val client = HttpClient(MockEngine { throw RuntimeException("connection reset") }) {
-      install(ContentNegotiation) { json() }
-    }
+    val client =
+      HttpClient(MockEngine { throw RuntimeException("connection reset") }) {
+        install(ContentNegotiation) { json() }
+      }
     try {
       val failure = assertIs<AptosResult.Failure>(submit(client))
       assertIs<xyz.mcxross.kaptos.model.AptosError.Transport>(failure.error)
@@ -129,7 +196,7 @@ class WorkerGasSponsorshipRepositoryTest {
             HttpStatusCode.OK,
             headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
           )
-        }
+        },
       ) {
         install(ContentNegotiation) { json() }
       }

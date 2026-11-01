@@ -17,7 +17,10 @@ import xyz.mcxross.flare.hyperliquid.api.StreamData
 import xyz.mcxross.flare.hyperliquid.api.StreamEvent
 import xyz.mcxross.flare.hyperliquid.api.Subscription
 
-/** A market's order book and recent trades from `/info`, then from the `l2Book` and `trades` streams. */
+/**
+ * A market's order book and recent trades from `/info`, then from the `l2Book` and `trades`
+ * streams.
+ */
 class HyperliquidMarketDetailsRepository(
   private val client: HyperliquidClient,
   private val markets: HyperliquidMarketsRepository,
@@ -49,7 +52,11 @@ class HyperliquidMarketDetailsRepository(
       }
       .onFailure { error ->
         updateFor(market) {
-          it.copy(loading = false, stale = true, error = error.message ?: "Order book is unavailable")
+          it.copy(
+            loading = false,
+            stale = true,
+            error = error.message ?: "Order book is unavailable",
+          )
         }
       }
     Unit
@@ -95,7 +102,8 @@ class HyperliquidMarketDetailsRepository(
               }
               else -> Unit
             }
-          is StreamEvent.Rejected -> updateFor(market) { it.copy(stale = true, error = event.reason) }
+          is StreamEvent.Rejected ->
+            updateFor(market) { it.copy(stale = true, error = event.reason) }
           is StreamEvent.Disconnected ->
             updateFor(market) {
               it.copy(stale = true, error = event.reason ?: "Market stream disconnected")

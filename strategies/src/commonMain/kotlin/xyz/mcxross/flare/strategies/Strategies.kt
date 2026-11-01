@@ -37,11 +37,13 @@ data class StrategyMarketSnapshot(
 )
 
 /**
- * Candles whose whole interval ended by [StrategyMarketSnapshot.fetchedAtMs], the moment the request
- * began. A candle still open when it was requested stays excluded, however late the answer arrives.
+ * Candles whose whole interval ended by [StrategyMarketSnapshot.fetchedAtMs], the moment the
+ * request began. A candle still open when it was requested stays excluded, however late the answer
+ * arrives.
  */
-fun StrategyMarketSnapshot.closedCandles(): List<StrategyCandle> =
-  candles.filter { it.openTimeMs + key.timeframeMs <= fetchedAtMs }
+fun StrategyMarketSnapshot.closedCandles(): List<StrategyCandle> = candles.filter {
+  it.openTimeMs + key.timeframeMs <= fetchedAtMs
+}
 
 fun interface StrategyMarketFeed {
   suspend fun snapshot(key: StrategyMarketKey): StrategyMarketSnapshot

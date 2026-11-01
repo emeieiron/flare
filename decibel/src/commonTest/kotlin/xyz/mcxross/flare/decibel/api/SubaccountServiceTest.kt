@@ -44,7 +44,10 @@ class SubaccountServiceTest {
   @Test
   fun otherFailuresStayUnknown() = runTest {
     val result =
-      service("""{"message":"busy","error_code":"internal_error"}""", HttpStatusCode.ServiceUnavailable)
+      service(
+          """{"message":"busy","error_code":"internal_error"}""",
+          HttpStatusCode.ServiceUnavailable,
+        )
         .status(address)
     assertIs<AptosResult.Failure>(result)
   }
@@ -61,14 +64,23 @@ class SubaccountServiceTest {
         """{"key":{"__variant__":"TradePerpsOnMarket","market":{"inner":"0x5d"}},"value":{"__variant__":"UnlimitedUntil","_0":"1736326800"}}]}}}]}]"""
     val delegations =
       assertIs<AptosResult.Success<List<xyz.mcxross.flare.decibel.model.Delegation>>>(
-        service(body, HttpStatusCode.OK).delegations(address)
-      ).value
+          service(body, HttpStatusCode.OK).delegations(address),
+        )
+        .value
 
     assertEquals(
-      listOf("TradePerpsAllMarkets", "TradeVaultTokens", "TradeSpotAllMarkets", "TradePerpsOnMarket"),
+      listOf(
+        "TradePerpsAllMarkets",
+        "TradeVaultTokens",
+        "TradeSpotAllMarkets",
+        "TradePerpsOnMarket",
+      ),
       delegations.map { it.permissionType },
     )
-    assertEquals("0x40d8b4894f4632d0304b8f894e94e0d447dcdb596dfd08b0bcc0d26845e6477e", delegations.first().delegate)
+    assertEquals(
+      "0x40d8b4894f4632d0304b8f894e94e0d447dcdb596dfd08b0bcc0d26845e6477e",
+      delegations.first().delegate,
+    )
     assertEquals(null, delegations.first().expirationTimeSeconds)
     assertEquals("0x5d", delegations.last().permissionMarket)
     assertEquals(1_736_326_800L, delegations.last().expirationTimeSeconds)
@@ -83,7 +95,7 @@ class SubaccountServiceTest {
         MockEngine { request ->
           assertEquals("/v1/view", request.url.encodedPath)
           respond(body, code, headersOf(HttpHeaders.ContentType, "application/json"))
-        }
+        },
       ) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
       }
@@ -93,7 +105,7 @@ class SubaccountServiceTest {
           network = Network.MAINNET,
           endpoints = AptosEndpoints(fullNode = "https://test.invalid/v1"),
           transport = http.asAptosTransport(),
-        )
+        ),
       )
     return DefaultSubaccountService(aptos, DecibelDeployment.Mainnet)
   }

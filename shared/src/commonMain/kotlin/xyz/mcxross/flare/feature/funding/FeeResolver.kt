@@ -3,16 +3,16 @@ package xyz.mcxross.flare.feature.funding
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.currentCoroutineContext
-import xyz.mcxross.flare.core.ReadOperation
-import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
-import xyz.mcxross.flare.core.readBackoffMs
-import xyz.mcxross.flare.core.isReadAccessFailure
-import xyz.mcxross.flare.core.readAccessMessage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
+import xyz.mcxross.flare.core.isReadAccessFailure
+import xyz.mcxross.flare.core.readAccessMessage
+import xyz.mcxross.flare.core.readBackoffMs
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.venue.model.NetworkFee
 
@@ -21,9 +21,13 @@ internal class FeeResolver<K : Any>(
   private val scope: CoroutineScope,
   private val read: suspend (K) -> NetworkFee?,
   private val publish: (K, NetworkFee?, String?) -> Unit,
-  private val now: () -> Long = run { val origin = TimeSource.Monotonic.markNow(); { origin.elapsedNow().inWholeMilliseconds } },
+  private val now: () -> Long = run {
+    val origin = TimeSource.Monotonic.markNow();
+    { origin.elapsedNow().inWholeMilliseconds }
+  },
 ) {
   private data class Cached(val fee: NetworkFee, val at: Long)
+
   private val cache = linkedMapOf<K, Cached>()
   private var key: K? = null
   private var revision = 0L
@@ -63,13 +67,24 @@ internal class FeeResolver<K : Any>(
           return@launch
         }
         attempt++
-        ReadRecoveryDiagnostics.failed(ReadOperation.FEES, attempt, result?.exceptionOrNull(), result == null)
+        ReadRecoveryDiagnostics.failed(
+          ReadOperation.FEES,
+          attempt,
+          result?.exceptionOrNull(),
+          result == null,
+        )
         val accessError = result?.exceptionOrNull()?.takeIf { it.isReadAccessFailure() }
         if (attempt >= 3 || accessError != null) {
           publish(value, null, accessError?.readAccessMessage() ?: "Fees unavailable")
           if (!visible) return@launch
         }
-        delay(when (attempt) { 1 -> 250; 2 -> 750; else -> readBackoffMs(attempt - 1) })
+        delay(
+          when (attempt) {
+            1 -> 250
+            2 -> 750
+            else -> readBackoffMs(attempt - 1)
+          },
+        )
       }
     }
   }

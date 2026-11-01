@@ -19,7 +19,7 @@ fun iosPreferencesDataStore(): DataStore<Preferences> = createPreferencesDataSto
           create = true,
           error = null,
         )
-        ?.path
+        ?.path,
     ) {
       "Application Support directory is unavailable"
     }

@@ -33,8 +33,8 @@ internal class HyperliquidApi(
   suspend fun info(body: JsonObject): JsonElement = post(INFO_PATH, body, retry = true)
 
   /**
-   * Sends to `/exchange` once. A signed action is never retried here: after a transport failure
-   * its outcome is unknown, and the caller reconciles it instead of risking a second execution.
+   * Sends to `/exchange` once. A signed action is never retried here: after a transport failure its
+   * outcome is unknown, and the caller reconciles it instead of risking a second execution.
    */
   suspend fun exchange(body: JsonObject): JsonElement = post(EXCHANGE_PATH, body, retry = false)
 

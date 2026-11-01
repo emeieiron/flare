@@ -8,11 +8,15 @@ import xyz.mcxross.kaptos.model.TransactionPayload
 object AptosSwapAssets {
   const val APT = "0xa"
   const val USDC = "0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b"
-  const val ROUTER = "0x1c3206329806286fd2223647c9f9b130e66baeb6d7224a18c1f642ffe48f3b4c::panora_swap::router_entry"
+  const val ROUTER =
+    "0x1c3206329806286fd2223647c9f9b130e66baeb6d7224a18c1f642ffe48f3b4c::panora_swap::router_entry"
 }
 
 @Serializable
-enum class SwapKind { EXACT_INPUT, EXACT_OUTPUT }
+enum class SwapKind {
+  EXACT_INPUT,
+  EXACT_OUTPUT,
+}
 
 @Serializable
 data class AptosSwapRequest(
@@ -29,7 +33,8 @@ data class AptosSwapRequest(
 }
 
 /** Frozen payload bytes prevent changes between quote review, simulation and signing. */
-class ValidatedSwapPlan internal constructor(
+class ValidatedSwapPlan
+internal constructor(
   val id: String,
   val request: AptosSwapRequest,
   val expectedInput: ULong,
@@ -71,7 +76,9 @@ internal fun units(value: String, decimals: Int): ULong {
   require(fraction.length <= decimals || fraction.drop(decimals).all { it == '0' }) {
     "Quantity exceeds asset precision"
   }
-  return requireNotNull((parts[0] + fraction.take(decimals).padEnd(decimals, '0')).toULongOrNull()) {
+  return requireNotNull(
+    (parts[0] + fraction.take(decimals).padEnd(decimals, '0')).toULongOrNull(),
+  ) {
     "Quantity exceeds u64"
   }
 }

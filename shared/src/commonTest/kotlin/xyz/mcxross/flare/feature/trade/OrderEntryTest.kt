@@ -82,7 +82,8 @@ class OrderEntryTest {
 
   @Test
   fun optionalExitsStayAbsentAndMarketEstimatesUseTheCorrectBookSide() {
-    val book = OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
+    val book =
+      OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
     val state =
       state()
         .copy(
@@ -104,7 +105,8 @@ class OrderEntryTest {
 
   @Test
   fun marketEntryKeepsAttachedExitsAndInvalidEstimatesNeverBecomeZero() {
-    val book = OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
+    val book =
+      OrderBook("0x123", listOf(OrderBookLevel("69990", "1")), listOf(OrderBookLevel("70010", "1")))
     val state =
       state().copy(orderType = OrderType.MARKET, marketDetails = MarketDetails(orderBook = book))
     val order = state.orderRequest(OrderSide.BUY)
@@ -174,8 +176,9 @@ class OrderEntryTest {
     assertNull(state().copy(quoteBalance = 70.0).orderInputError(OrderSide.BUY))
     assertNull(state().copy(quoteBalance = 20.0, leverage = 4).orderInputError(OrderSide.BUY))
     assertNotNull(
-      state().copy(quoteBalance = 70.0, fees = TradingFees(perp = FeeRates(0.0, 0.001)))
-        .orderInputError(OrderSide.BUY)
+      state()
+        .copy(quoteBalance = 70.0, fees = TradingFees(perp = FeeRates(0.0, 0.001)))
+        .orderInputError(OrderSide.BUY),
     )
     // An unknown balance never blocks the ticket.
     assertNull(state().orderInputError(OrderSide.BUY))
@@ -183,7 +186,9 @@ class OrderEntryTest {
 
   @Test
   fun closingAnOppositePositionNeedsNoNewMargin() {
-    val short = state().copy(quoteBalance = 0.0, positionSize = "-0.001", takeProfitInput = "", stopLossInput = "")
+    val short =
+      state()
+        .copy(quoteBalance = 0.0, positionSize = "-0.001", takeProfitInput = "", stopLossInput = "")
     assertNull(short.orderInputError(OrderSide.BUY))
     assertNotNull(short.copy(sizeInput = "0.002").orderInputError(OrderSide.BUY))
     assertNotNull(short.orderInputError(OrderSide.SELL))
@@ -192,7 +197,13 @@ class OrderEntryTest {
   @Test
   fun aSpotOrderStaysWithinWhatTheAccountHolds() {
     val apt =
-      market.copy(id = "0xapt", symbol = "APT", displayName = "APT/USDC", kind = MarketKind.SPOT, maxLeverage = 1)
+      market.copy(
+        id = "0xapt",
+        symbol = "APT",
+        displayName = "APT/USDC",
+        kind = MarketKind.SPOT,
+        maxLeverage = 1,
+      )
     val spot =
       TradeUiState(
         quote = MarketQuote(apt, 0.8415, 0.0, 0.0, 0.0),

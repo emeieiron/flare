@@ -58,10 +58,8 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.formatCompact
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
-import xyz.mcxross.flare.feature.auto.AutoTradingRoute
-import xyz.mcxross.flare.feature.strategies.StrategiesRoute
-import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ActionNotice
+import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.BackBar
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.EmptyState
@@ -73,13 +71,15 @@ import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TradeScreenSkeleton
+import xyz.mcxross.flare.feature.auto.AutoTradingRoute
+import xyz.mcxross.flare.feature.strategies.StrategiesRoute
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.MarketTrade
 import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
-import xyz.mcxross.flare.venue.model.ActionKind
 
 @Composable
 fun TradeRoute(
@@ -103,20 +103,50 @@ fun TradeRoute(
       launch { viewModel.followMarketDetails() }
     }
   }
-  TradeScreen(state, viewModel::onIntent, assets, modifier, onBack, onOpenSetup, onOpenActivity,
-    onOpenStrategies = { showStrategies = true })
+  TradeScreen(
+    state,
+    viewModel::onIntent,
+    assets,
+    modifier,
+    onBack,
+    onOpenSetup,
+    onOpenActivity,
+    onOpenStrategies = { showStrategies = true },
+  )
   val market = state.quote?.market
   if (showStrategies && market != null) {
-    StrategiesRoute(market.id, market.symbol, state.timeframe.durationMs,
-      state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showStrategies = false },
-      onOpenAuto = { showStrategies = false; showAuto = true })
+    StrategiesRoute(
+      market.id,
+      market.symbol,
+      state.timeframe.durationMs,
+      state.tradingAccountAddress ?: state.tradingKeyAddress,
+      onDismiss = { showStrategies = false },
+      onOpenAuto = {
+        showStrategies = false
+        showAuto = true
+      },
+    )
   }
-  if (showAuto && market != null) AutoTradingRoute(market, state.timeframe.durationMs,
-    state.tradingAccountAddress ?: state.tradingKeyAddress, onDismiss = { showAuto = false },
-    onOpenSetup = { showAuto = false; onOpenSetup() })
+  if (showAuto && market != null)
+    AutoTradingRoute(
+      market,
+      state.timeframe.durationMs,
+      state.tradingAccountAddress ?: state.tradingKeyAddress,
+      onDismiss = { showAuto = false },
+      onOpenSetup = {
+        showAuto = false
+        onOpenSetup()
+      },
+    )
 }
 
-internal enum class TradeStage { MARKET, EDIT, REVIEW, RESULT, FAILURE }
+internal enum class TradeStage {
+  MARKET,
+  EDIT,
+  REVIEW,
+  RESULT,
+  FAILURE,
+}
 
 @Composable
 fun TradeScreen(
@@ -133,29 +163,45 @@ fun TradeScreen(
   var showBook by rememberSaveable(quote?.market?.id) { mutableStateOf(false) }
   var trading by rememberSaveable(quote?.market?.id) { mutableStateOf(false) }
   var side by rememberSaveable(quote?.market?.id) { mutableStateOf(OrderSide.BUY) }
-  var exitsOpen by rememberSaveable(quote?.market?.id) {
-    mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
-  }
+  var exitsOpen by
+    rememberSaveable(quote?.market?.id) {
+      mutableStateOf(state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank())
+    }
   var showTimeframes by rememberSaveable { mutableStateOf(false) }
   // Shared by the price chart and the indicators under it; a new market or timeframe starts over.
   val chartWindow = remember(quote?.market?.id, state.timeframe) { ChartWindow() }
-  var reviewing by rememberSaveable(
-    quote?.market?.id, state.sizeInput, state.limitPriceInput, state.takeProfitInput,
-    state.stopLossInput, state.orderType, state.leverage,
-    state.twapDurationMinutesInput, state.twapFrequencyMinutesInput, side,
-  ) { mutableStateOf(false) }
+  var reviewing by
+    rememberSaveable(
+      quote?.market?.id,
+      state.sizeInput,
+      state.limitPriceInput,
+      state.takeProfitInput,
+      state.stopLossInput,
+      state.orderType,
+      state.leverage,
+      state.twapDurationMinutesInput,
+      state.twapFrequencyMinutesInput,
+      side,
+    ) {
+      mutableStateOf(false)
+    }
   val committed = state.transaction as? ActionState.Committed
-  val stage = when {
-    committed != null -> TradeStage.RESULT
-    state.orderBusy -> TradeStage.REVIEW
-    reviewing && state.orderError != null -> TradeStage.FAILURE
-    reviewing -> TradeStage.REVIEW
-    trading -> TradeStage.EDIT
-    else -> TradeStage.MARKET
-  }
+  val stage =
+    when {
+      committed != null -> TradeStage.RESULT
+      state.orderBusy -> TradeStage.REVIEW
+      reviewing && state.orderError != null -> TradeStage.FAILURE
+      reviewing -> TradeStage.REVIEW
+      trading -> TradeStage.EDIT
+      else -> TradeStage.MARKET
+    }
   val focus = LocalFocusManager.current
   val keyboard = LocalSoftwareKeyboardController.current
-  val clearFocus = { focus.clearFocus(); keyboard?.hide(); Unit }
+  val clearFocus = {
+    focus.clearFocus()
+    keyboard?.hide()
+    Unit
+  }
   val returnToMarket = {
     clearFocus()
     if (committed != null) onIntent(TradeIntent.DismissOrderReceipt)
@@ -167,19 +213,25 @@ fun TradeScreen(
       clearFocus()
       when (stage) {
         TradeStage.MARKET -> onBack()
-        TradeStage.REVIEW, TradeStage.FAILURE -> reviewing = false
+        TradeStage.REVIEW,
+        TradeStage.FAILURE -> reviewing = false
         else -> returnToMarket()
       }
     }
   }
-  val pullToReturn = rememberPullToReturnState(
-    enabled = stage != TradeStage.MARKET && !state.orderBusy,
-    onReturn = back,
-  )
-  val swipeBack = rememberSwipeBackState(
-    enabled = (stage == TradeStage.REVIEW || stage == TradeStage.FAILURE) && !state.orderBusy,
-    onBack = { clearFocus(); reviewing = false },
-  )
+  val pullToReturn =
+    rememberPullToReturnState(
+      enabled = stage != TradeStage.MARKET && !state.orderBusy,
+      onReturn = back,
+    )
+  val swipeBack =
+    rememberSwipeBackState(
+      enabled = (stage == TradeStage.REVIEW || stage == TradeStage.FAILURE) && !state.orderBusy,
+      onBack = {
+        clearFocus()
+        reviewing = false
+      },
+    )
   NavigationBackHandler(
     state = rememberNavigationEventState(NavigationEventInfo.None),
     isBackEnabled = stage != TradeStage.MARKET,
@@ -201,41 +253,54 @@ fun TradeScreen(
         TradeStage.MARKET -> quote?.market?.symbol ?: "Market"
         TradeStage.EDIT -> "Trade ${quote?.market?.symbol.orEmpty()}"
         TradeStage.REVIEW -> if (state.orderBusy) "Submitting order" else "Review order"
-        TradeStage.RESULT, TradeStage.FAILURE -> "Trade ${quote?.market?.symbol.orEmpty()}"
+        TradeStage.RESULT,
+        TradeStage.FAILURE -> "Trade ${quote?.market?.symbol.orEmpty()}"
       },
       back,
       Modifier.padding(horizontal = 8.dp),
       backEnabled = !state.orderBusy,
       action = {
         if (stage == TradeStage.REVIEW && !state.orderBusy) {
-          TextButton({ clearFocus(); reviewing = false }) { Text("Edit") }
+          TextButton(
+            {
+              clearFocus()
+              reviewing = false
+            },
+          ) {
+            Text("Edit")
+          }
         }
       },
     )
     if (quote == null) {
       if (state.error != null) EmptyState("Market data unavailable", "")
-      else TradeScreenSkeleton(
-        modifier = Modifier.semantics { contentDescription = "Loading market data" },
-        chartStyle = state.chartStyle,
-      )
+      else
+        TradeScreenSkeleton(
+          modifier = Modifier.semantics { contentDescription = "Loading market data" },
+          chartStyle = state.chartStyle,
+        )
       return@Column
     }
     TradeSurfaceLayout(
       stage = stage,
       modifier = Modifier.weight(1f),
       naturalBodyHeight = {
-        naturalHeights.getValue(currentStage.value).intValue.let { if (it > 0) it + bodyInsetPx else 0 }
+        naturalHeights.getValue(currentStage.value).intValue.let {
+          if (it > 0) it + bodyInsetPx else 0
+        }
       },
       pullOffset = { pullToReturn.offset },
       context = {
-        // The chart takes the same pull as the form, so stepping back works from anywhere above the button.
+        // The chart takes the same pull as the form, so stepping back works from anywhere above the
+        // button.
         Box(
-          Modifier.fillMaxSize().draggable(
-            state = rememberDraggableState { pullToReturn.dragBy(it) },
-            orientation = Orientation.Vertical,
-            enabled = stage != TradeStage.MARKET && !state.orderBusy,
-            onDragStopped = { velocity -> pullToReturn.dragStopped(velocity) },
-          )
+          Modifier.fillMaxSize()
+            .draggable(
+              state = rememberDraggableState { pullToReturn.dragBy(it) },
+              orientation = Orientation.Vertical,
+              enabled = stage != TradeStage.MARKET && !state.orderBusy,
+              onDragStopped = { velocity -> pullToReturn.dragStopped(velocity) },
+            ),
         ) {
           MarketContext(
             state,
@@ -264,15 +329,22 @@ fun TradeScreen(
         ) { displayed ->
           // Trading stages space their own groups from the top, so they only need the bottom inset.
           val topInset = if (displayed == TradeStage.MARKET) 16.dp else 0.dp
-          CompositionLocalProvider(LocalGroupsNaturalHeight provides naturalHeights.getValue(displayed)) {
+          CompositionLocalProvider(
+            LocalGroupsNaturalHeight provides naturalHeights.getValue(displayed),
+          ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
               val editorHeight = maxHeight - 24.dp
               Column(
-                Modifier.fillMaxSize().verticalScroll(when (displayed) {
-                  TradeStage.MARKET -> marketScroll
-                  TradeStage.EDIT -> editorScroll
-                  else -> reviewScroll
-                }).padding(horizontal = 24.dp).padding(top = topInset, bottom = 24.dp),
+                Modifier.fillMaxSize()
+                  .verticalScroll(
+                    when (displayed) {
+                      TradeStage.MARKET -> marketScroll
+                      TradeStage.EDIT -> editorScroll
+                      else -> reviewScroll
+                    },
+                  )
+                  .padding(horizontal = 24.dp)
+                  .padding(top = topInset, bottom = 24.dp),
               ) {
                 when (displayed) {
                   TradeStage.MARKET -> {
@@ -284,11 +356,24 @@ fun TradeScreen(
                     ) {
                       // Captures the style alone, so the toggle skips price ticks.
                       val chartStyle = state.chartStyle
-                      ChartStyleToggle(chartStyle, { onIntent(TradeIntent.SelectChartStyle(chartStyle.flipped())) })
+                      ChartStyleToggle(
+                        chartStyle,
+                        { onIntent(TradeIntent.SelectChartStyle(chartStyle.flipped())) },
+                      )
                       ChartTimeframeButton(state.timeframe, { showTimeframes = true })
                       Spacer(Modifier.weight(1f))
-                      IndicatorChip("RSI", state.showRsi, FlareColors.IndicatorCyan, { onIntent(TradeIntent.ToggleRsi) })
-                      IndicatorChip("MACD", state.showMacd, FlareColors.IndicatorOrange, { onIntent(TradeIntent.ToggleMacd) })
+                      IndicatorChip(
+                        "RSI",
+                        state.showRsi,
+                        FlareColors.IndicatorCyan,
+                        { onIntent(TradeIntent.ToggleRsi) },
+                      )
+                      IndicatorChip(
+                        "MACD",
+                        state.showMacd,
+                        FlareColors.IndicatorOrange,
+                        { onIntent(TradeIntent.ToggleMacd) },
+                      )
                     }
                     FlareIndicators(
                       state.candles,
@@ -296,30 +381,54 @@ fun TradeScreen(
                       state.showRsi,
                       state.showMacd,
                     )
-                    if (state.error != null && !state.stale) ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                    if (state.error != null && !state.stale)
+                      ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
                     onOpenStrategies?.let { open ->
-                      ActionRow("Strategies", "Independent signals · optional Jev confluence", onClick = open)
+                      ActionRow(
+                        "Strategies",
+                        "Independent signals · optional Jev confluence",
+                        onClick = open,
+                      )
                     }
                     MarketInformation(state, showBook, { showBook = !showBook })
                   }
-                  TradeStage.EDIT -> OrderEditor(
-                    state, side, { side = it }, onIntent,
-                    exitsOpen, { exitsOpen = it }, editorHeight,
-                  )
-                  TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
-                  TradeStage.FAILURE -> OrderFailure(state, side, editorHeight) {
-                    clearFocus()
-                    reviewing = false
-                  }
-                  TradeStage.RESULT -> if (committed != null) {
-                    val explorer = LocalTransactionExplorer.current
-                    val browser = LocalUriHandler.current
-                    OrderResult(
-                      state, side, editorHeight,
-                      onOpenActivity = onOpenActivity?.let { open -> { returnToMarket(); open() } },
-                      onViewTransaction = explorer.url(committed.reference)?.let { url -> { runCatching { browser.openUri(url) } } },
+                  TradeStage.EDIT ->
+                    OrderEditor(
+                      state,
+                      side,
+                      { side = it },
+                      onIntent,
+                      exitsOpen,
+                      { exitsOpen = it },
+                      editorHeight,
                     )
-                  }
+                  TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
+                  TradeStage.FAILURE ->
+                    OrderFailure(state, side, editorHeight) {
+                      clearFocus()
+                      reviewing = false
+                    }
+                  TradeStage.RESULT ->
+                    if (committed != null) {
+                      val explorer = LocalTransactionExplorer.current
+                      val browser = LocalUriHandler.current
+                      OrderResult(
+                        state,
+                        side,
+                        editorHeight,
+                        onOpenActivity =
+                          onOpenActivity?.let { open ->
+                            {
+                              returnToMarket()
+                              open()
+                            }
+                          },
+                        onViewTransaction =
+                          explorer.url(committed.reference)?.let { url ->
+                            { runCatching { browser.openUri(url) } }
+                          },
+                      )
+                    }
                 }
               }
             }
@@ -331,47 +440,65 @@ fun TradeScreen(
         // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
         val selfPayOffered = state.selfPayEstimate != null
         val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
-        val twapUnavailable = state.capabilities.unavailableReason(ActionKind.TWAP)
-          ?.takeIf { state.orderType == OrderType.TWAP && stage == TradeStage.EDIT }
+        val twapUnavailable =
+          state.capabilities.unavailableReason(ActionKind.TWAP)?.takeIf {
+            state.orderType == OrderType.TWAP && stage == TradeStage.EDIT
+          }
         // A wallet that left setup for later is shown the way to finish it instead of a ticket.
-        val setupNeed = state.setupNeed?.takeIf { stage == TradeStage.MARKET && actionsUnavailable == it.reason }
+        val setupNeed =
+          state.setupNeed?.takeIf { stage == TradeStage.MARKET && actionsUnavailable == it.reason }
         val finishSetup = LocalFinishSetup.current
-        val enabled = when (stage) {
-          TradeStage.MARKET -> !state.orderBusy && (actionsUnavailable == null || setupNeed != null)
-          TradeStage.RESULT -> !state.orderBusy
-          else -> state.tradingEnabled && inputError == null && state.sizeInput.isNotBlank() && twapUnavailable == null &&
-            !state.orderBusy && (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
-        }
+        val enabled =
+          when (stage) {
+            TradeStage.MARKET ->
+              !state.orderBusy && (actionsUnavailable == null || setupNeed != null)
+            TradeStage.RESULT -> !state.orderBusy
+            else ->
+              state.tradingEnabled &&
+                inputError == null &&
+                state.sizeInput.isNotBlank() &&
+                twapUnavailable == null &&
+                !state.orderBusy &&
+                (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
+          }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
           val notice = if (stage == TradeStage.MARKET) actionsUnavailable else twapUnavailable
           if (notice != null) {
-            Text(notice, Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
-              color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text(
+              notice,
+              Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp),
+              color = FlareColors.TextSecondary,
+              style = MaterialTheme.typography.bodySmall,
+            )
           }
           FlareButton(
             when (stage) {
               TradeStage.MARKET -> setupNeed?.actionLabel ?: "Trade ${quote.market.symbol}"
               TradeStage.EDIT -> "Review order"
-              TradeStage.REVIEW -> when {
-                state.orderBusy -> "Placing your order…"
-                selfPayOffered -> "Pay fee and confirm"
-                else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
-              }
+              TradeStage.REVIEW ->
+                when {
+                  state.orderBusy -> "Placing your order…"
+                  selfPayOffered -> "Pay fee and confirm"
+                  else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
+                }
               TradeStage.RESULT -> "Done"
               TradeStage.FAILURE -> "Try again"
             },
             {
               clearFocus()
               when (stage) {
-                TradeStage.MARKET -> when {
-                  setupNeed != null -> finishSetup(setupNeed)
-                  state.tradingKeyAddress == null -> onOpenSetup()
-                  else -> trading = true
-                }
+                TradeStage.MARKET ->
+                  when {
+                    setupNeed != null -> finishSetup(setupNeed)
+                    state.tradingKeyAddress == null -> onOpenSetup()
+                    else -> trading = true
+                  }
                 TradeStage.EDIT -> reviewing = true
                 TradeStage.REVIEW ->
-                  onIntent(if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side))
+                  onIntent(
+                    if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side),
+                  )
                 TradeStage.RESULT -> returnToMarket()
                 TradeStage.FAILURE -> onIntent(TradeIntent.Submit(side))
               }
@@ -408,9 +535,12 @@ private fun MarketInformation(state: TradeUiState, showBook: Boolean, onToggleBo
   } else {
     DetailRow("24h volume", formatCompact(quote.volume24h))
     DetailRow("Open interest", formatCompact(quote.openInterest))
-    DetailRow("Funding rate", quote.fundingRateBps?.let {
-      "${formatQuantity(it / 100.0, 4)}%"
-    } ?: "—")
+    DetailRow(
+      "Funding rate",
+      quote.fundingRateBps?.let {
+        "${formatQuantity(it / 100.0, 4)}%"
+      } ?: "—",
+    )
     DetailRow("Maximum leverage", "${quote.market.maxLeverage}×")
   }
   TextButton(onToggleBook, Modifier.fillMaxWidth().padding(top = 12.dp)) {
@@ -459,7 +589,6 @@ private fun MarketInformation(state: TradeUiState, showBook: Boolean, onToggleBo
       }
     }
   }
-
 }
 
 @Composable
@@ -497,7 +626,10 @@ private fun OrderBookSide(
 ) {
   Column(modifier) {
     Text(label, style = MaterialTheme.typography.labelMedium)
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(
+      Modifier.fillMaxWidth().padding(top = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
       Text("Price", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
       Text("Size", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextSecondary)
     }
@@ -506,7 +638,10 @@ private fun OrderBookSide(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
-        Text(level.price.toDoubleOrNull()?.let(::formatPrice) ?: "—", style = MaterialTheme.typography.labelSmall)
+        Text(
+          level.price.toDoubleOrNull()?.let(::formatPrice) ?: "—",
+          style = MaterialTheme.typography.labelSmall,
+        )
         Text(
           level.size.toDoubleOrNull()?.let { formatQuantity(it) } ?: "—",
           color = MaterialTheme.colorScheme.onSurfaceVariant,

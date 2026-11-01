@@ -403,7 +403,9 @@ internal object SdkVectors {
         ),
     )
 
-  /** `usdSend` (signing_test.py's action, signed for mainnet), mainnet, signatureChainId 0x66eee. */
+  /**
+   * `usdSend` (signing_test.py's action, signed for mainnet), mainnet, signatureChainId 0x66eee.
+   */
   val USD_SEND =
     UserVector(
       signingInput =
@@ -417,7 +419,9 @@ internal object SdkVectors {
         ),
     )
 
-  /** `withdraw3` (signing_test.py's action, signed for mainnet), mainnet, signatureChainId 0x66eee. */
+  /**
+   * `withdraw3` (signing_test.py's action, signed for mainnet), mainnet, signatureChainId 0x66eee.
+   */
   val WITHDRAW3 =
     UserVector(
       signingInput =

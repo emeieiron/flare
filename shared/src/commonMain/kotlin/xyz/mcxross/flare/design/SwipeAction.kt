@@ -61,8 +61,14 @@ fun SwipeAction(
   var armed by remember { mutableStateOf(false) }
   Box(
     modifier.fillMaxWidth().semantics {
-      customActions = listOf(CustomAccessibilityAction(label) { action(); true })
-    }
+      customActions =
+        listOf(
+          CustomAccessibilityAction(label) {
+            action()
+            true
+          },
+        )
+    },
   ) {
     Row(
       Modifier.matchParentSize().graphicsLayer { alpha = (-offset / threshold).coerceIn(0f, 1f) },
@@ -77,10 +83,12 @@ fun SwipeAction(
         .draggable(
           state =
             rememberDraggableState { delta ->
-              val resisted = if (offset <= -threshold && delta < 0f) delta * OVERDRAG_RESISTANCE else delta
+              val resisted =
+                if (offset <= -threshold && delta < 0f) delta * OVERDRAG_RESISTANCE else delta
               offset = (offset + resisted).coerceAtMost(0f)
               val nowArmed = offset <= -threshold
-              if (nowArmed && !armed) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+              if (nowArmed && !armed)
+                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
               armed = nowArmed
             },
           orientation = Orientation.Horizontal,
@@ -88,11 +96,13 @@ fun SwipeAction(
           onDragStopped = { velocity ->
             if (armed || (velocity < -ACTION_FLING_VELOCITY && offset < -threshold / 3)) action()
             armed = false
-            animate(offset, 0f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { value, _ ->
+            animate(offset, 0f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) {
+              value,
+              _ ->
               offset = value
             }
           },
-        )
+        ),
     ) {
       content()
     }

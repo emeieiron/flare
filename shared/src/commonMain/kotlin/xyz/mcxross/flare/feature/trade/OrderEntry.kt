@@ -103,7 +103,8 @@ internal fun TradeUiState.balanceError(side: OrderSide): String? {
   val size = sizeInput.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: return null
   if (market.kind == MarketKind.SPOT && side == OrderSide.SELL) {
     val held = baseBalance ?: return null
-    return if (exceeds(size, held)) "You have ${formatTokenBalance(held)} ${market.symbol} to sell" else null
+    return if (exceeds(size, held)) "You have ${formatTokenBalance(held)} ${market.symbol} to sell"
+    else null
   }
   val available = quoteBalance ?: return null
   val estimate = orderEstimate(side) ?: return null

@@ -23,15 +23,27 @@ class DecibelCredentialParserTest {
   fun detectsPhraseWithWhitespaceWithoutGuessingKeyPermissions() {
     assertEquals(
       CredentialFormat.RECOVERY_PHRASE,
-      DecibelCredentialParser.detect("  " + List(11) { "abandon" }.joinToString("\n") + "\tabout  "),
+      DecibelCredentialParser.detect(
+        "  " + List(11) { "abandon" }.joinToString("\n") + "\tabout  ",
+      ),
     )
-    assertEquals(CredentialFormat.PRIVATE_KEY, DecibelCredentialParser.detect("ed25519-priv-0x$hex"))
+    assertEquals(
+      CredentialFormat.PRIVATE_KEY,
+      DecibelCredentialParser.detect("ed25519-priv-0x$hex"),
+    )
   }
 
   @Test
   fun rejectsInvalidKeysAndUnsupportedAlgorithms() {
     for (value in
-      listOf("0x1234", "z".repeat(64), "ed25519-priv-0x1234", "secp256k1-priv-0x1234", "secp256r1-priv-0x$hex", "")) {
+      listOf(
+        "0x1234",
+        "z".repeat(64),
+        "ed25519-priv-0x1234",
+        "secp256k1-priv-0x1234",
+        "secp256r1-priv-0x$hex",
+        "",
+      )) {
       assertFailsWith<IllegalArgumentException> { DecibelCredentialParser.normalize(value) }
     }
   }

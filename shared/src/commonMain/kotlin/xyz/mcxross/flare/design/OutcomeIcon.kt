@@ -44,24 +44,27 @@ private const val SETTLE_MS = 550L
 fun OutcomeIcon(outcome: Outcome, modifier: Modifier = Modifier) {
   val reducedMotion = rememberReducedMotion()
   val haptics = LocalHapticFeedback.current
-  val composition by rememberLottieComposition(outcome) {
-    LottieCompositionSpec.JsonString(Res.readBytes(outcome.file).decodeToString())
-  }
-  val progress by animateLottieCompositionAsState(composition, isPlaying = !reducedMotion, iterations = 1)
+  val composition by
+    rememberLottieComposition(outcome) {
+      LottieCompositionSpec.JsonString(Res.readBytes(outcome.file).decodeToString())
+    }
+  val progress by
+    animateLottieCompositionAsState(composition, isPlaying = !reducedMotion, iterations = 1)
   val accent = if (outcome == Outcome.SUCCESS) FlareColors.Positive else FlareColors.Negative
-  val dynamicProperties = rememberLottieDynamicProperties(outcome) {
-    listOf("ring", "mark", "halo", "dot").forEach { name ->
-      shapeLayer(name) {
-        stroke("g", "stroke") { color { accent } }
-        fill("g", "fill") { color { accent } }
+  val dynamicProperties =
+    rememberLottieDynamicProperties(outcome) {
+      listOf("ring", "mark", "halo", "dot").forEach { name ->
+        shapeLayer(name) {
+          stroke("g", "stroke") { color { accent } }
+          fill("g", "fill") { color { accent } }
+        }
       }
     }
-  }
   LaunchedEffect(outcome, composition) {
     if (composition == null) return@LaunchedEffect
     if (!reducedMotion) delay(SETTLE_MS)
     haptics.performHapticFeedback(
-      if (outcome == Outcome.SUCCESS) HapticFeedbackType.Confirm else HapticFeedbackType.Reject
+      if (outcome == Outcome.SUCCESS) HapticFeedbackType.Confirm else HapticFeedbackType.Reject,
     )
   }
   // The layout keeps the circle's 52dp width, so the ring lines up with the text beside and below
@@ -72,11 +75,12 @@ fun OutcomeIcon(outcome: Outcome, modifier: Modifier = Modifier) {
     contentAlignment = Alignment.Center,
   ) {
     Image(
-      painter = rememberLottiePainter(
-        composition = composition,
-        progress = { if (reducedMotion) 1f else progress },
-        dynamicProperties = dynamicProperties,
-      ),
+      painter =
+        rememberLottiePainter(
+          composition = composition,
+          progress = { if (reducedMotion) 1f else progress },
+          dynamicProperties = dynamicProperties,
+        ),
       contentDescription = null,
       modifier = Modifier.requiredSize(80.dp),
     )

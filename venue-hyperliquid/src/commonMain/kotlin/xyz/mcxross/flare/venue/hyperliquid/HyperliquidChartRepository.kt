@@ -20,7 +20,9 @@ import xyz.mcxross.flare.store.SelectedMarketEntity
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 
-/** Candles from `candleSnapshot`, cached for offline use, and the forming candle from the stream. */
+/**
+ * Candles from `candleSnapshot`, cached for offline use, and the forming candle from the stream.
+ */
 class HyperliquidChartRepository(
   private val client: HyperliquidClient,
   private val markets: HyperliquidMarketsRepository,
@@ -39,7 +41,11 @@ class HyperliquidChartRepository(
               .candles(market, timeframe.toCandleInterval().wireValue, startTimeMs, endTimeMs)
               .map(CandleEntity::toCandle)
           if (cached.isEmpty()) throw error
-          ChartSnapshot(cached, stale = true, error = error.message ?: "Using cached candle history")
+          ChartSnapshot(
+            cached,
+            stale = true,
+            error = error.message ?: "Using cached candle history",
+          )
         },
       )
   }
@@ -68,7 +74,7 @@ class HyperliquidChartRepository(
           is StreamEvent.Rejected,
           is StreamEvent.Disconnected -> null
         }
-      }
+      },
     )
   }
 

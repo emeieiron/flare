@@ -2,14 +2,21 @@ package xyz.mcxross.flare.venue.decibel
 
 import xyz.mcxross.flare.decibel.model.AssetType
 import xyz.mcxross.flare.decibel.model.DecimalInput
+import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
 import xyz.mcxross.flare.decibel.model.MarketPrecision
+import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 import xyz.mcxross.flare.decibel.model.OrderDraft
+import xyz.mcxross.flare.decibel.model.OrderSide as DecibelOrderSide
+import xyz.mcxross.flare.decibel.model.OrderType as DecibelOrderType
 import xyz.mcxross.flare.decibel.model.OrderValidationError
 import xyz.mcxross.flare.decibel.model.SlippageBps
+import xyz.mcxross.flare.decibel.model.TimeInForce as DecibelTimeInForce
 import xyz.mcxross.flare.decibel.model.ValidatedOrder
 import xyz.mcxross.flare.decibel.model.ValidatedTwapOrder
 import xyz.mcxross.flare.decibel.model.toChainUnits
 import xyz.mcxross.flare.decibel.model.toDecimalString
+import xyz.mcxross.flare.decibel.model.validate as decibelValidate
+import xyz.mcxross.flare.decibel.model.validateTwap as decibelValidateTwap
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderCheck
 import xyz.mcxross.flare.venue.model.OrderRequest
@@ -17,17 +24,10 @@ import xyz.mcxross.flare.venue.model.OrderRules
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TimeInForce
-import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
-import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
-import xyz.mcxross.flare.decibel.model.OrderSide as DecibelOrderSide
-import xyz.mcxross.flare.decibel.model.OrderType as DecibelOrderType
-import xyz.mcxross.flare.decibel.model.TimeInForce as DecibelTimeInForce
-import xyz.mcxross.flare.decibel.model.validate as decibelValidate
-import xyz.mcxross.flare.decibel.model.validateTwap as decibelValidateTwap
 
 /**
- * A Decibel market's order checks: Decibel's exact chain-unit validation, with its errors written in
- * the market's own units. A valid order comes back with its prices and sizes as Decibel will
+ * A Decibel market's order checks: Decibel's exact chain-unit validation, with its errors written
+ * in the market's own units. A valid order comes back with its prices and sizes as Decibel will
  * receive them, so placing it validates to the same chain units again.
  */
 data class DecibelOrderRules(
@@ -53,8 +53,9 @@ data class DecibelOrderRules(
             schedule.frequencySeconds.toULong(),
             schedule.durationSeconds.toULong(),
           )
-      val twap = result.value?.takeIf { result.isValid }
-        ?: return OrderCheck.Invalid(result.errors.map { it.message() })
+      val twap =
+        result.value?.takeIf { result.isValid }
+          ?: return OrderCheck.Invalid(result.errors.map { it.message() })
       // Spot has no TWAP: the order goes in whole, at the book's best price.
       if (kind != AssetType.SPOT) return OrderCheck.Valid(order.resolved(twap))
     }
@@ -63,30 +64,31 @@ data class DecibelOrderRules(
       ?: OrderCheck.Invalid(result.errors.map { it.message() })
   }
 
-  override fun checkExitPrices(takeProfit: String?, stopLoss: String?): String? =
-    runCatching {
-        val units =
-          listOfNotNull(takeProfit, stopLoss).map {
-            DecimalInput(it).toChainUnits("TP/SL price", precision.priceDecimals).getOrThrow()
-          }
-        units.forEach { value ->
-          require(precision.tickSize == 0uL || value % precision.tickSize == 0uL) {
-            "TP/SL prices must align to tick size ${precision.tickSize}"
-          }
-        }
+  override fun checkExitPrices(takeProfit: String?, stopLoss: String?): String? = runCatching {
+    val units =
+      listOfNotNull(takeProfit, stopLoss).map {
+        DecimalInput(it).toChainUnits("TP/SL price", precision.priceDecimals).getOrThrow()
       }
-      .exceptionOrNull()
-      ?.let { it.message ?: "Check the take-profit and stop-loss prices" }
+    units.forEach { value ->
+      require(precision.tickSize == 0uL || value % precision.tickSize == 0uL) {
+        "TP/SL prices must align to tick size ${precision.tickSize}"
+      }
+    }
+  }
+    .exceptionOrNull()
+    ?.let { it.message ?: "Check the take-profit and stop-loss prices" }
 
   /** The order a checked [order] stands for, in chain units. */
   internal fun validated(order: OrderRequest): ValidatedOrder {
     val price = checkNotNull(order.price) { "The order has no price" }
     val draft =
-      order.toDraft().copy(
-        type = DecibelOrderType.LIMIT,
-        limitPrice = DecimalInput(price),
-        timeInForce = order.timeInForce.toDecibel(),
-      )
+      order
+        .toDraft()
+        .copy(
+          type = DecibelOrderType.LIMIT,
+          limitPrice = DecimalInput(price),
+          timeInForce = order.timeInForce.toDecibel(),
+        )
     val result = draft.decibelValidate(toDecibelMarket())
     return result.value?.takeIf { result.isValid }
       ?: error(result.errors.joinToString("\n") { it.message() })
@@ -186,8 +188,10 @@ data class DecibelOrderRules(
       when (field) {
         "size" -> "Size"
         "price" -> "Price"
-        "take-profit trigger", "take-profit limit" -> "Take profit"
-        "stop-loss trigger", "stop-loss limit" -> "Stop loss"
+        "take-profit trigger",
+        "take-profit limit" -> "Take profit"
+        "stop-loss trigger",
+        "stop-loss limit" -> "Stop loss"
         else -> field.replaceFirstChar(Char::uppercase)
       }
     fun amount(field: String, units: ULong): String =

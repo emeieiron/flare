@@ -70,13 +70,13 @@ internal fun decodeStreamData(
   when (topic) {
     AllMarketPrices ->
       DecibelStreamData.MarketPrices(
-        json.decodeFromJsonElement<MarketPricesEnvelope>(payload).prices
+        json.decodeFromJsonElement<MarketPricesEnvelope>(payload).prices,
       )
     AllSpotMids ->
       DecibelStreamData.SpotMids(json.decodeFromJsonElement<SpotMidsEnvelope>(payload).mids)
     is MarketPriceTopic ->
       DecibelStreamData.MarketPriceValue(
-        json.decodeFromJsonElement<MarketPriceEnvelope>(payload).price
+        json.decodeFromJsonElement<MarketPriceEnvelope>(payload).price,
       )
     is MarketDepth ->
       DecibelStreamData.MarketDepthValue(json.decodeFromJsonElement<MarketDepthUpdate>(payload))
@@ -85,19 +85,19 @@ internal fun decodeStreamData(
     is MarketTrades,
     is UserTrades ->
       DecibelStreamData.MarketTrades(
-        json.decodeFromJsonElement<MarketTradesEnvelope>(payload).trades
+        json.decodeFromJsonElement<MarketTradesEnvelope>(payload).trades,
       )
     is AccountOverviewTopic ->
       DecibelStreamData.AccountOverviewValue(
-        json.decodeFromJsonElement<AccountOverviewEnvelope>(payload).accountOverview
+        json.decodeFromJsonElement<AccountOverviewEnvelope>(payload).accountOverview,
       )
     is AccountPositions ->
       DecibelStreamData.AccountPositionsValue(
-        json.decodeFromJsonElement<AccountPositionsEnvelope>(payload).positions
+        json.decodeFromJsonElement<AccountPositionsEnvelope>(payload).positions,
       )
     is AccountOpenOrders ->
       DecibelStreamData.AccountOpenOrdersValue(
-        json.decodeFromJsonElement<AccountOpenOrdersEnvelope>(payload).orders
+        json.decodeFromJsonElement<AccountOpenOrdersEnvelope>(payload).orders,
       )
     else -> DecibelStreamData.Raw(payload)
   }
@@ -118,7 +118,7 @@ internal fun decodeStreamData(
 
 @Serializable
 private data class AccountOverviewEnvelope(
-  @SerialName("account_overview") val accountOverview: AccountOverview
+  @SerialName("account_overview") val accountOverview: AccountOverview,
 )
 
 @Serializable private data class AccountPositionsEnvelope(val positions: List<Position>)

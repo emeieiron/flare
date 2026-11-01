@@ -14,7 +14,11 @@ internal enum class LaunchStage {
  * Where a launch stands. Without a wallet there's only setup; a wallet whose setup finished, or was
  * left for later while it waits for funds, opens the app once unlocked.
  */
-internal fun launchStage(persisted: FlarePreferences?, walletLoaded: Boolean, unlocked: Boolean): LaunchStage =
+internal fun launchStage(
+  persisted: FlarePreferences?,
+  walletLoaded: Boolean,
+  unlocked: Boolean,
+): LaunchStage =
   when {
     persisted == null || !walletLoaded -> LaunchStage.LOADING
     persisted.profiles.isNotEmpty() && !unlocked -> LaunchStage.LOCKED

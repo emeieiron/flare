@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -30,26 +29,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.MarketQuote
@@ -57,8 +56,8 @@ import xyz.mcxross.flare.data.assetKey
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.design.EmptyState
-import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.FlareFilterChips
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSearchField
 import xyz.mcxross.flare.design.FlareSegmentedControl
@@ -119,7 +118,8 @@ fun MarketsScreen(
   // Read at tap time, so callbacks below keep their identity as prices tick.
   val latest by rememberUpdatedState(state)
   LaunchedEffect(pagerState, sequence) {
-    snapshotFlow { pagerState.settledPage }.collect { intents(MarketsIntent.ShowPage(sequence[it])) }
+    snapshotFlow { pagerState.settledPage }
+      .collect { intents(MarketsIntent.ShowPage(sequence[it])) }
   }
   val currentKey = sequence[pagerState.currentPage.coerceIn(sequence.indices)]
   Column(modifier = modifier.fillMaxSize()) {
@@ -181,7 +181,9 @@ fun MarketsScreen(
       }
     }
     if (state.searching) {
-      Column(Modifier.padding(horizontal = 24.dp)) { MarketSearchResults(state, onIntent, onMarketClick) }
+      Column(Modifier.padding(horizontal = 24.dp)) {
+        MarketSearchResults(state, onIntent, onMarketClick)
+      }
     } else {
       HorizontalPager(
         state = pagerState,
@@ -277,8 +279,8 @@ private fun MarketPageContent(
 }
 
 /**
- * Stays in place above the pager and acts as its indicator: the chip in view follows the swipe,
- * and the row switches to the other product's chips as the swipe crosses into it.
+ * Stays in place above the pager and acts as its indicator: the chip in view follows the swipe, and
+ * the row switches to the other product's chips as the swipe crosses into it.
  */
 @Composable
 private fun MarketFilterChips(
@@ -292,18 +294,21 @@ private fun MarketFilterChips(
     transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
     label = "marketChips",
   ) { instrument ->
-    // Remembered, so the chips see the same lists on every pass and only recompose for a new selection.
+    // Remembered, so the chips see the same lists on every pass and only recompose for a new
+    // selection.
     val chips = remember(sequence, instrument) { sequence.filter { it.instrument == instrument } }
-    val first = remember(sequence, instrument) { sequence.indexOfFirst { it.instrument == instrument } }
-    val labels = remember(chips) {
-      chips.map { key ->
-        when {
-          key.favoritesOnly -> "Watchlist"
-          key.category != null -> marketCategoryLabel(key.category)
-          else -> "All"
+    val first =
+      remember(sequence, instrument) { sequence.indexOfFirst { it.instrument == instrument } }
+    val labels =
+      remember(chips) {
+        chips.map { key ->
+          when {
+            key.favoritesOnly -> "Watchlist"
+            key.category != null -> marketCategoryLabel(key.category)
+            else -> "All"
+          }
         }
       }
-    }
     FlareFilterChips(
       labels = labels,
       selectedIndex = chips.indexOf(current).coerceAtLeast(0),
@@ -328,7 +333,9 @@ private fun MarketSearchResults(
   val results = state.searchResults
   val listState = rememberLazyListState()
   val keyboard = LocalSoftwareKeyboardController.current
-  LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress) keyboard?.hide() }
+  LaunchedEffect(listState.isScrollInProgress) {
+    if (listState.isScrollInProgress) keyboard?.hide()
+  }
   val query = state.query.trim()
   if (results.isEmpty) {
     if (state.error != null && state.quotes.isEmpty()) {
@@ -338,7 +345,8 @@ private fun MarketSearchResults(
     } else {
       EmptyState(
         title = if (query.isEmpty()) "Search every market" else "No markets match “$query”",
-        message = if (query.isEmpty()) "Type a ticker, name, or category. Starred markets appear here."
+        message =
+          if (query.isEmpty()) "Type a ticker, name, or category. Starred markets appear here."
           else "Try a ticker, asset name, or category.",
       )
     }
@@ -346,9 +354,10 @@ private fun MarketSearchResults(
   }
   LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
     val firstSection = if (results.perpetuals.isNotEmpty()) "Perpetuals" else "Spot"
-    if (query.isEmpty()) item(key = "watchlist-header", contentType = "market-header") {
-      MarketSectionHeader("Your watchlist", showPriceLabel = true)
-    }
+    if (query.isEmpty())
+      item(key = "watchlist-header", contentType = "market-header") {
+        MarketSectionHeader("Your watchlist", showPriceLabel = true)
+      }
     listOf("Perpetuals" to results.perpetuals, "Spot" to results.spot).forEach { (title, quotes) ->
       if (quotes.isEmpty()) return@forEach
       item(key = "section-$title", contentType = "market-header") {
@@ -374,11 +383,16 @@ private fun MarketSectionHeader(title: String, showPriceLabel: Boolean, subdued:
   ) {
     Text(
       title,
-      style = if (subdued) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
+      style =
+        if (subdued) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleMedium,
       color = if (subdued) FlareColors.TextSecondary else FlareColors.TextPrimary,
     )
     if (showPriceLabel) {
-      Text("Price / 24h", style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+      Text(
+        "Price / 24h",
+        style = MaterialTheme.typography.bodySmall,
+        color = FlareColors.TextSecondary,
+      )
     }
   }
 }

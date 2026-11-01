@@ -94,7 +94,8 @@ fun OrderDraft.validate(
         if (limitPrice == null) errors += OrderValidationError.MissingLimitPrice
         parse(limitPrice, "price", precision.priceDecimals)
       }
-      OrderType.MARKET, OrderType.TWAP -> {
+      OrderType.MARKET,
+      OrderType.TWAP -> {
         val bookAddress = orderBook?.let { parseAddress(it.market, "order book market", errors) }
         val reliableBook = orderBook?.takeIf {
           metadataAddress != null && bookAddress != null && metadataAddress == bookAddress
@@ -249,7 +250,7 @@ fun OrderDraft.validate(
         stopLossLimitPrice = optionalPrices["stop-loss limit"],
         builderAddress = finalBuilderAddress,
         builderFeeUnits = finalBuilderFeeUnits,
-      )
+      ),
   )
 }
 
@@ -330,10 +331,9 @@ fun OrderDraft.validateTwap(
         durationSeconds = durationSeconds,
         builderAddress = finalBuilderAddress,
         builderFeeUnits = finalBuilderFeeUnits,
-      )
+      ),
   )
 }
-
 
 private fun parseAddress(
   value: String,

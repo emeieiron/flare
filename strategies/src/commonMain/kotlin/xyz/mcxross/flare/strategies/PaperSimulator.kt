@@ -51,7 +51,7 @@ class PaperSimulator(val feeBps: Int = 5, private val maxBookAgeMs: Long = 5000)
         nowMs >= 0 &&
           snapshot.fetchedAtMs >= 0 &&
           snapshot.fetchedAtMs <= nowMs &&
-          nowMs - snapshot.fetchedAtMs <= maxBookAgeMs
+          nowMs - snapshot.fetchedAtMs <= maxBookAgeMs,
       ) {
         "Stale market snapshot"
       }
@@ -59,7 +59,7 @@ class PaperSimulator(val feeBps: Int = 5, private val maxBookAgeMs: Long = 5000)
       require(
         book.observedAtMs >= 0 &&
           book.observedAtMs <= nowMs &&
-          nowMs - book.observedAtMs <= maxBookAgeMs
+          nowMs - book.observedAtMs <= maxBookAgeMs,
       ) {
         "Stale order book"
       }
@@ -74,7 +74,7 @@ class PaperSimulator(val feeBps: Int = 5, private val maxBookAgeMs: Long = 5000)
           fees.sign >= 0 &&
           consumed.sign >= 0 &&
           (position.sign != 0 || basis.sign == 0) &&
-          (position.sign == 0 || basis.sign > 0)
+          (position.sign == 0 || basis.sign > 0),
       ) {
         "Invalid paper ledger"
       }
@@ -88,7 +88,7 @@ class PaperSimulator(val feeBps: Int = 5, private val maxBookAgeMs: Long = 5000)
         require(
           parsed.zipWithNext().all { (a, b) ->
             if (descending) a.first > b.first else a.first < b.first
-          }
+          },
         ) {
           "Unordered order book"
         }

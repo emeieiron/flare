@@ -1,4 +1,5 @@
-// The iOS app's Kotlin framework for the Hyperliquid build. It links :shared with :venue-hyperliquid and
+// The iOS app's Kotlin framework for the Hyperliquid build. It links :shared with
+// :venue-hyperliquid and
 // exports both, so Swift sees the same `Shared` framework whichever exchange the scheme builds.
 // Xcode runs :ios-${FLARE_VENUE}:embedAndSignAppleFrameworkForXcode; see iosApp/Configuration.
 plugins {

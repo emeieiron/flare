@@ -15,8 +15,8 @@ sealed interface ExchangeOutcome {
   data class Accepted(val response: ExchangeResponse) : ExchangeOutcome
 
   /**
-   * Hyperliquid refused the whole request without executing it: `"status": "err"` (bad
-   * signature, unknown user, nonce already used, …) or an HTTP 4xx answer.
+   * Hyperliquid refused the whole request without executing it: `"status": "err"` (bad signature,
+   * unknown user, nonce already used, …) or an HTTP 4xx answer.
    */
   data class Rejected(val reason: String) : ExchangeOutcome
 

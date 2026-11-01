@@ -14,38 +14,38 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import xyz.mcxross.flare.LaunchStage
-import xyz.mcxross.flare.launchStage
-import xyz.mcxross.flare.resumedSetup
-import xyz.mcxross.flare.shownWallet
-import xyz.mcxross.flare.feature.referrals.ReferralRepository
-import xyz.mcxross.flare.feature.referrals.ReferralProgram
-import xyz.mcxross.flare.feature.referrals.ReferralEligibility
-import xyz.mcxross.flare.feature.referrals.ReferralStatus
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.SetupTransactionException
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
+import xyz.mcxross.flare.feature.referrals.ReferralProgram
+import xyz.mcxross.flare.feature.referrals.ReferralRepository
+import xyz.mcxross.flare.feature.referrals.ReferralStatus
+import xyz.mcxross.flare.launchStage
+import xyz.mcxross.flare.resumedSetup
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.shownWallet
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.setupPending
-import xyz.mcxross.flare.testing.SetupBackupWords
+import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.testing.MemoryPreferences
 import xyz.mcxross.flare.testing.SETUP_OWNER
 import xyz.mcxross.flare.testing.SETUP_PHRASE
 import xyz.mcxross.flare.testing.SetupAccounts
+import xyz.mcxross.flare.testing.SetupBackupWords
 import xyz.mcxross.flare.testing.SetupCredentials
 import xyz.mcxross.flare.testing.SetupTrading
 import xyz.mcxross.flare.testing.SetupWallets
-import xyz.mcxross.flare.venue.model.TradingAccount
-import xyz.mcxross.flare.venue.model.ActionState
-import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.venue.VenueSetup
+import xyz.mcxross.flare.venue.model.ActionState
+import xyz.mcxross.flare.venue.model.TradingAccount
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OnboardingViewModelTest {
@@ -79,7 +79,13 @@ class OnboardingViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     val id = deferredWallet(preferences)
     val accounts = SetupAccounts(preferences)
-    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = false), preferences, ownerWallets(preferences))
+    val vm =
+      viewModel(
+        accounts,
+        VenueSetup(tradingAccounts = false, builderFee = false),
+        preferences,
+        ownerWallets(preferences),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
@@ -100,11 +106,20 @@ class OnboardingViewModelTest {
     val accounts =
       SetupAccounts(preferences).apply {
         approveResult =
-          ActionState.Failed("Move abort in 0x1::dex_accounts_entry: EBUILDER_SUBACCOUNT_NOT_FOUND(0x1):")
+          ActionState.Failed(
+            "Move abort in 0x1::dex_accounts_entry: EBUILDER_SUBACCOUNT_NOT_FOUND(0x1):",
+          )
       }
-    val vm = viewModel(accounts, VenueSetup(tradingAccounts = false, builderFee = true), preferences, ownerWallets(preferences))
+    val vm =
+      viewModel(
+        accounts,
+        VenueSetup(tradingAccounts = false, builderFee = true),
+        preferences,
+        ownerWallets(preferences),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val completed =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
     vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
     vm.onIntent(OnboardingIntent.EnableTrading)
@@ -129,7 +144,8 @@ class OnboardingViewModelTest {
       val accounts = SetupAccounts(preferences).apply { awaitingDeposit = awaiting }
       val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-      val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+      val completed =
+        backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
       vm.onIntent(OnboardingIntent.ShowImport)
       vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
@@ -158,7 +174,8 @@ class OnboardingViewModelTest {
         ),
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val completed =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
     vm.onIntent(OnboardingIntent.ShowImport)
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
@@ -175,7 +192,8 @@ class OnboardingViewModelTest {
     val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
     val vm = viewModel(accounts, HyperliquidSetup, preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val completed =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
     createAndConfirmBackup(vm)
 
@@ -213,7 +231,8 @@ class OnboardingViewModelTest {
     val accounts = SetupAccounts(preferences).apply { awaitingDeposit = true }
     val unfunded = viewModel(accounts, HyperliquidSetup, preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { unfunded.uiState.collect {} }
-    val back = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { unfunded.effects.first() }
+    val back =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { unfunded.effects.first() }
 
     // Still waiting for its deposit, it goes back to the app instead of a step it can't finish.
     unfunded.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
@@ -223,7 +242,8 @@ class OnboardingViewModelTest {
     accounts.awaitingDeposit = false
     val vm = viewModel(accounts, HyperliquidSetup, preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val completed =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
     vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
     assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
     assertTrue(vm.uiState.value.inApp)
@@ -239,7 +259,13 @@ class OnboardingViewModelTest {
   fun backAtTheBackupQuizMatchesWhetherOrNotTheAppWasLeft() = runTest {
     suspend fun backFromQuiz(relock: Boolean): Pair<OnboardingUiState, AppPreferences> {
       val preferences = AppPreferences(MemoryPreferences())
-      val vm = viewModel(SetupAccounts(preferences), HyperliquidSetup, preferences, SetupWallets(preferences))
+      val vm =
+        viewModel(
+          SetupAccounts(preferences),
+          HyperliquidSetup,
+          preferences,
+          SetupWallets(preferences),
+        )
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
       vm.onIntent(OnboardingIntent.CreateOwner)
       vm.onIntent(OnboardingIntent.ReviewBackup)
@@ -270,12 +296,16 @@ class OnboardingViewModelTest {
 
   @Test
   fun backAtOpenAccountMatchesWhetherOrNotTheAppWasLeft() = runTest {
-    suspend fun backFromOpenAccount(relock: Boolean, failedOpen: Boolean): Pair<OnboardingUiState, AppPreferences> {
+    suspend fun backFromOpenAccount(
+      relock: Boolean,
+      failedOpen: Boolean,
+    ): Pair<OnboardingUiState, AppPreferences> {
       val preferences = AppPreferences(MemoryPreferences())
       val accounts =
         object : SetupAccounts(preferences) {
           override suspend fun openTradingAccount(prompt: VaultPrompt): String =
-            if (failedOpen) throw SetupTransactionException(ActionState.Failed("Sponsorship unavailable"))
+            if (failedOpen)
+              throw SetupTransactionException(ActionState.Failed("Sponsorship unavailable"))
             else super.openTradingAccount(prompt)
         }
       val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
@@ -314,7 +344,8 @@ class OnboardingViewModelTest {
   @Test
   fun backAtTheBackupAfterTheAppUnlocksAgainReturnsToTheStart() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    val vm = viewModel(SetupAccounts(preferences), VenueSetup(), preferences, SetupWallets(preferences))
+    val vm =
+      viewModel(SetupAccounts(preferences), VenueSetup(), preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.CreateOwner)
     vm.onIntent(OnboardingIntent.ReviewBackup)
@@ -334,13 +365,14 @@ class OnboardingViewModelTest {
   fun failedLookupRecoversWithoutSelectingOrDelegatingTheOnlyAccount() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     var reads = 0
-    val accounts = object : SetupAccounts(preferences) {
-      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
-        reads++
-        if (reads < 3) error("Connection lost")
-        return listed.take(1)
+    val accounts =
+      object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+          reads++
+          if (reads < 3) error("Connection lost")
+          return listed.take(1)
+        }
       }
-    }
     val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.ShowImport)
@@ -349,7 +381,8 @@ class OnboardingViewModelTest {
     assertFalse(vm.uiState.value.busy)
     assertFalse(vm.uiState.value.subaccountsLoaded)
 
-    advanceTimeBy(3_001); runCurrent()
+    advanceTimeBy(3_001)
+    runCurrent()
 
     assertEquals(3, reads)
     assertTrue(vm.uiState.value.subaccountsLoaded)
@@ -364,25 +397,28 @@ class OnboardingViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     var reads = 0
     var available = false
-    val accounts = object : SetupAccounts(preferences) {
-      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
-        reads++
-        check(available) { "Connection lost" }
-        return listed
+    val accounts =
+      object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+          reads++
+          check(available) { "Connection lost" }
+          return listed
+        }
       }
-    }
     val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.ShowImport)
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
     vm.onIntent(OnboardingIntent.ImportCredential)
     vm.onIntent(OnboardingIntent.ClearSensitiveState)
-    advanceTimeBy(31_000); runCurrent()
+    advanceTimeBy(31_000)
+    runCurrent()
     assertEquals(1, reads)
 
     available = true
     vm.onIntent(OnboardingIntent.ResumeReads)
-    advanceTimeBy(1_001); runCurrent()
+    advanceTimeBy(1_001)
+    runCurrent()
     assertEquals(2, reads)
     assertTrue(vm.uiState.value.subaccountsLoaded)
     assertTrue(accounts.events.isEmpty())
@@ -394,22 +430,25 @@ class OnboardingViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     val response = CompletableDeferred<Unit>()
     var reads = 0
-    val accounts = object : SetupAccounts(preferences) {
-      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
-        reads++
-        if (reads == 1) error("Connection lost")
-        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { response.await() }
-        return listed.take(1)
+    val accounts =
+      object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> {
+          reads++
+          if (reads == 1) error("Connection lost")
+          kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { response.await() }
+          return listed.take(1)
+        }
       }
-    }
     val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.ShowImport)
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
     vm.onIntent(OnboardingIntent.ImportCredential)
-    advanceTimeBy(1_001); runCurrent()
+    advanceTimeBy(1_001)
+    runCurrent()
     vm.onIntent(OnboardingIntent.Back)
-    response.complete(Unit); runCurrent()
+    response.complete(Unit)
+    runCurrent()
 
     assertEquals(OnboardingStep.WELCOME, vm.uiState.value.step)
     assertFalse(vm.uiState.value.subaccountsLoaded)
@@ -422,32 +461,54 @@ class OnboardingViewModelTest {
     var redeemed = false
     var normalCreates = 0
     var applies = 0
-    val accounts = object : SetupAccounts(preferences) {
-      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = if (redeemed) listed.take(1) else emptyList()
-      override suspend fun subaccounts(owner: String) = if (redeemed) listed.take(1) else emptyList()
-      override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
-        normalCreates++
-        error("The referral endpoint already created the account")
+    val accounts =
+      object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) =
+          if (redeemed) listed.take(1) else emptyList()
+
+        override suspend fun subaccounts(owner: String) =
+          if (redeemed) listed.take(1) else emptyList()
+
+        override suspend fun createSubaccount(
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): ActionState {
+          normalCreates++
+          error("The referral endpoint already created the account")
+        }
       }
-    }
-    val referrals = object : ReferralRepository {
-      override suspend fun program() = ReferralProgram(true, "OC9E6E")
-      override suspend fun status(owner: String) = ReferralStatus(owner, if (redeemed) ReferralEligibility.BOUND else ReferralEligibility.ELIGIBLE,
-        if (redeemed) "OC9E6E" else null, if (redeemed) "0xa1" else null)
-      override suspend fun validate(code: String) = true
-      override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
-        applies++
-        redeemed = true
-        return ReferralStatus(owner, ReferralEligibility.BOUND, code, "0xa1")
+    val referrals =
+      object : ReferralRepository {
+        override suspend fun program() = ReferralProgram(true, "OC9E6E")
+
+        override suspend fun status(owner: String) =
+          ReferralStatus(
+            owner,
+            if (redeemed) ReferralEligibility.BOUND else ReferralEligibility.ELIGIBLE,
+            if (redeemed) "OC9E6E" else null,
+            if (redeemed) "0xa1" else null,
+          )
+
+        override suspend fun validate(code: String) = true
+
+        override suspend fun apply(
+          owner: String,
+          code: String,
+          prompt: VaultPrompt,
+        ): ReferralStatus {
+          applies++
+          redeemed = true
+          return ReferralStatus(owner, ReferralEligibility.BOUND, code, "0xa1")
+        }
       }
-    }
     val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.ResumeReads)
     vm.onIntent(OnboardingIntent.ShowImport)
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
     vm.onIntent(OnboardingIntent.ImportCredential)
-    advanceTimeBy(301); runCurrent()
+    advanceTimeBy(301)
+    runCurrent()
     assertTrue(vm.uiState.value.referral.canApply)
 
     vm.onIntent(OnboardingIntent.CreateSubaccount)
@@ -465,29 +526,45 @@ class OnboardingViewModelTest {
     val preferences = AppPreferences(MemoryPreferences())
     var normalCreates = 0
     var applies = 0
-    val accounts = object : SetupAccounts(preferences) {
-      override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = emptyList<TradingAccount>()
-      override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
-        normalCreates++
-        return ActionState.Failed("Normal creation requested", definitelyNotSubmitted = true)
+    val accounts =
+      object : SetupAccounts(preferences) {
+        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) =
+          emptyList<TradingAccount>()
+
+        override suspend fun createSubaccount(
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): ActionState {
+          normalCreates++
+          return ActionState.Failed("Normal creation requested", definitelyNotSubmitted = true)
+        }
       }
-    }
-    val referrals = object : ReferralRepository {
-      override suspend fun program() = ReferralProgram(true, "OC9E6E")
-      override suspend fun status(owner: String) = ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
-      override suspend fun validate(code: String) = true
-      override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
-        applies++
-        error("A cleared code must never be applied")
+    val referrals =
+      object : ReferralRepository {
+        override suspend fun program() = ReferralProgram(true, "OC9E6E")
+
+        override suspend fun status(owner: String) =
+          ReferralStatus(owner, ReferralEligibility.ELIGIBLE)
+
+        override suspend fun validate(code: String) = true
+
+        override suspend fun apply(
+          owner: String,
+          code: String,
+          prompt: VaultPrompt,
+        ): ReferralStatus {
+          applies++
+          error("A cleared code must never be applied")
+        }
       }
-    }
     val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
     vm.onIntent(OnboardingIntent.ResumeReads)
     vm.onIntent(OnboardingIntent.ShowImport)
     vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
     vm.onIntent(OnboardingIntent.ImportCredential)
-    advanceTimeBy(301); runCurrent()
+    advanceTimeBy(301)
+    runCurrent()
     vm.onIntent(OnboardingIntent.ChangeReferralCode(""))
 
     vm.onIntent(OnboardingIntent.CreateSubaccount)
@@ -504,24 +581,41 @@ class OnboardingViewModelTest {
       val preferences = AppPreferences(MemoryPreferences())
       var creates = 0
       var applies = 0
-      val accounts = object : SetupAccounts(preferences) {
-        override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) = emptyList<TradingAccount>()
-        override suspend fun subaccounts(owner: String) = listed.take(1)
-        override suspend fun createSubaccount(prompt: VaultPrompt, feePayment: FeePayment): ActionState {
-          creates++
-          error("An uncertain referral must not create another account")
+      val accounts =
+        object : SetupAccounts(preferences) {
+          override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) =
+            emptyList<TradingAccount>()
+
+          override suspend fun subaccounts(owner: String) = listed.take(1)
+
+          override suspend fun createSubaccount(
+            prompt: VaultPrompt,
+            feePayment: FeePayment,
+          ): ActionState {
+            creates++
+            error("An uncertain referral must not create another account")
+          }
         }
-      }
-      val referrals = object : ReferralRepository {
-        override suspend fun program() = ReferralProgram(true, "OC9E6E")
-        override suspend fun status(owner: String) = ReferralStatus(owner, ReferralEligibility.PENDING, "OC9E6E", preferred)
-        override suspend fun pendingCode(owner: String) = "OC9E6E"
-        override suspend fun validate(code: String) = true
-        override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
-          applies++
-          error("Reconciliation only reads")
+      val referrals =
+        object : ReferralRepository {
+          override suspend fun program() = ReferralProgram(true, "OC9E6E")
+
+          override suspend fun status(owner: String) =
+            ReferralStatus(owner, ReferralEligibility.PENDING, "OC9E6E", preferred)
+
+          override suspend fun pendingCode(owner: String) = "OC9E6E"
+
+          override suspend fun validate(code: String) = true
+
+          override suspend fun apply(
+            owner: String,
+            code: String,
+            prompt: VaultPrompt,
+          ): ReferralStatus {
+            applies++
+            error("Reconciliation only reads")
+          }
         }
-      }
       val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
       try {
@@ -535,7 +629,8 @@ class OnboardingViewModelTest {
         assertEquals(0, applies)
         assertEquals(preferred == "0xa1", accounts.events.contains("select 0xa1"))
         assertEquals(preferred == "0xa1", accounts.events.contains("prepare"))
-        if (preferred == "0xf") assertEquals("Your trading account isn’t available yet", vm.uiState.value.error)
+        if (preferred == "0xf")
+          assertEquals("Your trading account isn’t available yet", vm.uiState.value.error)
       } finally {
         vm.onIntent(OnboardingIntent.ClearSensitiveState)
       }
@@ -555,19 +650,34 @@ class OnboardingViewModelTest {
   fun anInstallLeftOnTheOldFundingStepOpensTheApp() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(
-      AccountProfile("owner_$OWNER", ownerAddress = OWNER, ownerBackupConfirmed = true, selectedSubaccount = OWNER)
+      AccountProfile(
+        "owner_$OWNER",
+        ownerAddress = OWNER,
+        ownerBackupConfirmed = true,
+        selectedSubaccount = OWNER,
+      ),
     )
     val saved = preferences.values.first()
     assertEquals(LaunchStage.ONBOARDING, launchStage(saved, walletLoaded = true, unlocked = true))
     val id = assertNotNull(resumedSetup(saved))
-    val vm = viewModel(SetupAccounts(preferences).apply { awaitingDeposit = true }, HyperliquidSetup, preferences, ownerWallets(preferences))
+    val vm =
+      viewModel(
+        SetupAccounts(preferences).apply { awaitingDeposit = true },
+        HyperliquidSetup,
+        preferences,
+        ownerWallets(preferences),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val completed = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val completed =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
 
     vm.onIntent(OnboardingIntent.InitializeMode(RESUME, id))
 
     assertEquals(OnboardingEffect.Completed, completed.await())
-    assertEquals(LaunchStage.READY, launchStage(preferences.values.first(), walletLoaded = true, unlocked = true))
+    assertEquals(
+      LaunchStage.READY,
+      launchStage(preferences.values.first(), walletLoaded = true, unlocked = true),
+    )
     assertTrue(preferences.values.first().profiles.single().setupPending)
   }
 
@@ -589,7 +699,8 @@ class OnboardingViewModelTest {
     val id = deferredWallet(preferences)
     val vm = viewModel(SetupAccounts(), HyperliquidSetup, preferences, ownerWallets(preferences))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
-    val cancelled = backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
+    val cancelled =
+      backgroundScope.async(UnconfinedTestDispatcher(testScheduler)) { vm.effects.first() }
     vm.onIntent(OnboardingIntent.InitializeMode("CONTINUE", id))
     assertEquals(OnboardingStep.ENABLE_TRADING, vm.uiState.value.step)
     preferences.removeProfile(id)
@@ -629,7 +740,12 @@ class OnboardingViewModelTest {
   private suspend fun deferredWallet(preferences: AppPreferences): String {
     val id = "owner_$OWNER"
     preferences.registerProfile(
-      AccountProfile(id, ownerAddress = OWNER, ownerBackupConfirmed = true, selectedSubaccount = OWNER)
+      AccountProfile(
+        id,
+        ownerAddress = OWNER,
+        ownerBackupConfirmed = true,
+        selectedSubaccount = OWNER,
+      ),
     )
     preferences.deferSetup()
     return id
@@ -653,7 +769,8 @@ class OnboardingViewModelTest {
     )
 
   private companion object {
-    val HyperliquidSetup = VenueSetup(tradingAccounts = false, openTradingAccount = false, builderFee = false)
+    val HyperliquidSetup =
+      VenueSetup(tradingAccounts = false, openTradingAccount = false, builderFee = false)
     const val OWNER = SETUP_OWNER
     const val PHRASE = SETUP_PHRASE
   }

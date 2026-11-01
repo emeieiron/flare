@@ -1,8 +1,8 @@
 package xyz.mcxross.flare.data
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.AccountOverview
 import xyz.mcxross.flare.venue.model.ActionState
@@ -14,8 +14,8 @@ import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.venue.model.TradingAccountStatus
 import xyz.mcxross.flare.venue.model.TradingFees
@@ -93,9 +93,10 @@ interface AccountRepository {
 
   /**
    * Opens the trading account of a wallet Flare created and returns its address. It happens exactly
-   * once: an earlier attempt that went through is found and reused, never repeated, and a new account
-   * is waited for until the exchange lists it. Flare sponsors the fee, since a new wallet has none.
-   * A transaction that didn't go through throws [SetupTransactionException], with its progress saved.
+   * once: an earlier attempt that went through is found and reused, never repeated, and a new
+   * account is waited for until the exchange lists it. Flare sponsors the fee, since a new wallet
+   * has none. A transaction that didn't go through throws [SetupTransactionException], with its
+   * progress saved.
    */
   suspend fun openTradingAccount(prompt: VaultPrompt): String
 
@@ -133,7 +134,10 @@ interface AccountRepository {
   suspend fun warmFundingFees() = Unit
 
   /** Read-only gas simulation for the funding form; never requests fresh authorization. */
-  suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): xyz.mcxross.flare.venue.model.NetworkFee? = null
+  suspend fun estimateFundingFee(
+    amount: String,
+    withdrawing: Boolean,
+  ): xyz.mcxross.flare.venue.model.NetworkFee? = null
 
   /** Withdraws to the owner wallet, or to [destination] through a reviewed follow-up transfer. */
   fun withdrawUsdc(
@@ -148,7 +152,12 @@ interface AccountRepository {
    * [xyz.mcxross.flare.venue.WithdrawalTerms.internalTransfers] says so offer it.
    */
   fun transferUsdc(amount: String, destination: String, prompt: VaultPrompt): Flow<ActionState> =
-    flowOf(ActionState.Failed("Transfers to other accounts aren’t available here", definitelyNotSubmitted = true))
+    flowOf(
+      ActionState.Failed(
+        "Transfers to other accounts aren’t available here",
+        definitelyNotSubmitted = true,
+      ),
+    )
 
   /** Perpetuals and spot keep separate on-chain approvals; [product] picks which one. */
   suspend fun approveBuilderFee(
@@ -197,5 +206,5 @@ class SetupTransactionException(val transaction: ActionState) :
   IllegalStateException(
     (transaction as? ActionState.Failed)?.let { failure ->
       "Enabling trading failed" + (failure.reference?.let { ". Transaction: $it" } ?: "")
-    } ?: "Enabling trading is still pending"
+    } ?: "Enabling trading is still pending",
   )

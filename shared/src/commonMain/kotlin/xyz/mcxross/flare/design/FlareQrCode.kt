@@ -19,25 +19,25 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.dp
+import io.github.alexzhirkevich.qrose.QrCodePainter
 import io.github.alexzhirkevich.qrose.options.QrBallShape
 import io.github.alexzhirkevich.qrose.options.QrBrush
 import io.github.alexzhirkevich.qrose.options.QrErrorCorrectionLevel
 import io.github.alexzhirkevich.qrose.options.QrFrameShape
 import io.github.alexzhirkevich.qrose.options.QrLogoPadding
 import io.github.alexzhirkevich.qrose.options.QrLogoShape
-import io.github.alexzhirkevich.qrose.options.QrPixelShape
 import io.github.alexzhirkevich.qrose.options.QrOptions
+import io.github.alexzhirkevich.qrose.options.QrPixelShape
 import io.github.alexzhirkevich.qrose.options.circle
 import io.github.alexzhirkevich.qrose.options.roundCorners
 import io.github.alexzhirkevich.qrose.options.solid
-import io.github.alexzhirkevich.qrose.QrCodePainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
  * A QR code in Flare's style: soft modules and eyes on a light card, with the Flare mark at its
- * centre. Dark on light, because every camera reads it; the light card is also the quiet zone.
- * High error correction leaves room for the mark without costing a scan.
+ * centre. Dark on light, because every camera reads it; the light card is also the quiet zone. High
+ * error correction leaves room for the mark without costing a scan.
  */
 @Composable
 fun FlareQrCode(data: String, contentDescription: String?, modifier: Modifier = Modifier) {
@@ -46,24 +46,32 @@ fun FlareQrCode(data: String, contentDescription: String?, modifier: Modifier = 
   FlareQrCode(painter, contentDescription, modifier)
 }
 
-/** Kept by the account screen so closing Receive does not discard Qrose's size-specific draw cache. */
+/**
+ * Kept by the account screen so closing Receive does not discard Qrose's size-specific draw cache.
+ */
 @Composable
 internal fun rememberPreparedFlareQrCodePainter(data: String): Painter? {
   val mark = remember { FlareBadgePainter(badge = FlareColors.Canvas, mark = FlareColors.Positive) }
   val options = remember(mark) { flareQrOptions(mark) }
   // A new address gets a new state holder, never the previous wallet's painter for one frame.
   return key(data) {
-    val painter by produceState<Painter?>(null) {
-      if (data.isNotBlank()) value = withContext(Dispatchers.Default) { QrCodePainter(data, options) }
-    }
+    val painter by
+      produceState<Painter?>(null) {
+        if (data.isNotBlank())
+          value = withContext(Dispatchers.Default) { QrCodePainter(data, options) }
+      }
     painter
   }
 }
 
 @Composable
-internal fun FlareQrCode(painter: Painter, contentDescription: String?, modifier: Modifier = Modifier) {
+internal fun FlareQrCode(
+  painter: Painter,
+  contentDescription: String?,
+  modifier: Modifier = Modifier,
+) {
   Box(
-    modifier.clip(RoundedCornerShape(28.dp)).background(FlareColors.TextPrimary).padding(20.dp)
+    modifier.clip(RoundedCornerShape(28.dp)).background(FlareColors.TextPrimary).padding(20.dp),
   ) {
     Image(painter, contentDescription, Modifier.fillMaxSize())
   }

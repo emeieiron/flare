@@ -68,11 +68,16 @@ class HyperliquidMarketsRepository(
       .onSuccess { markets ->
         val updatedAtMs = Clock.System.now().toEpochMilliseconds()
         lastSnapshotAtMs = updatedAtMs
-        val rows = withContext(Dispatchers.Default) {
-          markets.map {
-            MarketEntity(it.coin, CacheJson.encodeToString(CachedMarket.serializer(), it), updatedAtMs)
+        val rows =
+          withContext(Dispatchers.Default) {
+            markets.map {
+              MarketEntity(
+                it.coin,
+                CacheJson.encodeToString(CachedMarket.serializer(), it),
+                updatedAtMs,
+              )
+            }
           }
-        }
         cache.clearMarkets()
         cache.upsertMarkets(rows)
         show(markets, stale = false, updatedAtMs = updatedAtMs)
@@ -83,7 +88,8 @@ class HyperliquidMarketsRepository(
           it.copy(
             loading = false,
             stale = true,
-            error = if (it.quotes.isEmpty()) error.message ?: "Market data is unavailable" else null,
+            error =
+              if (it.quotes.isEmpty()) error.message ?: "Market data is unavailable" else null,
           )
         }
       }
@@ -92,13 +98,15 @@ class HyperliquidMarketsRepository(
 
   private suspend fun loadCachedMarkets() {
     val rows = cache.markets()
-    val markets = withContext(Dispatchers.Default) {
-      rows.mapNotNull { row ->
-        runCatching { CacheJson.decodeFromString(CachedMarket.serializer(), row.payloadJson) }
-          .getOrNull()
+    val markets =
+      withContext(Dispatchers.Default) {
+        rows.mapNotNull { row ->
+          runCatching { CacheJson.decodeFromString(CachedMarket.serializer(), row.payloadJson) }
+            .getOrNull()
+        }
       }
-    }
-    if (markets.isNotEmpty()) show(markets, stale = true, updatedAtMs = rows.maxOf { it.updatedAtMs })
+    if (markets.isNotEmpty())
+      show(markets, stale = true, updatedAtMs = rows.maxOf { it.updatedAtMs })
   }
 
   private suspend fun show(markets: List<CachedMarket>, stale: Boolean, updatedAtMs: Long) {
@@ -108,7 +116,8 @@ class HyperliquidMarketsRepository(
     mutableCatalog.value =
       MarketCatalog(
         loading = false,
-        quotes = quotes.map { it.copy(favorite = it.market.id in favorites) }.sortedWith(QuoteOrder),
+        quotes =
+          quotes.map { it.copy(favorite = it.market.id in favorites) }.sortedWith(QuoteOrder),
         stale = stale,
         updatedAtMs = updatedAtMs,
       )
@@ -126,7 +135,8 @@ class HyperliquidMarketsRepository(
       }
     }
     if (!preferences.values.first().spotWatchlistSeeded && spots.isNotEmpty()) {
-      val seeded = spots.filter { it.symbol in DEFAULT_SPOT_WATCHLIST && it.quoteAsset == null }.map { it.id }
+      val seeded =
+        spots.filter { it.symbol in DEFAULT_SPOT_WATCHLIST && it.quoteAsset == null }.map { it.id }
       if (seeded.isNotEmpty()) {
         favorites += seeded
         changed = true
@@ -153,7 +163,8 @@ class HyperliquidMarketsRepository(
             else -> Unit
           }
         }
-        is StreamEvent.Rejected -> mutableCatalog.update { it.copy(stale = true, error = event.reason) }
+        is StreamEvent.Rejected ->
+          mutableCatalog.update { it.copy(stale = true, error = event.reason) }
         is StreamEvent.Disconnected ->
           mutableCatalog.update {
             it.copy(stale = true, error = event.reason ?: "Live market stream disconnected")
@@ -196,8 +207,11 @@ class HyperliquidMarketsRepository(
       state.copy(
         quotes =
           state.quotes
-            .map { if (it.market.id == marketAddress) it.copy(favorite = marketAddress in favorites) else it }
-            .sortedWith(QuoteOrder)
+            .map {
+              if (it.market.id == marketAddress) it.copy(favorite = marketAddress in favorites)
+              else it
+            }
+            .sortedWith(QuoteOrder),
       )
     }
   }

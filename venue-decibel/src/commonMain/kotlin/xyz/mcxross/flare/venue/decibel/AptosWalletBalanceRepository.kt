@@ -16,12 +16,15 @@ class AptosWalletBalanceRepository(
   override val symbols = listOf("APT", "USDC")
 
   override suspend fun balance(address: String, symbol: String): String {
-    val (asset, decimals) = when (symbol) {
-      "APT" -> AccountAsset.coin(APTOS_COIN) to 8
-      "USDC" -> AccountAsset.fungibleAsset(deployment.usdcMetadataAddress) to 6
-      else -> error("Unsupported wallet asset")
-    }
-    return when (val result = aptos.accounts.getBalance(AccountAddress.fromString(address), asset)) {
+    val (asset, decimals) =
+      when (symbol) {
+        "APT" -> AccountAsset.coin(APTOS_COIN) to 8
+        "USDC" -> AccountAsset.fungibleAsset(deployment.usdcMetadataAddress) to 6
+        else -> error("Unsupported wallet asset")
+      }
+    return when (
+      val result = aptos.accounts.getBalance(AccountAddress.fromString(address), asset)
+    ) {
       is AptosResult.Success -> result.value.toDecimalString(decimals)
       is AptosResult.Failure -> error("The $symbol balance couldn’t be refreshed")
     }

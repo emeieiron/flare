@@ -15,7 +15,10 @@ data class SwapAsset(val network: String, val address: String, val decimals: Int
 }
 
 @Serializable
-enum class SwapAmountKind { EXACT_INPUT, EXACT_OUTPUT }
+enum class SwapAmountKind {
+  EXACT_INPUT,
+  EXACT_OUTPUT,
+}
 
 /** All quantities are unsigned integer base units, never formatted decimal amounts. */
 @Serializable
@@ -35,8 +38,7 @@ data class SwapRequest(
   }
 }
 
-@Serializable
-data class SwapFee(val asset: SwapAsset, val amount: String)
+@Serializable data class SwapFee(val asset: SwapAsset, val amount: String)
 
 @Serializable
 data class SwapNetworkFee(val payment: FeePayment, val estimate: ULong, val maximum: ULong)
@@ -71,7 +73,14 @@ data class SwapFundingCapacity(
 }
 
 @Serializable
-enum class SwapOperationStatus { PREPARED, SUBMITTING, PENDING, COMMITTED, ABORTED, NOT_SUBMITTED }
+enum class SwapOperationStatus {
+  PREPARED,
+  SUBMITTING,
+  PENDING,
+  COMMITTED,
+  ABORTED,
+  NOT_SUBMITTED,
+}
 
 @Serializable
 data class SwapOperation(

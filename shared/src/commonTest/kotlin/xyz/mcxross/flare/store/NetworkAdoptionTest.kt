@@ -38,7 +38,7 @@ class NetworkAdoptionTest {
         creationReference = "0xref",
         walletName = "Main wallet",
         tradingAccountNames = mapOf("0xsub" to "Testnet account"),
-      )
+      ),
     )
 
     preferences.adoptNetwork(Network.MAINNET)

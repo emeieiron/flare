@@ -11,7 +11,6 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -178,7 +177,11 @@ class MarketsViewModelTest {
   @Test
   fun perpetualsTabDefaultsToWatchlist() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     val state = vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -195,7 +198,11 @@ class MarketsViewModelTest {
   @Test
   fun categoryFilteringAndTitle() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -213,13 +220,20 @@ class MarketsViewModelTest {
 
   @Test
   fun swipeSequenceWalksPerpetualChipsThenSpotChips() {
-    val labels = marketPageSequence().map {
-      "${it.instrument.name.lowercase()}:${if (it.favoritesOnly) "watchlist" else it.category ?: "all"}"
-    }
+    val labels =
+      marketPageSequence().map {
+        "${it.instrument.name.lowercase()}:${if (it.favoritesOnly) "watchlist" else it.category ?: "all"}"
+      }
     assertEquals(
       listOf(
-        "perpetuals:all", "perpetuals:watchlist", "perpetuals:commodity", "perpetuals:crypto",
-        "perpetuals:equity", "spot:all", "spot:watchlist", "spot:crypto",
+        "perpetuals:all",
+        "perpetuals:watchlist",
+        "perpetuals:commodity",
+        "perpetuals:crypto",
+        "perpetuals:equity",
+        "spot:all",
+        "spot:watchlist",
+        "spot:crypto",
       ),
       labels,
     )
@@ -245,7 +259,11 @@ class MarketsViewModelTest {
   @Test
   fun switchingInstrumentsKeepsEachPagesSelection() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
     vm.onIntent(MarketsIntent.SetCategory("crypto"))
@@ -261,11 +279,14 @@ class MarketsViewModelTest {
     assertEquals("Crypto", marketSectionTitle(perpState))
   }
 
-
   @Test
   fun allPerpetualsIncludeNonFavorites() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     val initial = vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -282,7 +303,11 @@ class MarketsViewModelTest {
   @Test
   fun searchSpansBothProductsAndClosingRestoresBrowsing() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
     vm.onIntent(MarketsIntent.SetCategory("crypto"))
@@ -300,7 +325,12 @@ class MarketsViewModelTest {
 
   @Test
   fun typingAndSelectingProductsReuseCatalogPages() = runTest {
-    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+    val vm =
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     val initial = vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -327,14 +357,25 @@ class MarketsViewModelTest {
     vm.onIntent(MarketsIntent.Search("BTC"))
     vm.uiState.first { it.query == "BTC" }
 
-    repository.catalog.value = repository.catalog.value.copy(
-      quotes = quotes.map { if (it.market == btcPerp) it.copy(markPrice = 71_000.0, favorite = false) else it },
-    )
-    val updated = vm.uiState.first { it.searchResults.perpetuals.firstOrNull()?.markPrice == 71_000.0 }
+    repository.catalog.value =
+      repository.catalog.value.copy(
+        quotes =
+          quotes.map {
+            if (it.market == btcPerp) it.copy(markPrice = 71_000.0, favorite = false) else it
+          },
+      )
+    val updated =
+      vm.uiState.first { it.searchResults.perpetuals.firstOrNull()?.markPrice == 71_000.0 }
     assertNotSame(initial.pageQuotes, updated.pageQuotes)
     assertFalse(updated.searchResults.perpetuals.single().favorite)
     assertEquals(listOf("GOLD"), updated.quotes.map { it.market.symbol })
-    assertEquals(71_000.0, updated.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS)).first().markPrice)
+    assertEquals(
+      71_000.0,
+      updated.pageQuotes
+        .getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS))
+        .first()
+        .markPrice,
+    )
   }
 
   @Test
@@ -346,25 +387,43 @@ class MarketsViewModelTest {
     vm.onIntent(MarketsIntent.SetCategory("equity"))
     vm.uiState.first { it.selectedCategory == "equity" }
 
-    assets.assets.value = assetMetadataMap + ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "equity", name = "Digital gold"))
+    assets.assets.value =
+      assetMetadataMap +
+        ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "equity", name = "Digital gold"))
     val updated = vm.uiState.first { it.selectedCategory == "equity" && it.quotes.isNotEmpty() }
     assertNotSame(initial.pageQuotes, updated.pageQuotes)
     assertEquals(listOf("BTC"), updated.quotes.map { it.market.symbol })
-    assertFalse(updated.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS, category = "crypto")).any { it.market == btcPerp })
+    assertFalse(
+      updated.pageQuotes
+        .getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS, category = "crypto"))
+        .any { it.market == btcPerp },
+    )
 
     vm.onIntent(MarketsIntent.OpenSearch)
     vm.onIntent(MarketsIntent.Search("digital"))
-    assertEquals(listOf("BTC"), vm.uiState.first { it.query == "digital" }.searchResults.perpetuals.map { it.market.symbol })
+    assertEquals(
+      listOf("BTC"),
+      vm.uiState.first { it.query == "digital" }.searchResults.perpetuals.map { it.market.symbol },
+    )
   }
 
   @Test
   fun aCategoryOutsideTheSwipeSequenceStillFiltersCorrectly() = runTest {
-    val assets = assetMetadataMap + ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "custom"))
-    val vm = MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assets), testVenue())
+    val assets =
+      assetMetadataMap + ("BTC" to assetMetadataMap.getValue("BTC").copy(kind = "custom"))
+    val vm =
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assets),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
     vm.onIntent(MarketsIntent.SetCategory("custom"))
-    assertEquals(listOf("BTC"), vm.uiState.first { it.selectedCategory == "custom" }.quotes.map { it.market.symbol })
+    assertEquals(
+      listOf("BTC"),
+      vm.uiState.first { it.selectedCategory == "custom" }.quotes.map { it.market.symbol },
+    )
   }
 
   @Test
@@ -376,14 +435,22 @@ class MarketsViewModelTest {
     vm.onIntent(MarketsIntent.SetFavoritesOnly(false))
     vm.uiState.first { !it.favoritesOnly }
 
-    repository.catalog.value = repository.catalog.value.copy(quotes = listOf(quotes[2], quotes[1], quotes[3]))
-    val reordered = vm.uiState.first { it.quotes.map { quote -> quote.market.symbol } == listOf("GOLD", "ADA") }
-    assertEquals(listOf("GOLD", "ADA"), reordered.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS)).map { it.market.symbol })
+    repository.catalog.value =
+      repository.catalog.value.copy(quotes = listOf(quotes[2], quotes[1], quotes[3]))
+    val reordered =
+      vm.uiState.first { it.quotes.map { quote -> quote.market.symbol } == listOf("GOLD", "ADA") }
+    assertEquals(
+      listOf("GOLD", "ADA"),
+      reordered.pageQuotes.getValue(MarketPageKey(MarketInstrumentFilter.PERPETUALS)).map {
+        it.market.symbol
+      },
+    )
     vm.onIntent(MarketsIntent.OpenSearch)
     vm.onIntent(MarketsIntent.Search("BTC"))
     assertTrue(vm.uiState.first { it.query == "BTC" }.searchResults.isEmpty)
 
-    repository.catalog.value = repository.catalog.value.copy(quotes = listOf(quotes[0]) + repository.catalog.value.quotes)
+    repository.catalog.value =
+      repository.catalog.value.copy(quotes = listOf(quotes[0]) + repository.catalog.value.quotes)
     val inserted = vm.uiState.first { it.searchResults.perpetuals.isNotEmpty() }
     assertEquals(listOf("BTC", "GOLD", "ADA"), inserted.quotes.map { it.market.symbol })
     assertEquals(listOf("BTC"), inserted.searchResults.perpetuals.map { it.market.symbol })
@@ -392,7 +459,11 @@ class MarketsViewModelTest {
   @Test
   fun spotTabDefaultsToWatchlistWithSeededFavorite() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -408,7 +479,11 @@ class MarketsViewModelTest {
   @Test
   fun deselectingSpotCategoryShowsAllMarkets() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 
@@ -438,7 +513,11 @@ class MarketsViewModelTest {
   @Test
   fun allSpotMarketsIncludeNonFavorites() = runTest {
     val vm =
-      MarketsViewModel(FakeMarketsRepository(quotes), FakeAssetCatalogRepository(assetMetadataMap), testVenue())
+      MarketsViewModel(
+        FakeMarketsRepository(quotes),
+        FakeAssetCatalogRepository(assetMetadataMap),
+        testVenue(),
+      )
     backgroundScope.launch { vm.uiState.collect() }
     vm.uiState.first { it.quotes.isNotEmpty() }
 

@@ -85,7 +85,13 @@ class OrderPlacementTest {
   @Test
   fun existingPositionsKeepTheirLeverageAndSkipConfiguration() = runTest {
     val position =
-      Position(marketId = "0x123", size = "0.001", leverage = 5, entryPrice = 70_000.0, isolated = false)
+      Position(
+        marketId = "0x123",
+        size = "0.001",
+        leverage = 5,
+        entryPrice = 70_000.0,
+        isolated = false,
+      )
     assertNull(state.leverageCommand("0xabc", position))
     assertFailsWith<IllegalArgumentException> {
       state.copy(leverage = 2).leverageCommand("0xabc", position)
@@ -134,7 +140,7 @@ class OrderPlacementTest {
     assertNull(
       declined
         .copy(capabilities = VenueCapabilities.All.copy(sponsoredFees = false))
-        .selfPayEstimate
+        .selfPayEstimate,
     )
     assertNull(state.copy(transaction = ActionState.Failed("Rejected")).selfPayEstimate)
   }

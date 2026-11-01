@@ -13,7 +13,12 @@ import xyz.mcxross.flare.venue.model.MarketKind
 class HyperliquidMarketsRepositoryTest {
   @Test
   fun listsPerpsWithoutDelistedOnesAndTheirContextsByPosition() = runTest {
-    val repository = HyperliquidMarketsRepository(testClient(MarketResponses), memoryPreferences(), MemoryMarketCache())
+    val repository =
+      HyperliquidMarketsRepository(
+        testClient(MarketResponses),
+        memoryPreferences(),
+        MemoryMarketCache(),
+      )
 
     repository.refresh()
 
@@ -37,7 +42,12 @@ class HyperliquidMarketsRepositoryTest {
 
   @Test
   fun listsSpotPairsThatTradedOrAreCanonicalMatchedByCoin() = runTest {
-    val repository = HyperliquidMarketsRepository(testClient(MarketResponses), memoryPreferences(), MemoryMarketCache())
+    val repository =
+      HyperliquidMarketsRepository(
+        testClient(MarketResponses),
+        memoryPreferences(),
+        MemoryMarketCache(),
+      )
 
     repository.refresh()
 
@@ -56,7 +66,8 @@ class HyperliquidMarketsRepositoryTest {
   @Test
   fun seedsTheWatchlistOnceAndSortsFavoritesFirst() = runTest {
     val preferences = memoryPreferences()
-    val repository = HyperliquidMarketsRepository(testClient(MarketResponses), preferences, MemoryMarketCache())
+    val repository =
+      HyperliquidMarketsRepository(testClient(MarketResponses), preferences, MemoryMarketCache())
 
     repository.refresh()
 
@@ -85,7 +96,12 @@ class HyperliquidMarketsRepositoryTest {
 
   @Test
   fun liveMidsMoveThePriceAndTheDaysChange() = runTest {
-    val repository = HyperliquidMarketsRepository(testClient(MarketResponses), memoryPreferences(), MemoryMarketCache())
+    val repository =
+      HyperliquidMarketsRepository(
+        testClient(MarketResponses),
+        memoryPreferences(),
+        MemoryMarketCache(),
+      )
     repository.refresh()
 
     repository.applyMids(mapOf("BTC" to "90747.8", "@1035" to "40", "#1" to "0.5"), now = 1L)
@@ -109,7 +125,10 @@ class HyperliquidMarketsRepositoryTest {
 
     repository.refresh()
 
-    val spots = repository.catalog.value.quotes.filter { it.market.kind == MarketKind.SPOT }.associateBy { it.market.id }
+    val spots =
+      repository.catalog.value.quotes
+        .filter { it.market.kind == MarketKind.SPOT }
+        .associateBy { it.market.id }
     // PURR/TZERO is canonical but not quoted in a stable, and JUNK and UETH trade too little.
     assertEquals(setOf("PURR/USDC", "@1", "@3"), spots.keys)
     assertNull(spots.getValue("@1").market.quoteAsset)

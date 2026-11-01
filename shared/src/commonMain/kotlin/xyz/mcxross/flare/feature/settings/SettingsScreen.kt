@@ -1,7 +1,5 @@
 package xyz.mcxross.flare.feature.settings
 
-import xyz.mcxross.flare.design.rememberAppVersion
-import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,24 +18,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.valentinilk.shimmer.shimmer
 import org.koin.compose.koinInject
-import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
 import org.koin.compose.viewmodel.koinViewModel
 import xyz.mcxross.flare.data.formatCalendarDate
 import xyz.mcxross.flare.design.ActionNotice
@@ -51,23 +49,25 @@ import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareSkeletonBox
-import xyz.mcxross.flare.design.rememberFlareShimmer
-import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.design.FlareTextField
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.SwitchRow
+import xyz.mcxross.flare.design.UnavailableNotice
+import xyz.mcxross.flare.design.rememberAppVersion
+import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.feature.auto.AutoTradingRuntime
+import xyz.mcxross.flare.feature.referrals.ReferralCodeField
+import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import xyz.mcxross.flare.store.FlarePreferences
 import xyz.mcxross.flare.store.walletDisplayName
 import xyz.mcxross.flare.venue.Network
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
-import xyz.mcxross.flare.venue.model.ActionKind
-import xyz.mcxross.flare.feature.referrals.ReferralCodeField
-import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 
 @Composable
 fun SettingsRoute(
@@ -79,7 +79,9 @@ fun SettingsRoute(
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val lifecycleOwner = LocalLifecycleOwner.current
   LaunchedEffect(viewModel, lifecycleOwner) {
-    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.followReferralsWhileVisible() }
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      viewModel.followReferralsWhileVisible()
+    }
   }
   val autoRuntime: AutoTradingRuntime = koinInject()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(SettingsIntent.HideSecret) }
@@ -87,8 +89,15 @@ fun SettingsRoute(
   val jevState by jevViewModel.uiState.collectAsStateWithLifecycle()
   LifecycleEventEffect(Lifecycle.Event.ON_STOP) { jevViewModel.onIntent(JevSettingsIntent.Dismiss) }
   DisposableEffect(jevViewModel) { onDispose { jevViewModel.onIntent(JevSettingsIntent.Dismiss) } }
-  SettingsScreen(state, viewModel::onIntent, onBack, modifier, jevState, jevViewModel::onIntent,
-    onStopAuto = { autoRuntime.pause("Paused in Settings") })
+  SettingsScreen(
+    state,
+    viewModel::onIntent,
+    onBack,
+    modifier,
+    jevState,
+    jevViewModel::onIntent,
+    onStopAuto = { autoRuntime.pause("Paused in Settings") },
+  )
 }
 
 @Composable
@@ -107,7 +116,8 @@ fun SettingsScreen(
   var showReferralSheet by remember { mutableStateOf(false) }
   LaunchedEffect(state.profile) { showReferralSheet = false }
   LaunchedEffect(state.referralManaged, state.referral.enabled, state.referral.pending) {
-    if (state.referralManaged && !state.referral.enabled && !state.referral.pending) showReferralSheet = false
+    if (state.referralManaged && !state.referral.enabled && !state.referral.pending)
+      showReferralSheet = false
   }
   var revokeProduct by remember { mutableStateOf<MarketKind?>(null) }
   var revokeAddress by remember { mutableStateOf<String?>(null) }
@@ -119,7 +129,7 @@ fun SettingsScreen(
       .fillMaxSize()
       .background(FlareColors.Canvas)
       .verticalScroll(rememberScrollState())
-      .padding(horizontal = 24.dp)
+      .padding(horizontal = 24.dp),
   ) {
     BackBar(title = "Settings", onBack = onBack)
 
@@ -153,14 +163,20 @@ fun SettingsScreen(
 
     SwitchRow(
       "Confirm transactions",
-      if (state.preferences.autoTradingActive) "Off while real auto trading is active. Restored when the run stops."
-      else "Ask for your fingerprint, face, or passcode before each order, cancellation, or position change.",
+      if (state.preferences.autoTradingActive)
+        "Off while real auto trading is active. Restored when the run stops."
+      else
+        "Ask for your fingerprint, face, or passcode before each order, cancellation, or position change.",
       state.preferences.confirmTransactions,
       { onIntent(SettingsIntent.SetConfirmTransactions(it)) },
       enabled = !state.busy && !state.preferences.autoTradingActive,
     )
     if (state.preferences.autoTradingActive && onStopAuto != null) {
-      ActionRow("Pause auto trading", "Stop new orders and restore transaction confirmation", onClick = onStopAuto)
+      ActionRow(
+        "Pause auto trading",
+        "Stop new orders and restore transaction confirmation",
+        onClick = onStopAuto,
+      )
     }
 
     ActionRow(
@@ -175,15 +191,21 @@ fun SettingsScreen(
 
     ActionRow(
       "Jev confluence",
-      if (jevState.metadata.enabled) "Enabled" else if (jevState.metadata.configured) "API key saved · Off" else "Optional strategy second opinion",
+      if (jevState.metadata.enabled) "Enabled"
+      else if (jevState.metadata.configured) "API key saved · Off"
+      else "Optional strategy second opinion",
       FlareIcons.Key,
       onClick = { onJevIntent(JevSettingsIntent.Open) },
     )
 
     val offersBuilder = state.defaultBuilderAddress.isNotBlank()
     val managedReferralVisible = state.referral.enabled || state.referral.pending
-    if (state.profile.ownerAddress != null &&
-      (offersBuilder || state.capabilities.referralCodes || state.referralManaged && managedReferralVisible)) {
+    if (
+      state.profile.ownerAddress != null &&
+        (offersBuilder ||
+          state.capabilities.referralCodes ||
+          state.referralManaged && managedReferralVisible)
+    ) {
       SectionLabel("Protocol & Rewards")
       if (offersBuilder) {
         ActionRow(
@@ -198,7 +220,8 @@ fun SettingsScreen(
           "Referral code",
           when {
             state.referral.pending -> "Confirmation pending"
-            state.referral.eligibility == ReferralEligibility.BOUND -> state.referral.appliedCode.orEmpty()
+            state.referral.eligibility == ReferralEligibility.BOUND ->
+              state.referral.appliedCode.orEmpty()
             else -> "Enter a referral code"
           },
           FlareIcons.Gift,
@@ -226,7 +249,9 @@ fun SettingsScreen(
     DetailRow("DEX Protocol", venue.displayName)
     rememberAppVersion().takeIf(String::isNotBlank)?.let { DetailRow("Version", it) }
 
-    state.error?.let { ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT) }
+    state.error?.let {
+      ActionNotice(it, Modifier.padding(top = 16.dp, bottom = 24.dp), NoticeTone.ALERT)
+    }
     Spacer(Modifier.height(24.dp))
   }
 
@@ -256,9 +281,12 @@ fun SettingsScreen(
       }
       if (!state.delegationsLoaded && state.error == null) {
         val shimmer = rememberFlareShimmer()
-        Column(Modifier.fillMaxWidth().padding(top = 12.dp)
-          .semantics { contentDescription = "Loading authorized keys" },
-          verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+          Modifier.fillMaxWidth().padding(top = 12.dp).semantics {
+            contentDescription = "Loading authorized keys"
+          },
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
           repeat(2) {
             FlareSkeletonBox(Modifier.fillMaxWidth().height(52.dp).shimmer(shimmer))
           }
@@ -346,7 +374,8 @@ fun SettingsScreen(
   removal?.let { intent ->
     val profiles = state.preferences.profiles
     val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
-    val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
+    val walletLabel =
+      active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
     val removed =
       if (intent == SettingsIntent.RemoveApi) {
         "$walletLabel’s trading key, ${shortAddress(state.profile.apiWalletAddress.orEmpty())}"
@@ -391,14 +420,17 @@ fun SettingsScreen(
         )
         .filter { (product) -> product == MarketKind.PERP || state.capabilities.spot }
         .forEachIndexed { index, (product, approved, bps) ->
-          if (index > 0) HorizontalDivider(Modifier.padding(top = 24.dp), color = FlareColors.BorderSubtle)
+          if (index > 0)
+            HorizontalDivider(Modifier.padding(top = 24.dp), color = FlareColors.BorderSubtle)
           BuilderProductSection(
             title = if (product == MarketKind.PERP) "Perpetuals" else "Spot",
             approved = approved,
             basisPoints = bps,
             pending = state.builderPending == product,
-            enabled = !state.busy && state.profile.ownerAddress != null &&
-              state.capabilities.unavailableReason(ActionKind.SETUP) == null,
+            enabled =
+              !state.busy &&
+                state.profile.ownerAddress != null &&
+                state.capabilities.unavailableReason(ActionKind.SETUP) == null,
             onRate = { onIntent(SettingsIntent.SetBuilderFeeBps(product, it)) },
             onRevoke = { revokeProduct = product },
           )
@@ -441,8 +473,11 @@ fun SettingsScreen(
           { onIntent(SettingsIntent.ChangeReferralCode(it)) },
           explainIneligible = true,
         )
-        if (state.referral.eligibility != ReferralEligibility.INELIGIBLE && !state.referral.pending &&
-          state.referral.eligibility != ReferralEligibility.BOUND) {
+        if (
+          state.referral.eligibility != ReferralEligibility.INELIGIBLE &&
+            !state.referral.pending &&
+            state.referral.eligibility != ReferralEligibility.BOUND
+        ) {
           Spacer(Modifier.height(20.dp))
           FlareButton(
             "Apply code",
@@ -453,36 +488,37 @@ fun SettingsScreen(
           )
         }
       }
-    } else FlareSheet("Referral code", { showReferralSheet = false }) {
-      Text(
-        "Enter a ${venue.displayName} referral code to link your account and earn trading fee " +
-          "discounts.",
-        color = FlareColors.TextSecondary,
-        style = MaterialTheme.typography.bodyMedium,
-      )
-      Spacer(Modifier.height(16.dp))
-      FlareTextField(
-        value = state.referralCodeInput,
-        onValueChange = { onIntent(SettingsIntent.ChangeReferralCode(it)) },
-        placeholder = "e.g. FLARE2026",
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-      )
-      state.referralMessage?.let { msg ->
-        ActionNotice(
-          msg,
-          Modifier.padding(top = 12.dp),
-          if (state.referralRedeemed) NoticeTone.INFO else NoticeTone.ALERT,
+    } else
+      FlareSheet("Referral code", { showReferralSheet = false }) {
+        Text(
+          "Enter a ${venue.displayName} referral code to link your account and earn trading fee " +
+            "discounts.",
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(16.dp))
+        FlareTextField(
+          value = state.referralCodeInput,
+          onValueChange = { onIntent(SettingsIntent.ChangeReferralCode(it)) },
+          placeholder = "e.g. FLARE2026",
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+        )
+        state.referralMessage?.let { msg ->
+          ActionNotice(
+            msg,
+            Modifier.padding(top = 12.dp),
+            if (state.referralRedeemed) NoticeTone.INFO else NoticeTone.ALERT,
+          )
+        }
+        Spacer(Modifier.height(20.dp))
+        FlareButton(
+          text = if (state.busy) "Redeeming…" else "Redeem code",
+          onClick = { onIntent(SettingsIntent.RedeemReferralCode) },
+          modifier = Modifier.fillMaxWidth(),
+          enabled = !state.busy && state.referralCodeInput.isNotBlank() && !state.referralRedeemed,
         )
       }
-      Spacer(Modifier.height(20.dp))
-      FlareButton(
-        text = if (state.busy) "Redeeming…" else "Redeem code",
-        onClick = { onIntent(SettingsIntent.RedeemReferralCode) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !state.busy && state.referralCodeInput.isNotBlank() && !state.referralRedeemed,
-      )
-    }
   }
 
   revokeProduct?.let { product ->
@@ -511,12 +547,14 @@ private fun builderRateLabel(bps: Int): String =
 /** Each product's live rate, e.g. "Perpetuals 0.05% · Spot 0.02%". */
 private fun builderStatus(preferences: FlarePreferences): String =
   listOfNotNull(
-      "Perpetuals ${builderRateLabel(preferences.builderFeeBps)}".takeIf {
-        preferences.builderApproved && preferences.builderFeeBps > 0
-      },
-      "Spot ${builderRateLabel(preferences.spotBuilderFeeBps)}".takeIf {
-        preferences.spotBuilderApproved && preferences.spotBuilderFeeBps > 0
-      },
+      "Perpetuals ${builderRateLabel(preferences.builderFeeBps)}"
+        .takeIf {
+          preferences.builderApproved && preferences.builderFeeBps > 0
+        },
+      "Spot ${builderRateLabel(preferences.spotBuilderFeeBps)}"
+        .takeIf {
+          preferences.spotBuilderApproved && preferences.spotBuilderFeeBps > 0
+        },
     )
     .joinToString(" · ")
     .ifEmpty { "Off" }
@@ -535,7 +573,10 @@ private fun BuilderProductSection(
   onRate: (Int) -> Unit,
   onRevoke: () -> Unit,
 ) {
-  Row(Modifier.fillMaxWidth().padding(top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+  Row(
+    Modifier.fillMaxWidth().padding(top = 24.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
     Column(Modifier.weight(1f)) {
       Text(title, style = MaterialTheme.typography.titleSmall)
       Text(

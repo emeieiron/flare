@@ -53,8 +53,8 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
-import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.core.toDecimalString
+import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.design.ActionNotice
 import xyz.mcxross.flare.design.FlareButton
 import xyz.mcxross.flare.design.FlareButtonStyle
@@ -170,7 +170,9 @@ private fun SetupFlow(
       val canGoBack = !state.busy && !state.pastReturn
       IconButton(
         goBack,
-        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).semantics { contentDescription = "Back" },
+        Modifier.align(Alignment.CenterStart).padding(start = 4.dp).semantics {
+          contentDescription = "Back"
+        },
         enabled = canGoBack,
       ) {
         Icon(
@@ -240,8 +242,9 @@ private val OnboardingStep.order: Int
     }
 
 /**
- * Setup's progress, drawn as the mark. The bars stand for the stages; the current one is lit, the ones
- * to come are grey, and a finished stage's bar flares the moment it's done and keeps a soft glow.
+ * Setup's progress, drawn as the mark. The bars stand for the stages; the current one is lit, the
+ * ones to come are grey, and a finished stage's bar flares the moment it's done and keeps a soft
+ * glow.
  */
 @Composable
 private fun SetupProgress(stage: Int, modifier: Modifier = Modifier) {
@@ -260,7 +263,8 @@ private fun SetupProgress(stage: Int, modifier: Modifier = Modifier) {
   LaunchedEffect(stage) {
     val previous = shown
     shown = stage
-    if (previous != null && stage > previous) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+    if (previous != null && stage > previous)
+      haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
     for (bar in 0..2) {
       launch {
         val level = if (bar < stage) IGNITION_REST else 0f
@@ -277,7 +281,8 @@ private fun SetupProgress(stage: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * A setup step: its heading and body scroll, and its actions stay at the bottom, above the keyboard.
+ * A setup step: its heading and body scroll, and its actions stay at the bottom, above the
+ * keyboard.
  */
 @Composable
 internal fun StepLayout(
@@ -288,7 +293,10 @@ internal fun StepLayout(
 ) {
   Column(Modifier.fillMaxSize()) {
     Column(
-      Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp)
+      Modifier.weight(1f)
+        .fillMaxWidth()
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal = 24.dp),
     ) {
       Text(title, Modifier.padding(top = 12.dp), style = MaterialTheme.typography.headlineLarge)
       if (subtitle != null) {
@@ -312,9 +320,9 @@ internal fun StepLayout(
 }
 
 /**
- * A step's actions, after anything that went wrong. When Flare couldn't cover the network fee, the way
- * forward depends on the wallet: it can pay (and the person says so first), it needs funding, or its
- * balance couldn't be checked. Nothing is ever charged to it without that choice.
+ * A step's actions, after anything that went wrong. When Flare couldn't cover the network fee, the
+ * way forward depends on the wallet: it can pay (and the person says so first), it needs funding,
+ * or its balance couldn't be checked. Nothing is ever charged to it without that choice.
  */
 @Composable
 internal fun ColumnScope.SetupActions(
@@ -341,7 +349,7 @@ internal fun ColumnScope.SetupActions(
     is SetupFee.WalletCanPay -> {
       ActionNotice(
         "Flare couldn’t cover this step’s network fee. Your wallet can pay it: about " +
-          "${chain.roundedFee(fee.estimate)}, from its ${chain.roundedBalance(fee.balance)}."
+          "${chain.roundedFee(fee.estimate)}, from its ${chain.roundedBalance(fee.balance)}.",
       )
       FlareButton(
         "Pay ${chain.roundedFee(fee.estimate)} and continue",
@@ -375,7 +383,7 @@ internal fun ColumnScope.SetupActions(
     is SetupFee.AwaitingSponsor -> {
       ActionNotice(
         "Flare couldn’t cover the network fee just now. A new wallet has no ${chain.feeToken}, " +
-          "so nothing was charged, and everything that went through is saved. Try again in a moment."
+          "so nothing was charged, and everything that went through is saved. Try again in a moment.",
       )
       FlareButton(
         "Try again",
@@ -387,7 +395,7 @@ internal fun ColumnScope.SetupActions(
     is SetupFee.Unchecked -> {
       ActionNotice(
         "Flare couldn’t cover this step’s network fee just now. Nothing was charged, and your " +
-          "progress is saved."
+          "progress is saved.",
       )
       FlareButton(
         "Try again",
@@ -405,12 +413,24 @@ internal fun FundingAddress(address: String, modifier: Modifier = Modifier) {
   val clipboard = LocalClipboardManager.current
   val shape = RoundedCornerShape(14.dp)
   Row(
-    modifier.fillMaxWidth().clip(shape).background(FlareColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
+    modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .background(FlareColors.Surface)
+      .padding(horizontal = 16.dp, vertical = 12.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     Column(Modifier.weight(1f)) {
-      Text("Your wallet", style = MaterialTheme.typography.labelSmall, color = FlareColors.TextTertiary)
-      Text(shortAddress(address), Modifier.padding(top = 2.dp), style = MaterialTheme.typography.bodyMedium)
+      Text(
+        "Your wallet",
+        style = MaterialTheme.typography.labelSmall,
+        color = FlareColors.TextTertiary,
+      )
+      Text(
+        shortAddress(address),
+        Modifier.padding(top = 2.dp),
+        style = MaterialTheme.typography.bodyMedium,
+      )
     }
     Text(
       "Copy",

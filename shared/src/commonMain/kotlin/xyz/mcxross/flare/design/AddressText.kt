@@ -24,14 +24,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -57,7 +57,9 @@ fun emphasizedAddress(address: String): AnnotatedString {
     hex.forEachIndexed { index, char ->
       if (index == breakAt && hex.length > 2 * ADDRESS_EMPHASIS) append('\n')
       val bright = index < ADDRESS_EMPHASIS || index >= hex.length - ADDRESS_EMPHASIS
-      withStyle(SpanStyle(color = if (bright) FlareColors.TextPrimary else FlareColors.TextTertiary)) {
+      withStyle(
+        SpanStyle(color = if (bright) FlareColors.TextPrimary else FlareColors.TextTertiary),
+      ) {
         append(char)
       }
     }
@@ -65,8 +67,8 @@ fun emphasizedAddress(address: String): AnnotatedString {
 }
 
 /**
- * An address input on the same surface as [FlareAmountField]: the label sits inside, the border only
- * appears for an error. Empty, it offers to paste; filled, to clear.
+ * An address input on the same surface as [FlareAmountField]: the label sits inside, the border
+ * only appears for an error. Empty, it offers to paste; filled, to clear.
  */
 @Composable
 fun FlareAddressField(
@@ -84,25 +86,27 @@ fun FlareAddressField(
 ) {
   val clipboard = LocalClipboardManager.current
   val focused by interactionSource.collectIsFocusedAsState()
-  val labelColor by animateColorAsState(
-    when {
-      !enabled -> FlareColors.TextDisabled
-      isError -> FlareColors.Negative
-      focused -> FlareColors.TextPrimary
-      else -> FlareColors.TextTertiary
-    }
-  )
+  val labelColor by
+    animateColorAsState(
+      when {
+        !enabled -> FlareColors.TextDisabled
+        isError -> FlareColors.Negative
+        focused -> FlareColors.TextPrimary
+        else -> FlareColors.TextTertiary
+      },
+    )
   val shape = RoundedCornerShape(18.dp)
   val valueStyle = MaterialTheme.typography.bodyLarge
   Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
     BasicTextField(
       value = value,
       onValueChange = { onValueChange(it.filterNot(Char::isWhitespace)) },
-      modifier = Modifier.fillMaxWidth()
-        .clip(shape)
-        .background(FlareColors.Surface)
-        .then(if (isError) Modifier.border(1.dp, FlareColors.Negative, shape) else Modifier)
-        .padding(horizontal = 16.dp, vertical = 14.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .clip(shape)
+          .background(FlareColors.Surface)
+          .then(if (isError) Modifier.border(1.dp, FlareColors.Negative, shape) else Modifier)
+          .padding(horizontal = 16.dp, vertical = 14.dp),
       enabled = enabled,
       singleLine = false,
       maxLines = 2,
@@ -115,9 +119,10 @@ fun FlareAddressField(
         ),
       keyboardActions = keyboardActions,
       interactionSource = interactionSource,
-      textStyle = valueStyle.copy(
-        color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
-      ),
+      textStyle =
+        valueStyle.copy(
+          color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled,
+        ),
       cursorBrush = SolidColor(if (isError) FlareColors.Negative else FlareColors.Positive),
       decorationBox = { innerTextField ->
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -134,12 +139,20 @@ fun FlareAddressField(
                 Modifier.padding(start = 10.dp)
                   .clip(RoundedCornerShape(8.dp))
                   .border(1.dp, FlareColors.BorderDefault, RoundedCornerShape(8.dp))
-                  .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Paste address") {
+                  .clickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClickLabel = "Paste address",
+                  ) {
                     clipboard.getText()?.text?.let { onValueChange(it.trim()) }
                   }
                   .padding(horizontal = 10.dp, vertical = 5.dp),
               ) {
-                Text("Paste", style = MaterialTheme.typography.labelMedium, color = FlareColors.Positive)
+                Text(
+                  "Paste",
+                  style = MaterialTheme.typography.labelMedium,
+                  color = FlareColors.Positive,
+                )
               }
             } else if (enabled) {
               Box(
@@ -148,7 +161,9 @@ fun FlareAddressField(
                   .clip(CircleShape)
                   .background(FlareColors.Elevated)
                   .semantics { contentDescription = "Clear address" }
-                  .clickable(role = Role.Button, onClickLabel = "Clear address") { onValueChange("") },
+                  .clickable(role = Role.Button, onClickLabel = "Clear address") {
+                    onValueChange("")
+                  },
                 contentAlignment = Alignment.Center,
               ) {
                 Icon(

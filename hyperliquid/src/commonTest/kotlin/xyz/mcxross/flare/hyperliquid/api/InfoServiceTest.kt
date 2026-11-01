@@ -68,7 +68,7 @@ class InfoServiceTest {
           "vaultDetails" to Fixtures.VAULT_DETAILS,
           "maxBuilderFee" to Fixtures.MAX_BUILDER_FEE,
           "frontendOpenOrders" to Fixtures.FRONTEND_OPEN_ORDERS,
-        )
+        ),
       )
     val info = harness.info
     val mixedCase = "0xABCDEF0123456789abcdef0123456789ABCDEF01"
@@ -158,7 +158,7 @@ class InfoServiceTest {
             "l2Book" to Fixtures.L2_BOOK,
             "candleSnapshot" to Fixtures.CANDLE_SNAPSHOT,
             "recentTrades" to Fixtures.RECENT_TRADES,
-          )
+          ),
         )
         .info
 
@@ -253,7 +253,7 @@ class InfoServiceTest {
             "portfolio" to Fixtures.PORTFOLIO,
             "userFees" to Fixtures.USER_FEES,
             "userRole" to Fixtures.USER_ROLE,
-          )
+          ),
         )
         .info
     val user = Fixtures.USER
@@ -336,7 +336,7 @@ class InfoServiceTest {
             "clearinghouseState" to Fixtures.CLEARINGHOUSE_STATE_UNIFIED,
             "spotClearinghouseState" to Fixtures.SPOT_CLEARINGHOUSE_STATE_UNIFIED,
             "frontendOpenOrders" to Fixtures.FRONTEND_OPEN_ORDERS_EMPTY,
-          )
+          ),
         )
         .info
 
@@ -372,7 +372,7 @@ class InfoServiceTest {
             "frontendOpenOrders" to Fixtures.FRONTEND_OPEN_ORDERS_TRIGGERS,
             "twapHistory" to Fixtures.TWAP_HISTORY_ENTRIES,
             "userNonFundingLedgerUpdates" to Fixtures.LEDGER_UPDATES_KINDS,
-          )
+          ),
         )
         .info
 
@@ -381,7 +381,10 @@ class InfoServiceTest {
     assertNull(orders[0].tif)
     assertTrue(orders[2].isPositionTpsl)
     assertEquals("0.0", orders[2].sz)
-    assertEquals(listOf("Take Profit Market", "Stop Market"), orders[3].children.map { it.orderType })
+    assertEquals(
+      listOf("Take Profit Market", "Stop Market"),
+      orders[3].children.map { it.orderType },
+    )
 
     val twaps = info.twapHistory(Fixtures.USER)
     assertEquals(1774612361L, twaps.first().time)
@@ -391,7 +394,14 @@ class InfoServiceTest {
 
     val ledger = info.ledgerUpdates(Fixtures.USER, 0L)
     assertEquals(
-      listOf("deposit", "withdraw", "spotTransfer", "accountClassTransfer", "vaultDeposit", "vaultWithdraw"),
+      listOf(
+        "deposit",
+        "withdraw",
+        "spotTransfer",
+        "accountClassTransfer",
+        "vaultDeposit",
+        "vaultWithdraw",
+      ),
       ledger.map { it.delta.type },
     )
     assertEquals("1.0", ledger[1].delta.fee)
@@ -405,7 +415,7 @@ class InfoServiceTest {
     var known = true
     val harness =
       Harness(
-        responder = { if (known) Fixtures.ORDER_STATUS else Fixtures.ORDER_STATUS_UNKNOWN }
+        responder = { if (known) Fixtures.ORDER_STATUS else Fixtures.ORDER_STATUS_UNKNOWN },
       )
 
     val status = harness.info.orderStatus(Fixtures.USER, oid = 62467226234L)
@@ -425,9 +435,13 @@ class InfoServiceTest {
   fun readsTheLeverageSettingOfAPerp() = runTest {
     val harness = Harness(mapOf("activeAssetData" to Fixtures.ACTIVE_ASSET_DATA))
 
-    val data = harness.info.activeAssetData(Fixtures.HLP_VAULT.uppercase().replace("0X", "0x"), "ETH")
+    val data =
+      harness.info.activeAssetData(Fixtures.HLP_VAULT.uppercase().replace("0X", "0x"), "ETH")
 
-    assertEquals("""{"type":"activeAssetData","user":"${Fixtures.HLP_VAULT}","coin":"ETH"}""", harness.requests.single().body)
+    assertEquals(
+      """{"type":"activeAssetData","user":"${Fixtures.HLP_VAULT}","coin":"ETH"}""",
+      harness.requests.single().body,
+    )
     assertEquals("ETH", data.coin)
     assertTrue(data.leverage.isCross)
     assertEquals(20, data.leverage.value)
@@ -452,7 +466,7 @@ class InfoServiceTest {
             "referral" -> Fixtures.REFERRAL
             else -> error("Unexpected $type")
           }
-        }
+        },
       )
     val info = harness.info
     val user = Fixtures.USER
@@ -512,8 +526,8 @@ class InfoServiceTest {
             } else {
               respondJson(Fixtures.ALL_MIDS)
             }
-          }
-        )
+          },
+        ),
       )
 
     assertEquals("83108.5", client.info.allMids()["BTC"])
@@ -533,8 +547,8 @@ class InfoServiceTest {
               HttpStatusCode.TooManyRequests,
               headersOf(HttpHeaders.RetryAfter, "1"),
             )
-          }
-        )
+          },
+        ),
       )
 
     val failure = assertFailsWith<HyperliquidApiError> { client.info.allMids() }
@@ -557,8 +571,8 @@ class InfoServiceTest {
               HttpStatusCode.UnprocessableEntity,
               headersOf(HttpHeaders.ContentType, "text/plain; charset=utf-8"),
             )
-          }
-        )
+          },
+        ),
       )
 
     val failure = assertFailsWith<HyperliquidApiError> { client.info.perpMeta() }
@@ -577,8 +591,8 @@ class InfoServiceTest {
           MockEngine {
             attempts += 1
             respondJson("""{"universe":"not a list"}""")
-          }
-        )
+          },
+        ),
       )
 
     val failure = assertFailsWith<HyperliquidApiError> { client.info.perpMeta() }
@@ -622,7 +636,7 @@ private class Harness(
             val body = Json.parseToJsonElement(content.text).jsonObject
             val type = body.getValue("type").jsonPrimitive.content
             respondJson(responder(type))
-          }
+          },
         ),
         config,
       )

@@ -12,8 +12,7 @@ sealed interface DecisionQuestion {
 
   data class Noul(override val instructions: String) : DecisionQuestion
 
-  data class Score(override val instructions: String, val criteria: List<String>) :
-    DecisionQuestion
+  data class Score(override val instructions: String, val criteria: List<String>) : DecisionQuestion
 }
 
 data class DecisionQuery(
@@ -132,7 +131,7 @@ object JevConfluence {
               "sell" to "Indicators support downward directional confluence",
               "wait" to "Evidence is weak or conflicting",
             ),
-          )
+          ),
       ),
     )
   }
@@ -145,11 +144,11 @@ object JevConfluence {
     require(
       answer.probabilities.keys == setOf("buy", "sell", "wait") &&
         answer.confidence.isFinite() &&
-        answer.confidence in 0.0..1.0
+        answer.confidence in 0.0..1.0,
     )
     require(
       answer.probabilities.values.all { it.isFinite() && it in 0.0..1.0 } &&
-        kotlin.math.abs(answer.probabilities.values.sum() - 1.0) <= 0.001
+        kotlin.math.abs(answer.probabilities.values.sum() - 1.0) <= 0.001,
     )
     require(answer.probabilities[answer.choice] == answer.probabilities.values.max())
     val direction =

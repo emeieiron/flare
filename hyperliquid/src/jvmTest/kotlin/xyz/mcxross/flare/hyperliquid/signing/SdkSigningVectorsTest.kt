@@ -11,8 +11,8 @@ import xyz.mcxross.flare.hyperliquid.HyperliquidDeployment
  * the actions its tests don't cover (see [SdkVectors]). They check action hashes and the exact
  * EIP-712 signing input; the signatures themselves are checked by the FastKrypto signer's tests.
  *
- * These run on the JVM only: Keccak-256 comes from FastKrypto's native library, which Android
- * host tests cannot load (the Android artifact ships Android ABIs only).
+ * These run on the JVM only: Keccak-256 comes from FastKrypto's native library, which Android host
+ * tests cannot load (the Android artifact ships Android ABIs only).
  */
 class SdkSigningVectorsTest {
   @Test

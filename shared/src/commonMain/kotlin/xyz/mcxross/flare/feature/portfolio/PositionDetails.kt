@@ -1,6 +1,5 @@
 package xyz.mcxross.flare.feature.portfolio
 
-import xyz.mcxross.flare.design.UnavailableNotice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,9 +37,10 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareConfirmSheet
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
+import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.shortAddress
-import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ActionKind
+import xyz.mcxross.flare.venue.model.Position
 
 /** One open position, reached from the portfolio. It shares the portfolio's state and actions. */
 @Composable
@@ -48,7 +48,9 @@ fun PositionRoute(market: String, onBack: () -> Unit, viewModel: PortfolioViewMo
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val lifecycleOwner = LocalLifecycleOwner.current
   LaunchedEffect(lifecycleOwner, viewModel) {
-    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.refreshWhileVisible() }
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      viewModel.refreshWhileVisible()
+    }
   }
   // Loads this position's saved exits into the editor, and lets them go on the way out.
   DisposableEffect(market) {
@@ -72,8 +74,10 @@ fun PositionScreen(
   Column(modifier.fillMaxSize().background(FlareColors.Canvas)) {
     BackBar(symbol, onBack, backEnabled = !state.busy)
     Column(
-      Modifier.weight(1f).verticalScroll(rememberScrollState())
-        .padding(horizontal = 24.dp).padding(top = 8.dp, bottom = 24.dp),
+      Modifier.weight(1f)
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal = 24.dp)
+        .padding(top = 8.dp, bottom = 24.dp),
     ) {
       if (position != null) {
         PositionDetails(state, position, onIntent)
@@ -90,7 +94,9 @@ fun PositionScreen(
   }
   if (confirmClose && position != null) {
     ClosePositionSheet(
-      state, position, onIntent,
+      state,
+      position,
+      onIntent,
       onDismiss = { confirmClose = false },
       onClosed = {
         confirmClose = false
@@ -124,7 +130,8 @@ private fun PositionDetails(
   if (position.unrealizedFunding != 0.0)
     DetailRow(
       "Unrealized funding",
-      (if (position.unrealizedFunding >= 0) "+" else "") + formatBalance(position.unrealizedFunding),
+      (if (position.unrealizedFunding >= 0) "+" else "") +
+        formatBalance(position.unrealizedFunding),
     )
   DetailRow("Liquidation price", position.liquidationPrice?.let(::formatPrice) ?: "—")
   position.takeProfitTriggerPrice?.let { DetailRow("Take profit", formatPrice(it)) }
@@ -135,10 +142,12 @@ private fun PositionDetails(
   }
   Text("Set an exit", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.titleMedium)
   ExitPriceFields(
-    state.takeProfitInput, state.stopLossInput,
+    state.takeProfitInput,
+    state.stopLossInput,
     { onIntent(PortfolioIntent.ChangeTakeProfit(it)) },
     { onIntent(PortfolioIntent.ChangeStopLoss(it)) },
-    Modifier.fillMaxWidth().padding(top = 12.dp), enabled = !state.busy,
+    Modifier.fillMaxWidth().padding(top = 12.dp),
+    enabled = !state.busy,
   )
   FlareButton(
     "Save exits",
@@ -181,18 +190,22 @@ fun ClosePositionSheet(
   }
   val size = abs(position.size.toDoubleOrNull() ?: 0.0)
   val mark = state.markPrices[position.marketId]
-  val pnl = mark?.let { price -> position.size.toDoubleOrNull()?.let { (price - position.entryPrice) * it } }
+  val pnl = mark?.let { price ->
+    position.size.toDoubleOrNull()?.let { (price - position.entryPrice) * it }
+  }
   val feeEstimate = state.selfPayEstimate(state.positionTransaction)?.takeIf { closing }
   FlareConfirmSheet(
     title = "Close this position?",
     message =
       "Flare ${if (position.isLong) "sells" else "buys back"} ${formatQuantity(size)} $symbol at " +
-        "the market price" + (mark?.let { ", about ${formatPrice(it)} each" } ?: "") + ".",
+        "the market price" +
+        (mark?.let { ", about ${formatPrice(it)} each" } ?: "") +
+        ".",
     confirmLabel = if (feeEstimate != null) "Pay the fee and close" else "Close position",
     onConfirm = {
       onIntent(
         if (feeEstimate != null) PortfolioIntent.ConfirmPositionSelfPay
-        else PortfolioIntent.ClosePosition(position.marketId)
+        else PortfolioIntent.ClosePosition(position.marketId),
       )
     },
     onDismiss = {
@@ -203,14 +216,17 @@ fun ClosePositionSheet(
     working = state.busy && closing,
     error = state.actionError?.takeIf { closing },
   ) {
-    pnl?.let { Column(Modifier.padding(top = 8.dp)) { DetailRow("Estimated P&L", formatSignedBalance(it)) } }
+    pnl?.let {
+      Column(Modifier.padding(top = 8.dp)) { DetailRow("Estimated P&L", formatSignedBalance(it)) }
+    }
     if (closing) PositionFeeRecovery(state, onIntent, offerSelfPay = false)
   }
 }
 
 /**
  * What to do when Flare can't cover a position transaction's network fee: pay it from the wallet,
- * or send this device enough of the fee token to pay it. The close sheet offers self-pay on its own button.
+ * or send this device enough of the fee token to pay it. The close sheet offers self-pay on its own
+ * button.
  */
 @Composable
 private fun PositionFeeRecovery(

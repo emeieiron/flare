@@ -187,16 +187,18 @@ private val FlareShapes =
 
 // Disable tap ripples without removing keyboard focus, hover, or drag indications.
 @Suppress("DEPRECATION")
-private val FlareRippleConfiguration = RippleConfiguration(
-  rippleAlpha = with(RippleDefaults.RippleAlpha) {
-    RippleAlpha(
-      draggedAlpha = draggedAlpha,
-      focusedAlpha = focusedAlpha,
-      hoveredAlpha = hoveredAlpha,
-      pressedAlpha = 0f,
-    )
-  },
-)
+private val FlareRippleConfiguration =
+  RippleConfiguration(
+    rippleAlpha =
+      with(RippleDefaults.RippleAlpha) {
+        RippleAlpha(
+          draggedAlpha = draggedAlpha,
+          focusedAlpha = focusedAlpha,
+          hoveredAlpha = hoveredAlpha,
+          pressedAlpha = 0f,
+        )
+      },
+  )
 
 @Composable
 fun FlareTheme(content: @Composable () -> Unit) {

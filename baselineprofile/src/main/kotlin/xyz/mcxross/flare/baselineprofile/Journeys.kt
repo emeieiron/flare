@@ -15,12 +15,15 @@ private val Price = Pattern.compile("\\$[0-9][0-9,]*\\.[0-9]+")
 private const val UNLOCK_WAIT_MS = 300_000L
 
 /**
- * Launches Flare and waits on Markets. Every launch asks for the device credential, and nothing here
- * answers it: whoever runs the journey unlocks the app on the device while this waits.
+ * Launches Flare and waits on Markets. Every launch asks for the device credential, and nothing
+ * here answers it: whoever runs the journey unlocks the app on the device while this waits.
  */
 internal fun MacrobenchmarkScope.launchUnlocked() {
   startActivityAndWait()
-  waitForMarkets(UNLOCK_WAIT_MS, "Unlock Flare on the device when it asks, and keep an account there.")
+  waitForMarkets(
+    UNLOCK_WAIT_MS,
+    "Unlock Flare on the device when it asks, and keep an account there.",
+  )
 }
 
 /** Markets is the first screen once the app is unlocked; it's ready when a price shows. */
@@ -35,7 +38,6 @@ internal fun MacrobenchmarkScope.waitForMarkets(
 
 /** Whether Markets is already on screen, so a pass can reuse the unlocked app. */
 internal fun MacrobenchmarkScope.onMarkets(): Boolean = device.hasObject(By.text(Price))
-
 
 /** Swipes across the market pages and flings the full list, as someone browsing would. */
 internal fun MacrobenchmarkScope.browseMarkets() {

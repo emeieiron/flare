@@ -24,9 +24,12 @@ class DecibelStrategyMarketFeed(
     require(key.venueId == descriptor.id && key.network == descriptor.network.name.lowercase()) {
       "Signal venue or network does not match this feed"
     }
-    val timeframe = ChartTimeframe.entries.firstOrNull { it.durationMs == key.timeframeMs }
-      ?: error("Unsupported signal timeframe")
-    require(timeframe != ChartTimeframe.ONE_MONTH) { "Calendar months are not fixed signal intervals" }
+    val timeframe =
+      ChartTimeframe.entries.firstOrNull { it.durationMs == key.timeframeMs }
+        ?: error("Unsupported signal timeframe")
+    require(timeframe != ChartTimeframe.ONE_MONTH) {
+      "Calendar months are not fixed signal intervals"
+    }
     require(client.markets.markets().any { it.address == key.marketId }) { "Market is not listed" }
     val now = nowMs()
     val start = (now - key.timeframeMs * 200).coerceAtLeast(0)
@@ -41,14 +44,22 @@ class DecibelStrategyMarketFeed(
         asks = raw.asks.mapNotNull { it.strategyLevel() },
         observedAtMs = strategyBookTimestamp(raw.timestamp),
       )
-    }.getOrNull()
-    return StrategyMarketSnapshot(key, now,
-      candles.filter { it.openTimeMs >= start && it.openTimeMs <= now }
-        .sortedBy { it.openTimeMs }.map { it.strategyCandle() }, book)
+    }
+      .getOrNull()
+    return StrategyMarketSnapshot(
+      key,
+      now,
+      candles
+        .filter { it.openTimeMs >= start && it.openTimeMs <= now }
+        .sortedBy { it.openTimeMs }
+        .map { it.strategyCandle() },
+      book,
+    )
   }
 }
 
-internal fun Candle.strategyCandle() = StrategyCandle(openTimeMs, closeTimeMs, open, high, low, close, volume)
+internal fun Candle.strategyCandle() =
+  StrategyCandle(openTimeMs, closeTimeMs, open, high, low, close, volume)
 
 private fun List<String>.strategyLevel(): StrategyBookLevel? =
   if (size >= 2) StrategyBookLevel(this[0], this[1]) else null

@@ -1,10 +1,6 @@
 package xyz.mcxross.flare.feature.referrals
 
 import kotlinx.coroutines.CancellationException
-import xyz.mcxross.flare.design.actionFailure
-import xyz.mcxross.flare.security.isAuthorizationCancelled
-import xyz.mcxross.flare.core.ReadOperation
-import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,9 +12,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import xyz.mcxross.flare.core.ReadOperation
+import xyz.mcxross.flare.core.ReadRecoveryDiagnostics
 import xyz.mcxross.flare.core.readBackoffMs
 import xyz.mcxross.flare.core.runSuspendCatching
+import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 
 data class ReferralUiState(
   val profileId: String? = null,
@@ -37,21 +37,30 @@ data class ReferralUiState(
 ) {
   val pending: Boolean
     get() = eligibility == ReferralEligibility.PENDING
+
   val editable: Boolean
     get() = enabled && eligibility == ReferralEligibility.ELIGIBLE && !applying
+
   val canApply: Boolean
     get() = editable && input.isNotBlank() && valid && !validating
+
   val canContinue: Boolean
-    get() = !applying && when {
-      pending -> tradingAccount != null
-      !enabled || input.isBlank() -> true
-      eligibility == ReferralEligibility.BOUND || eligibility == ReferralEligibility.INELIGIBLE -> true
-      else -> canApply
-    }
+    get() =
+      !applying &&
+        when {
+          pending -> tradingAccount != null
+          !enabled || input.isBlank() -> true
+          eligibility == ReferralEligibility.BOUND ||
+            eligibility == ReferralEligibility.INELIGIBLE -> true
+          else -> canApply
+        }
 }
 
 /** Shared form policy; background work is restricted to reads and stops with the owning screen. */
-class ReferralController(private val repository: ReferralRepository?, private val scope: CoroutineScope) {
+class ReferralController(
+  private val repository: ReferralRepository?,
+  private val scope: CoroutineScope,
+) {
   private val mutable = MutableStateFlow(ReferralUiState())
   val state = mutable.asStateFlow()
   private var owner: String? = null
@@ -92,7 +101,9 @@ class ReferralController(private val repository: ReferralRepository?, private va
     touched = true
     inputRevision++
     validation?.cancel()
-    mutable.update { it.copy(input = value.take(128), valid = false, validating = false, error = null) }
+    mutable.update {
+      it.copy(input = value.take(128), valid = false, validating = false, error = null)
+    }
     validate()
   }
 
@@ -113,12 +124,19 @@ class ReferralController(private val repository: ReferralRepository?, private va
         currentCoroutineContext().ensureActive()
         result.getOrNull()?.let { valid ->
           ReadRecoveryDiagnostics.recovered(ReadOperation.REFERRALS)
-          mutable.update { it.copy(valid = valid, validating = false, error = if (valid) null else "Code unavailable") }
+          mutable.update {
+            it.copy(
+              valid = valid,
+              validating = false,
+              error = if (valid) null else "Code unavailable",
+            )
+          }
           return@launch
         }
         failures++
         ReadRecoveryDiagnostics.failed(ReadOperation.REFERRALS, failures, result.exceptionOrNull())
-        if (failures >= 3) mutable.update { it.copy(validating = false, error = "Referrals unavailable") }
+        if (failures >= 3)
+          mutable.update { it.copy(validating = false, error = "Referrals unavailable") }
         delay(readBackoffMs(failures))
       }
     }
@@ -139,32 +157,48 @@ class ReferralController(private val repository: ReferralRepository?, private va
         }
         if (version != revision || owner != wallet) return@launch
         currentCoroutineContext().ensureActive()
-        result.onSuccess { (program, status) ->
-          failures = 0
-          ReadRecoveryDiagnostics.recovered(ReadOperation.REFERRALS)
-          val prior = state.value
-          val input = when {
-            status.eligibility == ReferralEligibility.PENDING -> status.code.orEmpty()
-            !program.enabled -> ""
-            !touched -> program.suggestedCode
-            else -> prior.input
+        result
+          .onSuccess { (program, status) ->
+            failures = 0
+            ReadRecoveryDiagnostics.recovered(ReadOperation.REFERRALS)
+            val prior = state.value
+            val input =
+              when {
+                status.eligibility == ReferralEligibility.PENDING -> status.code.orEmpty()
+                !program.enabled -> ""
+                !touched -> program.suggestedCode
+                else -> prior.input
+              }
+            mutable.update {
+              it.copy(
+                enabled = program.enabled,
+                loading = false,
+                input = input,
+                suggestedCode = program.suggestedCode,
+                tradingAccount = status.tradingAccount,
+                eligibility = status.eligibility,
+                appliedCode = status.code,
+                error = null,
+                valid = prior.valid && prior.input == input,
+              )
+            }
+            if (input != prior.input || !state.value.valid && validation?.isActive != true)
+              validate()
           }
-          mutable.update { it.copy(enabled = program.enabled, loading = false, input = input,
-            suggestedCode = program.suggestedCode, tradingAccount = status.tradingAccount,
-            eligibility = status.eligibility, appliedCode = status.code,
-            error = null, valid = prior.valid && prior.input == input) }
-          if (input != prior.input || !state.value.valid && validation?.isActive != true) validate()
-        }.onFailure { error ->
-          failures++
-          ReadRecoveryDiagnostics.failed(ReadOperation.REFERRALS, failures, error)
-          if (failures >= 3) mutable.update { it.copy(loading = false, error = "Referrals unavailable") }
-        }
+          .onFailure { error ->
+            failures++
+            ReadRecoveryDiagnostics.failed(ReadOperation.REFERRALS, failures, error)
+            if (failures >= 3)
+              mutable.update { it.copy(loading = false, error = "Referrals unavailable") }
+          }
         delay(if (failures == 0) 30_000 else readBackoffMs(failures))
       }
     }
   }
 
-  /** Explicit user action only; uncertain outcomes stay pending and are reconciled through reads. */
+  /**
+   * Explicit user action only; uncertain outcomes stay pending and are reconciled through reads.
+   */
   suspend fun apply(prompt: VaultPrompt): ReferralStatus {
     val source = checkNotNull(repository) { "Referrals unavailable" }
     val wallet = checkNotNull(owner) { "Use your owner wallet" }
@@ -181,15 +215,25 @@ class ReferralController(private val repository: ReferralRepository?, private va
       currentCoroutineContext().ensureActive()
       check(contextRevision == contextVersion) { "The selected wallet changed" }
       if (revision == version) {
-        mutable.update { it.copy(eligibility = result.eligibility, appliedCode = result.code, tradingAccount = result.tradingAccount,
-          error = if (result.eligibility == ReferralEligibility.PENDING) "Referral confirmation pending" else null) }
+        mutable.update {
+          it.copy(
+            eligibility = result.eligibility,
+            appliedCode = result.code,
+            tradingAccount = result.tradingAccount,
+            error =
+              if (result.eligibility == ReferralEligibility.PENDING) "Referral confirmation pending"
+              else null,
+          )
+        }
       }
       return result
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
       if (owner == wallet && revision == version && !error.isAuthorizationCancelled())
-        mutable.update { it.copy(error = actionFailure(error.message, "Your referral code wasn’t applied.")) }
+        mutable.update {
+          it.copy(error = actionFailure(error.message, "Your referral code wasn’t applied."))
+        }
       throw error
     } finally {
       if (contextRevision == contextVersion) {

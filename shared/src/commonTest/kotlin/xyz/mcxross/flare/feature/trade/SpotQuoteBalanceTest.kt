@@ -13,7 +13,8 @@ class SpotQuoteBalanceTest {
 
   @Test
   fun addsWhatPerpetualsCanWithdrawToSpotUsdc() {
-    val overview = AccountOverview(0.0, 0.0, 0.0, 50.0, withdrawable = 30.0, balances = Balances(spot = spot))
+    val overview =
+      AccountOverview(0.0, 0.0, 0.0, 50.0, withdrawable = 30.0, balances = Balances(spot = spot))
 
     assertEquals(150.0, spotQuoteBalance(overview))
   }

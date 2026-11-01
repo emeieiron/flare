@@ -40,12 +40,26 @@ class SetupGatingTest {
   fun aWalletLeftForLaterShowsHowToFinishInPlaceOfItsActions() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
     preferences.registerProfile(
-      AccountProfile("owner_$SETUP_OWNER", ownerAddress = SETUP_OWNER, selectedSubaccount = SETUP_OWNER)
+      AccountProfile(
+        "owner_$SETUP_OWNER",
+        ownerAddress = SETUP_OWNER,
+        selectedSubaccount = SETUP_OWNER,
+      ),
     )
     preferences.deferSetup()
     val accounts = SetupAccounts().apply { awaitingDeposit = true }
     val gate = AccountSetupGate(preferences, accounts)
-    val vm = SettingsViewModel(preferences, SetupWallets(), accounts, null, accounts, testVenue(), SetupCredentials, gate)
+    val vm =
+      SettingsViewModel(
+        preferences,
+        SetupWallets(),
+        accounts,
+        null,
+        accounts,
+        testVenue(),
+        SetupCredentials,
+        gate,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
 
     assertEquals(SetupNeed.TRADING, vm.uiState.value.setupNeed)

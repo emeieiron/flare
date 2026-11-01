@@ -21,12 +21,29 @@ fun ExitPriceFields(
 ) {
   Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      FlareAmountField(takeProfit, onTakeProfit, Modifier.weight(1f), label = "Take profit",
-        unit = "USDC", enabled = enabled, compact = true)
-      FlareAmountField(stopLoss, onStopLoss, Modifier.weight(1f), label = "Stop loss",
-        unit = "USDC", enabled = enabled, compact = true)
+      FlareAmountField(
+        takeProfit,
+        onTakeProfit,
+        Modifier.weight(1f),
+        label = "Take profit",
+        unit = "USDC",
+        enabled = enabled,
+        compact = true,
+      )
+      FlareAmountField(
+        stopLoss,
+        onStopLoss,
+        Modifier.weight(1f),
+        label = "Stop loss",
+        unit = "USDC",
+        enabled = enabled,
+        compact = true,
+      )
     }
-    Text("Exit prices trigger a closing order. Execution price can vary.",
-      style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    Text(
+      "Exit prices trigger a closing order. Execution price can vary.",
+      style = MaterialTheme.typography.bodySmall,
+      color = FlareColors.TextSecondary,
+    )
   }
 }

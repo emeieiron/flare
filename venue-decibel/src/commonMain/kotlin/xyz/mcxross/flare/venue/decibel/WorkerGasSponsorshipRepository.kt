@@ -30,25 +30,31 @@ class WorkerGasSponsorshipRepository(
   private val decibelConfig: DecibelRuntimeConfig,
   private val sessions: SessionRepository,
 ) : GasSponsorshipRepository {
-  override suspend fun canSponsorSwap(): Boolean = try {
-    withTimeoutOrNull(3_000) {
-      val response = client.get("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/swap-availability") {
-        bearerAuth(sessions.accessToken())
-        header(HttpHeaders.Origin, runtime.appOrigin)
-      }
-      response.status.isSuccess() && response.body<SwapSponsorshipAvailability>().available
-    } ?: false
-  } catch (cancelled: CancellationException) {
-    throw cancelled
-  } catch (_: Exception) { false }
+  override suspend fun canSponsorSwap(): Boolean =
+    try {
+      withTimeoutOrNull(3_000) {
+        val response =
+          client.get("${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/swap-availability") {
+            bearerAuth(sessions.accessToken())
+            header(HttpHeaders.Origin, runtime.appOrigin)
+          }
+        response.status.isSuccess() && response.body<SwapSponsorshipAvailability>().available
+      } ?: false
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      false
+    }
 
   override suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,
   ): AptosResult<String> = submitAuthorized(request, ownerOnly, null)
 
-  override suspend fun submitSwap(request: ExternalFeePayerRequest, authorization: String): AptosResult<String> =
-    submitAuthorized(request, ownerOnly = true, authorization)
+  override suspend fun submitSwap(
+    request: ExternalFeePayerRequest,
+    authorization: String,
+  ): AptosResult<String> = submitAuthorized(request, ownerOnly = true, authorization)
 
   private suspend fun submitAuthorized(
     request: ExternalFeePayerRequest,
@@ -71,7 +77,7 @@ class WorkerGasSponsorshipRepository(
                   .takeIf { it.isNotEmpty() }
                   ?.map(ByteArray::toUnsignedInts),
               swapAuthorization = swapAuthorization,
-            )
+            ),
           )
         }
       if (!response.status.isSuccess()) {
@@ -94,13 +100,13 @@ class WorkerGasSponsorshipRepository(
                 "Fee sponsorship is unavailable. You can choose to pay fees with APT."
               else "Fee sponsorship was not accepted",
             errorCode = unavailable ?: "gas_station_http_${response.status.value}",
-          )
+          ),
         )
       } else {
         val hash = response.body<GasStationResponse>().transactionHash
         if (!HASH_PATTERN.matches(hash)) {
           AptosResult.Failure(
-            AptosError.Serialization("The Gas Station returned an invalid transaction hash")
+            AptosError.Serialization("The Gas Station returned an invalid transaction hash"),
           )
         } else {
           AptosResult.Success(hash)
@@ -135,7 +141,7 @@ class WorkerGasSponsorshipRepository(
             AptosError.Api(
               message = "Sponsorship status is unavailable",
               errorCode = "gas_station_status_http_${response.status.value}",
-            )
+            ),
           )
       }
     } catch (cancelled: CancellationException) {

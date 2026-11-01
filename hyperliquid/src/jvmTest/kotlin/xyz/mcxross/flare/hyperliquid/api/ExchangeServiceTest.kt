@@ -54,8 +54,8 @@ class ExchangeServiceTest {
           size = "100".toHlDecimal(),
           reduceOnly = false,
           type = OrderType.Limit(TimeInForce.GTC),
-        )
-      )
+        ),
+      ),
     )
 
   @Test
@@ -94,7 +94,7 @@ class ExchangeServiceTest {
             size = "2.5".toHlDecimal(),
             reduceOnly = true,
             type = OrderType.Trigger("150".toHlDecimal(), isMarket = true, TpSl.STOP_LOSS),
-          )
+          ),
         ),
         grouping = OrderGrouping.POSITION_TPSL,
       )
@@ -257,7 +257,7 @@ class ExchangeServiceTest {
                 reply.status,
                 headersOf(HttpHeaders.ContentType, "application/json"),
               )
-            }
+            },
           ),
           HyperliquidConfig(deployment),
           nonces = NonceSource { remaining.removeFirst() },

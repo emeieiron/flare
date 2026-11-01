@@ -11,7 +11,13 @@ import xyz.mcxross.flare.strategies.StrategyEvaluation
 import xyz.mcxross.flare.strategies.StrategyKind
 import xyz.mcxross.flare.venue.model.Market
 
-enum class AutoOutcome { ACTED, WAITING, VETOED, LATE, SKIPPED }
+enum class AutoOutcome {
+  ACTED,
+  WAITING,
+  VETOED,
+  LATE,
+  SKIPPED,
+}
 
 data class AutoActivity(
   val atMs: Long,
@@ -34,7 +40,19 @@ data class AutoDecision(
 data class AutoMarker(val closedAtMs: Long, val direction: StrategyDirection)
 
 data class AutoTradingUiState(
-  val config: AutoRunConfig = AutoRunConfig(StrategyKind.MACD_CROSSOVER, AutoRunMode.SIMULATION, "0.001", "0.01", "100", 10, 30, 30, 50, 1),
+  val config: AutoRunConfig =
+    AutoRunConfig(
+      StrategyKind.MACD_CROSSOVER,
+      AutoRunMode.SIMULATION,
+      "0.001",
+      "0.01",
+      "100",
+      10,
+      30,
+      30,
+      50,
+      1,
+    ),
   val market: Market? = null,
   val timeframeMs: Long = 60_000,
   val account: String? = null,
@@ -67,16 +85,24 @@ data class AutoTradingUiState(
 )
 
 sealed interface AutoTradingIntent {
-  data class Bind(val market: Market, val timeframeMs: Long, val account: String?) : AutoTradingIntent
+  data class Bind(val market: Market, val timeframeMs: Long, val account: String?) :
+    AutoTradingIntent
+
   data class Configure(val config: AutoRunConfig) : AutoTradingIntent
+
   data object ReviewStart : AutoTradingIntent
+
   data object ConfirmStart : AutoTradingIntent
+
   data object DismissReview : AutoTradingIntent
+
   data object Pause : AutoTradingIntent
+
   data object Reset : AutoTradingIntent
 }
 
 class AutoTradingViewModel(private val runtime: AutoTradingRuntime) : ViewModel() {
   val uiState = runtime.uiState
+
   fun onIntent(intent: AutoTradingIntent) = runtime.onIntent(intent)
 }

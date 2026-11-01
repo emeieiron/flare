@@ -27,7 +27,6 @@ import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.kaptos.account.Account
-import xyz.mcxross.kaptos.account.Ed25519Account
 import xyz.mcxross.kaptos.core.crypto.AnyPublicKey
 import xyz.mcxross.kaptos.core.crypto.AnySignature
 import xyz.mcxross.kaptos.model.HexInput
@@ -119,27 +118,40 @@ class WorkerSessionRepository(
       }
     }
 
-  override suspend fun ensureOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus = mutex.withLock {
-    val generation = wallets.authorizationGeneration
-    wallets.requireAuthorization(generation)
-    val selected = preferences.values.first()
-    val owner = wallets.profile.first().ownerAddress ?: error("Use a device that holds the owner key")
-    val cached = authenticatedSessions.value.entries.lastOrNull { (status, _) ->
-      authenticatedGeneration == generation && authenticatedProfileId == selected.activeProfileId && !prompt.requireFreshAuthorization &&
-        status.role == SessionRole.OWNER && status.walletAddress?.sameAptosAddress(owner) == true &&
-        (if (subaccount == null) status.subaccount == null else status.subaccount?.sameAptosAddress(subaccount) == true) &&
-        status.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+  override suspend fun ensureOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus =
+    mutex.withLock {
+      val generation = wallets.authorizationGeneration
+      wallets.requireAuthorization(generation)
+      val selected = preferences.values.first()
+      val owner =
+        wallets.profile.first().ownerAddress ?: error("Use a device that holds the owner key")
+      val cached =
+        authenticatedSessions.value.entries.lastOrNull { (status, _) ->
+          authenticatedGeneration == generation &&
+            authenticatedProfileId == selected.activeProfileId &&
+            !prompt.requireFreshAuthorization &&
+            status.role == SessionRole.OWNER &&
+            status.walletAddress?.sameAptosAddress(owner) == true &&
+            (if (subaccount == null) status.subaccount == null
+            else status.subaccount?.sameAptosAddress(subaccount) == true) &&
+            status.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+        }
+      val result =
+        cached?.let { (status, value) ->
+          session = value
+          mutableStatus.value = status
+          status
+        }
+          ?: wallets.withOwnerAccount(prompt) { account ->
+            authenticate(account, subaccount, SessionRole.OWNER)
+          }
+      wallets.requireAuthorization(generation)
+      check(result.walletAddress?.sameAptosAddress(owner) == true) { "The selected wallet changed" }
+      check(preferences.values.first().activeProfileId == selected.activeProfileId) {
+        "The selected wallet changed"
+      }
+      result
     }
-    val result = cached?.let { (status, value) ->
-      session = value
-      mutableStatus.value = status
-      status
-    } ?: wallets.withOwnerAccount(prompt) { account -> authenticate(account, subaccount, SessionRole.OWNER) }
-    wallets.requireAuthorization(generation)
-    check(result.walletAddress?.sameAptosAddress(owner) == true) { "The selected wallet changed" }
-    check(preferences.values.first().activeProfileId == selected.activeProfileId) { "The selected wallet changed" }
-    result
-  }
 
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
     mutex.withLock {
@@ -208,7 +220,7 @@ class WorkerSessionRepository(
               origin = runtime.appOrigin,
               walletAddress = address,
               subaccount = subaccount,
-            )
+            ),
           )
         }
         .body<ChallengeResponse>()
@@ -223,21 +235,24 @@ class WorkerSessionRepository(
     val signature =
       try {
         wallets.requireAuthorization(generation)
-        account.sign(HexInput.fromByteArray(challengeBytes)).let { (it as? AnySignature)?.signature ?: it }.toByteArray()
+        account
+          .sign(HexInput.fromByteArray(challengeBytes))
+          .let { (it as? AnySignature)?.signature ?: it }
+          .toByteArray()
       } finally {
         challengeBytes.fill(0)
       }
     val response =
       try {
-        val result = client
-          .post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/auth/session") {
+        val result =
+          client.post("${decibelConfig.workerBaseUrl.trimEnd('/')}/v1/auth/session") {
             contentType(ContentType.Application.Json)
             setBody(
               AuthenticatedSessionRequest(
                 challenge = challenge.challenge,
                 publicKey = publicKey.toLowerHex(),
                 signature = signature.toLowerHex(),
-              )
+              ),
             )
           }
         check(result.status.value in 200..299) {
@@ -266,13 +281,14 @@ class WorkerSessionRepository(
       when (subaccount) {
         null -> response.subaccount == null
         else -> response.subaccount?.sameAptosAddress(subaccount) == true
-      }
+      },
     ) {
       "The Flare Worker session is bound to a different subaccount"
     }
     wallets.requireAuthorization(generation)
     check(preferences.values.first().activeProfileId == profileId) { "The selected wallet changed" }
-    if (authenticatedGeneration != generation || authenticatedProfileId != profileId) authenticatedSessions.value = emptyMap()
+    if (authenticatedGeneration != generation || authenticatedProfileId != profileId)
+      authenticatedSessions.value = emptyMap()
     authenticatedGeneration = generation
     authenticatedProfileId = profileId
     session = response
@@ -295,7 +311,7 @@ class WorkerSessionRepository(
     require(
       refreshed.token.isNotBlank() &&
         refreshed.expiresAt > now &&
-        refreshed.role.toSessionRole() == SessionRole.ANONYMOUS
+        refreshed.role.toSessionRole() == SessionRole.ANONYMOUS,
     ) {
       "The Flare Worker returned an invalid anonymous session"
     }

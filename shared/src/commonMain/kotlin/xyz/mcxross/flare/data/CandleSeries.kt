@@ -18,8 +18,7 @@ fun List<Candle>.withLiveCandle(candle: Candle): List<Candle> {
     candle.openTimeMs > latest.openTimeMs -> this + candle
     else -> {
       val index = binarySearchBy(candle.openTimeMs, selector = Candle::openTimeMs)
-      if (index < 0 || this[index] == candle) this
-      else toMutableList().also { it[index] = candle }
+      if (index < 0 || this[index] == candle) this else toMutableList().also { it[index] = candle }
     }
   }
 }

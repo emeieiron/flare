@@ -13,8 +13,8 @@ import xyz.mcxross.kaptos.model.AccountAddress
 import xyz.mcxross.kaptos.model.AptosError
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.ExternalFeePayerRequest
-import xyz.mcxross.kaptos.model.TransactionPayload
 import xyz.mcxross.kaptos.model.TransactionOptions
+import xyz.mcxross.kaptos.model.TransactionPayload
 import xyz.mcxross.kaptos.model.UserTransactionResponse
 import xyz.mcxross.kaptos.move.MoveArgument
 
@@ -152,8 +152,8 @@ sealed interface TransactionState {
     val selfPayEstimateOctas: ULong? = null,
     val definitelyNotSubmitted: Boolean = false,
     /**
-     * What the sender must hold to pay the fee itself: the network reserves the whole gas limit at the
-     * gas price before running a transaction, so this is more than [selfPayEstimateOctas].
+     * What the sender must hold to pay the fee itself: the network reserves the whole gas limit at
+     * the gas price before running a transaction, so this is more than [selfPayEstimateOctas].
      */
     val selfPayReserveOctas: ULong? = null,
   ) : TransactionState
@@ -183,7 +183,7 @@ internal class DefaultDecibelTradingService(
   private val deployment: DecibelDeployment,
 ) : DecibelTradingService {
   override suspend fun payload(
-    command: DecibelCommand
+    command: DecibelCommand,
   ): AptosResult<TransactionPayload.EntryFunction> {
     if (command is DecibelCommand.TransferCollateral) {
       require(command.amount > 0uL) { "Transfer amount must be positive" }
@@ -198,7 +198,7 @@ internal class DefaultDecibelTradingService(
               address(command.destination),
               MoveArgument.U64(command.amount),
             ),
-        )
+        ),
       )
     }
     val call =
@@ -206,7 +206,7 @@ internal class DefaultDecibelTradingService(
         buildCall(command)
       } catch (error: Exception) {
         return AptosResult.Failure(
-          AptosError.Validation(error.message ?: "Invalid Decibel command")
+          AptosError.Validation(error.message ?: "Invalid Decibel command"),
         )
       }
     return aptos.transactions.entryFunctionPayload(
@@ -293,12 +293,12 @@ internal class DefaultDecibelTradingService(
               order.builderAddress?.let {
                 if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
                 else null
-              }
+              },
             ),
             option(
               order.builderFeeUnits?.let {
                 if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
-              }
+              },
             ),
           )
       }
@@ -319,12 +319,12 @@ internal class DefaultDecibelTradingService(
               order.builderAddress?.let {
                 if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
                 else null
-              }
+              },
             ),
             option(
               order.builderFeeUnits?.let {
                 if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
-              }
+              },
             ),
           )
       }
@@ -374,12 +374,12 @@ internal class DefaultDecibelTradingService(
               command.builderAddress?.let {
                 if (command.builderFeeUnits != null && command.builderFeeUnits > 0uL) address(it)
                 else null
-              }
+              },
             ),
             option(
               command.builderFeeUnits?.let {
                 if (it > 0uL && command.builderAddress != null) MoveArgument.U64(it) else null
-              }
+              },
             ),
           )
       }
@@ -449,12 +449,12 @@ internal class DefaultDecibelTradingService(
               order.builderAddress?.let {
                 if (order.builderFeeUnits != null && order.builderFeeUnits > 0uL) address(it)
                 else null
-              }
+              },
             ),
             option(
               order.builderFeeUnits?.let {
                 if (it > 0uL && order.builderAddress != null) MoveArgument.U64(it) else null
-              }
+              },
             ),
           )
       }
@@ -513,30 +513,38 @@ internal class DefaultDecibelTradingService(
     options: TransactionOptions?,
     onSimulation: suspend (UserTransactionResponse) -> Unit,
   ): Flow<TransactionState> =
-    AptosTransactionExecutor(aptos).execute(
-      signer = signer,
-      payload = { payload(command) },
-      feePayer = feePayer,
-      externalFeePayer = externalFeePayer?.let { submitter ->
-        xyz.mcxross.flare.aptos.transaction.ExternalFeePayerSubmitter(submitter::submit)
-      },
-      onPrepared = onPrepared,
-      beforeSign = beforeSign,
-      options = options,
-      validateSimulation = onSimulation,
-    ).map { state ->
-      when (state) {
-        AptosTransactionState.Simulating -> TransactionState.Simulating
-        AptosTransactionState.AwaitingAuthorization -> TransactionState.AwaitingAuthorization
-        AptosTransactionState.Submitting -> TransactionState.Submitting
-        is AptosTransactionState.Pending -> TransactionState.Pending(state.hash)
-        is AptosTransactionState.Committed -> TransactionState.Committed(state.hash)
-        is AptosTransactionState.Failed -> TransactionState.Failed(
-          state.message, state.hash, state.committed, state.selfPayEstimateOctas,
-          state.definitelyNotSubmitted, state.selfPayReserveOctas,
-        )
+    AptosTransactionExecutor(aptos)
+      .execute(
+        signer = signer,
+        payload = { payload(command) },
+        feePayer = feePayer,
+        externalFeePayer =
+          externalFeePayer?.let { submitter ->
+            xyz.mcxross.flare.aptos.transaction.ExternalFeePayerSubmitter(submitter::submit)
+          },
+        onPrepared = onPrepared,
+        beforeSign = beforeSign,
+        options = options,
+        validateSimulation = onSimulation,
+      )
+      .map { state ->
+        when (state) {
+          AptosTransactionState.Simulating -> TransactionState.Simulating
+          AptosTransactionState.AwaitingAuthorization -> TransactionState.AwaitingAuthorization
+          AptosTransactionState.Submitting -> TransactionState.Submitting
+          is AptosTransactionState.Pending -> TransactionState.Pending(state.hash)
+          is AptosTransactionState.Committed -> TransactionState.Committed(state.hash)
+          is AptosTransactionState.Failed ->
+            TransactionState.Failed(
+              state.message,
+              state.hash,
+              state.committed,
+              state.selfPayEstimateOctas,
+              state.definitelyNotSubmitted,
+              state.selfPayReserveOctas,
+            )
+        }
       }
-    }
 
   private fun address(value: String): MoveArgument.Address =
     MoveArgument.Address(AccountAddress.fromString(value))
@@ -545,8 +553,8 @@ internal class DefaultDecibelTradingService(
 
   /**
    * A Move `i64`. The bytes match a u64 of the same bit pattern, but Kaptos checks an argument
-   * against the ABI's declared type and refuses a u64 here, so the signed type is the only one
-   * that builds. `DecibelTradingPayloadTest` pins the bytes for a negative amount.
+   * against the ABI's declared type and refuses a u64 here, so the signed type is the only one that
+   * builds. `DecibelTradingPayloadTest` pins the bytes for a negative amount.
    */
   private fun signed64(value: Long): MoveArgument.I64 = MoveArgument.I64(value)
 

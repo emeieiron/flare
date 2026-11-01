@@ -138,8 +138,8 @@ data class VenueSetup(
   /** Spot orders need their own builder fee approval, apart from perpetuals'. */
   val separateSpotBuilderApproval: Boolean = true,
   /**
-   * Setup ends by enabling trading with a device trading key. Without it, setup ends once the wallet
-   * exists and its own address is the account.
+   * Setup ends by enabling trading with a device trading key. Without it, setup ends once the
+   * wallet exists and its own address is the account.
    */
   val enableTrading: Boolean = true,
 )

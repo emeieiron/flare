@@ -6,8 +6,8 @@ import xyz.mcxross.flare.security.VaultPrompt
 
 /**
  * Hyperliquid's view of the device's keys: EVM signers for the owner, which signs user-signed
- * actions (approving agents and builder fees, moving funds), and for the device's agent, which signs
- * L1 actions (orders). Bound to the same instance as [WalletRepository].
+ * actions (approving agents and builder fees, moving funds), and for the device's agent, which
+ * signs L1 actions (orders). Bound to the same instance as [WalletRepository].
  */
 interface HyperliquidSigningWallet : WalletRepository {
   suspend fun <T> withOwnerSigner(prompt: VaultPrompt, block: suspend (EvmSigner) -> T): T

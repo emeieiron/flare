@@ -52,7 +52,6 @@ import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
-import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
@@ -73,7 +72,9 @@ internal fun OrderEditor(
   val inputError = state.orderInputError(side)
   val hasExits = state.takeProfitInput.isNotBlank() || state.stopLossInput.isNotBlank()
   val showNotices =
-    (state.sizeInput.isNotBlank() && inputError != null) || state.orderError != null || !state.tradingEnabled
+    (state.sizeInput.isNotBlank() && inputError != null) ||
+      state.orderError != null ||
+      !state.tradingEnabled
   SpacedGroups(minHeight) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -99,7 +100,9 @@ internal fun OrderEditor(
           else listOf(OrderType.MARKET, OrderType.LIMIT, OrderType.TWAP)
         orderTypes.forEach { type ->
           FlareChip(
-            text = if (type == OrderType.TWAP) "TWAP" else type.name.lowercase().replaceFirstChar(Char::uppercase),
+            text =
+              if (type == OrderType.TWAP) "TWAP"
+              else type.name.lowercase().replaceFirstChar(Char::uppercase),
             selected = state.orderType == type,
             onClick = { onIntent(TradeIntent.SetOrderType(type)) },
             modifier = Modifier.weight(1f),
@@ -116,10 +119,12 @@ internal fun OrderEditor(
         { onIntent(TradeIntent.SetSize(it)) },
         Modifier.fillMaxWidth(),
         enabled = !state.orderBusy,
-        valueHint = "≈ " + when {
-          state.sizeInput.isBlank() -> formatBalance(0.0)
-          else -> estimate?.value?.let(::formatBalance) ?: "—"
-        },
+        valueHint =
+          "≈ " +
+            when {
+              state.sizeInput.isBlank() -> formatBalance(0.0)
+              else -> estimate?.value?.let(::formatBalance) ?: "—"
+            },
       )
       Row(
         Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -167,14 +172,15 @@ internal fun OrderEditor(
             Modifier.weight(1f),
             enabled = !state.orderBusy,
           )
-          if (state.capabilities.twapInterval) OrderAmountField(
-            "Interval",
-            "min",
-            state.twapFrequencyMinutesInput,
-            { onIntent(TradeIntent.SetTwapFrequencyMinutes(it)) },
-            Modifier.weight(1f),
-            enabled = !state.orderBusy,
-          )
+          if (state.capabilities.twapInterval)
+            OrderAmountField(
+              "Interval",
+              "min",
+              state.twapFrequencyMinutesInput,
+              { onIntent(TradeIntent.SetTwapFrequencyMinutes(it)) },
+              Modifier.weight(1f),
+              enabled = !state.orderBusy,
+            )
         }
         Text(
           "TWAP divides the order into regular slices across the duration.",
@@ -196,7 +202,8 @@ internal fun OrderEditor(
           exit = shrinkVertically() + fadeOut(),
         ) {
           ExitPriceFields(
-            state.takeProfitInput, state.stopLossInput,
+            state.takeProfitInput,
+            state.stopLossInput,
             { onIntent(TradeIntent.SetTakeProfit(it)) },
             { onIntent(TradeIntent.SetStopLoss(it)) },
             Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -229,9 +236,9 @@ private val MaxGroupGap = 28.dp
 internal val LocalGroupsNaturalHeight = staticCompositionLocalOf<MutableIntState?> { null }
 
 /**
- * Stacks the form's groups with gaps that open up to [MaxGroupGap] when the viewport has room
- * and close to [MinGroupGap] as the form grows. A gap also leads the first group. Any height left
- * over sits above the groups, so they stay close to the action button below.
+ * Stacks the form's groups with gaps that open up to [MaxGroupGap] when the viewport has room and
+ * close to [MinGroupGap] as the form grows. A gap also leads the first group. Any height left over
+ * sits above the groups, so they stay close to the action button below.
  */
 @Composable
 internal fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
@@ -305,7 +312,12 @@ internal fun OrderReviewStatus(
 
 /** Optional exits stay one quiet row until the trader asks for them. */
 @Composable
-private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+private fun ExitsDisclosure(
+  expanded: Boolean,
+  added: Boolean,
+  enabled: Boolean,
+  onToggle: () -> Unit,
+) {
   val rotation by animateFloatAsState(if (expanded) 45f else 0f, label = "exitsDisclosure")
   Column(Modifier.fillMaxWidth()) {
     HorizontalDivider(color = FlareColors.BorderSubtle)
@@ -315,7 +327,8 @@ private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean,
         .clickable(
           enabled = enabled,
           role = Role.Button,
-          onClickLabel = if (expanded) "Hide take profit and stop loss" else "Show take profit and stop loss",
+          onClickLabel =
+            if (expanded) "Hide take profit and stop loss" else "Show take profit and stop loss",
           onClick = onToggle,
         )
         .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
@@ -353,8 +366,11 @@ private fun ExitsDisclosure(expanded: Boolean, added: Boolean, enabled: Boolean,
 private fun OrderConnectionNotice() {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     FlareSkeletonBox(Modifier.width(40.dp).height(3.dp).shimmer(rememberFlareShimmer()))
-    Text("Live prices unavailable",
-      color = FlareColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+    Text(
+      "Live prices unavailable",
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
 }
 
@@ -362,4 +378,5 @@ private fun marketDataUnavailable(state: TradeUiState): Boolean =
   state.tradingKeyAddress != null &&
     (state.marketDetails.stale ||
       (state.orderType == OrderType.MARKET &&
-        (state.marketDetails.orderBook?.bestBid == null || state.marketDetails.orderBook?.bestAsk == null)))
+        (state.marketDetails.orderBook?.bestBid == null ||
+          state.marketDetails.orderBook?.bestAsk == null)))

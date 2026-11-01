@@ -33,7 +33,6 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.floor
 
@@ -62,39 +61,37 @@ fun FlareFilterChips(
   // Chip bounds in the row's content space, captured as each chip is placed.
   val starts = remember(labels) { mutableStateListOf(*Array(labels.size) { 0f }) }
   val widths = remember(labels) { mutableStateListOf(*Array(labels.size) { 0f }) }
-  val settled by animateFloatAsState(
-    selectedIndex.toFloat(),
-    spring(stiffness = Spring.StiffnessMediumLow),
-    label = "filterPill",
-  )
+  val settled by
+    animateFloatAsState(
+      selectedIndex.toFloat(),
+      spring(stiffness = Spring.StiffnessMediumLow),
+      label = "filterPill",
+    )
   LaunchedEffect(selectedIndex, labels) {
     val start = starts.getOrNull(selectedIndex) ?: return@LaunchedEffect
     val gutter = with(density) { 48.dp.toPx() }
     scrollState.animateScrollTo((start - gutter).toInt().coerceAtLeast(0))
   }
   Row(
-    modifier
-      .fillMaxWidth()
-      .horizontalScroll(scrollState)
-      .padding(contentPadding)
-      .drawBehind {
-        if (labels.isEmpty() || widths.all { it == 0f }) return@drawBehind
-        val position = (indicatorPosition?.invoke() ?: settled).coerceIn(0f, labels.lastIndex.toFloat())
-        val from = floor(position).toInt()
-        val to = (from + 1).coerceAtMost(labels.lastIndex)
-        val fraction = position - from
-        val x = starts[from] + (starts[to] - starts[from]) * fraction
-        val width = widths[from] + (widths[to] - widths[from]) * fraction
-        val height = PillHeight.toPx()
-        val stroke = 1.dp.toPx()
-        drawRoundRect(
-          FlareColors.BorderDefault,
-          topLeft = Offset(x + stroke / 2, (size.height - height) / 2 + stroke / 2),
-          size = Size(width - stroke, height - stroke),
-          cornerRadius = CornerRadius(height / 2),
-          style = Stroke(stroke),
-        )
-      },
+    modifier.fillMaxWidth().horizontalScroll(scrollState).padding(contentPadding).drawBehind {
+      if (labels.isEmpty() || widths.all { it == 0f }) return@drawBehind
+      val position =
+        (indicatorPosition?.invoke() ?: settled).coerceIn(0f, labels.lastIndex.toFloat())
+      val from = floor(position).toInt()
+      val to = (from + 1).coerceAtMost(labels.lastIndex)
+      val fraction = position - from
+      val x = starts[from] + (starts[to] - starts[from]) * fraction
+      val width = widths[from] + (widths[to] - widths[from]) * fraction
+      val height = PillHeight.toPx()
+      val stroke = 1.dp.toPx()
+      drawRoundRect(
+        FlareColors.BorderDefault,
+        topLeft = Offset(x + stroke / 2, (size.height - height) / 2 + stroke / 2),
+        size = Size(width - stroke, height - stroke),
+        cornerRadius = CornerRadius(height / 2),
+        style = Stroke(stroke),
+      )
+    },
     horizontalArrangement = Arrangement.spacedBy(4.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
@@ -102,9 +99,9 @@ fun FlareFilterChips(
       val selected = index == selectedIndex
       Box(
         Modifier.onPlaced {
-          starts[index] = it.positionInParent().x
-          widths[index] = it.size.width.toFloat()
-        }
+            starts[index] = it.positionInParent().x
+            widths[index] = it.size.width.toFloat()
+          }
           .heightIn(min = 48.dp)
           .selectable(selected = selected, role = Role.Tab) { onSelect(index) }
           .padding(horizontal = ChipPadding),
@@ -122,6 +119,7 @@ fun FlareFilterChips(
  */
 @Composable
 private fun ChipLabel(label: String, selected: Boolean) {
-  val color by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary)
+  val color by
+    animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextTertiary)
   Text(label, color = color, style = MaterialTheme.typography.labelMedium)
 }

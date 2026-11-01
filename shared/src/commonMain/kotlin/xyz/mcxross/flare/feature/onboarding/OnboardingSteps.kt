@@ -51,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,6 +66,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
 import kotlinx.coroutines.delay
@@ -86,9 +86,9 @@ import xyz.mcxross.flare.design.SwitchRow
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.shortAddress
-import xyz.mcxross.flare.venue.model.TradingAccount
 import xyz.mcxross.flare.feature.referrals.ReferralCodeField
 import xyz.mcxross.flare.feature.referrals.ReferralEligibility
+import xyz.mcxross.flare.venue.model.TradingAccount
 
 private val Whitespace = Regex("\\s+")
 
@@ -101,7 +101,8 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
   ProtectFromScreenCapture()
   val credentials = LocalCredentialParser.current
   val format = remember(state.input, credentials) { credentials.detect(state.input) }
-  val words = remember(state.input) { state.input.trim().split(Whitespace).count(String::isNotEmpty) }
+  val words =
+    remember(state.input) { state.input.trim().split(Whitespace).count(String::isNotEmpty) }
   val phraseAsTradingKey = state.apiImport && format == CredentialFormat.RECOVERY_PHRASE
   val ready =
     format != CredentialFormat.UNKNOWN &&
@@ -123,9 +124,10 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
       }
     },
   ) {
-    val submit = KeyboardActions(
-      onDone = { if (ready && !state.busy) onIntent(OnboardingIntent.ImportCredential) }
-    )
+    val submit =
+      KeyboardActions(
+        onDone = { if (ready && !state.busy) onIntent(OnboardingIntent.ImportCredential) },
+      )
     SecretField(
       value = state.input,
       onValueChange = { onIntent(OnboardingIntent.ChangeInput(it)) },
@@ -137,11 +139,13 @@ internal fun ImportStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
     CredentialHint(
       when {
         state.input.isBlank() -> null
-        phraseAsTradingKey -> Hint("A trading key is a private key, not a recovery phrase.", HintTone.ALERT)
-        format == CredentialFormat.RECOVERY_PHRASE -> Hint("$words-word recovery phrase", HintTone.RECOGNIZED)
+        phraseAsTradingKey ->
+          Hint("A trading key is a private key, not a recovery phrase.", HintTone.ALERT)
+        format == CredentialFormat.RECOVERY_PHRASE ->
+          Hint("$words-word recovery phrase", HintTone.RECOGNIZED)
         format == CredentialFormat.PRIVATE_KEY -> Hint("Private key", HintTone.RECOGNIZED)
         else -> Hint("Enter 12 or 24 words, or a private key.", HintTone.NEUTRAL)
-      }
+      },
     )
     val tradingKeys = LocalVenue.current.setup.enableTrading
     AnimatedVisibility(tradingKeys && (format == CredentialFormat.PRIVATE_KEY || state.apiImport)) {
@@ -204,8 +208,8 @@ private fun tradingAccountHint(check: TradingAccountCheck): Hint? =
   }
 
 /**
- * Where a recovery phrase or key goes. It stays masked unless the person asks to see it, and a secret
- * pasted in is cleared from the clipboard, where any app could read it.
+ * Where a recovery phrase or key goes. It stays masked unless the person asks to see it, and a
+ * secret pasted in is cleared from the clipboard, where any app could read it.
  */
 @Composable
 private fun SecretField(
@@ -254,13 +258,18 @@ private fun SecretField(
         imeAction = imeAction,
       ),
     keyboardActions = keyboardActions,
-    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+    visualTransformation =
+      if (visible) VisualTransformation.None else PasswordVisualTransformation(),
     interactionSource = interaction,
-    textStyle = style.copy(color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled),
+    textStyle =
+      style.copy(color = if (enabled) FlareColors.TextPrimary else FlareColors.TextDisabled),
     cursorBrush = SolidColor(FlareColors.Positive),
     decorationBox = { field ->
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+          Modifier.fillMaxWidth().heightIn(min = 28.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
           Text(
             "Recovery phrase or private key",
             Modifier.weight(1f),
@@ -280,12 +289,20 @@ private fun SecretField(
                     }
                   }
                 }
-                .padding(horizontal = 10.dp, vertical = 5.dp)
+                .padding(horizontal = 10.dp, vertical = 5.dp),
             ) {
-              Text("Paste", style = MaterialTheme.typography.labelMedium, color = FlareColors.Positive)
+              Text(
+                "Paste",
+                style = MaterialTheme.typography.labelMedium,
+                color = FlareColors.Positive,
+              )
             }
           } else {
-            FieldAction(if (visible) FlareIcons.Hide else FlareIcons.Show, if (visible) "Hide" else "Show", enabled) {
+            FieldAction(
+              if (visible) FlareIcons.Hide else FlareIcons.Show,
+              if (visible) "Hide" else "Show",
+              enabled,
+            ) {
               visible = !visible
             }
             FieldAction(FlareIcons.Close, "Clear", enabled) { onValueChange("") }
@@ -293,7 +310,11 @@ private fun SecretField(
         }
         Box {
           if (value.isEmpty()) {
-            Text("12 or 24 words, or a private key", style = style, color = FlareColors.TextDisabled)
+            Text(
+              "12 or 24 words, or a private key",
+              style = style,
+              color = FlareColors.TextDisabled,
+            )
           }
           field()
         }
@@ -323,7 +344,9 @@ private enum class HintTone {
 
 private data class Hint(val message: String, val tone: HintTone)
 
-/** What the field holds, confirmed as it's typed or pasted, so no one has to guess before importing. */
+/**
+ * What the field holds, confirmed as it's typed or pasted, so no one has to guess before importing.
+ */
 @Composable
 private fun CredentialHint(hint: Hint?) {
   AnimatedContent(
@@ -341,7 +364,10 @@ private fun CredentialHint(hint: Hint?) {
           HintTone.ALERT -> FlareColors.Negative
           HintTone.NEUTRAL -> FlareColors.TextTertiary
         }
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
         if (shown.tone == HintTone.RECOGNIZED) {
           Icon(FlareIcons.Check, contentDescription = null, Modifier.size(16.dp), tint = color)
         }
@@ -388,7 +414,12 @@ internal fun BackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
       onReveal = { onIntent(OnboardingIntent.RevealBackup) },
     )
     Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      Icon(FlareIcons.Shield, contentDescription = null, Modifier.size(18.dp), tint = FlareColors.TextTertiary)
+      Icon(
+        FlareIcons.Shield,
+        contentDescription = null,
+        Modifier.size(18.dp),
+        tint = FlareColors.TextTertiary,
+      )
       Text(
         "Anyone with these words controls your account. Flare will never ask for them.",
         style = MaterialTheme.typography.bodySmall,
@@ -399,8 +430,9 @@ internal fun BackupStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -
 }
 
 /**
- * The recovery phrase, numbered down two columns the way it's written on paper. It stays covered until
- * the person asks to see it, then the words surface one after another, in the order they're written.
+ * The recovery phrase, numbered down two columns the way it's written on paper. It stays covered
+ * until the person asks to see it, then the words surface one after another, in the order they're
+ * written.
  */
 @Composable
 private fun PhraseCard(
@@ -425,7 +457,7 @@ private fun PhraseCard(
     Modifier.fillMaxWidth()
       .clip(shape)
       .background(FlareColors.Surface)
-      .border(1.dp, FlareColors.BorderSubtle, shape)
+      .border(1.dp, FlareColors.BorderSubtle, shape),
   ) {
     val rows = (count + 1) / 2
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)) {
@@ -433,7 +465,8 @@ private fun PhraseCard(
         Column(Modifier.weight(1f)) {
           for (row in 0 until rows) {
             val index = column * rows + row
-            if (index < count) PhraseWord(index, words.getOrNull(index)) { wordReveal(reveal.value, index, count) }
+            if (index < count)
+              PhraseWord(index, words.getOrNull(index)) { wordReveal(reveal.value, index, count) }
           }
         }
       }
@@ -442,7 +475,12 @@ private fun PhraseCard(
       Box(
         Modifier.matchParentSize()
           .background(FlareColors.Surface.copy(alpha = 0.86f))
-          .clickable(enabled = !working, role = Role.Button, onClickLabel = "Reveal recovery phrase", onClick = onReveal),
+          .clickable(
+            enabled = !working,
+            role = Role.Button,
+            onClickLabel = "Reveal recovery phrase",
+            onClick = onReveal,
+          ),
         contentAlignment = Alignment.Center,
       ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -453,10 +491,19 @@ private fun PhraseCard(
             if (working) {
               CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
-              Icon(FlareIcons.Show, contentDescription = null, Modifier.size(22.dp), tint = FlareColors.Positive)
+              Icon(
+                FlareIcons.Show,
+                contentDescription = null,
+                Modifier.size(22.dp),
+                tint = FlareColors.Positive,
+              )
             }
           }
-          Text("Tap to reveal", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelLarge)
+          Text(
+            "Tap to reveal",
+            Modifier.padding(top = 12.dp),
+            style = MaterialTheme.typography.labelLarge,
+          )
           Text(
             "Make sure no one can see your screen.",
             Modifier.padding(top = 4.dp),
@@ -475,7 +522,8 @@ private fun wordReveal(progress: Float, index: Int, count: Int): Float {
   return FastOutSlowInEasing.transform(((progress - start) / 0.45f).coerceIn(0f, 1f))
 }
 
-// Word-like lengths for the covered placeholders, so the card looks like a phrase before it's shown.
+// Word-like lengths for the covered placeholders, so the card looks like a phrase before it's
+// shown.
 private val PlaceholderWidths = listOf(56, 72, 48, 64, 80, 52, 68, 44, 76, 60, 50, 70)
 
 @Composable
@@ -492,7 +540,7 @@ private fun PhraseWord(index: Int, word: String?, reveal: () -> Float) {
         Modifier.width(PlaceholderWidths[index % PlaceholderWidths.size].dp)
           .height(10.dp)
           .graphicsLayer { alpha = 1f - reveal() }
-          .background(FlareColors.Elevated, RoundedCornerShape(5.dp))
+          .background(FlareColors.Elevated, RoundedCornerShape(5.dp)),
       )
       if (word != null) {
         Text(
@@ -547,8 +595,8 @@ internal fun ConfirmBackupStep(state: OnboardingUiState, onIntent: (OnboardingIn
 }
 
 /**
- * One position to confirm, with three words to choose from. The right one locks in; a wrong one shakes
- * and clears, so there's nothing to type and no typo to trip on.
+ * One position to confirm, with three words to choose from. The right one locks in; a wrong one
+ * shakes and clears, so there's nothing to type and no typo to trip on.
  */
 @Composable
 private fun WordQuestion(
@@ -568,8 +616,15 @@ private fun WordQuestion(
     }
   }
   Column {
-    Text("Word $position", style = MaterialTheme.typography.labelMedium, color = FlareColors.TextSecondary)
-    Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(
+      "Word $position",
+      style = MaterialTheme.typography.labelMedium,
+      color = FlareColors.TextSecondary,
+    )
+    Row(
+      Modifier.fillMaxWidth().padding(top = 10.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
       for (option in options) {
         WordChoice(
           word = option,
@@ -660,8 +715,12 @@ private fun WordChoice(
       .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
     contentAlignment = Alignment.Center,
   ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-      if (correct) Icon(FlareIcons.Check, contentDescription = null, Modifier.size(16.dp), tint = content)
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      if (correct)
+        Icon(FlareIcons.Check, contentDescription = null, Modifier.size(16.dp), tint = content)
       Text(word, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
     }
   }
@@ -725,8 +784,9 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
         }
       }
     state.subaccountsLoaded -> {
-      val referralActive = (state.referral.enabled || state.referral.pending) &&
-        state.referral.eligibility != ReferralEligibility.INELIGIBLE
+      val referralActive =
+        (state.referral.enabled || state.referral.pending) &&
+          state.referral.eligibility != ReferralEligibility.INELIGIBLE
       StepLayout(
         title = "Create your trading account",
         subtitle =
@@ -805,7 +865,10 @@ private fun AccountOption(
 ) {
   val shape = RoundedCornerShape(16.dp)
   val border by
-    animateColorAsState(if (selected) FlareColors.Positive else FlareColors.BorderSubtle, label = "Account border")
+    animateColorAsState(
+      if (selected) FlareColors.Positive else FlareColors.BorderSubtle,
+      label = "Account border",
+    )
   Row(
     Modifier.fillMaxWidth()
       .clip(shape)
@@ -817,7 +880,9 @@ private fun AccountOption(
   ) {
     Column(Modifier.weight(1f)) {
       Text(
-        subaccount.label.orEmpty().ifBlank { if (subaccount.primary) "Primary account" else "Account ${position + 1}" },
+        subaccount.label.orEmpty().ifBlank {
+          if (subaccount.primary) "Primary account" else "Account ${position + 1}"
+        },
         style = MaterialTheme.typography.titleMedium,
       )
       Text(
@@ -828,7 +893,10 @@ private fun AccountOption(
       )
     }
     val ring by
-      animateColorAsState(if (selected) FlareColors.Positive else FlareColors.BorderStrong, label = "Account ring")
+      animateColorAsState(
+        if (selected) FlareColors.Positive else FlareColors.BorderStrong,
+        label = "Account ring",
+      )
     Box(Modifier.size(22.dp).border(2.dp, ring, CircleShape), contentAlignment = Alignment.Center) {
       if (selected) Box(Modifier.size(10.dp).background(FlareColors.Positive, CircleShape))
     }
@@ -836,15 +904,17 @@ private fun AccountOption(
 }
 
 /**
- * A new wallet's last step: Flare opens its trading account and enables trading, all sponsored. What
- * has gone through stays checked off, so a retry after a failure or an interruption only does what's
- * left.
+ * A new wallet's last step: Flare opens its trading account and enables trading, all sponsored.
+ * What has gone through stays checked off, so a retry after a failure or an interruption only does
+ * what's left.
  */
 @Composable
 internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingIntent) -> Unit) {
   val stalled = !state.busy && (state.error != null || state.setupFee != null)
-  val referralActive = !state.accountOpened && (state.referral.enabled || state.referral.pending) &&
-    state.referral.eligibility != ReferralEligibility.INELIGIBLE
+  val referralActive =
+    !state.accountOpened &&
+      (state.referral.enabled || state.referral.pending) &&
+      state.referral.eligibility != ReferralEligibility.INELIGIBLE
   val venueName = LocalVenue.current.displayName
   StepLayout(
     title = "Open your trading account",
@@ -872,7 +942,7 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
       Modifier.fillMaxWidth()
         .clip(RoundedCornerShape(18.dp))
         .background(FlareColors.Surface)
-        .padding(horizontal = 16.dp)
+        .padding(horizontal = 16.dp),
     ) {
       SetupTask(
         "Trading account",
@@ -907,7 +977,7 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
         .padding(top = 12.dp)
         .clip(RoundedCornerShape(18.dp))
         .background(FlareColors.Surface)
-        .padding(horizontal = 16.dp)
+        .padding(horizontal = 16.dp),
     ) {
       SwitchRow(
         "Support Flare",
@@ -948,15 +1018,29 @@ private fun SetupTask(
   done: String,
   stalled: String,
 ) {
-  Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+  Row(
+    Modifier.fillMaxWidth().padding(vertical = 14.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
     Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
       when (status) {
-        TaskStatus.WAITING -> Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.BorderStrong, CircleShape))
+        TaskStatus.WAITING ->
+          Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.BorderStrong, CircleShape))
         TaskStatus.WORKING ->
-          CircularProgressIndicator(Modifier.size(18.dp), color = FlareColors.Positive, strokeWidth = 2.dp)
+          CircularProgressIndicator(
+            Modifier.size(18.dp),
+            color = FlareColors.Positive,
+            strokeWidth = 2.dp,
+          )
         TaskStatus.DONE ->
-          Icon(FlareIcons.CheckCircle, contentDescription = null, Modifier.size(22.dp), tint = FlareColors.Positive)
-        TaskStatus.STALLED -> Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.Warning, CircleShape))
+          Icon(
+            FlareIcons.CheckCircle,
+            contentDescription = null,
+            Modifier.size(22.dp),
+            tint = FlareColors.Positive,
+          )
+        TaskStatus.STALLED ->
+          Box(Modifier.size(18.dp).border(1.5.dp, FlareColors.Warning, CircleShape))
       }
     }
     Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -1007,9 +1091,10 @@ internal fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIn
         Modifier.fillMaxWidth()
           .clip(RoundedCornerShape(18.dp))
           .background(FlareColors.Surface)
-          .padding(horizontal = 16.dp)
+          .padding(horizontal = 16.dp),
       ) {
-        // Held as chosen while trading is being enabled, rather than greyed out to look switched off.
+        // Held as chosen while trading is being enabled, rather than greyed out to look switched
+        // off.
         SwitchRow(
           "Support Flare",
           "Adds ${percentOfBps(venue.builderFeeBps)} to your trades to fund Flare’s development. " +
@@ -1031,13 +1116,34 @@ internal fun EnableTradingStep(state: OnboardingUiState, onIntent: (OnboardingIn
  */
 @Composable
 private fun NetworkFeeLine(label: String, covered: Boolean, modifier: Modifier = Modifier) {
-  Row(modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-    Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = FlareColors.TextSecondary)
+  Row(
+    modifier.fillMaxWidth().padding(horizontal = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      label,
+      Modifier.weight(1f),
+      style = MaterialTheme.typography.bodyMedium,
+      color = FlareColors.TextSecondary,
+    )
     if (covered) {
-      Icon(FlareIcons.CheckCircle, contentDescription = null, Modifier.size(16.dp), tint = FlareColors.Positive)
-      Text("Covered by Flare", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
+      Icon(
+        FlareIcons.CheckCircle,
+        contentDescription = null,
+        Modifier.size(16.dp),
+        tint = FlareColors.Positive,
+      )
+      Text(
+        "Covered by Flare",
+        Modifier.padding(start = 6.dp),
+        style = MaterialTheme.typography.bodyMedium,
+      )
     } else {
-      Text("Not covered right now", style = MaterialTheme.typography.bodyMedium, color = FlareColors.Warning)
+      Text(
+        "Not covered right now",
+        style = MaterialTheme.typography.bodyMedium,
+        color = FlareColors.Warning,
+      )
     }
   }
 }

@@ -131,54 +131,53 @@ data class StreamFunding(
 internal fun decodeStreamData(channel: String, data: JsonElement?, json: Json): StreamData {
   if (data == null || data is JsonNull) return StreamData.Malformed("$channel sent no data")
   return runCatching {
-      when (channel) {
-        "allMids" -> StreamData.Mids(json.decodeFromJsonElement<MidsEnvelope>(data).mids)
-        "l2Book" -> StreamData.Book(json.decodeFromJsonElement<L2Book>(data))
-        "trades" -> StreamData.Trades(json.decodeFromJsonElement<List<MarketTrade>>(data))
-        "candle" -> StreamData.CandleUpdate(json.decodeFromJsonElement<Candle>(data))
-        "activeAssetCtx" ->
-          json.decodeFromJsonElement<PerpContextEnvelope>(data).let {
-            StreamData.PerpContext(it.coin, it.ctx)
-          }
-        "activeSpotAssetCtx" ->
-          json.decodeFromJsonElement<SpotContextEnvelope>(data).let {
-            StreamData.SpotContext(it.coin, it.ctx)
-          }
-        "activeAssetData" -> StreamData.AssetData(json.decodeFromJsonElement<ActiveAssetData>(data))
-        "clearinghouseState" ->
-          json.decodeFromJsonElement<ClearinghouseEnvelope>(data).let {
-            StreamData.Clearinghouse(it.user, it.clearinghouseState)
-          }
-        "openOrders" ->
-          json.decodeFromJsonElement<OpenOrdersEnvelope>(data).let {
-            StreamData.OpenOrders(it.user, it.orders)
-          }
-        "spotState" ->
-          json.decodeFromJsonElement<SpotStateEnvelope>(data).let {
-            StreamData.SpotState(it.user, it.spotState)
-          }
-        "twapStates" ->
-          json.decodeFromJsonElement<TwapStatesEnvelope>(data).let {
-            StreamData.TwapStates(it.user, it.states)
-          }
-        "orderUpdates" ->
-          StreamData.OrderUpdates(json.decodeFromJsonElement<List<OrderUpdate>>(data))
-        "userFills" ->
-          json.decodeFromJsonElement<UserFillsEnvelope>(data).let {
-            StreamData.UserFills(it.user, it.fills, it.isSnapshot)
-          }
-        "user" -> StreamData.UserEvent(json.decodeFromJsonElement<UserEventData>(data))
-        "userFundings" ->
-          json.decodeFromJsonElement<UserFundingsEnvelope>(data).let {
-            StreamData.UserFundings(it.user, it.fundings, it.isSnapshot)
-          }
-        "userNonFundingLedgerUpdates" ->
-          json.decodeFromJsonElement<LedgerUpdatesEnvelope>(data).let {
-            StreamData.LedgerUpdates(it.user, it.nonFundingLedgerUpdates, it.isSnapshot)
-          }
-        else -> StreamData.Raw(data)
-      }
+    when (channel) {
+      "allMids" -> StreamData.Mids(json.decodeFromJsonElement<MidsEnvelope>(data).mids)
+      "l2Book" -> StreamData.Book(json.decodeFromJsonElement<L2Book>(data))
+      "trades" -> StreamData.Trades(json.decodeFromJsonElement<List<MarketTrade>>(data))
+      "candle" -> StreamData.CandleUpdate(json.decodeFromJsonElement<Candle>(data))
+      "activeAssetCtx" ->
+        json.decodeFromJsonElement<PerpContextEnvelope>(data).let {
+          StreamData.PerpContext(it.coin, it.ctx)
+        }
+      "activeSpotAssetCtx" ->
+        json.decodeFromJsonElement<SpotContextEnvelope>(data).let {
+          StreamData.SpotContext(it.coin, it.ctx)
+        }
+      "activeAssetData" -> StreamData.AssetData(json.decodeFromJsonElement<ActiveAssetData>(data))
+      "clearinghouseState" ->
+        json.decodeFromJsonElement<ClearinghouseEnvelope>(data).let {
+          StreamData.Clearinghouse(it.user, it.clearinghouseState)
+        }
+      "openOrders" ->
+        json.decodeFromJsonElement<OpenOrdersEnvelope>(data).let {
+          StreamData.OpenOrders(it.user, it.orders)
+        }
+      "spotState" ->
+        json.decodeFromJsonElement<SpotStateEnvelope>(data).let {
+          StreamData.SpotState(it.user, it.spotState)
+        }
+      "twapStates" ->
+        json.decodeFromJsonElement<TwapStatesEnvelope>(data).let {
+          StreamData.TwapStates(it.user, it.states)
+        }
+      "orderUpdates" -> StreamData.OrderUpdates(json.decodeFromJsonElement<List<OrderUpdate>>(data))
+      "userFills" ->
+        json.decodeFromJsonElement<UserFillsEnvelope>(data).let {
+          StreamData.UserFills(it.user, it.fills, it.isSnapshot)
+        }
+      "user" -> StreamData.UserEvent(json.decodeFromJsonElement<UserEventData>(data))
+      "userFundings" ->
+        json.decodeFromJsonElement<UserFundingsEnvelope>(data).let {
+          StreamData.UserFundings(it.user, it.fundings, it.isSnapshot)
+        }
+      "userNonFundingLedgerUpdates" ->
+        json.decodeFromJsonElement<LedgerUpdatesEnvelope>(data).let {
+          StreamData.LedgerUpdates(it.user, it.nonFundingLedgerUpdates, it.isSnapshot)
+        }
+      else -> StreamData.Raw(data)
     }
+  }
     .getOrElse { error ->
       StreamData.Malformed("Invalid $channel payload: ${error.message?.take(MAX_REASON_LENGTH)}")
     }

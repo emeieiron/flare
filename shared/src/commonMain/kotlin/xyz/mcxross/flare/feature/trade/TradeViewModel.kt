@@ -10,17 +10,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
-import xyz.mcxross.flare.data.SetupNeed
-import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.ChartRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.LiveCandles
@@ -28,12 +26,13 @@ import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.caughtUpWith
 import xyz.mcxross.flare.data.formatBalance
-import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatTokenBalance
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.data.withLiveCandle
@@ -204,7 +203,9 @@ class TradeViewModel(
     setupGate?.let { gate ->
       viewModelScope.launch {
         gate.need.collect { need ->
-          mutableUiState.update { it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need)) }
+          mutableUiState.update {
+            it.copy(setupNeed = need, capabilities = capabilities.gatedBy(need))
+          }
         }
       }
     }
@@ -245,7 +246,8 @@ class TradeViewModel(
     viewModelScope.launch {
       preferences.values.collect { values ->
         val timeframe =
-          ChartTimeframe.entries.firstOrNull { it.name == values.chartRange } ?: ChartTimeframe.Default
+          ChartTimeframe.entries.firstOrNull { it.name == values.chartRange }
+            ?: ChartTimeframe.Default
         val chartStyle =
           ChartStyle.entries.firstOrNull { it.name == values.chartStyle } ?: ChartStyle.LINE
         val timeframeChanged = timeframe != mutableUiState.value.timeframe
@@ -322,7 +324,8 @@ class TradeViewModel(
     if (quote?.market?.kind == MarketKind.SPOT) {
       val spot = snapshot.overview?.balances?.spot
       mutableUiState.update { it.copy(quoteBalance = spotQuoteBalance(snapshot.overview)) }
-      val base = spot?.assets?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
+      val base =
+        spot?.assets?.filter { it.symbol.equals(quote.market.symbol, true) }?.sumOf { it.amount }
       if (spot != null) {
         baseBalanceJob?.cancel()
         mutableUiState.update { it.copy(baseBalance = base) }
@@ -334,11 +337,16 @@ class TradeViewModel(
         baseBalanceJob?.cancel()
         mutableUiState.update { it.copy(baseBalance = null, quoteBalance = null) }
         baseBalanceJob = viewModelScope.launch {
-          val availableBase = runSuspendCatching { trading.baseAssetBalance(subaccount, quote.market.symbol) }.getOrNull()
+          val availableBase = runSuspendCatching {
+            trading.baseAssetBalance(subaccount, quote.market.symbol)
+          }
+            .getOrNull()
           val cash = runSuspendCatching { trading.baseAssetBalance(subaccount, "USDC") }.getOrNull()
           mutableUiState.update {
-            it.copy(baseBalance = availableBase,
-              quoteBalance = cash?.plus(snapshot.overview?.withdrawable ?: 0.0))
+            it.copy(
+              baseBalance = availableBase,
+              quoteBalance = cash?.plus(snapshot.overview?.withdrawable ?: 0.0),
+            )
           }
         }
       }
@@ -388,10 +396,14 @@ class TradeViewModel(
       }
       is TradeIntent.SetOrderType ->
         mutableUiState.update {
-          it.copy(orderType = intent.type, orderError = null,
-            takeProfitInput = if (intent.type == OrderType.TWAP) "" else it.takeProfitInput,
-            stopLossInput = if (intent.type == OrderType.TWAP) "" else it.stopLossInput,
-          ).withTradingEnabled()
+          it
+            .copy(
+              orderType = intent.type,
+              orderError = null,
+              takeProfitInput = if (intent.type == OrderType.TWAP) "" else it.takeProfitInput,
+              stopLossInput = if (intent.type == OrderType.TWAP) "" else it.stopLossInput,
+            )
+            .withTradingEnabled()
         }
       is TradeIntent.SetSize ->
         mutableUiState.update {
@@ -405,9 +417,7 @@ class TradeViewModel(
       is TradeIntent.SetLeverage ->
         mutableUiState.update {
           if (
-            it.orderBusy ||
-              it.positionLeverage != null ||
-              it.quote?.market?.kind == MarketKind.SPOT
+            it.orderBusy || it.positionLeverage != null || it.quote?.market?.kind == MarketKind.SPOT
           )
             it
           else
@@ -455,12 +465,15 @@ class TradeViewModel(
 
   /** Keeps the selected book live only while the trade route owns this collector. */
   suspend fun followMarketDetails() {
-    mutableUiState.map { it.quote?.market?.id }.distinctUntilChanged().collectLatest { market ->
-      if (market != null) {
-        marketDetails.refresh(market)
-        marketDetails.connectLive(market)
+    mutableUiState
+      .map { it.quote?.market?.id }
+      .distinctUntilChanged()
+      .collectLatest { market ->
+        if (market != null) {
+          marketDetails.refresh(market)
+          marketDetails.connectLive(market)
+        }
       }
-    }
   }
 
   private fun submitOrder(side: OrderSide, feePayment: FeePayment) {
@@ -505,7 +518,7 @@ class TradeViewModel(
               VaultPrompt(
                 title = "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
                 subtitle = "Confirm your identity",
-              )
+              ),
             ) {
               placeConfiguredOrder(
                 configuration = if (isSpot) null else state.leverageCommand(subaccount, position),
@@ -544,11 +557,13 @@ class TradeViewModel(
               }
               // Venues without a fee token to send never offer a top-up.
               if (capabilities.networkFeeTopUp) {
-                trading.tradingKeyTopUpFor(transaction, wallets.profile.first(), minimumFeeTopUp)?.let { topUp ->
-                  mutableUiState.update {
-                    it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp)
+                trading
+                  .tradingKeyTopUpFor(transaction, wallets.profile.first(), minimumFeeTopUp)
+                  ?.let { topUp ->
+                    mutableUiState.update {
+                      it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp)
+                    }
                   }
-                }
               }
             }
             else -> Unit
@@ -610,7 +625,9 @@ class TradeViewModel(
     }
   }
 
-  /** The chart keeps trying on its own; selecting another market or timeframe cancels the attempt. */
+  /**
+   * The chart keeps trying on its own; selecting another market or timeframe cancels the attempt.
+   */
   private fun loadCandles(quote: MarketQuote, timeframe: ChartTimeframe) {
     chartJob?.cancel()
     olderCandlesJob?.cancel()
@@ -694,9 +711,10 @@ class TradeViewModel(
     olderCandlesJob = viewModelScope.launch {
       var backoffMs = CHART_RETRY_BASE_MS
       repeat(OLDER_CANDLES_ATTEMPTS) { attempt ->
-        val older =
-          runSuspendCatching { charts.candlesBefore(key.market, key.timeframe, oldest.openTimeMs) }
-            .getOrNull()
+        val older = runSuspendCatching {
+          charts.candlesBefore(key.market, key.timeframe, oldest.openTimeMs)
+        }
+          .getOrNull()
         if (loadedChart.value != key) return@launch
         if (older != null) {
           if (older.isEmpty()) historyComplete = true
@@ -719,7 +737,9 @@ class TradeViewModel(
  */
 fun spotQuoteBalance(overview: AccountOverview?): Double? {
   val balances = overview?.balances ?: return null
-  balances.spotBuyingPower?.let { return it }
+  balances.spotBuyingPower?.let {
+    return it
+  }
   val cash = balances.spot?.assets?.filter { it.symbol.equals("USDC", true) }?.sumOf { it.amount }
   return cash?.plus(overview.withdrawable)
 }
@@ -734,7 +754,7 @@ private fun TradeUiState.withTradingEnabled(): TradeUiState =
       tradingKeyAddress != null &&
         !marketDetails.stale &&
         (orderType != OrderType.MARKET ||
-          (marketDetails.orderBook?.bestBid != null && marketDetails.orderBook.bestAsk != null))
+          (marketDetails.orderBook?.bestBid != null && marketDetails.orderBook.bestAsk != null)),
   )
 
 private fun decimalCharacters(value: String): String =

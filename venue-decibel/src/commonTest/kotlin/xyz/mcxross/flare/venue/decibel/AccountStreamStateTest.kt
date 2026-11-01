@@ -10,11 +10,12 @@ import xyz.mcxross.flare.venue.model.AccountOverview
 class AccountStreamStateTest {
   @Test
   fun transportFailureKeepsConfirmedPortfolioAndEmptyHistory() {
-    val portfolio = AccountSnapshot(
-      account = "0x1",
-      overview = AccountOverview(100.0, 0.0, 0.0, 100.0, 100.0),
-      stale = false,
-    )
+    val portfolio =
+      AccountSnapshot(
+        account = "0x1",
+        overview = AccountOverview(100.0, 0.0, 0.0, 100.0, 100.0),
+        stale = false,
+      )
     val history = AccountHistorySnapshot(account = "0x1", stale = false)
 
     assertEquals(portfolio, portfolio.afterStreamFailure("Upstream unavailable"))

@@ -9,8 +9,12 @@ import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.decibel.DecibelClient
 import xyz.mcxross.flare.decibel.api.MarketDepthUpdate
 import xyz.mcxross.flare.decibel.model.AssetType
+import xyz.mcxross.flare.decibel.model.Candle as DecibelCandle
 import xyz.mcxross.flare.decibel.model.CandleInterval
+import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
 import xyz.mcxross.flare.decibel.model.MarketPrecision
+import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
+import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.Market
@@ -18,10 +22,6 @@ import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.MarketTrade
 import xyz.mcxross.flare.venue.model.OrderBook
 import xyz.mcxross.flare.venue.model.OrderBookLevel
-import xyz.mcxross.flare.decibel.model.Candle as DecibelCandle
-import xyz.mcxross.flare.decibel.model.Market as DecibelMarket
-import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
-import xyz.mcxross.flare.decibel.model.OrderBook as DecibelOrderBook
 
 class DecibelMarketMappersTest {
   private val json = DecibelClient.DefaultJson
@@ -75,7 +75,7 @@ class DecibelMarketMappersTest {
         .decodeFromString<DecibelMarket>(
           MARKET_JSON.replace("\"perp\"", "\"spot\"")
             .replace("BTC/USD", "apt-usdc")
-            .replace("\"is_isolated_only\":false", "\"is_isolated_only\":true")
+            .replace("\"is_isolated_only\":false", "\"is_isolated_only\":true"),
         )
         .toMarket()
 
@@ -91,7 +91,10 @@ class DecibelMarketMappersTest {
       listOf("1m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "1w", "1mo"),
       ChartTimeframe.entries.map { it.toCandleInterval().wireValue },
     )
-    assertEquals(CandleInterval.entries.toSet(), ChartTimeframe.entries.map { it.toCandleInterval() }.toSet())
+    assertEquals(
+      CandleInterval.entries.toSet(),
+      ChartTimeframe.entries.map { it.toCandleInterval() }.toSet(),
+    )
     ChartTimeframe.entries.forEach { timeframe ->
       assertEquals(timeframe, chartTimeframeOf(timeframe.toCandleInterval().wireValue))
     }
@@ -104,7 +107,7 @@ class DecibelMarketMappersTest {
     val candle =
       json
         .decodeFromString<DecibelCandle>(
-          """{"t":1790518620000,"T":1790518679999,"o":340.35,"h":340.35,"l":340.14,"c":340.14,"v":0.12,"i":"1m"}"""
+          """{"t":1790518620000,"T":1790518679999,"o":340.35,"h":340.35,"l":340.14,"c":340.14,"v":0.12,"i":"1m"}""",
         )
         .toCandle()
 
@@ -128,7 +131,7 @@ class DecibelMarketMappersTest {
     val candle =
       json
         .decodeFromString<DecibelCandle>(
-          """{"t":1761588000000,"T":1761591599999,"o":100.0,"h":102.0,"l":98.0,"c":101.0,"v":1000.0,"i":"3h"}"""
+          """{"t":1761588000000,"T":1761591599999,"o":100.0,"h":102.0,"l":98.0,"c":101.0,"v":1000.0,"i":"3h"}""",
         )
         .toCandle()
 
@@ -140,7 +143,7 @@ class DecibelMarketMappersTest {
   fun cachedCandlesKeepDecibelsWireInterval() {
     val decibel =
       json.decodeFromString<DecibelCandle>(
-        """{"t":1761588000000,"T":1761591599999,"o":100.0,"h":102.0,"l":98.0,"c":101.0,"v":1000.0,"i":"1mo"}"""
+        """{"t":1761588000000,"T":1761591599999,"o":100.0,"h":102.0,"l":98.0,"c":101.0,"v":1000.0,"i":"1mo"}""",
       )
     val entity = decibel.toCandleEntity("0x1", CandleInterval.ONE_MONTH)
 
@@ -155,7 +158,7 @@ class DecibelMarketMappersTest {
     val book =
       json
         .decodeFromString<DecibelOrderBook>(
-          """{"ticker_id":"0x1","timestamp":"1761588000000","bids":[["100.0","2"],["99.5","0.000000001"]],"asks":[["100.125","1.25"]]}"""
+          """{"ticker_id":"0x1","timestamp":"1761588000000","bids":[["100.0","2"],["99.5","0.000000001"]],"asks":[["100.125","1.25"]]}""",
         )
         .toOrderBook()
 
@@ -174,7 +177,12 @@ class DecibelMarketMappersTest {
   @Test
   fun aBookLevelMissingItsPriceOrSizeIsLeftOut() {
     val book =
-      DecibelOrderBook("0x1", "0", bids = listOf(listOf("100"), listOf("99", "1")), asks = listOf(emptyList()))
+      DecibelOrderBook(
+          "0x1",
+          "0",
+          bids = listOf(listOf("100"), listOf("99", "1")),
+          asks = listOf(emptyList()),
+        )
         .toOrderBook()
 
     assertEquals(listOf(OrderBookLevel("99", "1")), book.bids)
@@ -185,7 +193,7 @@ class DecibelMarketMappersTest {
   fun aStreamedDepthUpdateBecomesTheSameBook() {
     val update =
       json.decodeFromString<MarketDepthUpdate>(
-        """{"market":"0x1","asks":[{"price":100.125,"size":1.25}],"bids":[{"price":100.0,"size":2}],"best_ask":100.125,"best_bid":100.0,"unix_ms":1000,"sequence":7}"""
+        """{"market":"0x1","asks":[{"price":100.125,"size":1.25}],"bids":[{"price":100.0,"size":2}],"best_ask":100.125,"best_bid":100.0,"unix_ms":1000,"sequence":7}""",
       )
 
     val book = update.toOrderBook().toOrderBook()

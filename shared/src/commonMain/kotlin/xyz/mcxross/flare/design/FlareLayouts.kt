@@ -11,8 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,6 +20,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import xyz.mcxross.flare.venue.VenueDescriptor
@@ -102,7 +102,12 @@ fun SwitchRow(
   Row(
     modifier
       .fillMaxWidth()
-      .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+      .toggleable(
+        value = checked,
+        enabled = enabled,
+        role = Role.Switch,
+        onValueChange = onCheckedChange,
+      )
       .padding(vertical = 16.dp),
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -198,7 +203,11 @@ fun TransactionReceipt(message: String, hash: String, onDone: () -> Unit, enable
     )
     Text(message, style = MaterialTheme.typography.bodyLarge)
     explorer.url(hash)?.let { url ->
-      ActionRow(explorer.label, icon = FlareIcons.External, onClick = { runCatching { browser.openUri(url) } })
+      ActionRow(
+        explorer.label,
+        icon = FlareIcons.External,
+        onClick = { runCatching { browser.openUri(url) } },
+      )
     }
     FlareButton("Done", onDone, Modifier.fillMaxWidth(), enabled = enabled)
   }
@@ -216,7 +225,11 @@ fun BackBar(
     modifier.fillMaxWidth().heightIn(min = 56.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    IconButton(onClick = onBack, Modifier.semantics { contentDescription = "Back" }, enabled = backEnabled) {
+    IconButton(
+      onClick = onBack,
+      Modifier.semantics { contentDescription = "Back" },
+      enabled = backEnabled,
+    ) {
       Icon(
         FlareIcons.ArrowBack,
         null,
@@ -231,10 +244,10 @@ fun BackBar(
 val FlareSheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 
 /**
- * [title] is left out when the content carries its own heading, as an outcome does.
- * [dismissible] false holds the sheet open, for while the action it confirms is running.
- * [heightFraction] gives the sheet a fixed share of the screen height instead of fitting its content;
- * the content can then use weights to distribute the room.
+ * [title] is left out when the content carries its own heading, as an outcome does. [dismissible]
+ * false holds the sheet open, for while the action it confirms is running. [heightFraction] gives
+ * the sheet a fixed share of the screen height instead of fitting its content; the content can then
+ * use weights to distribute the room.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -270,13 +283,17 @@ fun FlareSheet(
     val density = LocalDensity.current
     val windowHeight = LocalWindowInfo.current.containerSize.height
     val bottomInset = WindowInsets.safeDrawing.getBottom(density)
-    val fixedHeight = heightFraction?.let { with(density) { (windowHeight * it - bottomInset).toDp() } }
+    val fixedHeight = heightFraction?.let {
+      with(density) { (windowHeight * it - bottomInset).toDp() }
+    }
     Column(Modifier.fillMaxWidth().then(fixedHeight?.let { Modifier.height(it) } ?: Modifier)) {
       BottomSheetDefaults.DragHandle(Modifier.align(Alignment.CenterHorizontally))
       Column(
         Modifier.fillMaxWidth()
           .then(if (fixedHeight != null) Modifier.weight(1f) else Modifier)
-          .padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding()
+          .padding(horizontal = 24.dp)
+          .padding(bottom = 24.dp)
+          .imePadding(),
       ) {
         if (title != null) {
           Text(

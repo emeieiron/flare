@@ -19,7 +19,7 @@ fun iosDatabaseBuilder(): RoomDatabase.Builder<FlareDatabase> {
           create = true,
           error = null,
         )
-        ?.path
+        ?.path,
     ) {
       "Application Support directory is unavailable"
     }

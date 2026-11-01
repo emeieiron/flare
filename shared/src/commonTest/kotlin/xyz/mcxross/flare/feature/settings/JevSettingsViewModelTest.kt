@@ -9,8 +9,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -25,13 +25,26 @@ import xyz.mcxross.flare.store.AppPreferences
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class JevSettingsViewModelTest {
-  @BeforeTest fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
-  @AfterTest fun teardown() { Dispatchers.resetMain() }
+  @BeforeTest
+  fun setup() {
+    Dispatchers.setMain(UnconfinedTestDispatcher())
+  }
+
+  @AfterTest
+  fun teardown() {
+    Dispatchers.resetMain()
+  }
 
   @Test
   fun typingDoesNotSendKeyAndDismissClearsInput() = runTest {
     var checks = 0
-    val vm = viewModel(JevKeyChecker { checks++; true })
+    val vm =
+      viewModel(
+        JevKeyChecker {
+          checks++
+          true
+        },
+      )
     vm.onIntent(JevSettingsIntent.Open)
     vm.onIntent(JevSettingsIntent.ChangeKey("draft-key"))
     assertEquals(0, checks)
@@ -43,7 +56,13 @@ class JevSettingsViewModelTest {
   @Test
   fun saveClearsInputAndCheckRequiresExplicitAction() = runTest {
     var checked: String? = null
-    val vm = viewModel(JevKeyChecker { checked = it; true })
+    val vm =
+      viewModel(
+        JevKeyChecker {
+          checked = it
+          true
+        },
+      )
     vm.onIntent(JevSettingsIntent.ChangeKey("saved-key"))
     vm.onIntent(JevSettingsIntent.Save)
     assertEquals("", vm.uiState.value.keyInput)
@@ -61,9 +80,16 @@ class JevSettingsViewModelTest {
   @Test
   fun dismissCancelsEnteredKeyCheckAndClearsSecretState() = runTest {
     var cleaned = false
-    val vm = viewModel(JevKeyChecker {
-      try { awaitCancellation() } finally { cleaned = true }
-    })
+    val vm =
+      viewModel(
+        JevKeyChecker {
+          try {
+            awaitCancellation()
+          } finally {
+            cleaned = true
+          }
+        },
+      )
     vm.onIntent(JevSettingsIntent.Open)
     vm.onIntent(JevSettingsIntent.ChangeKey("draft-key"))
     vm.onIntent(JevSettingsIntent.Check)
@@ -76,16 +102,32 @@ class JevSettingsViewModelTest {
   }
 
   private fun viewModel(checker: JevKeyChecker): JevSettingsViewModel {
-    val preferences = AppPreferences(object : DataStore<Preferences> {
-      override val data = MutableStateFlow(emptyPreferences())
-      override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences = transform(data.value).also { data.value = it }
-    })
-    val vault = ForegroundWalletVault(object : WalletVault {
-      override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) = Unit
-      override suspend fun read(slot: WalletSecretSlot, prompt: VaultPrompt) = error("Unused")
-      override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) = Unit
-      override fun lock() = Unit
-    })
+    val preferences =
+      AppPreferences(
+        object : DataStore<Preferences> {
+          override val data = MutableStateFlow(emptyPreferences())
+
+          override suspend fun updateData(
+            transform: suspend (Preferences) -> Preferences,
+          ): Preferences = transform(data.value).also { data.value = it }
+        },
+      )
+    val vault =
+      ForegroundWalletVault(
+        object : WalletVault {
+          override suspend fun store(
+            slot: WalletSecretSlot,
+            secret: ByteArray,
+            prompt: VaultPrompt,
+          ) = Unit
+
+          override suspend fun read(slot: WalletSecretSlot, prompt: VaultPrompt) = error("Unused")
+
+          override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) = Unit
+
+          override fun lock() = Unit
+        },
+      )
     return JevSettingsViewModel(JevCredentials(vault, preferences), checker)
   }
 }

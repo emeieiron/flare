@@ -27,7 +27,7 @@ class DecibelApiTest {
           authorization = request.headers[HttpHeaders.Authorization].orEmpty()
           origin = request.headers[HttpHeaders.Origin].orEmpty()
           respondJson("""{"value":"ok"}""")
-        }
+        },
       )
     val api =
       DecibelApi(
@@ -61,7 +61,7 @@ class DecibelApiTest {
           } else {
             respondJson("""{"value":"recovered"}""")
           }
-        }
+        },
       )
     val api = api(client)
 
@@ -80,7 +80,7 @@ class DecibelApiTest {
             """{"status":"failed","message":"invalid market"}""",
             HttpStatusCode.BadRequest,
           )
-        }
+        },
       )
     val api = api(client)
 

@@ -45,11 +45,10 @@ enum class JevFailure {
 class JevException(val failure: JevFailure) : Exception("Jev request failed: ${failure.name}")
 
 class JevClient(httpClient: HttpClient, private val timeoutMs: Long = 10_000) {
-  private val client =
-    httpClient.config {
-      followRedirects = false
-      expectSuccess = false
-    }
+  private val client = httpClient.config {
+    followRedirects = false
+    expectSuccess = false
+  }
 
   init {
     require(timeoutMs in 1..60_000)
@@ -83,7 +82,7 @@ class JevClient(httpClient: HttpClient, private val timeoutMs: Long = 10_000) {
           if (status == 429 || status == 529) {
             if (attempt >= 2)
               throw JevException(
-                if (status == 429) JevFailure.RATE_LIMITED else JevFailure.UNAVAILABLE
+                if (status == 429) JevFailure.RATE_LIMITED else JevFailure.UNAVAILABLE,
               )
             // Retry only bounded transient overload responses; the outer deadline includes backoff.
             delay(250L shl attempt++)
@@ -98,7 +97,7 @@ class JevClient(httpClient: HttpClient, private val timeoutMs: Long = 10_000) {
                 in 300..399 -> JevFailure.UNAVAILABLE
                 in 500..599 -> JevFailure.UNAVAILABLE
                 else -> JevFailure.INVALID_RESPONSE
-              }
+              },
             )
           val bytes = response.bodyAsChannel().readRemaining(128_001).readByteArray()
           if (bytes.size > 128_000) throw JevException(JevFailure.INVALID_RESPONSE)
@@ -219,7 +218,7 @@ class JevClient(httpClient: HttpClient, private val timeoutMs: Long = 10_000) {
                 legend.keys == keys &&
                   question.criteria.indices.all {
                     legend[it.toString()]!!.jsonPrimitive.content == question.criteria[it]
-                  }
+                  },
               )
               val probabilities = distribution(answer, keys)
               val score = number(answer["score"])

@@ -48,7 +48,8 @@ internal fun testClient(responses: Map<String, String>): HyperliquidClient {
     val type = Json.parseToJsonElement(body).jsonObject["type"]?.jsonPrimitive?.content
     val response = responses[type]
     if (response == null) respondError(HttpStatusCode.BadRequest, "Unexpected request")
-    else respond(response, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+    else
+      respond(response, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
   }
   return HyperliquidClient(HttpClient(engine))
 }
@@ -87,13 +88,18 @@ internal class MemoryMarketCache : MarketCacheDao {
     interval: String,
     startTimeMs: Long,
     endTimeMs: Long,
-  ): List<CandleEntity> =
-    candles.filter {
-      it.marketAddress == market && it.interval == interval && it.openTimeMs in startTimeMs..endTimeMs
-    }
+  ): List<CandleEntity> = candles.filter {
+    it.marketAddress == market && it.interval == interval && it.openTimeMs in startTimeMs..endTimeMs
+  }
 
   override suspend fun upsertCandles(candles: List<CandleEntity>) {
-    this.candles.removeAll { old -> candles.any { it.marketAddress == old.marketAddress && it.interval == old.interval && it.openTimeMs == old.openTimeMs } }
+    this.candles.removeAll { old ->
+      candles.any {
+        it.marketAddress == old.marketAddress &&
+          it.interval == old.interval &&
+          it.openTimeMs == old.openTimeMs
+      }
+    }
     this.candles += candles
   }
 
@@ -117,7 +123,8 @@ internal fun dynamicClient(answer: (type: String, body: JsonObject) -> String?):
     val type = body["type"]?.jsonPrimitive?.content.orEmpty()
     val response = answer(type, body)
     if (response == null) respondError(HttpStatusCode.BadRequest, "Unexpected request")
-    else respond(response, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+    else
+      respond(response, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
   }
   return HyperliquidClient(HttpClient(engine))
 }
@@ -125,27 +132,37 @@ internal fun dynamicClient(answer: (type: String, body: JsonObject) -> String?):
 internal class MemoryJournal : TransactionJournalDao {
   val entries = MutableStateFlow<Map<String, PendingTransactionEntity>>(emptyMap())
 
-  override suspend fun upsert(transaction: PendingTransactionEntity) =
-    entries.update { it + (transaction.hash to transaction) }
+  override suspend fun upsert(transaction: PendingTransactionEntity) = entries.update {
+    it + (transaction.hash to transaction)
+  }
 
-  override fun observePending(): Flow<List<PendingTransactionEntity>> =
-    entries.map { all -> all.values.sortedBy { it.createdAtMs } }
+  override fun observePending(): Flow<List<PendingTransactionEntity>> = entries.map { all ->
+    all.values.sortedBy { it.createdAtMs }
+  }
 
   override suspend fun pending(): List<PendingTransactionEntity> =
     entries.value.values.sortedBy { it.createdAtMs }
 
   override suspend fun find(hash: String): PendingTransactionEntity? = entries.value[hash]
 
-  override suspend fun replaceHash(oldHash: String, newHash: String, state: String, updatedAtMs: Long): Int {
+  override suspend fun replaceHash(
+    oldHash: String,
+    newHash: String,
+    state: String,
+    updatedAtMs: Long,
+  ): Int {
     val old = entries.value[oldHash] ?: return 0
-    entries.update { it - oldHash + (newHash to old.copy(hash = newHash, state = state, updatedAtMs = updatedAtMs)) }
+    entries.update {
+      it - oldHash + (newHash to old.copy(hash = newHash, state = state, updatedAtMs = updatedAtMs))
+    }
     return 1
   }
 
   override suspend fun remove(hash: String) = entries.update { it - hash }
 
-  override suspend fun deleteOtherNetworks(network: String) =
-    entries.update { all -> all.filterValues { it.network == network } }
+  override suspend fun deleteOtherNetworks(network: String) = entries.update { all ->
+    all.filterValues { it.network == network }
+  }
 }
 
 /** Host tests can't load FastKrypto, so these signers only carry an address. */
@@ -157,9 +174,8 @@ internal class AddressOnlySigner(override val address: String) : EvmSigner {
 /** Keys as addresses: the owner's, and agent keys handed out in order from [agentKeys]. */
 internal class FakeSigningWallet(
   private val preferences: AppPreferences,
-  private val agentKeys: Iterator<String> = generateSequence(1) { it + 1 }
-    .map { "0x" + it.toString(16).padStart(40, 'a') }
-    .iterator(),
+  private val agentKeys: Iterator<String> =
+    generateSequence(1) { it + 1 }.map { "0x" + it.toString(16).padStart(40, 'a') }.iterator(),
 ) : HyperliquidSigningWallet {
   val ownerPrompts = mutableListOf<VaultPrompt>()
   var confirmations = 0
@@ -173,19 +189,29 @@ internal class FakeSigningWallet(
   override fun requireAuthorization(generation: Long) {}
 
   override val profile: Flow<WalletProfile> =
-    preferences.values.map { WalletProfile(it.ownerAddress, it.apiWalletAddress, it.ownerBackupConfirmed) }
+    preferences.values.map {
+      WalletProfile(it.ownerAddress, it.apiWalletAddress, it.ownerBackupConfirmed)
+    }
 
   override suspend fun confirmIdentity(prompt: VaultPrompt) {
     confirmations += 1
   }
 
-  override suspend fun <T> withOwnerSigner(prompt: VaultPrompt, block: suspend (EvmSigner) -> T): T {
+  override suspend fun <T> withOwnerSigner(
+    prompt: VaultPrompt,
+    block: suspend (EvmSigner) -> T,
+  ): T {
     ownerPrompts += prompt
     signingFails?.let { throw it }
-    return block(AddressOnlySigner(checkNotNull(preferences.values.first().ownerAddress).lowercase()))
+    return block(
+      AddressOnlySigner(checkNotNull(preferences.values.first().ownerAddress).lowercase()),
+    )
   }
 
-  override suspend fun <T> withAgentSigner(prompt: VaultPrompt, block: suspend (EvmSigner) -> T): T =
+  override suspend fun <T> withAgentSigner(
+    prompt: VaultPrompt,
+    block: suspend (EvmSigner) -> T,
+  ): T =
     block(AddressOnlySigner(checkNotNull(preferences.values.first().apiWalletAddress).lowercase()))
 
   override suspend fun createApiWallet(prompt: VaultPrompt): String =
@@ -232,7 +258,9 @@ internal class FakeSubmitter : HyperliquidSubmitter {
   val sent = mutableListOf<Pair<ExchangeAction, Long>>()
   /** The `vaultAddress` each L1 action was signed with. */
   val vaults = mutableListOf<String?>()
-  var outcome: (ExchangeAction) -> ExchangeOutcome = { ExchangeOutcome.Accepted(ExchangeResponse.Default) }
+  var outcome: (ExchangeAction) -> ExchangeOutcome = {
+    ExchangeOutcome.Accepted(ExchangeResponse.Default)
+  }
   /** Runs before the request would be signed: what the journal holds by then. */
   var beforeSigning: suspend (nonce: Long) -> Unit = {}
   var afterSigning: suspend (nonce: Long) -> Unit = {}
@@ -268,7 +296,9 @@ internal class FakeSubmitter : HyperliquidSubmitter {
 }
 
 /** Setup over fakes: the wallet, `/exchange` and the journal, with `/info` from [answer]. */
-internal class SetupHarness(answer: (type: String, body: JsonObject) -> String? = { _, _ -> null }) {
+internal class SetupHarness(
+  answer: (type: String, body: JsonObject) -> String? = { _, _ -> null },
+) {
   var now = 1_800_000_000_000L
   val preferences = memoryPreferences()
   val journal = MemoryJournal()
@@ -277,9 +307,9 @@ internal class SetupHarness(answer: (type: String, body: JsonObject) -> String? 
   var answer: (type: String, body: JsonObject) -> String? = answer
   val client = dynamicClient { type, body -> this.answer(type, body) }
   val nonces = HyperliquidNonces(preferences) { now }
-  val actions =
-    HyperliquidActions(journal, preferences, wallet, client, submitter, nonces) { now }
-  val setup = HyperliquidSetup(client, preferences, wallet, actions, nonces, { now }, verificationDelayMs = 0)
+  val actions = HyperliquidActions(journal, preferences, wallet, client, submitter, nonces) { now }
+  val setup =
+    HyperliquidSetup(client, preferences, wallet, actions, nonces, { now }, verificationDelayMs = 0)
 
   suspend fun withOwner(owner: String = OWNER): SetupHarness = apply {
     preferences.registerProfile(AccountProfile("owner_$owner", ownerAddress = owner))
@@ -310,7 +340,11 @@ internal fun testAccounts(
 internal fun unusedFunds(client: HyperliquidClient, preferences: AppPreferences): HyperliquidFunds {
   val actions =
     HyperliquidActions(
-      MemoryJournal(), preferences, FakeSigningWallet(preferences), client, FakeSubmitter(),
+      MemoryJournal(),
+      preferences,
+      FakeSigningWallet(preferences),
+      client,
+      FakeSubmitter(),
       HyperliquidNonces(preferences),
     )
   return HyperliquidFunds(client, actions, preferences)

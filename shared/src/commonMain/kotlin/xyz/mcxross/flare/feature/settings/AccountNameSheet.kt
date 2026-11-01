@@ -15,8 +15,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +47,10 @@ internal fun AccountNameSheet(editor: AccountNameEditor, onIntent: (SettingsInte
   val keyboard = LocalSoftwareKeyboardController.current
   val focus = remember { FocusRequester() }
   var focused by remember { mutableStateOf(false) }
-  var value by remember(editor.profileId, editor.address, editor.tradingAccount) {
-    mutableStateOf(TextFieldValue(editor.name, TextRange(0, editor.name.length)))
-  }
+  var value by
+    remember(editor.profileId, editor.address, editor.tradingAccount) {
+      mutableStateOf(TextFieldValue(editor.name, TextRange(0, editor.name.length)))
+    }
   val dismiss = {
     keyboard?.hide()
     onIntent(SettingsIntent.DismissAccountName)
@@ -62,16 +63,20 @@ internal fun AccountNameSheet(editor: AccountNameEditor, onIntent: (SettingsInte
     onDismiss = dismiss,
     dismissible = !editor.saving,
   ) {
-    Text(shortAddress(editor.address), color = FlareColors.TextSecondary,
-      style = MaterialTheme.typography.bodySmall)
+    Text(
+      shortAddress(editor.address),
+      color = FlareColors.TextSecondary,
+      style = MaterialTheme.typography.bodySmall,
+    )
     Spacer(Modifier.height(24.dp))
     Text("Name", style = MaterialTheme.typography.labelMedium, color = FlareColors.TextSecondary)
     Spacer(Modifier.height(6.dp))
-    val border = when {
-      editor.error != null -> FlareColors.Negative
-      focused -> FlareColors.Positive
-      else -> FlareColors.BorderSubtle
-    }
+    val border =
+      when {
+        editor.error != null -> FlareColors.Negative
+        focused -> FlareColors.Positive
+        else -> FlareColors.BorderSubtle
+      }
     BasicTextField(
       value = value,
       onValueChange = {
@@ -79,13 +84,14 @@ internal fun AccountNameSheet(editor: AccountNameEditor, onIntent: (SettingsInte
         value = it
         if (changed) onIntent(SettingsIntent.ChangeAccountName(it.text))
       },
-      modifier = Modifier.fillMaxWidth()
-        .focusRequester(focus)
-        .onFocusChanged { focused = it.isFocused }
-        .semantics { contentDescription = "Name" }
-        .background(FlareColors.Elevated, RoundedCornerShape(14.dp))
-        .border(1.dp, border, RoundedCornerShape(14.dp))
-        .padding(14.dp),
+      modifier =
+        Modifier.fillMaxWidth()
+          .focusRequester(focus)
+          .onFocusChanged { focused = it.isFocused }
+          .semantics { contentDescription = "Name" }
+          .background(FlareColors.Elevated, RoundedCornerShape(14.dp))
+          .border(1.dp, border, RoundedCornerShape(14.dp))
+          .padding(14.dp),
       enabled = !editor.saving,
       singleLine = true,
       textStyle = MaterialTheme.typography.bodyLarge.copy(color = FlareColors.TextPrimary),
@@ -93,28 +99,51 @@ internal fun AccountNameSheet(editor: AccountNameEditor, onIntent: (SettingsInte
       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
       keyboardActions = KeyboardActions(onDone = { save() }),
     )
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-      Text(editor.error ?: "Name on this device", style = MaterialTheme.typography.bodySmall,
-        color = if (editor.error != null) FlareColors.Negative else FlareColors.TextSecondary)
-      Text("${value.text.trim().length}/$ACCOUNT_NAME_MAX_LENGTH",
-        style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+    Row(
+      Modifier.fillMaxWidth().padding(top = 6.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text(
+        editor.error ?: "Name on this device",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (editor.error != null) FlareColors.Negative else FlareColors.TextSecondary,
+      )
+      Text(
+        "${value.text.trim().length}/$ACCOUNT_NAME_MAX_LENGTH",
+        style = MaterialTheme.typography.bodySmall,
+        color = FlareColors.TextSecondary,
+      )
     }
-    if (editor.hasCustomName) TextButton(
-      onClick = {
-        value = TextFieldValue(editor.defaultName, TextRange(0, editor.defaultName.length))
-        onIntent(SettingsIntent.UseDefaultAccountName)
-      },
-      enabled = !editor.saving && !editor.useDefault,
-    ) { Text("Use default name", color = FlareColors.TextSecondary) }
+    if (editor.hasCustomName)
+      TextButton(
+        onClick = {
+          value = TextFieldValue(editor.defaultName, TextRange(0, editor.defaultName.length))
+          onIntent(SettingsIntent.UseDefaultAccountName)
+        },
+        enabled = !editor.saving && !editor.useDefault,
+      ) {
+        Text("Use default name", color = FlareColors.TextSecondary)
+      }
     Spacer(Modifier.height(24.dp))
-    FlareButton("Save", save, Modifier.fillMaxWidth(), enabled = editor.canSave, working = editor.saving)
+    FlareButton(
+      "Save",
+      save,
+      Modifier.fillMaxWidth(),
+      enabled = editor.canSave,
+      working = editor.saving,
+    )
     Spacer(Modifier.height(8.dp))
-    FlareButton("Cancel", dismiss, Modifier.fillMaxWidth(),
-      style = FlareButtonStyle.OUTLINE, enabled = !editor.saving)
+    FlareButton(
+      "Cancel",
+      dismiss,
+      Modifier.fillMaxWidth(),
+      style = FlareButtonStyle.OUTLINE,
+      enabled = !editor.saving,
+    )
   }
   DisposableEffect(Unit) { onDispose { keyboard?.hide() } }
   LaunchedEffect(editor.profileId, editor.address, editor.tradingAccount) {
-    withFrameNanos { }
+    withFrameNanos {}
     focus.requestFocus()
     keyboard?.show()
   }

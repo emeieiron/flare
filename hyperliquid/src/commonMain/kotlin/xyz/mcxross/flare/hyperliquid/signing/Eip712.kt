@@ -77,9 +77,10 @@ sealed interface Eip712Value {
 class Eip712Struct(val typeName: String, val fields: List<Pair<String, Eip712Value>>) {
   /** `Name(type1 name1,type2 name2)`. */
   val encodedType: String
-    get() = fields.joinToString(",", prefix = "$typeName(", postfix = ")") { (name, value) ->
-      "${value.type} $name"
-    }
+    get() =
+      fields.joinToString(",", prefix = "$typeName(", postfix = ")") { (name, value) ->
+        "${value.type} $name"
+      }
 
   fun typeHash(): ByteArray = keccak256(encodedType.encodeToByteArray())
 

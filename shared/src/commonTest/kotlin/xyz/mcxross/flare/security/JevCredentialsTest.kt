@@ -5,11 +5,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +27,10 @@ class JevCredentialsTest {
     val platform = SecretVault()
     val credentials = JevCredentials(ForegroundWalletVault(platform), preferences)
     credentials.store("test-secret-value")
-    assertEquals("test-secret-value", platform.secrets[WalletSecretSlot.JEV_API_KEY]?.decodeToString())
+    assertEquals(
+      "test-secret-value",
+      platform.secrets[WalletSecretSlot.JEV_API_KEY]?.decodeToString(),
+    )
     assertTrue(credentials.metadata.first().configured)
     assertFalse(credentials.metadata.first().enabled)
     assertTrue(store.data.value.asMap().values.all { it is Boolean })
@@ -109,7 +112,11 @@ class JevCredentialsTest {
       var cleaned = false
       val request = async {
         credentials.withKey {
-          try { awaitCancellation() } finally { cleaned = true }
+          try {
+            awaitCancellation()
+          } finally {
+            cleaned = true
+          }
         }
       }
       runCurrent()
@@ -194,7 +201,8 @@ class JevCredentialsTest {
   @Test
   fun invalidInputIsRejectedBeforeStorage() = runTest {
     val platform = SecretVault()
-    val credentials = JevCredentials(ForegroundWalletVault(platform), AppPreferences(MetadataStore()))
+    val credentials =
+      JevCredentials(ForegroundWalletVault(platform), AppPreferences(MetadataStore()))
     for (key in listOf("", "key\nvalue", "key value", "x".repeat(4097))) {
       assertFailsWith<IllegalArgumentException> { credentials.store(key) }
     }
@@ -203,6 +211,7 @@ class JevCredentialsTest {
 
   private class MetadataStore : DataStore<Preferences> {
     override val data = MutableStateFlow(emptyPreferences())
+
     override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
       return transform(data.value).also { data.value = it }
     }
@@ -214,16 +223,24 @@ class JevCredentialsTest {
     var wait: CompletableDeferred<Unit>? = null
     var corruptReads = false
     val returned = mutableListOf<ByteArray>()
+
     override suspend fun store(slot: WalletSecretSlot, secret: ByteArray, prompt: VaultPrompt) {
       secrets.put(slot, secret.copyOf())?.fill(0)
     }
+
     override suspend fun read(slot: WalletSecretSlot, prompt: VaultPrompt): ByteArray {
       reads++
       wait?.await()
       if (corruptReads) throw WalletVaultException.Corrupted()
-      return (secrets[slot]?.copyOf() ?: throw WalletVaultException.Corrupted()).also { returned += it }
+      return (secrets[slot]?.copyOf() ?: throw WalletVaultException.Corrupted()).also {
+        returned += it
+      }
     }
-    override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) { secrets.remove(slot)?.fill(0) }
+
+    override suspend fun remove(slot: WalletSecretSlot, prompt: VaultPrompt) {
+      secrets.remove(slot)?.fill(0)
+    }
+
     override fun lock() = Unit
   }
 }

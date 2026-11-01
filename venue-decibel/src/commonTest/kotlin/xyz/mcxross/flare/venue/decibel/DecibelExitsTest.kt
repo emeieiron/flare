@@ -20,15 +20,32 @@ import xyz.mcxross.flare.venue.model.OpenOrder
 class DecibelExitsTest {
   private val json = DecibelClient.DefaultJson
 
-  // A 0.01 ETH market buy with TP 3,000 and SL 2,000 attached, after it filled, beside a resting buy.
+  // A 0.01 ETH market buy with TP 3,000 and SL 2,000 attached, after it filled, beside a resting
+  // buy.
   private val orders =
     json
       .decodeFromString<Page<Order>>(
         """{"items":[""" +
-          order("11", isBuy = false, reduceOnly = true, type = "Stop Limit", price = 2000.0, ms = 2) + "," +
-          order("12", isBuy = false, reduceOnly = true, type = "Take Profit Limit", price = 3000.0, ms = 2) + "," +
+          order(
+            "11",
+            isBuy = false,
+            reduceOnly = true,
+            type = "Stop Limit",
+            price = 2000.0,
+            ms = 2,
+          ) +
+          "," +
+          order(
+            "12",
+            isBuy = false,
+            reduceOnly = true,
+            type = "Take Profit Limit",
+            price = 3000.0,
+            ms = 2,
+          ) +
+          "," +
           order("13", isBuy = true, reduceOnly = false, type = "Limit", price = 2000.0, ms = 1) +
-          """],"total_count":3}"""
+          """],"total_count":3}""",
       )
       .items
       .map { it.toOpenOrder() }
@@ -39,7 +56,7 @@ class DecibelExitsTest {
         """"is_isolated":false,"is_deleted":false,"unrealized_funding":0.0,""" +
         """"estimated_liquidation_price":0.0,"transaction_version":38648300,""" +
         """"has_fixed_sized_tpsls":true,"tp_order_id":null,"tp_trigger_price":null,""" +
-        """"tp_limit_price":null,"sl_order_id":null,"sl_trigger_price":null,"sl_limit_price":null}"""
+        """"tp_limit_price":null,"sl_order_id":null,"sl_trigger_price":null,"sl_limit_price":null}""",
     )
 
   @Test
@@ -85,22 +102,38 @@ class DecibelExitsTest {
     // Set for the whole position, as Manage position does: no size of its own.
     val whole = positionExit("21", "Take Profit Limit", tp = 3200.0, size = "null").toOpenOrder()
     assertEquals(
-      "take profit limit · Reduce only" to "Sell entire position · at \$3,200.00 · trigger \$3,200.00",
+      "take profit limit · Reduce only" to
+        "Sell entire position · at \$3,200.00 · trigger \$3,200.00",
       row(whole),
     )
-    val stop = positionExit("22", "Stop Market", sl = 1900.0, price = "null", size = "null").toOpenOrder()
+    val stop =
+      positionExit("22", "Stop Market", sl = 1900.0, price = "null", size = "null").toOpenOrder()
     assertEquals("Sell entire position · at market · trigger \$1,900.00", openOrderSummary(stop))
 
     // One listed with a size is still whole when the position names it as its exit.
-    val sized = listOf(positionExit("23", "Stop Market", sl = 1900.0, price = "null", size = "0.01").toOpenOrder())
+    val sized =
+      listOf(
+        positionExit("23", "Stop Market", sl = 1900.0, price = "null", size = "0.01").toOpenOrder(),
+      )
     assertEquals("Sell 0.01 · at market · trigger \$1,900.00", openOrderSummary(sized.single()))
     val named = sized.withWholePositionExits(listOf(long.copy(stopLossOrderId = "23")))
-    assertEquals("Sell entire position · at market · trigger \$1,900.00", openOrderSummary(named.single()))
+    assertEquals(
+      "Sell entire position · at market · trigger \$1,900.00",
+      openOrderSummary(named.single()),
+    )
   }
 
   @Test
   fun aTriggerConditionNamesTheTrigger() {
-    val order = positionExit("24", "Stop Limit", sl = null, price = "1890.0", size = "0.01", condition = "mark <= 1,900.5")
+    val order =
+      positionExit(
+        "24",
+        "Stop Limit",
+        sl = null,
+        price = "1890.0",
+        size = "0.01",
+        condition = "mark <= 1,900.5",
+      )
     assertEquals(1900.5, order.toOpenOrder().triggerPrice)
   }
 
@@ -110,8 +143,14 @@ class DecibelExitsTest {
     val earlier = orders.exitsFor(ETH, closesWithBuy = false)
     val replacement =
       ExitReplacement(
-        openExits = { events += "read"; earlier },
-        cancel = { events += "cancel ${it.orderId}"; ActionState.Committed("0xc${it.orderId}") },
+        openExits = {
+          events += "read"
+          earlier
+        },
+        cancel = {
+          events += "cancel ${it.orderId}"
+          ActionState.Committed("0xc${it.orderId}")
+        },
       )
     val placement = flow {
       events += "place"
@@ -131,7 +170,10 @@ class DecibelExitsTest {
     val replacement =
       ExitReplacement(
         openExits = { orders.exitsFor(ETH, closesWithBuy = false) },
-        cancel = { cancelled += it.orderId; ActionState.Committed("0x") },
+        cancel = {
+          cancelled += it.orderId
+          ActionState.Committed("0x")
+        },
       )
 
     val states = replacement.replace(flowOf(ActionState.Failed("Simulation failed"))).toList()
@@ -148,7 +190,10 @@ class DecibelExitsTest {
     val replacement =
       ExitReplacement(
         openExits = { if (reads++ == 0) earlier else earlier.filter { it.orderId == "11" } },
-        cancel = { cancelled += it.orderId; ActionState.Failed("Network busy") },
+        cancel = {
+          cancelled += it.orderId
+          ActionState.Failed("Network busy")
+        },
       )
 
     val last = replacement.replace(flowOf(ActionState.Committed("0xnew"))).toList().last()
@@ -176,13 +221,20 @@ class DecibelExitsTest {
         """"is_tpsl":true,"cancellation_reason":"","transaction_version":38648400,"unix_ms":3,""" +
         """"price":$price,"orig_size":$size,"remaining_size":$size,"size_delta":null,""" +
         """"tp_trigger_price":$tp,"tp_limit_price":${if (price == "null") null else tp},""" +
-        """"sl_trigger_price":$sl,"sl_limit_price":${if (price == "null") null else sl}}"""
+        """"sl_trigger_price":$sl,"sl_limit_price":${if (price == "null") null else sl}}""",
     )
 
   private companion object {
     const val ETH = "0x59fa603bd934597e8d69ce9ffc8070c0a91112e4948ec46339071b5f8922c30d"
 
-    fun order(id: String, isBuy: Boolean, reduceOnly: Boolean, type: String, price: Double, ms: Long) =
+    fun order(
+      id: String,
+      isBuy: Boolean,
+      reduceOnly: Boolean,
+      type: String,
+      price: Double,
+      ms: Long,
+    ) =
       """{"asset_type":"perp","parent":"0xce9f","market":"$ETH","client_order_id":"",""" +
         """"order_id":"$id","status":"Open","order_type":"$type","trigger_condition":"",""" +
         """"order_direction":"${if (reduceOnly) "Close Long" else "Open Long"}","is_buy":$isBuy,""" +

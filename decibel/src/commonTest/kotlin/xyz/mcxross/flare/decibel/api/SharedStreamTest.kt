@@ -25,8 +25,13 @@ class SharedStreamTest {
     val incoming = Channel<String>(Channel.UNLIMITED)
     val sent = mutableListOf<String>()
     var closed = false
-    override suspend fun send(message: String) { sent += message }
+
+    override suspend fun send(message: String) {
+      sent += message
+    }
+
     override suspend fun receive(): String? = incoming.receiveCatching().getOrNull()
+
     fun subscriptions(method: String) = sent.filter { "\"method\":\"$method\"" in it }
   }
 
@@ -34,20 +39,36 @@ class SharedStreamTest {
     val sockets = mutableListOf<Socket>()
     var token = "owner"
     private val client = HttpClient(MockEngine { error("Unexpected HTTP request") })
-    val stream = DefaultDecibelStreamService(
-      client, DecibelConfig(accessToken = { token }), DecibelClient.DefaultJson,
-      StreamTransport { token, block ->
-        val socket = Socket(token).also { sockets += it }
-        try { socket.block() } finally { socket.closed = true }
-      }, scope,
-    )
-    fun close() { stream.close(); client.close() }
+    val stream =
+      DefaultDecibelStreamService(
+        client,
+        DecibelConfig(accessToken = { token }),
+        DecibelClient.DefaultJson,
+        StreamTransport { token, block ->
+          val socket = Socket(token).also { sockets += it }
+          try {
+            socket.block()
+          } finally {
+            socket.closed = true
+          }
+        },
+        scope,
+      )
+
+    fun close() {
+      stream.close()
+      client.close()
+    }
   }
 
-  private fun TestScope.follow(f: Fixture, topics: Set<DecibelStreamTopic>, events: MutableList<StreamEvent>): Job =
-    backgroundScope.launch { f.stream.subscribe(topics).collect { events += it } }
+  private fun TestScope.follow(
+    f: Fixture,
+    topics: Set<DecibelStreamTopic>,
+    events: MutableList<StreamEvent>,
+  ): Job = backgroundScope.launch { f.stream.subscribe(topics).collect { events += it } }
 
-  @Test fun fourFeedsShareOneSocketAndRouteOnlyTheirTopics() = runTest {
+  @Test
+  fun fourFeedsShareOneSocketAndRouteOnlyTheirTopics() = runTest {
     val f = Fixture(backgroundScope)
     try {
       val account = mutableListOf<StreamEvent>()
@@ -65,7 +86,9 @@ class SharedStreamTest {
       assertEquals(6, socket.subscriptions("subscribe").size)
       assertEquals(1, account.filterIsInstance<StreamEvent.Connected>().size)
       socket.incoming.send("""{"topic":"all_market_prices","sequence":1,"prices":[]}""")
-      socket.incoming.send("""{"topic":"${AccountPositions("0x1").wireValue}","sequence":90,"positions":[]}""")
+      socket.incoming.send(
+        """{"topic":"${AccountPositions("0x1").wireValue}","sequence":90,"positions":[]}""",
+      )
       socket.incoming.send("""{"topic":"all_market_prices","sequence":2,"prices":[]}""")
       runCurrent()
       assertEquals(2, prices.filterIsInstance<StreamEvent.Message>().size)
@@ -73,10 +96,13 @@ class SharedStreamTest {
       assertTrue(details.none { it is StreamEvent.Message })
       assertTrue(candles.none { it is StreamEvent.Message })
       assertTrue(prices.none { it is StreamEvent.SequenceGap })
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 
-  @Test fun topicsAreReferenceCountedUsingCanonicalWireNames() = runTest {
+  @Test
+  fun topicsAreReferenceCountedUsingCanonicalWireNames() = runTest {
     val f = Fixture(backgroundScope)
     try {
       val topic = MarketTrades("0x1")
@@ -100,10 +126,13 @@ class SharedStreamTest {
       advanceTimeBy(2_001)
       runCurrent()
       assertTrue(socket.closed)
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 
-  @Test fun backgroundClosesImmediatelyAndResumeReplaysTopics() = runTest {
+  @Test
+  fun backgroundClosesImmediatelyAndResumeReplaysTopics() = runTest {
     val f = Fixture(backgroundScope)
     try {
       follow(f, setOf(AllMarketPrices), mutableListOf())
@@ -118,10 +147,13 @@ class SharedStreamTest {
       runCurrent()
       assertEquals(2, f.sockets.size)
       assertEquals(1, f.sockets.last().subscriptions("subscribe").size)
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 
-  @Test fun rapidPauseResumeCannotLeaveACancelledConnectionInUse() = runTest {
+  @Test
+  fun rapidPauseResumeCannotLeaveACancelledConnectionInUse() = runTest {
     val f = Fixture(backgroundScope)
     try {
       follow(f, setOf(AllMarketPrices), mutableListOf())
@@ -132,10 +164,13 @@ class SharedStreamTest {
       assertTrue(f.sockets.first().closed)
       assertEquals(2, f.sockets.size)
       assertEquals(1, f.sockets.last().subscriptions("subscribe").size)
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 
-  @Test fun privateJoinUpgradesAnonymousAndAccountSwitchRemovesOldListener() = runTest {
+  @Test
+  fun privateJoinUpgradesAnonymousAndAccountSwitchRemovesOldListener() = runTest {
     val f = Fixture(backgroundScope)
     try {
       f.token = "anonymous"
@@ -152,12 +187,19 @@ class SharedStreamTest {
       runCurrent()
       assertFalse(old.isActive)
       assertEquals("owner-b", f.sockets.last().token)
-      assertTrue(f.sockets.last().subscriptions("subscribe").none { AccountPositions("0x1").wireValue in it })
+      assertTrue(
+        f.sockets.last().subscriptions("subscribe").none {
+          AccountPositions("0x1").wireValue in it
+        },
+      )
       assertEquals(2, f.sockets.last().subscriptions("subscribe").size)
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 
-  @Test fun reconnectRenewsTokenAndMalformedFramesDoNotKillOtherFeeds() = runTest {
+  @Test
+  fun reconnectRenewsTokenAndMalformedFramesDoNotKillOtherFeeds() = runTest {
     val f = Fixture(backgroundScope)
     try {
       val events = mutableListOf<StreamEvent>()
@@ -180,6 +222,8 @@ class SharedStreamTest {
       assertEquals(2, f.sockets.size)
       assertEquals("renewed", f.sockets.last().token)
       assertEquals(1, f.sockets.last().subscriptions("subscribe").size)
-    } finally { f.close() }
+    } finally {
+      f.close()
+    }
   }
 }

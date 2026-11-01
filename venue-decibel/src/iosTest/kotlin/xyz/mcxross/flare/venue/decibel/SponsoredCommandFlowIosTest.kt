@@ -42,14 +42,14 @@ import xyz.mcxross.flare.decibel.model.ValidatedTwapOrder
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.kaptos.Aptos
+import xyz.mcxross.kaptos.AptosConfig
+import xyz.mcxross.kaptos.AptosEndpoints
 import xyz.mcxross.kaptos.account.TransactionSigner
 import xyz.mcxross.kaptos.core.crypto.Ed25519PublicKey
 import xyz.mcxross.kaptos.core.crypto.Ed25519Signature
 import xyz.mcxross.kaptos.core.crypto.PublicKey
 import xyz.mcxross.kaptos.core.crypto.Signature
 import xyz.mcxross.kaptos.model.AccountAddress
-import xyz.mcxross.kaptos.AptosConfig
-import xyz.mcxross.kaptos.AptosEndpoints
 import xyz.mcxross.kaptos.model.AptosResult
 import xyz.mcxross.kaptos.model.MoveFunction
 import xyz.mcxross.kaptos.model.MoveModule
@@ -69,7 +69,10 @@ class SponsoredCommandFlowIosTest {
   @Test
   fun everyCommandIsSponsoredOnTheRouteOfItsSigner() = runTest {
     for ((command, route) in COMMANDS) {
-      val f = Fixture(dispatcher()) { respondJson("""{"transactionHash":"$SPONSORED_HASH"}""", HttpStatusCode.OK) }
+      val f =
+        Fixture(dispatcher()) {
+          respondJson("""{"transactionHash":"$SPONSORED_HASH"}""", HttpStatusCode.OK)
+        }
       try {
         val states = f.run(command)
         assertEquals(ActionState.Committed(SPONSORED_HASH), states.last(), "$command")
@@ -110,9 +113,24 @@ class SponsoredCommandFlowIosTest {
   fun uncertainSponsorshipOutcomesStayPendingWithoutSelfPay() = runTest {
     val cases: List<MockRequestHandleScope.() -> HttpResponseData> =
       listOf(
-        { respondJson("""{"error":"Unable to journal sponsored transaction"}""", HttpStatusCode.ServiceUnavailable) },
-        { respondJson("""{"code":"gas_station_transaction_not_allowed"}""", HttpStatusCode.ServiceUnavailable) },
-        { respondJson("""{"error":"Gas Station request outcome is unknown"}""", HttpStatusCode.BadGateway) },
+        {
+          respondJson(
+            """{"error":"Unable to journal sponsored transaction"}""",
+            HttpStatusCode.ServiceUnavailable,
+          )
+        },
+        {
+          respondJson(
+            """{"code":"gas_station_transaction_not_allowed"}""",
+            HttpStatusCode.ServiceUnavailable,
+          )
+        },
+        {
+          respondJson(
+            """{"error":"Gas Station request outcome is unknown"}""",
+            HttpStatusCode.BadGateway,
+          )
+        },
         { respondJson("""{"error":"timeout"}""", HttpStatusCode.GatewayTimeout) },
         { respondJson("""{"transactionHash":"invalid"}""", HttpStatusCode.OK) },
         { throw RuntimeException("connection reset after submit") },
@@ -148,8 +166,8 @@ private class Fixture(
         MockEngineConfig().apply {
           this.dispatcher = dispatcher
           addHandler { request -> handle(request) }
-        }
-      )
+        },
+      ),
     ) {
       install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
@@ -159,7 +177,7 @@ private class Fixture(
         network = Network.MAINNET,
         endpoints = AptosEndpoints(fullNode = "https://fullnode.invalid/v1"),
         transport = http.asAptosTransport(),
-      )
+      ),
     )
   private val client = DecibelClient(http, aptos)
   private val sponsorship =
@@ -190,7 +208,11 @@ private class Fixture(
     check(aptos.transactions.preloadModuleAbis(ENTRY_ABI) is AptosResult.Success)
     check(aptos.transactions.preloadModuleAbis(SPOT_ENTRY_ABI) is AptosResult.Success)
     return client.trading
-      .execute(signer = Signer, command = command, externalFeePayer = sponsorship.submitterFor(command))
+      .execute(
+        signer = Signer,
+        command = command,
+        externalFeePayer = sponsorship.submitterFor(command),
+      )
       .toList()
       .map { it.toActionState() }
   }
@@ -224,7 +246,7 @@ private object Signer : TransactionSigner {
   override suspend fun signText(message: String) = signBytes(message.encodeToByteArray())
 
   override suspend fun signTransaction(
-    transaction: UnsignedTransaction
+    transaction: UnsignedTransaction,
   ): AptosResult<AccountAuthenticator> = AptosResult.Success(auth)
 
   override fun verifySignature(message: ByteArray, signature: Signature) = true
@@ -233,7 +255,7 @@ private object Signer : TransactionSigner {
 private object Sessions : SessionRepository {
   override val status =
     kotlinx.coroutines.flow.MutableStateFlow<SessionStatus?>(
-      SessionStatus(role = SessionRole.OWNER, expiresAt = Long.MAX_VALUE)
+      SessionStatus(role = SessionRole.OWNER, expiresAt = Long.MAX_VALUE),
     )
 
   override fun <T> bind(status: SessionStatus, operation: kotlinx.coroutines.flow.Flow<T>) =
@@ -257,9 +279,24 @@ private const val OWNER = "owner"
 private const val TRADING = "trading"
 private const val MAX_U128 = "340282366920938463463374607431768211455"
 private val ORDER =
-  ValidatedOrder("0x22", OrderSide.BUY, 10uL, 1uL, TimeInForce.GOOD_TILL_CANCELLED, false, null, null, null, null, null, null)
+  ValidatedOrder(
+    "0x22",
+    OrderSide.BUY,
+    10uL,
+    1uL,
+    TimeInForce.GOOD_TILL_CANCELLED,
+    false,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  )
 
-/** Each command and the Worker route its signer uses; the Worker allowlists it on that route only. */
+/**
+ * Each command and the Worker route its signer uses; the Worker allowlists it on that route only.
+ */
 private val COMMANDS: List<Pair<DecibelCommand, String>> =
   listOf(
     DecibelCommand.CreateSubaccount to OWNER,
@@ -277,7 +314,8 @@ private val COMMANDS: List<Pair<DecibelCommand, String>> =
     DecibelCommand.ConfigureMarket("0x11", "0x22", MarginMode.CROSS, 1u) to TRADING,
     DecibelCommand.PlaceOrder("0x11", ORDER) to TRADING,
     DecibelCommand.PlaceSpotOrder("0x11", ORDER) to TRADING,
-    DecibelCommand.PlaceTwapOrder("0x11", ValidatedTwapOrder("0x22", OrderSide.BUY, 10uL)) to TRADING,
+    DecibelCommand.PlaceTwapOrder("0x11", ValidatedTwapOrder("0x22", OrderSide.BUY, 10uL)) to
+      TRADING,
     DecibelCommand.CancelOrder("0x11", "0x22", MAX_U128) to TRADING,
     DecibelCommand.CancelSpotOrder("0x11", "0x22", MAX_U128) to TRADING,
     DecibelCommand.CancelTwapOrder("0x11", "0x22", MAX_U128) to TRADING,
@@ -325,18 +363,49 @@ private val ENTRY_ABI =
     entry("configure_user_settings_for_market", "address", PERP, "bool", "u8"),
     entry(
       "place_order_to_subaccount",
-      SUBACCOUNT, PERP, "u64", "u64", "bool", "u8", "bool", OPT_STRING,
-      OPT_U64, OPT_U64, OPT_U64, OPT_U64, OPT_U64, OPT_ADDRESS, OPT_U64,
+      SUBACCOUNT,
+      PERP,
+      "u64",
+      "u64",
+      "bool",
+      "u8",
+      "bool",
+      OPT_STRING,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_ADDRESS,
+      OPT_U64,
     ),
     entry("cancel_order_to_subaccount", SUBACCOUNT, "u128", PERP),
     entry("cancel_tp_sl_order_for_position", SUBACCOUNT, PERP, "u128"),
     entry(
       "place_tp_sl_order_for_position",
-      SUBACCOUNT, PERP, OPT_U64, OPT_U64, OPT_U64, OPT_U64, OPT_U64, OPT_U64, OPT_ADDRESS, OPT_U64,
+      SUBACCOUNT,
+      PERP,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_U64,
+      OPT_ADDRESS,
+      OPT_U64,
     ),
     entry(
       "place_twap_order_to_subaccount_v2",
-      SUBACCOUNT, PERP, "u64", "bool", "bool", OPT_STRING, "u64", "u64", OPT_ADDRESS, OPT_U64,
+      SUBACCOUNT,
+      PERP,
+      "u64",
+      "bool",
+      "bool",
+      OPT_STRING,
+      "u64",
+      "u64",
+      OPT_ADDRESS,
+      OPT_U64,
     ),
     entry("cancel_twap_orders_to_subaccount", SUBACCOUNT, PERP, "u128"),
     entry("contribute_to_vault", SUBACCOUNT, "address", ASSET, "u64"),
@@ -348,7 +417,14 @@ private val SPOT_ENTRY_ABI =
     "dex_accounts_spot_entry",
     entry(
       "place_spot_order_to_subaccount",
-      SUBACCOUNT, SPOT, "u64", "u64", "bool", "u8", OPT_ADDRESS, OPT_U64,
+      SUBACCOUNT,
+      SPOT,
+      "u64",
+      "u64",
+      "bool",
+      "u8",
+      OPT_ADDRESS,
+      OPT_U64,
     ),
     entry("cancel_spot_order_to_subaccount", SUBACCOUNT, SPOT, "u128"),
     entry("approve_max_spot_builder_fee_for_subaccount", SUBACCOUNT, "address", "u64"),

@@ -14,9 +14,9 @@ import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TimeInForce
 
 /**
- * A Hyperliquid market's order checks: a price has at most five significant figures and at most
- * (6 for perps, 8 for spot) − szDecimals decimals, a size at most szDecimals decimals, and an order
- * is worth at least $10. A market order is sent as an immediate-or-cancel limit order at the best
+ * A Hyperliquid market's order checks: a price has at most five significant figures and at most (6
+ * for perps, 8 for spot) − szDecimals decimals, a size at most szDecimals decimals, and an order is
+ * worth at least $10. A market order is sent as an immediate-or-cancel limit order at the best
  * price moved by the slippage allowance.
  */
 data class HyperliquidOrderRules(
@@ -58,7 +58,8 @@ data class HyperliquidOrderRules(
           }
         }
       }
-      return if (errors.isEmpty() && size != null) OrderCheck.Valid(order.copy(size = size.toString()))
+      return if (errors.isEmpty() && size != null)
+        OrderCheck.Valid(order.copy(size = size.toString()))
       else OrderCheck.Invalid(errors)
     }
     val price =
@@ -80,18 +81,20 @@ data class HyperliquidOrderRules(
         errors += "Minimum order value is $${HyperliquidAsset.MIN_ORDER_VALUE_USDC}"
       }
     }
-    if (errors.isNotEmpty() || size == null || price == null) return OrderCheck.Invalid(errors.distinct())
+    if (errors.isNotEmpty() || size == null || price == null)
+      return OrderCheck.Invalid(errors.distinct())
     return OrderCheck.Valid(
       order.copy(
         size = size.toString(),
         price = price.toString(),
         timeInForce =
-          if (order.type == OrderType.MARKET) TimeInForce.IMMEDIATE_OR_CANCEL else order.timeInForce,
+          if (order.type == OrderType.MARKET) TimeInForce.IMMEDIATE_OR_CANCEL
+          else order.timeInForce,
         takeProfitTrigger = takeProfitTrigger?.toString(),
         takeProfitLimit = takeProfitLimit?.toString(),
         stopLossTrigger = stopLossTrigger?.toString(),
         stopLossLimit = stopLossLimit?.toString(),
-      )
+      ),
     )
   }
 
@@ -122,7 +125,8 @@ data class HyperliquidOrderRules(
       price == null || price.signum <= 0 -> errors += "$label: enter a valid price"
       !asset.isValidPrice(price) ->
         errors +=
-          if (maxPriceDecimals == 0) "$label can have at most 5 significant figures, or be a whole number"
+          if (maxPriceDecimals == 0)
+            "$label can have at most 5 significant figures, or be a whole number"
           else "$label can have at most 5 significant figures and $maxPriceDecimals decimals"
       else -> return price
     }
@@ -131,8 +135,10 @@ data class HyperliquidOrderRules(
 
   private fun midPrice(orderBook: OrderBook?): HlDecimal? {
     if (orderBook == null || orderBook.marketId != coin) return null
-    val bid = orderBook.bestBid?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
-    val ask = orderBook.bestAsk?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
+    val bid =
+      orderBook.bestBid?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
+    val ask =
+      orderBook.bestAsk?.let(HlDecimal::parseOrNull)?.takeIf { it.signum > 0 } ?: return null
     return runCatching { (bid + ask) * HlDecimal.of(5, 1) }.getOrNull()
   }
 

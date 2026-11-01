@@ -57,11 +57,11 @@ object MsgPack {
       val text = value.content
       if (text.startsWith('-')) {
         signed(
-          text.toLongOrNull() ?: throw IllegalArgumentException("MsgPack: unsupported number")
+          text.toLongOrNull() ?: throw IllegalArgumentException("MsgPack: unsupported number"),
         )
       } else {
         unsigned(
-          text.toULongOrNull() ?: throw IllegalArgumentException("MsgPack: unsupported number")
+          text.toULongOrNull() ?: throw IllegalArgumentException("MsgPack: unsupported number"),
         )
       }
     }

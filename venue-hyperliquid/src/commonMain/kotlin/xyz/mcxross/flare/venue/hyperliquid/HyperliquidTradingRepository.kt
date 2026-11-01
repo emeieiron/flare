@@ -4,7 +4,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import xyz.mcxross.flare.data.ExactAssetBalance
-import xyz.mcxross.flare.strategies.AutoAmounts
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
@@ -21,6 +20,7 @@ import xyz.mcxross.flare.hyperliquid.model.HyperliquidAsset
 import xyz.mcxross.flare.hyperliquid.model.L1Action
 import xyz.mcxross.flare.hyperliquid.model.UpdateLeverage
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.strategies.AutoAmounts
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.MarginMode
@@ -65,19 +65,27 @@ class HyperliquidTradingRepository(
         is TradeAction.RevokeBuilderFee -> setup.revokeBuilderFee(action.builder, prompt)
         is TradeAction.PlaceOrder -> beforeSending(prompt) { placeOrder(action, prompt) }
         is TradeAction.CancelOrder ->
-          beforeSending(prompt) { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
+          beforeSending(prompt) {
+            cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt)
+          }
         is TradeAction.CancelPositionTpSl ->
-          beforeSending(prompt) { cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt) }
-        is TradeAction.CancelOrders -> beforeSending(prompt) { cancel(action.account, action.orders, prompt) }
+          beforeSending(prompt) {
+            cancel(action.account, listOf(OpenOrderRef(action.marketId, action.orderId)), prompt)
+          }
+        is TradeAction.CancelOrders ->
+          beforeSending(prompt) { cancel(action.account, action.orders, prompt) }
         is TradeAction.ConfigureMarket -> beforeSending(prompt) { configureMarket(action, prompt) }
         is TradeAction.SetPositionTpSl -> beforeSending(prompt) { setPositionTpSl(action, prompt) }
         is TradeAction.CancelTwapOrder -> beforeSending(prompt) { cancelTwap(action, prompt) }
         is TradeAction.Withdraw -> funds.withdraw(action.account, null, action.amount, prompt)
-        is TradeAction.Transfer -> funds.send(action.account, action.destination, action.amount, prompt)
+        is TradeAction.Transfer ->
+          funds.send(action.account, action.destination, action.amount, prompt)
         is TradeAction.MovePerpSpot ->
           funds.movePerpSpot(action.account, action.amount, toPerp = !action.toSpot, prompt)
-        is TradeAction.VaultDeposit -> funds.vault(action.account, action.vault, true, action.amount, prompt)
-        is TradeAction.VaultWithdraw -> funds.vault(action.account, action.vault, false, action.shares, prompt)
+        is TradeAction.VaultDeposit ->
+          funds.vault(action.account, action.vault, true, action.amount, prompt)
+        is TradeAction.VaultWithdraw ->
+          funds.vault(action.account, action.vault, false, action.shares, prompt)
         is TradeAction.Deposit -> unavailable(DEPOSIT_BY_ADDRESS)
         is TradeAction.EnableTrading,
         TradeAction.CreateTradingAccount ->
@@ -90,7 +98,10 @@ class HyperliquidTradingRepository(
     actions.confirmed(prompt, block)
 
   /** Anything that fails before [block] reaches [actions] was never sent. */
-  private suspend fun beforeSending(prompt: VaultPrompt, block: suspend () -> ActionState): ActionState =
+  private suspend fun beforeSending(
+    prompt: VaultPrompt,
+    block: suspend () -> ActionState,
+  ): ActionState =
     try {
       actions.confirmed(prompt, block)
     } catch (cancelled: CancellationException) {
@@ -133,16 +144,27 @@ class HyperliquidTradingRepository(
       prompt,
       vaultAddress = actions.vaultFor(action.account),
       record = { lapses ->
-        JournaledAction.PlaceTwap(action.account, asset.coin, twap.isBuy, twap.size.toWire(), twap.minutes, lapses)
+        JournaledAction.PlaceTwap(
+          action.account,
+          asset.coin,
+          twap.isBuy,
+          twap.size.toWire(),
+          twap.minutes,
+          lapses,
+        )
       },
     ) { response, reference ->
       HyperliquidResults.twapPlaced(response, reference)
     }
   }
 
-  private suspend fun cancelTwap(action: TradeAction.CancelTwapOrder, prompt: VaultPrompt): ActionState {
+  private suspend fun cancelTwap(
+    action: TradeAction.CancelTwapOrder,
+    prompt: VaultPrompt,
+  ): ActionState {
     val asset = assets.asset(action.marketId)
-    val twapId = action.twapId.toLongOrNull() ?: throw IllegalArgumentException("This TWAP can’t be canceled")
+    val twapId =
+      action.twapId.toLongOrNull() ?: throw IllegalArgumentException("This TWAP can’t be canceled")
     return actions.sendAsAgent(
       CancelTwap(asset.id, twapId),
       prompt,
@@ -154,7 +176,11 @@ class HyperliquidTradingRepository(
   }
 
   /** Cancels by oid; an order known only by its cloid is canceled by cloid. */
-  private suspend fun cancel(account: String, orders: List<OpenOrderRef>, prompt: VaultPrompt): ActionState {
+  private suspend fun cancel(
+    account: String,
+    orders: List<OpenOrderRef>,
+    prompt: VaultPrompt,
+  ): ActionState {
     require(orders.isNotEmpty()) { "No orders to cancel" }
     val byOid = mutableListOf<CancelRequest>()
     val byCloid = mutableListOf<CancelByCloidRequest>()
@@ -169,7 +195,8 @@ class HyperliquidTradingRepository(
       results += sendCancel(account, CancelOrders(byOid), byOid.map { it.oid.toString() }, prompt)
     }
     if (byCloid.isNotEmpty() && results.none { it !is ActionState.Committed }) {
-      results += sendCancel(account, CancelOrdersByCloid(byCloid), byCloid.map { it.cloid.hex }, prompt)
+      results +=
+        sendCancel(account, CancelOrdersByCloid(byCloid), byCloid.map { it.cloid.hex }, prompt)
     }
     return results.firstOrNull { it !is ActionState.Committed } ?: results.last()
   }
@@ -193,14 +220,16 @@ class HyperliquidTradingRepository(
    * Sets leverage, sent only when it changes something. The screens offer no margin mode, so a
    * request for cross keeps the mode the market already has; isolated-only markets stay isolated.
    */
-  private suspend fun configureMarket(action: TradeAction.ConfigureMarket, prompt: VaultPrompt): ActionState {
+  private suspend fun configureMarket(
+    action: TradeAction.ConfigureMarket,
+    prompt: VaultPrompt,
+  ): ActionState {
     val asset = assets.asset(action.marketId)
     require(asset.kind == AssetKind.PERP) { "Spot has no leverage" }
     val maxLeverage = asset.maxLeverage ?: 1
     require(action.leverage in 1..maxLeverage) { "Choose leverage from 1× to $maxLeverage×" }
     val current = client.info.activeAssetData(action.account, asset.coin).leverage
-    val isCross =
-      !asset.isIsolatedOnly && action.marginMode == MarginMode.CROSS && current.isCross
+    val isCross = !asset.isIsolatedOnly && action.marginMode == MarginMode.CROSS && current.isCross
     if (current.value == action.leverage && current.isCross == isCross) {
       return ActionState.Committed(NOTHING_SENT, "Leverage is already ${action.leverage}×.")
     }
@@ -220,11 +249,16 @@ class HyperliquidTradingRepository(
    * Places the position's new exits, then cancels the ones they replace. Until the new ones are in,
    * the old ones stay, so the position is never left without the exits it had.
    */
-  private suspend fun setPositionTpSl(action: TradeAction.SetPositionTpSl, prompt: VaultPrompt): ActionState {
+  private suspend fun setPositionTpSl(
+    action: TradeAction.SetPositionTpSl,
+    prompt: VaultPrompt,
+  ): ActionState {
     val coin = action.market.id
     val asset = assets.asset(coin)
     val position =
-      client.info.clearinghouseState(action.account).assetPositions
+      client.info
+        .clearinghouseState(action.account)
+        .assetPositions
         .map { it.position }
         .firstOrNull { it.coin == coin && it.szi.toDoubleOrZero() != 0.0 }
         ?: throw IllegalArgumentException("Open a position in ${asset.displayName} first")
@@ -233,7 +267,9 @@ class HyperliquidTradingRepository(
         HyperliquidOrders.Exit(it, action.takeProfitLimit, action.takeProfitSize)
       }
     val stopLoss =
-      action.stopLossTrigger?.let { HyperliquidOrders.Exit(it, action.stopLossLimit, action.stopLossSize) }
+      action.stopLossTrigger?.let {
+        HyperliquidOrders.Exit(it, action.stopLossLimit, action.stopLossSize)
+      }
     val closesWithBuy = position.szi.trim().startsWith('-')
     // Every exit of the kinds being set goes, whichever grouping placed it, so none is left twice.
     val replaced =
@@ -268,7 +304,7 @@ class HyperliquidTradingRepository(
       placed.copy(
         detail =
           listOfNotNull(placed.detail, "Your earlier exits are still open; cancel them in Orders.")
-            .joinToString(" ")
+            .joinToString(" "),
       )
   }
 
@@ -279,17 +315,23 @@ class HyperliquidTradingRepository(
 
   override suspend fun ownerFeeBalance(): ULong = 0uL
 
-  override suspend fun assetBalanceDecimal(accountAddress: String, symbol: String): ExactAssetBalance {
-    val balance = client.info.spotClearinghouseState(accountAddress).balances.firstOrNull {
-      it.coin.trim().equals(symbol.substringBefore('/').trim(), ignoreCase = true)
-    } ?: return ExactAssetBalance("0", "0")
+  override suspend fun assetBalanceDecimal(
+    accountAddress: String,
+    symbol: String,
+  ): ExactAssetBalance {
+    val balance =
+      client.info.spotClearinghouseState(accountAddress).balances.firstOrNull {
+        it.coin.trim().equals(symbol.substringBefore('/').trim(), ignoreCase = true)
+      } ?: return ExactAssetBalance("0", "0")
     val total = AutoAmounts.normalize(balance.total)
     val available = AutoAmounts.subtract(total, balance.hold)
     require(AutoAmounts.compare(total, "0") >= 0 && AutoAmounts.compare(available, "0") >= 0)
     return ExactAssetBalance(total, available)
   }
 
-  /** The spot balance free to trade: what [accountAddress] holds of [symbol], less what orders hold. */
+  /**
+   * The spot balance free to trade: what [accountAddress] holds of [symbol], less what orders hold.
+   */
   override suspend fun baseAssetBalance(accountAddress: String, symbol: String): Double {
     val balance =
       client.info.spotClearinghouseState(accountAddress).balances.firstOrNull {

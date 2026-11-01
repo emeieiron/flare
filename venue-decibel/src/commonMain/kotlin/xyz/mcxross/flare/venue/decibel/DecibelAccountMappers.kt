@@ -1,24 +1,31 @@
 package xyz.mcxross.flare.venue.decibel
 
-import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
+import kotlinx.datetime.LocalDate
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.decibel.api.SubaccountStatus
 import xyz.mcxross.flare.decibel.model.AccountFees
+import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
 import xyz.mcxross.flare.decibel.model.AccountReferralInfo
 import xyz.mcxross.flare.decibel.model.AccountVaultPerformance
 import xyz.mcxross.flare.decibel.model.AmpsBreakdown
 import xyz.mcxross.flare.decibel.model.Delegation
+import xyz.mcxross.flare.decibel.model.FundMovement as DecibelFundMovement
+import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
 import xyz.mcxross.flare.decibel.model.GlobalPointsStats
+import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
 import xyz.mcxross.flare.decibel.model.Order
 import xyz.mcxross.flare.decibel.model.OwnerAmpsDaily
 import xyz.mcxross.flare.decibel.model.PortfolioChartPoint
+import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
 import xyz.mcxross.flare.decibel.model.ProductFees
 import xyz.mcxross.flare.decibel.model.ReferrerStats
 import xyz.mcxross.flare.decibel.model.SecondaryCollateral
 import xyz.mcxross.flare.decibel.model.SpotOverview
 import xyz.mcxross.flare.decibel.model.Subaccount
 import xyz.mcxross.flare.decibel.model.TierInfo
+import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
+import xyz.mcxross.flare.decibel.model.TwapOrder as DecibelTwapOrder
 import xyz.mcxross.flare.decibel.model.UserCampaigns
 import xyz.mcxross.flare.decibel.model.UserClaim
 import xyz.mcxross.flare.decibel.model.VaultInfo
@@ -35,13 +42,13 @@ import xyz.mcxross.flare.venue.model.FillDirection
 import xyz.mcxross.flare.venue.model.FundMovement
 import xyz.mcxross.flare.venue.model.FundMovementKind
 import xyz.mcxross.flare.venue.model.FundingPayment
+import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.OpenOrder
 import xyz.mcxross.flare.venue.model.OrderHistoryEntry
 import xyz.mcxross.flare.venue.model.OrderTrigger
 import xyz.mcxross.flare.venue.model.PointsStanding
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.ReferralSummary
 import xyz.mcxross.flare.venue.model.RewardPart
@@ -49,6 +56,7 @@ import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardPointsSource
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.SpotReservation
@@ -59,19 +67,11 @@ import xyz.mcxross.flare.venue.model.TradingKey
 import xyz.mcxross.flare.venue.model.TradingKeyScope
 import xyz.mcxross.flare.venue.model.TradingStreak
 import xyz.mcxross.flare.venue.model.TwapOrder
-import xyz.mcxross.flare.venue.model.ManagerFee
 import xyz.mcxross.flare.venue.model.VaultFact
 import xyz.mcxross.flare.venue.model.VaultFactValue
 import xyz.mcxross.flare.venue.model.VaultKind
 import xyz.mcxross.flare.venue.model.VaultPosition
 import xyz.mcxross.flare.venue.model.VaultSummary
-import xyz.mcxross.flare.decibel.model.AccountOverview as DecibelAccountOverview
-import xyz.mcxross.flare.decibel.model.FundMovement as DecibelFundMovement
-import xyz.mcxross.flare.decibel.model.FundingPayment as DecibelFundingPayment
-import xyz.mcxross.flare.decibel.model.MarketTrade as DecibelMarketTrade
-import xyz.mcxross.flare.decibel.model.Position as DecibelPosition
-import xyz.mcxross.flare.decibel.model.TradingStreak as DecibelTradingStreak
-import xyz.mcxross.flare.decibel.model.TwapOrder as DecibelTwapOrder
 
 // Decibel's account data as the app's exchange-neutral models.
 
@@ -98,7 +98,9 @@ private fun SpotOverview.toSpotBalances(): SpotBalances =
     totalUsd = totalUsd,
   )
 
-/** The position, with the exits set for it whole or, failing those, attached to its opening order. */
+/**
+ * The position, with the exits set for it whole or, failing those, attached to its opening order.
+ */
 internal fun DecibelPosition.toPosition(openOrders: List<OpenOrder> = emptyList()): Position {
   val exits = openOrders.exitsFor(market, closesWithBuy = !isLong)
   return Position(
@@ -115,43 +117,51 @@ internal fun DecibelPosition.toPosition(openOrders: List<OpenOrder> = emptyList(
 }
 
 internal fun Order.toOpenOrder(): OpenOrder {
-  val order = OpenOrder(
-    marketId = market,
-    orderId = orderId,
-    clientOrderId = clientOrderId,
-    kind = assetType.toMarketKind(),
-    isBuy = isBuy,
-    orderType = orderType,
-    direction = orderDirection,
-    price = price,
-    originalSize = originalSize,
-    remainingSize = remainingSize,
-    reduceOnly = isReduceOnly,
-    isPositionTpSl = isTpSl,
-    triggerCondition = triggerCondition,
-    takeProfit = takeProfitTriggerPrice?.let { OrderTrigger(it, takeProfitLimitPrice) },
-    stopLoss = stopLossTriggerPrice?.let { OrderTrigger(it, stopLossLimitPrice) },
-    timeMs = unixMs,
-  )
+  val order =
+    OpenOrder(
+      marketId = market,
+      orderId = orderId,
+      clientOrderId = clientOrderId,
+      kind = assetType.toMarketKind(),
+      isBuy = isBuy,
+      orderType = orderType,
+      direction = orderDirection,
+      price = price,
+      originalSize = originalSize,
+      remainingSize = remainingSize,
+      reduceOnly = isReduceOnly,
+      isPositionTpSl = isTpSl,
+      triggerCondition = triggerCondition,
+      takeProfit = takeProfitTriggerPrice?.let { OrderTrigger(it, takeProfitLimitPrice) },
+      stopLoss = stopLossTriggerPrice?.let { OrderTrigger(it, stopLossLimitPrice) },
+      timeMs = unixMs,
+    )
   val trigger = order.ownTrigger()
   // An exit's own trigger isn't one that comes with it.
   val ownKind = order.exitKind.takeIf { isReduceOnly }
   return order.copy(
     triggerPrice = trigger,
     takeProfit =
-      order.takeProfit.takeUnless { ownKind == ExitKind.TAKE_PROFIT && it?.triggerPrice == trigger },
-    stopLoss = order.stopLoss.takeUnless { ownKind == ExitKind.STOP_LOSS && it?.triggerPrice == trigger },
+      order.takeProfit.takeUnless {
+        ownKind == ExitKind.TAKE_PROFIT && it?.triggerPrice == trigger
+      },
+    stopLoss =
+      order.stopLoss.takeUnless { ownKind == ExitKind.STOP_LOSS && it?.triggerPrice == trigger },
     // An exit set for the whole position carries no size of its own.
     coversPosition = isTpSl && (remainingSize ?: 0.0) == 0.0 && (originalSize ?: 0.0) == 0.0,
   )
 }
 
 internal fun Order.toOrderHistoryEntry(): OrderHistoryEntry =
-  OrderHistoryEntry(order = toOpenOrder(), status = cancellationNote()?.let { "$status: $it" } ?: status)
+  OrderHistoryEntry(
+    order = toOpenOrder(),
+    status = cancellationNote()?.let { "$status: $it" } ?: status,
+  )
 
 /**
  * Why Decibel cancelled the order, in a few words; null when it didn't or the person did. An order
- * the account couldn't pay for is cancelled after its transaction confirms, with only this to say so.
+ * the account couldn't pay for is cancelled after its transaction confirms, with only this to say
+ * so.
  */
 private fun Order.cancellationNote(): String? {
   if (!status.lowercase().startsWith("cancel")) return null
@@ -167,8 +177,7 @@ private fun Order.cancellationNote(): String? {
     reason == "disallowedselftrading" -> "self-trade"
     reason == "deadmansswitchexpired" -> "scheduled"
     detail.isNotEmpty() -> detail.replaceFirstChar(Char::lowercase)
-    else ->
-      cancellationReason.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()
+    else -> cancellationReason.replace(Regex("([a-z])([A-Z])"), "$1 $2").lowercase()
   }
 }
 
@@ -240,8 +249,8 @@ internal val PortfolioMetric.decibelWireValue: String
     }
 
 /**
- * Decibel names the plotted value differently by endpoint version; any of them will do. Its
- * account value is perps only, and spot holdings come beside it, so they are added back.
+ * Decibel names the plotted value differently by endpoint version; any of them will do. Its account
+ * value is perps only, and spot holdings come beside it, so they are added back.
  */
 internal fun PortfolioChartPoint.toPortfolioPoint(metric: PortfolioMetric): SeriesPoint =
   SeriesPoint(
@@ -333,11 +342,14 @@ internal fun Delegation.toTradingKey(): TradingKey =
   )
 
 /**
- * Decibel lists each permission a key holds on its own, so one key that trades everything shows
- * up as a perps grant and a spot grant. Each key becomes one entry with what it can trade in all.
+ * Decibel lists each permission a key holds on its own, so one key that trades everything shows up
+ * as a perps grant and a spot grant. Each key becomes one entry with what it can trade in all.
  */
-internal fun List<Delegation>.toTradingKeys(): List<TradingKey> =
-  groupBy { it.delegate.lowercase() }.values.mapNotNull { grants ->
+internal fun List<Delegation>.toTradingKeys(): List<TradingKey> = groupBy {
+  it.delegate.lowercase()
+}
+  .values
+  .mapNotNull { grants ->
     val perps = grants.firstOrNull { it.canTradeAllPerpMarkets }
     val spot = grants.firstOrNull { it.canTradeAllSpotMarkets }
     val oneMarket = grants.firstOrNull { it.permissionType == "TradePerpsOnMarket" }
@@ -416,9 +428,11 @@ private fun AmpsBreakdown.toRewardPoints(global: GlobalPointsStats?): RewardPoin
     total = totalAmps,
     rank = rank,
     standing =
-      global?.takeIf { it.totalUsers > 0 }?.let {
-        PointsStanding(holders = it.totalUsers, distributed = it.totalAmpsDistributed)
-      },
+      global
+        ?.takeIf { it.totalUsers > 0 }
+        ?.let {
+          PointsStanding(holders = it.totalUsers, distributed = it.totalAmpsDistributed)
+        },
     sources =
       listOf(
         RewardPointsSource("Trading", tradingAmps),
@@ -434,7 +448,10 @@ private fun AmpsBreakdown.toRewardPoints(global: GlobalPointsStats?): RewardPoin
  * passes its lifetime volume gate; an affiliate sees theirs regardless. Null [stats] is an account
  * that has never referred anyone.
  */
-internal fun decibelReferral(stats: ReferrerStats?, referral: AccountReferralInfo?): ReferralSummary {
+internal fun decibelReferral(
+  stats: ReferrerStats?,
+  referral: AccountReferralInfo?,
+): ReferralSummary {
   val code = stats?.codes?.firstOrNull(String::isNotBlank)
   return ReferralSummary(
     code = code,

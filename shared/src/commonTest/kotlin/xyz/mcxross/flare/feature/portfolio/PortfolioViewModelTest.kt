@@ -1,16 +1,5 @@
 package xyz.mcxross.flare.feature.portfolio
 
-import xyz.mcxross.flare.venue.model.ActionKind
-import xyz.mcxross.flare.store.AccountProfile
-import xyz.mcxross.flare.data.SetupNeed
-import xyz.mcxross.flare.data.SwapRepository
-import xyz.mcxross.flare.data.SwapFundingCapacity
-import xyz.mcxross.flare.data.SwapAsset
-import xyz.mcxross.flare.data.SwapRequest
-import xyz.mcxross.flare.data.SwapQuote
-import xyz.mcxross.flare.data.SwapNetworkFee
-import xyz.mcxross.flare.data.SwapOperation
-import xyz.mcxross.flare.data.AccountSetupGate
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -23,11 +12,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
-import xyz.mcxross.flare.venue.model.NetworkFee
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,12 +31,12 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.BareCapabilities
 import xyz.mcxross.flare.data.AccountHistoryKind
 import xyz.mcxross.flare.data.AccountHistorySnapshot
 import xyz.mcxross.flare.data.AccountRepository
-import xyz.mcxross.flare.data.RewardsRepository
-import xyz.mcxross.flare.data.VaultsRepository
+import xyz.mcxross.flare.data.AccountSetupGate
 import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
@@ -62,28 +49,41 @@ import xyz.mcxross.flare.data.MarketsRepository
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
+import xyz.mcxross.flare.data.RewardsRepository
+import xyz.mcxross.flare.data.SetupNeed
+import xyz.mcxross.flare.data.SwapAsset
+import xyz.mcxross.flare.data.SwapFundingCapacity
+import xyz.mcxross.flare.data.SwapNetworkFee
+import xyz.mcxross.flare.data.SwapOperation
+import xyz.mcxross.flare.data.SwapQuote
+import xyz.mcxross.flare.data.SwapRepository
+import xyz.mcxross.flare.data.SwapRequest
 import xyz.mcxross.flare.data.TradingRepository
+import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.VenueCapabilities
 import xyz.mcxross.flare.venue.model.AccountOverview
+import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
-import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.Position
 import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
 import xyz.mcxross.flare.venue.model.SelfPayOffer
+import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
 import xyz.mcxross.flare.venue.model.SpotBalances
 import xyz.mcxross.flare.venue.model.TradeAction
@@ -307,8 +307,7 @@ class PortfolioViewModelTest {
 
     override suspend fun reconcilePending() = ReconciliationResult(0, 0)
 
-    override suspend fun transactionStatus(hash: String): ActionState =
-      ActionState.Committed(hash)
+    override suspend fun transactionStatus(hash: String): ActionState = ActionState.Committed(hash)
 
     override fun execute(
       action: TradeAction,
@@ -354,7 +353,7 @@ class PortfolioViewModelTest {
         mapOf(
           "apt" to AssetMetadata("APT", "Aptos", "crypto", null, null),
           "usdc" to AssetMetadata("USDC", "USD Coin", "crypto", null, null),
-        )
+        ),
       )
 
     override suspend fun refresh() {}
@@ -377,15 +376,22 @@ class PortfolioViewModelTest {
         marginRatio = 0.0,
         availableToTrade = 20.0,
         withdrawable = 12.0,
-        balances = Balances(spot = SpotBalances(listOf(SpotBalance("0", "USDC", 7.5, 7.5)), totalUsd = 7.5)),
+        balances =
+          Balances(spot = SpotBalances(listOf(SpotBalance("0", "USDC", 7.5, 7.5)), totalUsd = 7.5)),
         perpSpotSeparate = true,
       )
     val snapshot = AccountSnapshot(account = "0xaccount", overview = overview, stale = false)
     val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
     val vm =
-      PortfolioViewModel(FakeAccountRepository(snapshot), FakeWalletRepository(), AppPreferences(MemoryPreferences()),
-        trading, FakeMarketsRepository(quotes), FakeMarketDetailsRepository(),
-        testVenue(BareCapabilities.copy(perpSpotTransfer = true)))
+      PortfolioViewModel(
+        FakeAccountRepository(snapshot),
+        FakeWalletRepository(),
+        AppPreferences(MemoryPreferences()),
+        trading,
+        FakeMarketsRepository(quotes),
+        FakeMarketDetailsRepository(),
+        testVenue(BareCapabilities.copy(perpSpotTransfer = true)),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.WITHDRAW))
@@ -400,29 +406,53 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("7.5"))
     vm.onIntent(PortfolioIntent.SubmitFunding)
 
-    assertEquals(listOf<TradeAction>(TradeAction.MovePerpSpot("0xaccount", "7.5", toSpot = false)), trading.executed)
+    assertEquals(
+      listOf<TradeAction>(TradeAction.MovePerpSpot("0xaccount", "7.5", toSpot = false)),
+      trading.executed,
+    )
     assertEquals(ActionState.Committed("0xhash"), vm.uiState.value.fundingTransaction)
-    val unified = PortfolioUiState(capabilities = BareCapabilities.copy(perpSpotTransfer = true),
-      account = AccountSnapshot(overview = overview.copy(perpSpotSeparate = false)))
+    val unified =
+      PortfolioUiState(
+        capabilities = BareCapabilities.copy(perpSpotTransfer = true),
+        account = AccountSnapshot(overview = overview.copy(perpSpotSeparate = false)),
+      )
     assertFalse(unified.canMovePerpSpot)
   }
 
   @Test
   fun actionsWaitWhileSetupIsLeftForLaterAndTheVenuesOwnReasonsStay() = runTest {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("owner_0x1", ownerAddress = "0x1", selectedSubaccount = "0x1"))
+    preferences.registerProfile(
+      AccountProfile("owner_0x1", ownerAddress = "0x1", selectedSubaccount = "0x1"),
+    )
     preferences.deferSetup()
     val accounts = FakeAccountRepository(AccountSnapshot(account = "0x1"))
-    val venue = testVenue(VenueCapabilities.All.copy(unavailableActions = mapOf(ActionKind.TWAP to "Not here")))
+    val venue =
+      testVenue(
+        VenueCapabilities.All.copy(unavailableActions = mapOf(ActionKind.TWAP to "Not here")),
+      )
     val vm =
-      PortfolioViewModel(accounts, FakeWalletRepository(), preferences, FakeTradingRepository(),
-        FakeMarketsRepository(emptyList()), FakeMarketDetailsRepository(), venue,
-        setupGate = AccountSetupGate(preferences, accounts))
+      PortfolioViewModel(
+        accounts,
+        FakeWalletRepository(),
+        preferences,
+        FakeTradingRepository(),
+        FakeMarketsRepository(emptyList()),
+        FakeMarketDetailsRepository(),
+        venue,
+        setupGate = AccountSetupGate(preferences, accounts),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
     assertEquals(SetupNeed.TRADING, vm.uiState.value.setupNeed)
-    assertEquals(SetupNeed.TRADING.reason, vm.uiState.value.capabilities.unavailableReason(ActionKind.TRADING))
-    assertEquals(SetupNeed.TRADING.reason, vm.uiState.value.capabilities.unavailableReason(ActionKind.FUNDS))
+    assertEquals(
+      SetupNeed.TRADING.reason,
+      vm.uiState.value.capabilities.unavailableReason(ActionKind.TRADING),
+    )
+    assertEquals(
+      SetupNeed.TRADING.reason,
+      vm.uiState.value.capabilities.unavailableReason(ActionKind.FUNDS),
+    )
     assertEquals("Not here", vm.uiState.value.capabilities.unavailableReason(ActionKind.TWAP))
 
     preferences.setOnboardingComplete(true)
@@ -492,7 +522,10 @@ class PortfolioViewModelTest {
       )
     val vm =
       PortfolioViewModel(
-        accounts = FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", overview = overview, stale = false)),
+        accounts =
+          FakeAccountRepository(
+            AccountSnapshot(account = "0xsubaccount", overview = overview, stale = false),
+          ),
         wallets = FakeWalletRepository(),
         preferences = AppPreferences(MemoryPreferences()),
         trading = FakeTradingRepository(),
@@ -507,7 +540,10 @@ class PortfolioViewModelTest {
     assertTrue(state.spotHoldings.isEmpty())
     assertEquals(0.0, state.totalBalance)
     // Spot isn't reported, so whether anything is held isn't known yet.
-    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null), state.holdingsPreview)
+    assertEquals(
+      HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
+      state.holdingsPreview,
+    )
   }
 
   @Test
@@ -521,20 +557,40 @@ class PortfolioViewModelTest {
         withdrawable = 0.0,
         balances = Balances(collateral = 0.0, spot = SpotBalances()),
       )
-    val live = PortfolioUiState(account = AccountSnapshot(account = "0xa", overview = empty, stale = false))
+    val live =
+      PortfolioUiState(account = AccountSnapshot(account = "0xa", overview = empty, stale = false))
 
     assertEquals(HoldingsPreview.Loading, PortfolioUiState().holdingsPreview)
     assertEquals(HoldingsPreview.NoneHeld, live.holdingsPreview)
-    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
-      live.copy(account = live.account.copy(stale = true)).holdingsPreview)
-    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
-      live.copy(holdingsError = "offline").holdingsPreview)
+    assertEquals(
+      HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
+      live.copy(account = live.account.copy(stale = true)).holdingsPreview,
+    )
+    assertEquals(
+      HoldingsPreview.Holding("USDC", "Spot and trading collateral", null),
+      live.copy(holdingsError = "offline").holdingsPreview,
+    )
 
     val hype = SpotHolding("HYPE", "Hyperliquid", quantity = 2.0, markPrice = 40.0, valueUsd = 80.0)
-    assertEquals(HoldingsPreview.Holding("HYPE", "Hyperliquid", 80.0), live.copy(spotHoldings = listOf(hype)).holdingsPreview)
-    val usdc = SpotHolding("USDC", "Trading collateral", quantity = 5.0, markPrice = 1.0, valueUsd = 5.0, isCollateral = true)
-    assertEquals(HoldingsPreview.Holding("USDC", "Spot and trading collateral", 5.0),
-      live.copy(account = live.account.copy(stale = true), spotHoldings = listOf(usdc, hype)).holdingsPreview)
+    assertEquals(
+      HoldingsPreview.Holding("HYPE", "Hyperliquid", 80.0),
+      live.copy(spotHoldings = listOf(hype)).holdingsPreview,
+    )
+    val usdc =
+      SpotHolding(
+        "USDC",
+        "Trading collateral",
+        quantity = 5.0,
+        markPrice = 1.0,
+        valueUsd = 5.0,
+        isCollateral = true,
+      )
+    assertEquals(
+      HoldingsPreview.Holding("USDC", "Spot and trading collateral", 5.0),
+      live
+        .copy(account = live.account.copy(stale = true), spotHoldings = listOf(usdc, hype))
+        .holdingsPreview,
+    )
   }
 
   @Test
@@ -542,15 +598,27 @@ class PortfolioViewModelTest {
     var unavailable = true
     var reads = 0
     val point = SeriesPoint(timeMs = 1, value = 25.0)
-    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun portfolioChart(range: PortfolioChartRange, metric: PortfolioMetric): List<SeriesPoint> {
-        reads++
-        check(!unavailable) { "Offline" }
-        return listOf(point)
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun portfolioChart(
+          range: PortfolioChartRange,
+          metric: PortfolioMetric,
+        ): List<SeriesPoint> {
+          reads++
+          check(!unavailable) { "Offline" }
+          return listOf(point)
+        }
       }
-    }
-    val vm = PortfolioViewModel(accounts, FakeWalletRepository(), AppPreferences(MemoryPreferences()),
-      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository(), testVenue())
+    val vm =
+      PortfolioViewModel(
+        accounts,
+        FakeWalletRepository(),
+        AppPreferences(MemoryPreferences()),
+        FakeTradingRepository(),
+        FakeMarketsRepository(quotes),
+        FakeMarketDetailsRepository(),
+        testVenue(),
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.SetHistoryVisible(true))
     assertTrue(vm.uiState.value.chartError != null)
@@ -612,7 +680,9 @@ class PortfolioViewModelTest {
         override suspend fun vaults(limit: Int): List<VaultSummary> = listOf(testVault)
 
         override suspend fun vaultPositions(): List<VaultPosition> =
-          listOf(VaultPosition(vault = testVault, shares = 100.0, value = 105.0, returnPercent = 5.0))
+          listOf(
+            VaultPosition(vault = testVault, shares = 100.0, value = 105.0, returnPercent = 5.0),
+          )
       }
 
     val vm =
@@ -629,8 +699,7 @@ class PortfolioViewModelTest {
       )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 
-    val vaultsState =
-      vm.uiState.first { it.vaults.isNotEmpty() }
+    val vaultsState = vm.uiState.first { it.vaults.isNotEmpty() }
     assertEquals(1, vaultsState.vaults.size)
     assertEquals("Decibel Liquidity Pool", vaultsState.vaults.first().name)
     assertEquals(1, vaultsState.accountVaults.size)
@@ -729,25 +798,41 @@ class PortfolioViewModelTest {
       val payments = mutableListOf<FeePayment>()
       val estimated = NetworkFee(400_000uL, 5_000_000uL)
       val reported = estimated.copy(covered = covered)
-      val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-        override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
-          assertEquals("1", amount); assertFalse(withdrawing)
-          return estimated
+      val accounts =
+        object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+          override suspend fun estimateFundingFee(
+            amount: String,
+            withdrawing: Boolean,
+          ): NetworkFee {
+            assertEquals("1", amount)
+            assertFalse(withdrawing)
+            return estimated
+          }
+
+          override fun depositUsdc(
+            amount: String,
+            prompt: VaultPrompt,
+            feePayment: FeePayment,
+          ): Flow<ActionState> {
+            payments += feePayment
+            return flowOf(
+              ActionState.FeeEstimated(estimated),
+              ActionState.Pending("transfer", reported),
+              ActionState.Committed("transfer", networkFee = reported),
+            )
+          }
         }
-        override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
-          payments += feePayment
-          return flowOf(ActionState.FeeEstimated(estimated), ActionState.Pending("transfer", reported),
-            ActionState.Committed("transfer", networkFee = reported))
-        }
-      }
-      val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+      val vm =
+        portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
       backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
       vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
       vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
-      advanceTimeBy(176); runCurrent()
+      advanceTimeBy(176)
+      runCurrent()
       assertEquals(estimated, vm.uiState.value.fundingNetworkFee)
       assertTrue(payments.isEmpty())
-      vm.onIntent(PortfolioIntent.SubmitFunding); runCurrent()
+      vm.onIntent(PortfolioIntent.SubmitFunding)
+      runCurrent()
       assertEquals(listOf(FeePayment.AUTOMATIC), payments)
       assertEquals(reported, vm.uiState.value.fundingNetworkFee)
       assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
@@ -760,28 +845,42 @@ class PortfolioViewModelTest {
     val refreshGate = CompletableDeferred<Unit>()
     var committed = false
     var refreshStarted = false
-    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> = flow {
-        committed = true
-        emit(ActionState.Committed("confirmed"))
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override fun depositUsdc(
+          amount: String,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> = flow {
+          committed = true
+          emit(ActionState.Committed("confirmed"))
+        }
+
+        override suspend fun restoreTrading() {
+          if (committed) {
+            refreshStarted = true
+            refreshGate.await()
+            error("Refresh failed")
+          }
+        }
       }
-      override suspend fun restoreTrading() {
-        if (committed) { refreshStarted = true; refreshGate.await(); error("Refresh failed") }
-      }
-    }
-    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    val vm =
+      portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
-    vm.onIntent(PortfolioIntent.SubmitFunding); runCurrent()
+    vm.onIntent(PortfolioIntent.SubmitFunding)
+    runCurrent()
     assertTrue(refreshStarted)
     assertIs<ActionState.Committed>(vm.uiState.value.fundingTransaction)
     assertFalse(vm.uiState.value.busy)
-    vm.onIntent(PortfolioIntent.CloseFunding); runCurrent()
+    vm.onIntent(PortfolioIntent.CloseFunding)
+    runCurrent()
     assertNull(vm.uiState.value.fundingMode)
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("2"))
-    refreshGate.complete(Unit); runCurrent()
+    refreshGate.complete(Unit)
+    runCurrent()
     assertEquals("2", vm.uiState.value.fundingAmount)
     assertNull(vm.uiState.value.fundingTransaction)
     assertNull(vm.uiState.value.actionError)
@@ -791,18 +890,22 @@ class PortfolioViewModelTest {
   @Test
   fun maximumResolvesImmediatelyAndEquivalentAmountsReuseTheFee() = runTest {
     val reads = mutableListOf<String>()
-    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
-        reads += amount
-        return NetworkFee(100uL, 5_000uL)
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+          reads += amount
+          return NetworkFee(100uL, 5_000uL)
+        }
       }
-    }
-    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    val vm =
+      portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1", immediate = true)); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1", immediate = true))
+    runCurrent()
     assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1.0")); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1.0"))
+    runCurrent()
     assertEquals(listOf("1"), reads)
     assertEquals("1.0", vm.uiState.value.fundingAmount)
     assertEquals(NetworkFee(100uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
@@ -812,20 +915,27 @@ class PortfolioViewModelTest {
   fun aLateFeeReadCannotReplaceTheEstimateForANewTransferAmount() = runTest {
     val gate = CompletableDeferred<Unit>()
     val reads = mutableListOf<String>()
-    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
-        reads += amount
-        if (amount == "1") withContext(NonCancellable) { gate.await() }
-        return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override suspend fun estimateFundingFee(amount: String, withdrawing: Boolean): NetworkFee {
+          reads += amount
+          if (amount == "1") withContext(NonCancellable) { gate.await() }
+          return NetworkFee(amount.toULong() * 100uL, 5_000uL)
+        }
       }
-    }
-    val vm = portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
+    val vm =
+      portfolio(accounts, trading = FakeTradingRepository(spotBalances = mapOf("USDC" to 10.0)))
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1")); advanceTimeBy(176); runCurrent()
-    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2")); advanceTimeBy(176); runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("1"))
+    advanceTimeBy(176)
+    runCurrent()
+    vm.onIntent(PortfolioIntent.ChangeFundingAmount("2"))
+    advanceTimeBy(176)
+    runCurrent()
     assertEquals(NetworkFee(200uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
-    gate.complete(Unit); runCurrent()
+    gate.complete(Unit)
+    runCurrent()
     assertEquals(listOf("1", "2"), reads)
     assertEquals("2", vm.uiState.value.fundingAmount)
     assertEquals(NetworkFee(200uL, 5_000uL), vm.uiState.value.fundingNetworkFee)
@@ -837,28 +947,70 @@ class PortfolioViewModelTest {
     val output = SwapAsset("aptos:1", "usdc", 6)
     var walletUsdc = 10_000_000uL
     var deposits = 0
-    val accounts = object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
-      override fun depositUsdc(amount: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
-        assertEquals("10", amount)
-        deposits++
-        return flowOf(ActionState.Committed("deposit"))
+    val accounts =
+      object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
+        override fun depositUsdc(
+          amount: String,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> {
+          assertEquals("10", amount)
+          deposits++
+          return flowOf(ActionState.Committed("deposit"))
+        }
       }
-    }
-    val swaps = object : SwapRepository {
-      override val operations = flowOf(emptyList<SwapOperation>())
-      override suspend fun fundingCapacity(owner: String) =
-        SwapFundingCapacity(owner, input, output, "APT", "USDC", 500_000_000uL, walletUsdc, 10_000_000uL)
-      override suspend fun quote(request: SwapRequest) = SwapQuote("quote", "fake", request,
-        "80000000", "8000000", "81000000", "8000000", emptyList(), kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000,
-        SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL))
-      override fun execute(quoteId: String, prompt: VaultPrompt, feePayment: FeePayment): Flow<ActionState> {
-        walletUsdc = 10_000_000uL
-        return flowOf(ActionState.Committed("swap"))
+    val swaps =
+      object : SwapRepository {
+        override val operations = flowOf(emptyList<SwapOperation>())
+
+        override suspend fun fundingCapacity(owner: String) =
+          SwapFundingCapacity(
+            owner,
+            input,
+            output,
+            "APT",
+            "USDC",
+            500_000_000uL,
+            walletUsdc,
+            10_000_000uL,
+          )
+
+        override suspend fun quote(request: SwapRequest) =
+          SwapQuote(
+            "quote",
+            "fake",
+            request,
+            "80000000",
+            "8000000",
+            "81000000",
+            "8000000",
+            emptyList(),
+            kotlin.time.Clock.System.now().toEpochMilliseconds() + 30_000,
+            SwapNetworkFee(FeePayment.SPONSORED, 10_000uL, 5_000_000uL),
+          )
+
+        override fun execute(
+          quoteId: String,
+          prompt: VaultPrompt,
+          feePayment: FeePayment,
+        ): Flow<ActionState> {
+          walletUsdc = 10_000_000uL
+          return flowOf(ActionState.Committed("swap"))
+        }
+
+        override suspend fun reconcile() = emptyList<SwapOperation>()
       }
-      override suspend fun reconcile() = emptyList<SwapOperation>()
-    }
-    val vm = PortfolioViewModel(accounts, FakeWalletRepository(), AppPreferences(MemoryPreferences()),
-      FakeTradingRepository(), FakeMarketsRepository(quotes), FakeMarketDetailsRepository(), testVenue(), swaps = swaps)
+    val vm =
+      PortfolioViewModel(
+        accounts,
+        FakeWalletRepository(),
+        AppPreferences(MemoryPreferences()),
+        FakeTradingRepository(),
+        FakeMarketsRepository(quotes),
+        FakeMarketDetailsRepository(),
+        testVenue(),
+        swaps = swaps,
+      )
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     vm.onIntent(PortfolioIntent.ChangeFundingAmount("10"))
@@ -870,7 +1022,8 @@ class PortfolioViewModelTest {
     assertTrue(vm.uiState.value.fundingSwap.canSwap)
     assertNull(vm.uiState.value.actionError)
     vm.onIntent(PortfolioIntent.BeginFundingSwap)
-    advanceTimeBy(601); runCurrent()
+    advanceTimeBy(601)
+    runCurrent()
     assertEquals("8", vm.uiState.value.fundingSwap.inputAmount)
     vm.onIntent(PortfolioIntent.ConfirmSwap)
     assertEquals("10", vm.uiState.value.fundingAmount)
@@ -918,7 +1071,7 @@ class PortfolioViewModelTest {
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
     assertNull(
-      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL)))
+      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),
     )
 
     // Without in-app deposits, a transfer can only go out to the wallet.
@@ -933,6 +1086,7 @@ class PortfolioViewModelTest {
     val accounts =
       object : FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", stale = false)) {
         override suspend fun vaults(limit: Int) = listOf(vault)
+
         // A 500-share stake of which only 120.5 is outside the lockup.
         override suspend fun collateral(vaultAddress: String) =
           VaultCollateral(pledgeable = 120.5, pledged = 40.0, creditPercent = 90.0)
@@ -1049,8 +1203,13 @@ class PortfolioViewModelTest {
     vm.uiState.first { it.vaultTransaction is ActionState.Committed }
 
     // The shares the deposit freed are offered as margin without leaving the page.
-    assertEquals(25.0, vm.uiState.first { it.collateralFor(vault.address)?.pledgeable == 25.0 }
-      .collateralFor(vault.address)?.pledgeable)
+    assertEquals(
+      25.0,
+      vm.uiState
+        .first { it.collateralFor(vault.address)?.pledgeable == 25.0 }
+        .collateralFor(vault.address)
+        ?.pledgeable,
+    )
   }
 
   @Test
@@ -1081,7 +1240,7 @@ class PortfolioViewModelTest {
       val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
       val accounts =
         FakeAccountRepository(
-          AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false)
+          AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
         )
       // Flare couldn't sponsor the fee, and the device holds less than the wallet would pay.
       val failure = ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(200_000_000uL))
@@ -1103,18 +1262,27 @@ class PortfolioViewModelTest {
   fun savingExitsSendsOnlyTheOnesThatChanged() = runTest {
     val position =
       Position(
-        "0xbtc_perp", "0.1", 10, 68_000.0, isolated = false,
-        takeProfitTriggerPrice = 130_000.0, stopLossTriggerPrice = 35_000.0,
+        "0xbtc_perp",
+        "0.1",
+        10,
+        68_000.0,
+        isolated = false,
+        takeProfitTriggerPrice = 130_000.0,
+        stopLossTriggerPrice = 35_000.0,
       )
     val accounts =
-      FakeAccountRepository(AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false))
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
     val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
     val vm = portfolio(accounts, trading = trading)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
     vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
 
     // Nothing changed: there is nothing to save, and saving sends nothing.
-    assertFalse(exitChanges(vm.uiState.value.takeProfitInput, vm.uiState.value.stopLossInput, position).any)
+    assertFalse(
+      exitChanges(vm.uiState.value.takeProfitInput, vm.uiState.value.stopLossInput, position).any,
+    )
     vm.onIntent(PortfolioIntent.SubmitTpSl)
     assertEquals(emptyList(), trading.executed)
 
@@ -1133,7 +1301,14 @@ class PortfolioViewModelTest {
   @Test
   fun exitChangesCompareByValue() {
     val position =
-      Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false, takeProfitTriggerPrice = 2_529.556)
+      Position(
+        "0xbtc_perp",
+        "0.1",
+        10,
+        68_000.0,
+        isolated = false,
+        takeProfitTriggerPrice = 2_529.556,
+      )
     assertEquals(ExitChanges(null, null), exitChanges("2529.56", "", position))
     assertEquals(ExitChanges(null, null), exitChanges("2529.556", " ", position))
     assertEquals(ExitChanges("2600", "2400"), exitChanges("2600", "2400", position))

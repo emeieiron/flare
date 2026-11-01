@@ -56,8 +56,7 @@ internal class DefaultSubaccountService(
         }
       // The view aborts when the address holds no Subaccount object.
       is AptosResult.Failure ->
-        if (result.error.isAbort()) AptosResult.Success(SubaccountStatus.NOT_SUBACCOUNT)
-        else result
+        if (result.error.isAbort()) AptosResult.Success(SubaccountStatus.NOT_SUBACCOUNT) else result
     }
   }
 
@@ -89,7 +88,8 @@ internal class DefaultSubaccountService(
 internal fun parseDelegatedPermissions(value: JsonElement?): List<Delegation> {
   val delegates = value?.jsonObject?.get("entries")?.jsonArray ?: return emptyList()
   return delegates.flatMap { entry ->
-    val delegate = entry.jsonObject["key"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
+    val delegate =
+      entry.jsonObject["key"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
     val perms =
       entry.jsonObject["value"]?.jsonObject?.get("perms")?.jsonObject?.get("entries")?.jsonArray
         ?: return@flatMap emptyList()
@@ -101,7 +101,9 @@ internal fun parseDelegatedPermissions(value: JsonElement?): List<Delegation> {
         delegate = delegate,
         expirationTimeSeconds =
           (stored?.get("expiration_time_s") ?: stored?.get("_0"))
-            ?.jsonPrimitive?.contentOrNull?.toLongOrNull(),
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.toLongOrNull(),
         permissionType = type,
         permissionMarket = key["market"]?.let(::objectAddress),
       )

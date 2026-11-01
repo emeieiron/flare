@@ -32,7 +32,9 @@ object HyperliquidCredentialParser : CredentialParser {
         }
       CredentialFormat.PRIVATE_KEY ->
         runCatching { EvmKeys.normalizePrivateKey(input) }
-          .getOrElse { throw IllegalArgumentException("Enter a valid recovery phrase or private key.") }
+          .getOrElse {
+            throw IllegalArgumentException("Enter a valid recovery phrase or private key.")
+          }
       CredentialFormat.UNKNOWN ->
         throw IllegalArgumentException("Enter a valid recovery phrase or private key.")
     }
@@ -50,8 +52,8 @@ object HyperliquidCredentialParser : CredentialParser {
   }
 
   /**
-   * `0x` and 40 hex digits. A mixed-case address must carry a correct EIP-55 checksum, since a wrong
-   * one is most likely a typo.
+   * `0x` and 40 hex digits. A mixed-case address must carry a correct EIP-55 checksum, since a
+   * wrong one is most likely a typo.
    */
   override fun isAddress(input: String): Boolean {
     val value = input.trim()

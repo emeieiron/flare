@@ -34,8 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.lerp
@@ -44,6 +42,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -68,9 +68,10 @@ private val HeroMarkSize = 96.dp
 private val Glide = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
 
 /**
- * The first screen. On its first showing after launch it takes the mark over from the splash, at the
- * same place and size, and carries it up into the hero while the bars ignite one after another and
- * the words rise in beneath. [intro] is false once that has played, so returning here doesn't replay it.
+ * The first screen. On its first showing after launch it takes the mark over from the splash, at
+ * the same place and size, and carries it up into the hero while the bars ignite one after another
+ * and the words rise in beneath. [intro] is false once that has played, so returning here doesn't
+ * replay it.
  */
 @Composable
 internal fun WelcomeScreen(
@@ -120,7 +121,7 @@ internal fun WelcomeScreen(
   Box(
     modifier.fillMaxSize().background(FlareColors.Canvas).onGloballyPositioned {
       origin = it.positionInRoot()
-    }
+    },
   ) {
     // The light sits behind the words: it only crosses them while they're still hidden.
     Canvas(Modifier.fillMaxSize()) {
@@ -129,13 +130,15 @@ internal fun WelcomeScreen(
       val end = hero?.translate(-origin) ?: start
       val mark = lerp(start, end, glide.value)
       drawFlareAfterglow(mark.center, mark.width * 2.8f, afterglow.value * breath())
-      translate(mark.left, mark.top) { drawLitFlareMark(mark.size, { FlareColors.Positive }, ignition::level) }
+      translate(mark.left, mark.top) {
+        drawLitFlareMark(mark.size, { FlareColors.Positive }, ignition::level)
+      }
     }
     Column(
       Modifier.fillMaxSize()
         .safeDrawingPadding()
         .verticalScroll(rememberScrollState())
-        .padding(horizontal = 24.dp, vertical = 16.dp)
+        .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
       Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).revealed(reveal::value, 0),

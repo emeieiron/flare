@@ -34,12 +34,13 @@ class DecibelCampaignMappersTest {
     val payload =
       """{"ready_to_claim":20907000,"lifetime_earned":41814000,"total_claimed":20907000,"claims":[""" +
         listOf(
-          claim(1, ready = 20_907_000),
-          claim(2, claimable = 5_000_000, claimed = 5_000_000, claimedAt = 1_792_000_000),
-          claim(3, claimable = 1_000_000, endSec = 1_792_000_000),
-          claim(4, allocation = false),
-          claim(5, claimable = 2_500_000),
-        ).joinToString(",") +
+            claim(1, ready = 20_907_000),
+            claim(2, claimable = 5_000_000, claimed = 5_000_000, claimedAt = 1_792_000_000),
+            claim(3, claimable = 1_000_000, endSec = 1_792_000_000),
+            claim(4, allocation = false),
+            claim(5, claimable = 2_500_000),
+          )
+          .joinToString(",") +
         """]}"""
     val rewards = json.decodeFromString<UserCampaigns>(payload).toCampaignRewards(now)
 
@@ -67,7 +68,8 @@ class DecibelCampaignMappersTest {
   @Test
   fun anAccountWithNoCampaignsAddsNothingToTheScreen() {
     val rewards =
-      json.decodeFromString<UserCampaigns>("""{"ready_to_claim":0,"lifetime_earned":0,"claims":[]}""")
+      json
+        .decodeFromString<UserCampaigns>("""{"ready_to_claim":0,"lifetime_earned":0,"claims":[]}""")
         .toCampaignRewards(now)
     assertEquals("0", rewards.readyToClaim)
     assertEquals(false, rewards.hasAnything)

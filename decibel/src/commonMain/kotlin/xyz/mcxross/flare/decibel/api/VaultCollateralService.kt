@@ -24,7 +24,10 @@ data class VaultShareCollateral(
  * REST endpoint for these, so each is a Move view.
  */
 interface VaultCollateralService {
-  suspend fun shareCollateral(vaultAddress: String, account: String): AptosResult<VaultShareCollateral>
+  suspend fun shareCollateral(
+    vaultAddress: String,
+    account: String,
+  ): AptosResult<VaultShareCollateral>
 }
 
 internal class DefaultVaultCollateralService(
@@ -76,15 +79,18 @@ internal class DefaultVaultCollateralService(
   private suspend fun view(function: String, arguments: List<JsonPrimitive>) =
     aptos.views.callRaw(function = "${deployment.packageAddress}::$function", arguments = arguments)
 
-  private fun normalize(value: String): String? =
-    runCatching { AccountAddress.fromString(value.trim()).toString() }.getOrNull()
+  private fun normalize(value: String): String? = runCatching {
+    AccountAddress.fromString(value.trim()).toString()
+  }
+    .getOrNull()
 
   /** A view returning an `Object<T>` answers with `{"inner": "0x…"}`. */
   private fun objectAddress(element: kotlinx.serialization.json.JsonElement): String? =
     runCatching { element.jsonPrimitive.content }.getOrNull()
       ?: runCatching {
         (element as kotlinx.serialization.json.JsonObject)["inner"]?.jsonPrimitive?.content
-      }.getOrNull()
+      }
+        .getOrNull()
 
   private fun kotlinx.serialization.json.JsonElement.toULongOrNull(): ULong? =
     runCatching { jsonPrimitive.content.toULong() }.getOrNull()

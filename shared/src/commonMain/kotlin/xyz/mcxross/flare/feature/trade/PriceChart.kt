@@ -132,7 +132,7 @@ fun FlarePriceChart(
               low = candles.map(Candle::low),
               high = candles.map(Candle::high),
             )
-        }
+        },
       )
     }
   val visibleIndices =
@@ -145,7 +145,7 @@ fun FlarePriceChart(
       priceBounds(
         candles.slice(visibleIndices).flatMap {
           if (style == ChartStyle.LINE) listOf(it.close) else listOf(it.low, it.high)
-        }
+        },
       )
     }
   // A short history keeps its candles at their usual width, sitting at the latest end, rather than
@@ -163,7 +163,7 @@ fun FlarePriceChart(
     rememberDefaultCartesianMarker(
       label =
         rememberTextComponent(
-          style = MaterialTheme.typography.bodySmall.copy(color = FlareColors.TextPrimary)
+          style = MaterialTheme.typography.bodySmall.copy(color = FlareColors.TextPrimary),
         ),
       guideline = rememberLineComponent(fill = Fill(FlareColors.BorderStrong), thickness = 1.dp),
     )
@@ -181,15 +181,15 @@ fun FlarePriceChart(
             CandlestickCartesianLayer.CandleProvider.absolute(
               bullish =
                 CandlestickCartesianLayer.Candle(
-                  rememberLineComponent(Fill(FlareColors.Positive), CANDLE_WIDTH)
+                  rememberLineComponent(Fill(FlareColors.Positive), CANDLE_WIDTH),
                 ),
               neutral =
                 CandlestickCartesianLayer.Candle(
-                  rememberLineComponent(Fill(FlareColors.TextSecondary), CANDLE_WIDTH)
+                  rememberLineComponent(Fill(FlareColors.TextSecondary), CANDLE_WIDTH),
                 ),
               bearish =
                 CandlestickCartesianLayer.Candle(
-                  rememberLineComponent(Fill(FlareColors.Negative), CANDLE_WIDTH)
+                  rememberLineComponent(Fill(FlareColors.Negative), CANDLE_WIDTH),
                 ),
             ),
           candleSpacing = CANDLE_SPACING - CANDLE_WIDTH,
@@ -291,15 +291,17 @@ fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier
       .clearAndSetSemantics {
         contentDescription = label
         role = Role.Button
-        onClick(label) { onToggle(); true }
+        onClick(label) {
+          onToggle()
+          true
+        }
       }
       .clickable(onClick = onToggle),
     contentAlignment = Alignment.Center,
   ) {
     Crossfade(next, label = "chartStyleToggle") { target ->
       Icon(
-        if (target == ChartStyle.LINE) FlareIcons.ChartLine
-        else FlareIcons.ChartCandles,
+        if (target == ChartStyle.LINE) FlareIcons.ChartLine else FlareIcons.ChartCandles,
         contentDescription = null,
         modifier = Modifier.size(18.dp),
         tint = FlareColors.TextPrimary,
@@ -310,7 +312,11 @@ fun ChartStyleToggle(style: ChartStyle, onToggle: () -> Unit, modifier: Modifier
 
 /** Shows the chart's timeframe and opens the full list. */
 @Composable
-fun ChartTimeframeButton(timeframe: ChartTimeframe, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ChartTimeframeButton(
+  timeframe: ChartTimeframe,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
   Row(
     modifier
       .height(32.dp)
@@ -319,7 +325,10 @@ fun ChartTimeframeButton(timeframe: ChartTimeframe, onClick: () -> Unit, modifie
       .clearAndSetSemantics {
         contentDescription = "Timeframe, ${timeframe.title}"
         role = Role.Button
-        onClick("Change timeframe") { onClick(); true }
+        onClick("Change timeframe") {
+          onClick()
+          true
+        }
       }
       .clickable(onClick = onClick)
       .padding(start = 12.dp, end = 8.dp),
@@ -350,7 +359,12 @@ fun ChartTimeframeSheet(
       ChartTimeframe.entries.chunked(TIMEFRAME_COLUMNS).forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(TimeframeGap)) {
           row.forEach { timeframe ->
-            TimeframePill(timeframe, timeframe == selected, { onSelect(timeframe) }, Modifier.weight(1f))
+            TimeframePill(
+              timeframe,
+              timeframe == selected,
+              { onSelect(timeframe) },
+              Modifier.weight(1f),
+            )
           }
           repeat(TIMEFRAME_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
         }
@@ -368,8 +382,10 @@ private fun TimeframePill(
   modifier: Modifier = Modifier,
 ) {
   val background by animateColorAsState(if (selected) FlareColors.Elevated else Color.Transparent)
-  val border by animateColorAsState(if (selected) FlareColors.Elevated else FlareColors.BorderDefault)
-  val foreground by animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
+  val border by
+    animateColorAsState(if (selected) FlareColors.Elevated else FlareColors.BorderDefault)
+  val foreground by
+    animateColorAsState(if (selected) FlareColors.TextPrimary else FlareColors.TextSecondary)
   Box(
     modifier
       .height(48.dp)
@@ -403,9 +419,10 @@ fun FlareIndicators(
   val rsi = remember(closes) { TradingIndicators.rsi(closes) }
   val macd = remember(closes) { TradingIndicators.macd(closes) }
   val slots = remember(candles) { candleSlots(candles) }
-  val visible = remember(slots, window.slots) {
-    visibleCandleIndices(slots, window.slots, INITIAL_CANDLES)
-  }
+  val visible =
+    remember(slots, window.slots) {
+      visibleCandleIndices(slots, window.slots, INITIAL_CANDLES)
+    }
   Column(modifier.fillMaxWidth()) {
     IndicatorPanel(
       visible = showRsi,
@@ -445,12 +462,16 @@ private fun IndicatorPanel(
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, color = FlareColors.TextTertiary, style = MaterialTheme.typography.labelSmall)
-        Text(reading ?: "—", color = FlareColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
+        Text(
+          reading ?: "—",
+          color = FlareColors.TextSecondary,
+          style = MaterialTheme.typography.labelSmall,
+        )
       }
       Box(
         Modifier.fullBleed().height(96.dp).padding(top = 4.dp).semantics {
           contentDescription = description
-        }
+        },
       ) {
         chart()
       }
@@ -509,8 +530,8 @@ private fun MacdIndicatorChart(
     rememberColumnCartesianLayer(
       columnProvider =
         ColumnCartesianLayer.ColumnProvider.series(
-          rememberLineComponent(fill = Fill(FlareColors.IndicatorOrange), thickness = 3.dp)
-        )
+          rememberLineComponent(fill = Fill(FlareColors.IndicatorOrange), thickness = 3.dp),
+        ),
     )
   CartesianChartHost(
     chart =
@@ -540,7 +561,7 @@ private fun flareLineLayer(
       LineCartesianLayer.LineProvider.series(
         colors.map { color ->
           LineCartesianLayer.Line(fill = LineCartesianLayer.LineFill.single(Fill(color)))
-        }
+        },
       ),
   )
 
@@ -569,7 +590,9 @@ private fun ChartPlaceholder(text: String, modifier: Modifier) {
   }
 }
 
-/** Two decimals for readings of 1 or more, four below that, so small MACD values don't read as 0. */
+/**
+ * Two decimals for readings of 1 or more, four below that, so small MACD values don't read as 0.
+ */
 private fun indicatorReading(value: Double): String {
   val decimals = if (abs(value) >= 1.0) 2 else 4
   val factor = 10.0.pow(decimals).toLong()

@@ -30,11 +30,10 @@ class JevLiveTest {
       val now = System.currentTimeMillis()
       val timeframeMs = 60_000L
       val closes = List(40) { 100.0 - it * 0.4 } + 110.0
-      val candles =
-        closes.mapIndexed { index, close ->
-          val openTime = now - (closes.size - index) * timeframeMs
-          StrategyCandle(openTime, openTime + timeframeMs, close, close + 1, close - 1, close, 10.0)
-        }
+      val candles = closes.mapIndexed { index, close ->
+        val openTime = now - (closes.size - index) * timeframeMs
+        StrategyCandle(openTime, openTime + timeframeMs, close, close + 1, close - 1, close, 10.0)
+      }
       val snapshot =
         StrategyMarketSnapshot(
           StrategyMarketKey("synthetic", "simulation", "SYNTHETIC-BTC", timeframeMs),

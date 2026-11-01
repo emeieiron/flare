@@ -55,9 +55,9 @@ internal constructor(
 }
 
 /**
- * Hyperliquid's `/exchange`: signs actions with an [EvmSigner] and sends them once, never
- * retrying (a retry after an unknown outcome could execute twice). Neither signatures nor payloads
- * are logged.
+ * Hyperliquid's `/exchange`: signs actions with an [EvmSigner] and sends them once, never retrying
+ * (a retry after an unknown outcome could execute twice). Neither signatures nor payloads are
+ * logged.
  */
 interface ExchangeService {
   /**
@@ -212,7 +212,9 @@ private fun orderStatus(element: JsonElement): OrderStatus {
     }
   }
   val obj = element as? JsonObject ?: return OrderStatus.Unrecognized("non-object")
-  obj.string("error")?.let { return OrderStatus.Error(it) }
+  obj.string("error")?.let {
+    return OrderStatus.Error(it)
+  }
   (obj["resting"] as? JsonObject)?.let { resting ->
     val oid = resting.long("oid") ?: return OrderStatus.Unrecognized("resting")
     return OrderStatus.Resting(oid, resting.cloid())
@@ -238,14 +240,20 @@ private fun cancelStatus(element: JsonElement): CancelStatus {
     }
   }
   val obj = element as? JsonObject ?: return CancelStatus.Unrecognized("non-object")
-  obj.string("error")?.let { return CancelStatus.Error(it) }
+  obj.string("error")?.let {
+    return CancelStatus.Error(it)
+  }
   return CancelStatus.Unrecognized(obj.keys.joinToString(",").take(MAX_KIND))
 }
 
 private fun twapOrderStatus(element: JsonElement): TwapOrderStatus {
   val obj = element as? JsonObject ?: return TwapOrderStatus.Unrecognized("non-object")
-  obj.string("error")?.let { return TwapOrderStatus.Error(it) }
-  (obj["running"] as? JsonObject)?.long("twapId")?.let { return TwapOrderStatus.Running(it) }
+  obj.string("error")?.let {
+    return TwapOrderStatus.Error(it)
+  }
+  (obj["running"] as? JsonObject)?.long("twapId")?.let {
+    return TwapOrderStatus.Running(it)
+  }
   return TwapOrderStatus.Unrecognized(obj.keys.joinToString(",").take(MAX_KIND))
 }
 

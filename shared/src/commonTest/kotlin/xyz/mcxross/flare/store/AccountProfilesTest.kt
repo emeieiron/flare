@@ -16,8 +16,14 @@ class AccountProfilesTest {
   fun namesSurviveRestartWithoutChangingCredentialsOrTheActiveAccount() = runTest {
     val store = MemoryPreferences()
     val preferences = AppPreferences(store)
-    val first = AccountProfile("first", ownerAddress = "0x1", apiWalletAddress = "0x2",
-      selectedSubaccount = "0x3", onboardingComplete = true)
+    val first =
+      AccountProfile(
+        "first",
+        ownerAddress = "0x1",
+        apiWalletAddress = "0x2",
+        selectedSubaccount = "0x3",
+        onboardingComplete = true,
+      )
     preferences.registerProfile(first)
     preferences.registerProfile(AccountProfile("second", ownerAddress = "0x4"))
 
@@ -28,20 +34,32 @@ class AccountProfilesTest {
     val saved = AppPreferences(store).values.first()
     assertEquals("second", saved.activeProfileId)
     val renamed = saved.profiles.first { it.id == "first" }
-    assertEquals(first.copy(walletName = "Main wallet", tradingAccountNames = mapOf("0x3" to "BTC strategy")), renamed)
+    assertEquals(
+      first.copy(walletName = "Main wallet", tradingAccountNames = mapOf("0x3" to "BTC strategy")),
+      renamed,
+    )
     assertEquals("BTC strategy", renamed.tradingAccountDisplayName("0X0003", "Venue name"))
     assertEquals("Savings", saved.profiles.last().tradingAccountDisplayName("0x3"))
     preferences.resetWalletName("first")
     preferences.resetTradingAccountName("first", "0X0003")
     assertEquals(first, preferences.values.first().profiles.first { it.id == "first" })
-    assertEquals("Savings", preferences.values.first().profiles.last().tradingAccountDisplayName("0x3"))
+    assertEquals(
+      "Savings",
+      preferences.values.first().profiles.last().tradingAccountDisplayName("0x3"),
+    )
   }
 
   @Test
   fun oldProfilesAndVenueNamesRemainValidFallbacks() = runTest {
-    val preferences = AppPreferences(MemoryPreferences(preferencesOf(
-      stringPreferencesKey("account_profiles_v1") to """[{"id":"first","ownerAddress":"0x1"}]""",
-    )))
+    val preferences =
+      AppPreferences(
+        MemoryPreferences(
+          preferencesOf(
+            stringPreferencesKey("account_profiles_v1") to
+              """[{"id":"first","ownerAddress":"0x1"}]""",
+          ),
+        ),
+      )
     val profile = preferences.values.first().profiles.single()
     assertEquals("Wallet 1", profile.walletDisplayName(0))
     assertEquals("Primary account", profile.tradingAccountDisplayName("0x3", "Primary account"))
@@ -84,7 +102,7 @@ class AccountProfilesTest {
           stringPreferencesKey("owner_address") to "0x1",
           stringPreferencesKey("api_wallet_address") to "0x2",
           stringPreferencesKey("selected_subaccount") to "0x3",
-        )
+        ),
       )
     val preferences = AppPreferences(store)
     assertEquals(LEGACY_PROFILE_ID, preferences.values.first().profiles.single().id)

@@ -70,9 +70,11 @@ object EvmAddress {
     val lower = normalizeEvmAddress(address).drop(2)
     val hash = keccak256(lower.encodeToByteArray()).toHexDigits()
     return "0x" +
-      lower.mapIndexed { index, char ->
-        if (char in 'a'..'f' && hash[index] >= '8') char.uppercaseChar() else char
-      }.joinToString("")
+      lower
+        .mapIndexed { index, char ->
+          if (char in 'a'..'f' && hash[index] >= '8') char.uppercaseChar() else char
+        }
+        .joinToString("")
   }
 
   /**

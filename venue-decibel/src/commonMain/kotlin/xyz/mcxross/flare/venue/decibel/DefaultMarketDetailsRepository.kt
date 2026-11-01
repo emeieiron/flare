@@ -71,9 +71,11 @@ class DefaultMarketDetailsRepository(private val client: DecibelClient) : Market
         when (event) {
           is StreamEvent.Connected -> {
             refreshMutex.withLock {}
-            if (mutableDetails.value.market != market ||
-              Clock.System.now().toEpochMilliseconds() - lastSnapshotAtMs >= 2_000L
-            ) refresh(market)
+            if (
+              mutableDetails.value.market != market ||
+                Clock.System.now().toEpochMilliseconds() - lastSnapshotAtMs >= 2_000L
+            )
+              refresh(market)
             lastRecoveryAtMs = Clock.System.now().toEpochMilliseconds()
           }
           is StreamEvent.Message -> {

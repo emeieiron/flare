@@ -17,8 +17,8 @@ fun normalizeEvmAddress(value: String, field: String = "address"): String {
 }
 
 /**
- * A client order id: 16 bytes written as `0x` and 32 lower-case hex digits. Flare sets one on
- * every order so an order whose submission outcome is unknown can be found again.
+ * A client order id: 16 bytes written as `0x` and 32 lower-case hex digits. Flare sets one on every
+ * order so an order whose submission outcome is unknown can be found again.
  */
 @JvmInline
 value class Cloid private constructor(val hex: String) {

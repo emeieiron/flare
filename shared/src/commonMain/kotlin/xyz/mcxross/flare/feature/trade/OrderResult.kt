@@ -19,7 +19,6 @@ import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.OrderSide
 
-
 @Composable
 internal fun OrderResult(
   state: TradeUiState,
@@ -29,10 +28,14 @@ internal fun OrderResult(
   onViewTransaction: (() -> Unit)?,
 ) {
   OrderOutcome(
-    state, side, minHeight, Outcome.SUCCESS,
+    state,
+    side,
+    minHeight,
+    Outcome.SUCCESS,
     title = "Order submitted",
-    message = (state.transaction as? ActionState.Committed)?.detail?.let { "$it Follow it in Activity." }
-      ?: "Your order is confirmed on-chain. Follow its status and fills in Activity.",
+    message =
+      (state.transaction as? ActionState.Committed)?.detail?.let { "$it Follow it in Activity." }
+        ?: "Your order is confirmed on-chain. Follow its status and fills in Activity.",
   ) {
     onOpenActivity?.let { ActionRow("View Activity", onClick = it) }
     onViewTransaction?.let { ActionRow("View transaction", onClick = it) }
@@ -42,7 +45,10 @@ internal fun OrderResult(
 @Composable
 internal fun OrderFailure(state: TradeUiState, side: OrderSide, minHeight: Dp, onEdit: () -> Unit) {
   OrderOutcome(
-    state, side, minHeight, Outcome.FAILURE,
+    state,
+    side,
+    minHeight,
+    Outcome.FAILURE,
     title = "Order not placed",
     message = state.orderError ?: "Your order wasn’t placed.",
   ) {

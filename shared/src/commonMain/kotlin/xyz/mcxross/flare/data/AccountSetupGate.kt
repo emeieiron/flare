@@ -18,7 +18,10 @@ import xyz.mcxross.flare.venue.model.ActionKind
 /** What a wallet whose setup was left for later still needs before it can send actions. */
 enum class SetupNeed(val reason: String, val actionLabel: String) {
   /** The exchange enables trading only once the account's first deposit arrives. */
-  FUNDS("Add funds to start trading. Trading can be enabled once your first deposit arrives.", "Add funds"),
+  FUNDS(
+    "Add funds to start trading. Trading can be enabled once your first deposit arrives.",
+    "Add funds",
+  ),
   /** The account can enable trading on this device, which setup does next. */
   TRADING("Enable trading on this device to place orders and move funds.", "Enable trading"),
 }
@@ -26,12 +29,13 @@ enum class SetupNeed(val reason: String, val actionLabel: String) {
 /** [capabilities] with every action held back by [need], keeping the venue's own reasons first. */
 fun VenueCapabilities.gatedBy(need: SetupNeed?): VenueCapabilities =
   if (need == null) this
-  else copy(unavailableActions = ActionKind.entries.associateWith { need.reason } + unavailableActions)
+  else
+    copy(unavailableActions = ActionKind.entries.associateWith { need.reason } + unavailableActions)
 
 /**
  * Whether the active wallet's setup was left for later, and what it waits for. Whether the account
- * still waits for its first deposit is read from the venue only when [refresh] is asked, and no more
- * often than [minIntervalMs].
+ * still waits for its first deposit is read from the venue only when [refresh] is asked, and no
+ * more often than [minIntervalMs].
  */
 class AccountSetupGate(
   private val preferences: AppPreferences,
@@ -79,7 +83,10 @@ class AccountSetupGate(
 
   private suspend fun pendingProfile(): String? {
     val saved = preferences.values.first()
-    return saved.profiles.firstOrNull { it.id == saved.activeProfileId }?.takeIf { it.setupPending }?.id
+    return saved.profiles
+      .firstOrNull { it.id == saved.activeProfileId }
+      ?.takeIf { it.setupPending }
+      ?.id
   }
 
   private companion object {

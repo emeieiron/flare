@@ -41,8 +41,8 @@ class ExchangeServiceSigningTest {
             size = "100".toHlDecimal(),
             reduceOnly = false,
             type = OrderType.Limit(TimeInForce.GTC),
-          )
-        )
+          ),
+        ),
       )
 
     val body = post(HyperliquidDeployment.Mainnet, nonce = 0L) { submit(order, signer) }
@@ -79,7 +79,8 @@ class ExchangeServiceSigningTest {
   @Test
   fun signsWithTheCallersNonceOverTheClients() = runTest {
     val action = UsdSend(VectorCases.DESTINATION, "1".toHlDecimal())
-    val fromSource = post(HyperliquidDeployment.Mainnet, nonce = 1_687_816_341_423L) { submit(action, signer) }
+    val fromSource =
+      post(HyperliquidDeployment.Mainnet, nonce = 1_687_816_341_423L) { submit(action, signer) }
 
     val explicit =
       post(HyperliquidDeployment.Mainnet, nonce = 1L) {
@@ -105,7 +106,7 @@ class ExchangeServiceSigningTest {
                 HttpStatusCode.OK,
                 headersOf(HttpHeaders.ContentType, "application/json"),
               )
-            }
+            },
           ),
           HyperliquidConfig(deployment),
           nonces = NonceSource { nonce },
