@@ -107,9 +107,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :strategies:jvmTest :jev:jvmTest :shared:testAndroidHostTest \
-            ":$VENUE:jvmTest" ":$VENUE:testAndroidHostTest" \
-            ":venue-$VENUE:testAndroidHostTest" ":androidApp:lint${VARIANT}Release"
+          tasks=(:strategies:jvmTest :jev:jvmTest :shared:testAndroidHostTest \
+            ":$VENUE:jvmTest" ":venue-$VENUE:testAndroidHostTest" ":androidApp:lint${VARIANT}Release")
+          # Decibel's Android SDK tests load Android JNI crypto, which cannot run
+          # on this Linux JVM. Its JVM SDK tests cover the same common tests.
+          if [[ "$VENUE" == hyperliquid ]]; then
+            tasks+=(:hyperliquid:testAndroidHostTest)
+          fi
+          ./gradlew "${tasks[@]}"
 
       - name: Build the selected signed APK
         env:
