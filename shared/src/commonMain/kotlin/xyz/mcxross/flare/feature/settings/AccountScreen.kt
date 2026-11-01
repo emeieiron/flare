@@ -1,12 +1,13 @@
 package xyz.mcxross.flare.feature.settings
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,12 +15,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,13 +45,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -82,7 +85,6 @@ import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
-import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
@@ -197,38 +199,48 @@ fun AccountScreen(
       Text("Your wallet", style = MaterialTheme.typography.headlineLarge)
       FlareButton("Add wallet", { showAddWallet = true }, Modifier.fillMaxWidth().padding(top = 24.dp))
     } else {
-      WalletNameRow(walletLabel,
-        subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
-          else shortAddress(walletAddress),
-        icon = FlareIcons.Wallet,
-        onClick = { showWallets = true }, enabled = !state.busy,
-        onClickLabel = "Open wallets",
-        onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) },
-        balances = state.walletBalances.takeIf {
+      Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+          .background(FlareColors.Surface).padding(20.dp)
+      ) {
+        Text("Wallet", style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+        WalletNameRow(walletLabel,
+          subtitle = if (active.ownerAddress == null) "Trading key · ${shortAddress(walletAddress)}"
+            else shortAddress(walletAddress),
+          icon = FlareIcons.Wallet,
+          onClick = { showWallets = true }, enabled = !state.busy,
+          onClickLabel = "Open wallets",
+          onRename = { onIntent(SettingsIntent.RenameWallet(active.id)) },
+          showDivider = false,
+          showActions = true,
+        )
+        val balances = state.walletBalances.takeIf {
           state.walletBalanceProfileId == active.id && state.walletBalanceAddress == walletAddress
-        }.orEmpty(),
-        assetMetadata = assetMetadata,
-      )
-      val need = state.setupNeed
-      if (active.setupPending && need != null) {
-        UnavailableNotice(need.reason, need)
-      } else if (!active.onboardingComplete) {
-        FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
-      }
-      if (active.ownerAddress != null) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          FlareButton("Receive", { showDeposit = true }, Modifier.weight(1f))
-          FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
-            style = FlareButtonStyle.OUTLINE,
-            enabled = active.selectedSubaccount != null && !state.busy &&
-              state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
+        }.orEmpty()
+        if (balances.isNotEmpty()) WalletBalances(balances, assetMetadata)
+        val need = state.setupNeed
+        if (active.setupPending && need != null) {
+          UnavailableNotice(need.reason, need)
+        } else if (!active.onboardingComplete) {
+          FlareButton("Finish setup", { onContinueSetup(active.id) }, Modifier.fillMaxWidth())
         }
-        state.capabilities.unavailableReason(ActionKind.FUNDS)?.takeIf { it != state.setupNeed?.reason }?.let {
-          Text(it, Modifier.padding(bottom = 16.dp), color = FlareColors.TextSecondary,
-            style = MaterialTheme.typography.bodySmall)
+        if (active.ownerAddress != null) {
+          HorizontalDivider(Modifier.padding(top = 20.dp), color = FlareColors.BorderSubtle)
+          Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlareButton("Receive", { showDeposit = true }, Modifier.weight(1f))
+            FlareButton("Withdraw", { showWithdraw = true; onIntent(SettingsIntent.OpenWithdraw) }, Modifier.weight(1f),
+              style = FlareButtonStyle.OUTLINE,
+              enabled = active.selectedSubaccount != null && !state.busy &&
+                state.capabilities.unavailableReason(ActionKind.FUNDS) == null)
+          }
+          state.capabilities.unavailableReason(ActionKind.FUNDS)?.takeIf { it != state.setupNeed?.reason }?.let {
+            Text(it, Modifier.padding(top = 12.dp), color = FlareColors.TextSecondary,
+              style = MaterialTheme.typography.bodySmall)
+          }
         }
       }
-      SectionLabel("Trading accounts")
+      Text("Trading accounts", Modifier.padding(top = 32.dp, bottom = 12.dp),
+        style = MaterialTheme.typography.titleMedium)
       subaccounts.forEachIndexed { index, account ->
         val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
         Row(Modifier.fillMaxWidth().combinedClickable(
@@ -240,6 +252,10 @@ fun AccountScreen(
           onLongClick = { onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address)) },
         ).semantics { this.selected = selected }.padding(vertical = 12.dp),
           verticalAlignment = Alignment.CenterVertically) {
+          Icon(FlareIcons.AccountBranch, null,
+            modifier = Modifier.align(Alignment.Top).padding(top = 2.dp).size(24.dp),
+            tint = FlareColors.BorderStrong)
+          Spacer(Modifier.width(12.dp))
           Column(Modifier.weight(1f)) {
             Text(active.tradingAccountDisplayName(account.address, account.label, index),
               style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -255,6 +271,9 @@ fun AccountScreen(
             Icon(FlareIcons.Copy, null, tint = FlareColors.TextSecondary,
               modifier = Modifier.size(18.dp))
           }
+          AccountActionsMenu("Trading account", !state.busy) {
+            onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
+          }
         }
         HorizontalDivider(color = FlareColors.BorderSubtle)
       }
@@ -263,8 +282,6 @@ fun AccountScreen(
           icon = FlareIcons.Add, enabled = !state.busy && !state.creatingSubaccount,
           onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) })
       }
-      Text("Touch and hold a wallet or trading account to rename.", Modifier.padding(top = 16.dp),
-        style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
     }
     Spacer(Modifier.height(32.dp))
   }
@@ -326,8 +343,8 @@ private fun WalletNameRow(
   onClick: () -> Unit,
   icon: ImageVector? = null,
   selected: Boolean = false,
-  balances: List<WalletTokenBalance> = emptyList(),
-  assetMetadata: Map<String, AssetMetadata> = emptyMap(),
+  showDivider: Boolean = true,
+  showActions: Boolean = false,
   onClickLabel: String = "Select wallet",
 ) {
   Row(Modifier.fillMaxWidth().combinedClickable(
@@ -337,48 +354,67 @@ private fun WalletNameRow(
     .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(14.dp)) {
     icon?.let {
-      Icon(it, null, tint = FlareColors.TextSecondary, modifier =
-        (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 1.dp)).size(22.dp))
+      Icon(it, null, tint = FlareColors.TextSecondary, modifier = Modifier.size(22.dp))
     }
     Column(Modifier.weight(1f)) {
       Text(name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
       Text(subtitle, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
-      if (balances.isNotEmpty()) InlineWalletBalances(balances, assetMetadata)
     }
     if (selected) Icon(FlareIcons.CheckCircle, "Selected", tint = FlareColors.TextPrimary,
       modifier = Modifier.size(20.dp))
-    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier =
-      (if (balances.isEmpty()) Modifier else Modifier.align(Alignment.Top).padding(top = 2.dp)).size(20.dp))
+    Icon(FlareIcons.ChevronRight, null, tint = FlareColors.TextTertiary, modifier = Modifier.size(20.dp))
+    if (showActions) AccountActionsMenu("Wallet", enabled, onRename)
   }
-  HorizontalDivider(color = FlareColors.BorderSubtle)
+  if (showDivider) HorizontalDivider(color = FlareColors.BorderSubtle)
 }
 
 @Composable
-private fun InlineWalletBalances(
+private fun AccountActionsMenu(label: String, enabled: Boolean, onRename: () -> Unit) {
+  var expanded by remember { mutableStateOf(false) }
+  Box {
+    IconButton({ expanded = true }, enabled = enabled,
+      modifier = Modifier.size(48.dp).semantics { contentDescription = "$label options" }) {
+      Icon(FlareIcons.More, null, Modifier.size(20.dp), tint = FlareColors.TextSecondary)
+    }
+    DropdownMenu(expanded, { expanded = false }) {
+      DropdownMenuItem(text = { Text("Rename") }, onClick = { expanded = false; onRename() })
+    }
+  }
+}
+
+@Composable
+private fun WalletBalances(
   balances: List<WalletTokenBalance>,
   assetMetadata: Map<String, AssetMetadata>,
 ) {
-  FlowRow(Modifier.fillMaxWidth().padding(top = 12.dp),
-    horizontalArrangement = Arrangement.spacedBy(24.dp),
-    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-    balances.forEach { balance ->
-      Row(verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        val metadata = assetMetadata[balance.symbol]
-        AssetIcon(resolveAssetIdentity(balance.symbol, balance.symbol, metadata), 24.dp)
-        Text(buildAnnotatedString {
-          append(balance.displayAmount)
-          withStyle(SpanStyle(color = FlareColors.TextSecondary)) { append(" ${balance.symbol}") }
-        }, style = MaterialTheme.typography.bodyLarge, color = FlareColors.TextPrimary)
+  val fontScale = LocalDensity.current.fontScale
+  BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+    val columns = if (maxWidth < 280.dp || fontScale > 1.3f || balances.any { it.displayAmount.length > 8 }) 1 else 2
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+      balances.chunked(columns).forEach { group ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+          group.forEachIndexed { index, balance ->
+            if (index > 0) VerticalDivider(Modifier.height(44.dp), color = FlareColors.BorderSubtle)
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+              val metadata = assetMetadata[balance.symbol]
+              AssetIcon(resolveAssetIdentity(balance.symbol, balance.symbol, metadata), 28.dp)
+              Column {
+                Text(balance.symbol, style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
+                Text(balance.displayAmount, style = MaterialTheme.typography.titleLarge,
+                  color = FlareColors.TextPrimary)
+              }
+            }
+          }
+          if (group.size < columns) Spacer(Modifier.weight(1f))
+        }
+      }
+      if (balances.any { it.unavailable }) {
+        Text(if (balances.any { it.unavailable && it.amount == null }) "Balance unavailable" else "Updated earlier",
+          style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
       }
     }
-  }
-  if (balances.any { it.unavailable }) Row(
-    Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(if (balances.any { it.unavailable && it.amount == null }) "Balance unavailable"
-      else "Updated earlier", Modifier.weight(1f),
-      style = MaterialTheme.typography.bodySmall, color = FlareColors.TextSecondary)
   }
 }
 

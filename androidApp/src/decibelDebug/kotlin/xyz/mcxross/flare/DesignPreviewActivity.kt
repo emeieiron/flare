@@ -280,6 +280,28 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
             },
             { screen = "welcome" },
           )
+        "account-layout" -> {
+          val owner = "0x3fbda2cb" + "0".repeat(50) + "ff51c4"
+          val account = "0x2aa050b3" + "0".repeat(50) + "806ebb"
+          val profile = xyz.mcxross.flare.store.AccountProfile("preview", ownerAddress = owner,
+            selectedSubaccount = account, onboardingComplete = true, walletName = "Main")
+          Column {
+            AccountScreen(
+              SettingsUiState(
+                preferences = FlarePreferences(activeProfileId = "preview", profiles = listOf(profile)),
+                walletBalanceProfileId = "preview", walletBalanceAddress = owner,
+                walletBalances = listOf(WalletTokenBalance("APT", "6.66"), WalletTokenBalance("USDC", "0")),
+                subaccountsByOwner = mapOf(owner to listOf(TradingAccount(account, owner, label = "Leverage", primary = true))),
+              ), {}, {}, {}, {}, {}, Modifier.weight(1f),
+            )
+            FlareBottomNavigation(listOf(
+              FlareNavigationItem("Markets", FlareIcons.Markets),
+              FlareNavigationItem("Portfolio", FlareIcons.Portfolio),
+              FlareNavigationItem("Activity", FlareIcons.Activity),
+              FlareNavigationItem("Account", FlareIcons.Account, FlareIcons.AccountFilled),
+            ), 3, {})
+          }
+        }
         "account", "account-owner", "settings-auto", "referral-settings", "referral-bound",
         "referral-ineligible", "referral-pending" ->
           SettingsScreen(
