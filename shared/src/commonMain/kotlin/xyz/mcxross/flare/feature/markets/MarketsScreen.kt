@@ -268,8 +268,8 @@ private fun MarketPageContent(
       state = listState,
       contentPadding = PaddingValues(horizontal = 24.dp),
     ) {
-      item { MarketSectionHeader(title, showPriceLabel = true) }
-      items(quotes, key = { it.market.id }) { quote ->
+      item(contentType = "market-header") { MarketSectionHeader(title, showPriceLabel = true) }
+      items(quotes, key = { it.market.id }, contentType = { "market-quote" }) { quote ->
         MarketQuoteRow(quote, assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }
@@ -346,17 +346,19 @@ private fun MarketSearchResults(
   }
   LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
     val firstSection = if (results.perpetuals.isNotEmpty()) "Perpetuals" else "Spot"
-    if (query.isEmpty()) item { MarketSectionHeader("Your watchlist", showPriceLabel = true) }
+    if (query.isEmpty()) item(key = "watchlist-header", contentType = "market-header") {
+      MarketSectionHeader("Your watchlist", showPriceLabel = true)
+    }
     listOf("Perpetuals" to results.perpetuals, "Spot" to results.spot).forEach { (title, quotes) ->
       if (quotes.isEmpty()) return@forEach
-      item(key = "section-$title") {
+      item(key = "section-$title", contentType = "market-header") {
         MarketSectionHeader(
           title,
           showPriceLabel = query.isNotEmpty() && title == firstSection,
           subdued = query.isEmpty(),
         )
       }
-      items(quotes, key = { "search-${it.market.id}" }) { quote ->
+      items(quotes, key = { "search-${it.market.id}" }, contentType = { "market-quote" }) { quote ->
         MarketQuoteRow(quote, state.assets[assetKey(quote.market.symbol)], onIntent, onMarketClick)
       }
     }

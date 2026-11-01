@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -77,6 +78,7 @@ import xyz.mcxross.flare.design.FlareButtonStyle
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareQrCode
+import xyz.mcxross.flare.design.rememberPreparedFlareQrCodePainter
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSheet
 import xyz.mcxross.flare.design.FlareTopBar
@@ -175,6 +177,7 @@ fun AccountScreen(
   val active = profiles.firstOrNull { it.id == state.preferences.activeProfileId }
   val walletLabel = active?.walletDisplayName(profiles.indexOf(active).coerceAtLeast(0)) ?: "Wallet"
   val walletAddress = (active?.ownerAddress ?: active?.apiWalletAddress).orEmpty()
+  val receiveQrPainter = rememberPreparedFlareQrCodePainter(walletAddress)
   val subaccounts = active?.ownerAddress?.let { state.subaccountsByOwner[it] }.orEmpty()
     .ifEmpty {
       active?.selectedSubaccount?.let {
@@ -329,7 +332,7 @@ fun AccountScreen(
   }
   if (showDeposit && walletAddress.isNotBlank()) DepositSheet(walletLabel, walletAddress, copied, {
     clipboard.setText(AnnotatedString(walletAddress)); copied = true
-  }, { showDeposit = false })
+  }, { showDeposit = false }, receiveQrPainter)
   if (showWithdraw && active?.selectedSubaccount != null) WithdrawSheet(state,
     onIntent, { if (!state.withdrawing) { showWithdraw = false; onIntent(SettingsIntent.DismissWithdraw) } })
 }
@@ -425,9 +428,13 @@ private fun DepositSheet(
   copied: Boolean,
   onCopy: () -> Unit,
   onDismiss: () -> Unit,
+  qrPainter: Painter?,
 ) {
   val chain = LocalVenue.current.chain
   val receive = LocalVenue.current.receive
+  // Keep an immediate-open fallback for this sheet rather than replacing its warm draw cache
+  // when background preparation finishes. A different address always selects a new painter.
+  val painter = remember(address) { qrPainter }
   FlareSheet("Receive funds", onDismiss, heightFraction = 0.9f) {
     Text(
       receive?.summary
@@ -439,7 +446,12 @@ private fun DepositSheet(
     BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
       val codeSize = minOf(maxWidth * 0.84f, maxHeight - 112.dp, 320.dp).coerceAtLeast(168.dp)
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FlareQrCode(address, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        if (painter != null) {
+          FlareQrCode(painter, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        } else {
+          // An immediate tap can precede background preparation; keep Receive fully functional.
+          FlareQrCode(address, "QR code for your ${chain.name} address", Modifier.size(codeSize))
+        }
         ReceiveAddress(address, onCopy, Modifier.padding(top = 20.dp))
       }
     }

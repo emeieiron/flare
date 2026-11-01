@@ -18,3 +18,5 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 docs/
 DESIGN.md
+.maestro/
+.claude/
