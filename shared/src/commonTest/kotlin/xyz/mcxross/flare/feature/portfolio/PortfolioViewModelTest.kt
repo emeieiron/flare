@@ -312,6 +312,12 @@ class PortfolioViewModelTest {
     val feePayments = mutableListOf<FeePayment>()
     val reviewed = mutableListOf<List<TradeAction>>()
     val confirmed = mutableListOf<Boolean>()
+    var confirmedActions = 0
+
+    override suspend fun <T> confirmedAction(prompt: VaultPrompt, block: suspend () -> T): T {
+      confirmedActions++
+      return block()
+    }
 
     override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? {
       reviewed += actions
@@ -1281,6 +1287,32 @@ class PortfolioViewModelTest {
     vm.onIntent(PortfolioIntent.SubmitTpSl)
     assertEquals(listOf(FeePayment.WALLET_FALLBACK), trading.feePayments)
     assertEquals("Add APT to cover network fees.", vm.uiState.value.actionError)
+  }
+
+  @Test
+  fun savingExitsAsksForConfirmationWithoutWaitingForTheAccountRefresh() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val refreshGate = CompletableDeferred<Unit>()
+    val accounts =
+      object :
+        FakeAccountRepository(
+          AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+        ) {
+        override suspend fun refresh() = refreshGate.await()
+      }
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
+    vm.onIntent(PortfolioIntent.ChangeTakeProfit("80000"))
+    vm.onIntent(PortfolioIntent.SubmitTpSl)
+    runCurrent()
+    // Asked at once; nothing is sent until the account has been read again.
+    assertEquals(1, trading.confirmedActions)
+    assertTrue(trading.executed.isEmpty())
+    refreshGate.complete(Unit)
+    runCurrent()
+    assertIs<TradeAction.SetPositionTpSl>(trading.executed.single())
   }
 
   @Test

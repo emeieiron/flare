@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -688,88 +690,98 @@ class TradeViewModel(
         runSuspendCatching {
           val subaccount =
             preferences.values.first().selectedSubaccount ?: error("Complete account setup")
-          val reconciliation = trading.reconcilePending()
-          require(reconciliation.unresolved == 0) {
-            "Flare is still confirming an earlier action. Try again in a moment."
-          }
-          accounts.refresh()
-          val snapshot = accounts.snapshot.value
-          require(!snapshot.stale && snapshot.account == subaccount) {
-            "Your account is still reconnecting. Try again in a moment."
-          }
-          // Refresh can change position settings or connection state while submission waits.
-          // Read those facts now, before authorizing the reviewed actions.
-          syncPositionLeverage()
-          val state = mutableUiState.value
-          checkNotNull(state.quote) { "Select a market first" }
-          require(state.tradingAccountAddress == subaccount) {
-            "Your account changed. Check network fees again."
-          }
-          if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
-            error("A live order book is required for a market order")
-          }
-          val review = state.feeReview
-          check(reviewedOrderInput == state.orderInputIdentity(side)) {
-            "Your order changed. Check network fees again."
-          }
-          // Book updates may change a newly resolved market price. Confirmation executes the
-          // reviewed bound exactly; it must never widen that bound to follow the live book.
-          val actions = review?.actions ?: orderActions(state, side)
-          val entryAction = actions.filterIsInstance<TradeAction.PlaceOrder>().single()
-          val configuration = actions.filterIsInstance<TradeAction.ConfigureMarket>().singleOrNull()
+          val review = mutableUiState.value.feeReview
           val prompt =
             VaultPrompt(
               title = "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
               subtitle = "Confirm your identity",
             )
-          val place: suspend () -> ActionState = {
-            placeConfiguredOrder(
-              configuration = configuration,
-              entry = entryAction,
-              execute = { action ->
-                trading.execute(
-                  action,
-                  VaultPrompt(
-                    title =
-                      if (action is TradeAction.ConfigureMarket) "Apply ${state.leverage}× leverage"
-                      else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
-                    subtitle = "Confirm your identity",
-                  ),
-                  FeePayment.SPONSORED,
-                )
-              },
-              onState = { stage, transaction ->
-                mutableUiState.update {
-                  val fee =
-                    when (transaction) {
-                      is ActionState.FeeEstimated -> transaction.fee
-                      is ActionState.Pending -> transaction.networkFee
-                      is ActionState.Committed -> transaction.networkFee
-                      else -> null
-                    }
-                  if (stage == OrderStage.LEVERAGE)
-                    it.copy(
-                      leverageTransaction = transaction,
-                    )
-                  else
-                    it.copy(
-                      transaction = transaction,
-                      entryNetworkFee = fee ?: it.entryNetworkFee,
-                    )
+          coroutineScope {
+            // The account is re-read while the person confirms; nothing signs until it lands.
+            val accountRead = async {
+              runSuspendCatching {
+                val reconciliation = trading.reconcilePending()
+                require(reconciliation.unresolved == 0) {
+                  "Flare is still confirming an earlier action. Try again in a moment."
                 }
-              },
-            )
-          }
-          val terminal =
-            if (review != null) {
-              trading.confirmedOrderFees(review, review.canSelfPay, prompt, place)
-            } else trading.confirmedAction(prompt, place)
-          // A reviewed plan is single-use; a new attempt must review a fresh budget.
-          invalidateFeeReview()
-          when (val transaction = terminal) {
-            is ActionState.Committed -> accounts.refresh()
-            is ActionState.Failed -> error(transaction.message)
-            else -> Unit
+                accounts.refresh()
+              }
+            }
+            val place: suspend () -> ActionState = {
+              accountRead.await().getOrThrow()
+              val snapshot = accounts.snapshot.value
+              require(!snapshot.stale && snapshot.account == subaccount) {
+                "Your account is still reconnecting. Try again in a moment."
+              }
+              // Refresh can change position settings or connection state while confirmation
+              // waits. Read those facts now, before signing the reviewed actions.
+              syncPositionLeverage()
+              val state = mutableUiState.value
+              checkNotNull(state.quote) { "Select a market first" }
+              require(state.tradingAccountAddress == subaccount) {
+                "Your account changed. Check network fees again."
+              }
+              if (state.orderType == OrderType.MARKET && state.marketDetails.stale) {
+                error("A live order book is required for a market order")
+              }
+              check(reviewedOrderInput == state.orderInputIdentity(side)) {
+                "Your order changed. Check network fees again."
+              }
+              // Book updates may change a newly resolved market price. Confirmation executes the
+              // reviewed bound exactly; it must never widen that bound to follow the live book.
+              val actions = review?.actions ?: orderActions(state, side)
+              val entryAction = actions.filterIsInstance<TradeAction.PlaceOrder>().single()
+              val configuration =
+                actions.filterIsInstance<TradeAction.ConfigureMarket>().singleOrNull()
+              placeConfiguredOrder(
+                configuration = configuration,
+                entry = entryAction,
+                execute = { action ->
+                  trading.execute(
+                    action,
+                    VaultPrompt(
+                      title =
+                        if (action is TradeAction.ConfigureMarket)
+                          "Apply ${state.leverage}× leverage"
+                        else "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"} order",
+                      subtitle = "Confirm your identity",
+                    ),
+                    FeePayment.SPONSORED,
+                  )
+                },
+                onState = { stage, transaction ->
+                  mutableUiState.update {
+                    val fee =
+                      when (transaction) {
+                        is ActionState.FeeEstimated -> transaction.fee
+                        is ActionState.Pending -> transaction.networkFee
+                        is ActionState.Committed -> transaction.networkFee
+                        else -> null
+                      }
+                    if (stage == OrderStage.LEVERAGE)
+                      it.copy(
+                        leverageTransaction = transaction,
+                      )
+                    else
+                      it.copy(
+                        transaction = transaction,
+                        entryNetworkFee = fee ?: it.entryNetworkFee,
+                      )
+                  }
+                },
+              )
+            }
+            val terminal =
+              if (review != null) {
+                trading.confirmedOrderFees(review, review.canSelfPay, prompt, place)
+              } else trading.confirmedAction(prompt, place)
+            // A reviewed plan is single-use; a new attempt must review a fresh budget.
+            invalidateFeeReview()
+            when (val transaction = terminal) {
+              is ActionState.Committed -> accounts.refresh()
+              is ActionState.Failed -> error(transaction.message)
+              else -> Unit
+            }
           }
         }
           .onFailure { error ->

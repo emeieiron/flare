@@ -3,8 +3,12 @@ package xyz.mcxross.flare.feature.portfolio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlin.time.Clock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -909,19 +913,28 @@ class PortfolioViewModel(
             }
           } else null
       reviewedClose = null
+      val prompt = VaultPrompt("Close position", "Confirm your identity")
       if (reviewed == null) {
-        executePositionActionInternal(closeOrder(market), FeePayment.WALLET_FALLBACK)
+        coroutineScope {
+          val accountRead = readAccount()
+          trading.confirmedAction(prompt) {
+            executePositionActionInternal(
+              closeOrder(market),
+              FeePayment.WALLET_FALLBACK,
+              accountRead,
+            )
+          }
+        }
         return@launchAction
       }
       val review = reviewed.review
       local.update { it.copy(closeReview = review) }
       review.paymentError?.let { error(it) }
-      trading.confirmedOrderFees(
-        review,
-        review.canSelfPay,
-        VaultPrompt("Close position", "Confirm your identity"),
-      ) {
-        executePositionActionInternal(reviewed.action, FeePayment.SPONSORED)
+      coroutineScope {
+        val accountRead = readAccount()
+        trading.confirmedOrderFees(review, review.canSelfPay, prompt) {
+          executePositionActionInternal(reviewed.action, FeePayment.SPONSORED, accountRead)
+        }
       }
     }
 
@@ -977,24 +990,37 @@ class PortfolioViewModel(
         throw IllegalArgumentException(it)
       }
       val subaccount = checkNotNull(uiState.value.account.account)
-      executePositionActionInternal(
-        TradeAction.SetPositionTpSl(
-          account = subaccount,
-          market = quote.market,
-          takeProfitTrigger = takeProfit,
-          takeProfitLimit = takeProfit,
-          stopLossTrigger = stopLoss,
-          stopLossLimit = stopLoss,
-        ),
-        FeePayment.WALLET_FALLBACK,
-      )
+      coroutineScope {
+        val accountRead = readAccount()
+        trading.confirmedAction(VaultPrompt("Manage position", "Confirm your identity")) {
+          executePositionActionInternal(
+            TradeAction.SetPositionTpSl(
+              account = subaccount,
+              market = quote.market,
+              takeProfitTrigger = takeProfit,
+              takeProfitLimit = takeProfit,
+              stopLossTrigger = stopLoss,
+              stopLossLimit = stopLoss,
+            ),
+            FeePayment.WALLET_FALLBACK,
+            accountRead,
+          )
+        }
+      }
     }
 
+  /** Re-reads the account while the person confirms, so the prompt needn't wait for it. */
+  private fun CoroutineScope.readAccount(): Deferred<Result<Unit>> = async {
+    runSuspendCatching { accounts.refresh() }
+  }
+
+  /** Nothing signs until [accountRead] lands; a failed read stops the action there. */
   private suspend fun executePositionActionInternal(
     action: TradeAction,
     feePayment: FeePayment,
+    accountRead: Deferred<Result<Unit>>,
   ) {
-    accounts.refresh()
+    accountRead.await().getOrThrow()
     trading
       .execute(
         action = action,

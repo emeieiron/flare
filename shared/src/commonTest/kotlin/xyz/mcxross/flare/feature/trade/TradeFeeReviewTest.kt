@@ -253,7 +253,7 @@ class TradeFeeReviewTest {
         val gate = CompletableDeferred<Unit>()
         f.accounts.refreshGate = gate
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
-        assertEquals(0, f.trading.confirmations)
+        assertEquals(1, f.trading.confirmations)
         if (externalPosition)
           f.accounts.snapshot.value =
             f.accounts.snapshot.value.copy(
@@ -263,7 +263,6 @@ class TradeFeeReviewTest {
         runCurrent()
         assertEquals(2, f.vm.uiState.value.leverage)
         if (externalPosition) {
-          assertEquals(0, f.trading.confirmations)
           assertTrue(f.trading.executed.isEmpty())
           assertTrue(
             assertNotNull(f.vm.uiState.value.orderError).contains("Check network fees again"),
@@ -280,7 +279,7 @@ class TradeFeeReviewTest {
   }
 
   @Test
-  fun positionChangesDuringAccountRefreshRequireReviewBeforeAuthorization() = runTest {
+  fun positionChangesDuringAccountRefreshStopTheOrderBeforeSigning() = runTest {
     for (position in
       listOf(
         Position("0xmarket", "0.001", 2, 70_000.0, isolated = false),
@@ -296,11 +295,12 @@ class TradeFeeReviewTest {
         val gate = CompletableDeferred<Unit>()
         f.accounts.refreshGate = gate
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
-        assertEquals(0, f.trading.confirmations)
+        // The confirmation is asked for at once; the refresh lands while it's given.
+        assertEquals(1, f.trading.confirmations)
         f.accounts.snapshot.value = f.accounts.snapshot.value.copy(positions = listOf(position))
         gate.complete(Unit)
         runCurrent()
-        assertEquals(0, f.trading.confirmations)
+        assertEquals(1, f.trading.confirmations)
         assertTrue(f.trading.executed.isEmpty())
         assertTrue(
           assertNotNull(f.vm.uiState.value.orderError).contains("Check network fees again"),
@@ -313,7 +313,7 @@ class TradeFeeReviewTest {
   }
 
   @Test
-  fun aBookBecomingStaleDuringAccountRefreshBlocksMarketOrderAuthorization() = runTest {
+  fun aBookBecomingStaleDuringAccountRefreshBlocksMarketOrderSigning() = runTest {
     val f = fixture()
     try {
       f.details.value =
@@ -335,7 +335,7 @@ class TradeFeeReviewTest {
       f.details.value = f.details.value.copy(stale = true)
       gate.complete(Unit)
       runCurrent()
-      assertEquals(0, f.trading.confirmations)
+      assertEquals(1, f.trading.confirmations)
       assertTrue(f.trading.executed.isEmpty())
       assertTrue(assertNotNull(f.vm.uiState.value.orderError).contains("live order book"))
       assertFalse(f.vm.uiState.value.feeReviewPrepared)

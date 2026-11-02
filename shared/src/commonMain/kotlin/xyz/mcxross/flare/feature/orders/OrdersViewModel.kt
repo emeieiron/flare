@@ -2,7 +2,9 @@ package xyz.mcxross.flare.feature.orders
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -260,28 +262,31 @@ class OrdersViewModel(
 
   private fun cancel(market: String, orderId: String, isTpSl: Boolean) =
     launchAction("Your order is still open.") {
-      accounts.refresh()
-      val subaccount = checkNotNull(uiState.value.account.account)
       local.update { it.copy(lastCancelOrderId = orderId) }
       val isSpot =
         markets.catalog.value.quotes.firstOrNull { it.market.id == market }?.market?.kind ==
           MarketKind.SPOT
-      trading
-        .execute(
-          if (isTpSl) {
-            TradeAction.CancelPositionTpSl(subaccount, market, orderId)
-          } else {
-            TradeAction.CancelOrder(
-              subaccount,
-              market,
-              orderId,
-              if (isSpot) MarketKind.SPOT else MarketKind.PERP,
-            )
-          },
-          VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity"),
-          FeePayment.WALLET_FALLBACK,
-        )
-        .collect { state -> local.update { it.copy(transaction = state) } }
+      val prompt =
+        VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity")
+      confirmedWithAccountRead(prompt) {
+        val subaccount = checkNotNull(uiState.value.account.account)
+        trading
+          .execute(
+            if (isTpSl) {
+              TradeAction.CancelPositionTpSl(subaccount, market, orderId)
+            } else {
+              TradeAction.CancelOrder(
+                subaccount,
+                market,
+                orderId,
+                if (isSpot) MarketKind.SPOT else MarketKind.PERP,
+              )
+            },
+            prompt,
+            FeePayment.WALLET_FALLBACK,
+          )
+          .collect { state -> local.update { it.copy(transaction = state) } }
+      }
       when (val state = local.value.transaction) {
         is ActionState.Committed -> {
           accounts.refresh()
@@ -314,27 +319,26 @@ class OrdersViewModel(
 
   private fun cancelAll() =
     launchAction("Some orders couldn’t be cancelled.") {
-      accounts.refresh()
-      val openOrders = uiState.value.account.openOrders
-      if (openOrders.isEmpty()) return@launchAction
-      val subaccount = checkNotNull(uiState.value.account.account)
-      if (capabilities.batchCancel) {
-        trading
-          .execute(
-            TradeAction.CancelOrders(
-              subaccount,
-              openOrders.map { OpenOrderRef(it.marketId, it.orderId) },
-            ),
-            VaultPrompt("Cancel all orders", "Confirm your identity"),
-            FeePayment.WALLET_FALLBACK,
-          )
-          .collect { state -> local.update { it.copy(transaction = state) } }
-        accounts.refresh()
-        accounts.refreshHistory()
-        (local.value.transaction as? ActionState.Failed)?.let { error(it.failureMessage()) }
-        return@launchAction
-      }
-      trading.confirmedAction(VaultPrompt("Cancel all orders", "Confirm your identity")) {
+      if (uiState.value.account.openOrders.isEmpty()) return@launchAction
+      var batchFailure: ActionState.Failed? = null
+      confirmedWithAccountRead(VaultPrompt("Cancel all orders", "Confirm your identity")) {
+        val openOrders = uiState.value.account.openOrders
+        if (openOrders.isEmpty()) return@confirmedWithAccountRead
+        val subaccount = checkNotNull(uiState.value.account.account)
+        if (capabilities.batchCancel) {
+          trading
+            .execute(
+              TradeAction.CancelOrders(
+                subaccount,
+                openOrders.map { OpenOrderRef(it.marketId, it.orderId) },
+              ),
+              VaultPrompt("Cancel all orders", "Confirm your identity"),
+              FeePayment.WALLET_FALLBACK,
+            )
+            .collect { state -> local.update { it.copy(transaction = state) } }
+          batchFailure = local.value.transaction as? ActionState.Failed
+          return@confirmedWithAccountRead
+        }
         for (order in openOrders) {
           val isSpot =
             markets.catalog.value.quotes
@@ -363,6 +367,20 @@ class OrdersViewModel(
       }
       accounts.refresh()
       accounts.refreshHistory()
+      batchFailure?.let { error(it.failureMessage()) }
+    }
+
+  /**
+   * Asks for confirmation at once and re-reads the account meanwhile; [block] runs, and so signs,
+   * only after both.
+   */
+  private suspend fun confirmedWithAccountRead(prompt: VaultPrompt, block: suspend () -> Unit) =
+    coroutineScope {
+      val accountRead = async { runSuspendCatching { accounts.refresh() } }
+      trading.confirmedAction(prompt) {
+        accountRead.await().getOrThrow()
+        block()
+      }
     }
 
   fun refreshTwaps() {
