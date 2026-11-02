@@ -40,6 +40,29 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class OrderFeeReviewIosTest {
   @Test
+  fun missingActualFeeStatementNeverFallsBackToTheSimulationEstimate() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      f.includeFeeStatement = false
+      val states = f.order()
+      val fee = assertNotNull(assertIs<ActionState.Committed>(states.last()).networkFee)
+      assertEquals(7_000uL, fee.estimate)
+      assertNull(fee.actual)
+    }
+  }
+
+  @Test
+  fun refundsAreAggregatedBeforeClampingNetUserPaidFeeAtZero() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      f.configRefund = 8_000uL
+      f.entryRefund = 0uL
+      val states = f.order()
+      assertEquals(0uL, assertIs<ActionState.Committed>(states.last()).networkFee?.actual)
+    }
+  }
+
+  @Test
   fun ownerAtTheSupportedSdkMinimumUsesActualOwnerEstimateBeforeConfirmation() = runTest {
     fixture { f ->
       f.requireConfiguration = false
@@ -94,6 +117,7 @@ class OrderFeeReviewIosTest {
       val fee = assertNotNull(assertIs<ActionState.Committed>(states.last()).networkFee)
       assertFalse(fee.covered)
       assertEquals(5_000uL, fee.estimate)
+      assertEquals(3_600uL, fee.actual)
       assertEquals(200_000uL, fee.maximum)
       assertEquals(1, f.submitted.size)
       assertEquals(1, f.events.count { it == "authorize" })
@@ -144,6 +168,7 @@ class OrderFeeReviewIosTest {
       assertEquals(50_000uL, f.simulated.first().rawTxn.maxGasAmount)
       assertTrue(f.ownerBalance.toULong() < 5_000_000uL)
       assertEquals(7_000uL, assertIs<ActionState.Committed>(states.last()).networkFee?.estimate)
+      assertEquals(4_800uL, assertIs<ActionState.Committed>(states.last()).networkFee?.actual)
       assertTrue(f.journal.pending().isEmpty())
     }
   }
@@ -163,7 +188,7 @@ class OrderFeeReviewIosTest {
   }
 
   @Test
-  fun reviewUsesCachedIdentitiesAndDoesNotSimulateEntryBeforeConfigurationCommits() = runTest {
+  fun reviewUsesCachedIdentitiesAndEstimatesEntryAlongsideConfiguration() = runTest {
     fixture { f ->
       val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
       assertEquals("0x1", review.feePayerAddress)
@@ -172,12 +197,25 @@ class OrderFeeReviewIosTest {
       assertEquals(400_000uL, review.feePayerBalance)
       assertEquals(200_000uL, review.requiredReserveOctas)
       assertTrue(review.canSelfPay)
-      assertNull(review.estimatedFeeOctas)
+      assertEquals(7_000uL, review.estimatedFeeOctas)
       assertEquals(10_000_000uL, review.maximumTotalOctas)
-      assertEquals(3, f.simulated.size)
+      assertEquals(4, f.simulated.size)
+      assertEquals(1, f.reviewEntrySimulations)
       assertFalse("authorize" in f.events)
       assertFalse("sign" in f.events)
       assertEquals(0, f.freshKeyReads)
+    }
+  }
+
+  @Test
+  fun entryThatCannotBeSimulatedBeforeConfigurationKeepsTheCeiling() = runTest {
+    fixture { f ->
+      f.entryFailsBeforeSetup = true
+      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
+      assertNull(review.estimatedFeeOctas)
+      assertEquals(10_000_000uL, review.maximumTotalOctas)
+      assertTrue(review.canSelfPay)
+      assertEquals(2, f.order().count { it is ActionState.Committed })
     }
   }
 
@@ -393,6 +431,13 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
   var failEntrySimulation = false
   var loseSubmitResponse = false
   var entrySimulations = 0
+  var reviewEntrySimulations = 0
+  var entryFailsBeforeSetup = false
+  var includeFeeStatement = true
+  var configRefund = 500uL
+  var entryRefund = 700uL
+  var committedConfigGas = 17uL
+  var committedEntryGas = 43uL
   var zeroGasOverride: ULong? = null
   var realOwnerGasOverride: ULong? = null
   private val pendingRaw = mutableMapOf<String, RawTransaction>()
@@ -463,11 +508,11 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
                   val entry =
                     (raw.payload as TransactionPayload.EntryFunction).call.function.toString() ==
                       "place_order_to_subaccount"
-                  if (entry) {
+                  val beforeSetup = entry && requireConfiguration && !configurationCommitted
+                  if (entry && "authorize" !in events) reviewEntrySimulations++
+                  else if (entry) {
                     entrySimulations++
-                    check(!requireConfiguration || configurationCommitted) {
-                      "Entry simulated before leverage was applied"
-                    }
+                    check(!beforeSetup) { "Entry simulated before leverage was applied" }
                   }
                   val payer =
                     (signed.authenticator as? TransactionAuthenticator.FeePayer)?.feePayerAddress
@@ -483,7 +528,10 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
                       else -> null
                     } ?: if (entry) 50uL else 20uL
                   val success =
-                    reserveFits && gas <= raw.maxGasAmount && !(entry && failEntrySimulation)
+                    reserveFits &&
+                      gas <= raw.maxGasAmount &&
+                      !(entry && failEntrySimulation) &&
+                      !(beforeSetup && entryFailsBeforeSetup)
                   "[${response(HASH, raw, gas, success)}]"
                 }
                 path.endsWith("/transactions") && request.method == HttpMethod.Post -> {
@@ -525,7 +573,12 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
                       ownerBalance = (ownerBalance.toULong() - cost).toString()
                     else apiBalance = (apiBalance.toULong() - cost).toString()
                   }
-                  response(hash, raw)
+                  val isEntry =
+                    (raw?.payload as? TransactionPayload.EntryFunction)
+                      ?.call
+                      ?.function
+                      ?.toString() == "place_order_to_subaccount"
+                  response(hash, raw, if (isEntry) committedEntryGas else committedConfigGas)
                 }
                 else -> error("Unexpected path $path")
               }
@@ -740,8 +793,17 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
     raw: RawTransaction? = null,
     gas: ULong = 20uL,
     success: Boolean = true,
-  ) =
-    """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"$gas","success":$success,"vm_status":"${if (success) "Executed successfully" else "Insufficient gas reserve or unapplied leverage"}","accumulator_root_hash":"0x0","sender":"${raw?.sender ?: "0x3"}","sequence_number":"${raw?.sequenceNumber ?: sequence}","max_gas_amount":"${raw?.maxGasAmount ?: 1000uL}","gas_unit_price":"${raw?.gasUnitPrice ?: 100uL}","expiration_timestamp_secs":"${raw?.expirationTimestampSecs ?: 9999999999uL}","events":[],"timestamp":"0"}"""
+  ): String {
+    val entry =
+      (raw?.payload as? TransactionPayload.EntryFunction)?.call?.function?.toString() ==
+        "place_order_to_subaccount"
+    val refund = if (entry) entryRefund else configRefund
+    val events =
+      if (includeFeeStatement)
+        """{"guid":{},"type":"0x1::transaction_fee::FeeStatement","data":{"total_charge_gas_units":"$gas","storage_fee_refund_octas":"$refund","storage_fee_octas":"0"}}"""
+      else ""
+    return """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"$gas","success":$success,"vm_status":"${if (success) "Executed successfully" else "Insufficient gas reserve or unapplied leverage"}","accumulator_root_hash":"0x0","sender":"${raw?.sender ?: "0x3"}","sequence_number":"${raw?.sequenceNumber ?: sequence}","max_gas_amount":"${raw?.maxGasAmount ?: 2000uL}","gas_unit_price":"${raw?.gasUnitPrice ?: 100uL}","expiration_timestamp_secs":"${raw?.expirationTimestampSecs ?: 9999999999uL}","events":[$events],"timestamp":"0"}"""
+  }
 }
 
 private class OrderFeeDatabase(private val journal: TransactionJournalDao) : FlareDatabase() {

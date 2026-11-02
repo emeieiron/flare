@@ -27,7 +27,7 @@ class TradeFeeReviewTest {
   fun reviewingIsUnsignedAndFeesAreAutomaticWithinOneConfirmation() = runTest {
     val f = fixture()
     try {
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       val review = assertNotNull(f.vm.uiState.value.feeReview, f.vm.uiState.value.toString())
       assertEquals(2, review.actions.size)
       assertEquals(10_000uL, review.maximumTotalOctas)
@@ -50,7 +50,7 @@ class TradeFeeReviewTest {
       val f = fixture()
       try {
         f.trading.balance = balance
-        f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+        f.prepareFees()
         val review = assertNotNull(f.vm.uiState.value.feeReview, f.vm.uiState.value.toString())
         assertFalse(review.canSelfPay)
         assertEquals(balance?.let { 9_000uL }, review.fundingDeficit)
@@ -67,11 +67,12 @@ class TradeFeeReviewTest {
   fun changingOrderOrAccountRequiresNewReviewAndClearsConsent() = runTest {
     val f = fixture()
     try {
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       f.vm.onIntent(TradeIntent.SetSize("0.002"))
       assertNull(f.vm.uiState.value.feeReview)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(0, f.trading.confirmations)
+      f.awaitFees()
       assertNotNull(f.vm.uiState.value.feeReview, f.vm.uiState.value.toString())
       f.preferences.setSelectedSubaccount("0xother")
       assertNull(f.vm.uiState.value.feeReview)
@@ -86,7 +87,7 @@ class TradeFeeReviewTest {
     try {
       f.trading.terminal =
         ActionState.Failed("Sponsor response was lost", reference = "sponsor:unknown")
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
       assertEquals(1, f.trading.executed.size)
@@ -103,7 +104,7 @@ class TradeFeeReviewTest {
     val f = fixture()
     try {
       f.trading.sponsorshipAvailable = false
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       assertFalse(f.vm.uiState.value.orderFeePaymentBlocked)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
@@ -122,7 +123,7 @@ class TradeFeeReviewTest {
       f.trading.balance = 0uL
       f.trading.ownerBalance = 2_000uL
       f.trading.requiredReserve = 1_000uL
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       val review = assertNotNull(f.vm.uiState.value.feeReview)
       assertTrue(review.ownerPaysFees)
       assertEquals(0uL, review.tradingKeyBalance)
@@ -146,13 +147,13 @@ class TradeFeeReviewTest {
       f.trading.ownerBalance = 500uL
       f.trading.requiredReserve = 1_000uL
       f.trading.localFeeReady = false
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       assertTrue(f.vm.uiState.value.orderFeesNeedRetry)
       assertNotNull(f.vm.uiState.value.orderFeePaymentError)
       assertEquals(0, f.trading.confirmations)
       f.trading.ownerBalance = 2_000uL
       f.trading.localFeeReady = true
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       assertFalse(f.vm.uiState.value.orderFeesNeedRetry)
       assertEquals(2_000uL, f.vm.uiState.value.feeReview?.feePayerBalance)
       assertEquals(0, f.trading.confirmations)
@@ -170,7 +171,7 @@ class TradeFeeReviewTest {
     try {
       f.trading.sponsorshipAvailable = false
       f.trading.localFeeReady = false
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       assertTrue(f.vm.uiState.value.orderFeePaymentBlocked)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(0, f.trading.confirmations)
@@ -185,11 +186,15 @@ class TradeFeeReviewTest {
     val f = fixture()
     try {
       f.trading.sponsorshipAvailable = false
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       val state = f.vm.uiState.value
       val review = assertNotNull(state.feeReview)
       val chain = testVenue().chain
       assertEquals("Up to 0.0001 APT", state.orderNetworkFeeText(chain))
+      assertEquals(
+        "≈ 0.000007 APT",
+        state.copy(feeReview = review.copy(estimatedFeeOctas = 700uL)).orderNetworkFeeText(chain),
+      )
       val singleEntry =
         review.copy(
           actions = review.actions.filterIsInstance<TradeAction.PlaceOrder>(),
@@ -216,7 +221,7 @@ class TradeFeeReviewTest {
       try {
         f.trading.sponsorshipAvailable = false
         f.trading.balance = balance
-        f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+        f.prepareFees()
         val review = assertNotNull(f.vm.uiState.value.feeReview)
         assertEquals(balance, review.tradingKeyBalance)
         assertEquals("0xapi", review.tradingKeyAddress)
@@ -236,7 +241,7 @@ class TradeFeeReviewTest {
       val f = fixture()
       try {
         f.vm.onIntent(TradeIntent.SetLeverage(2))
-        f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+        f.prepareFees()
         val review = assertNotNull(f.vm.uiState.value.feeReview)
         assertEquals(
           2,
@@ -284,7 +289,7 @@ class TradeFeeReviewTest {
           f.accounts.snapshot.value.copy(
             positions = listOf(Position("0xmarket", "0.001", 1, 70_000.0, isolated = false)),
           )
-        f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+        f.prepareFees()
         val gate = CompletableDeferred<Unit>()
         f.accounts.refreshGate = gate
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
@@ -320,7 +325,7 @@ class TradeFeeReviewTest {
         )
       f.vm.onIntent(TradeIntent.SetOrderType(OrderType.MARKET))
       f.vm.onIntent(TradeIntent.SetLimitPrice(""))
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       val gate = CompletableDeferred<Unit>()
       f.accounts.refreshGate = gate
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
@@ -353,7 +358,7 @@ class TradeFeeReviewTest {
             ),
         )
       f.details.value = book("70010")
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.prepareFees()
       val reviewed = assertNotNull(f.vm.uiState.value.feeReview)
       assertEquals(
         "70361",
@@ -379,6 +384,66 @@ class TradeFeeReviewTest {
       return OrderCheck.Valid(
         order.copy(price = bound.toString(), timeInForce = TimeInForce.IMMEDIATE_OR_CANCEL),
       )
+    }
+  }
+
+  @Test
+  fun receiptFeesUseOnlyActualCommittedTotals() {
+    val chain = testVenue().chain
+    fun receipt(fee: NetworkFee) =
+      TradeUiState(transaction = ActionState.Committed("hash", networkFee = fee))
+    assertEquals(
+      "0.00000123 APT",
+      receipt(NetworkFee(900uL, 9_000uL, actual = 123uL)).orderReceiptFeeText(chain),
+    )
+    assertEquals(
+      "Covered by Flare",
+      receipt(NetworkFee(900uL, 9_000uL, covered = true, actual = 123uL))
+        .orderReceiptFeeText(chain),
+    )
+    assertEquals("—", receipt(NetworkFee(900uL, 9_000uL)).orderReceiptFeeText(chain))
+  }
+
+  @Test
+  fun preparationCoalescesTapsIgnoresBookTicksAndCancelsObsoleteInputs() = runTest {
+    val f = fixture()
+    try {
+      val gate = CompletableDeferred<Unit>()
+      f.trading.preparationGate = gate
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      f.trading.preparationStarted.await()
+      assertTrue(f.vm.uiState.value.feeReviewLoading)
+      repeat(3) {
+        f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+        f.details.value =
+          MarketDetails(
+            stale = false,
+            orderBook =
+              OrderBook(
+                "0xmarket",
+                listOf(OrderBookLevel("70000", "1")),
+                listOf(OrderBookLevel((70010 + it).toString(), "1")),
+              ),
+          )
+      }
+      assertEquals(1, f.trading.feePreparations)
+      f.vm.onIntent(TradeIntent.SetSize("0.002"))
+      f.trading.preparationCancelled.await()
+      assertFalse(f.vm.uiState.value.feeReviewLoading)
+      assertNull(f.vm.uiState.value.feeReview)
+      f.trading.preparationGate = null
+      f.prepareFees()
+      gate.complete(Unit)
+      val entry =
+        assertNotNull(f.vm.uiState.value.feeReview)
+          .actions
+          .filterIsInstance<TradeAction.PlaceOrder>()
+          .single()
+      assertEquals("0.002", entry.order.size)
+      assertEquals(2, f.trading.feePreparations)
+      assertEquals(0, f.trading.confirmations)
+    } finally {
+      f.vm.viewModelScope.cancel()
     }
   }
 
@@ -475,6 +540,15 @@ class TradeFeeReviewTest {
     return Fixture(vm, trading, preferences, details.details, accounts)
   }
 
+  private suspend fun Fixture.prepareFees() {
+    vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+    awaitFees()
+  }
+
+  private suspend fun Fixture.awaitFees() {
+    vm.uiState.first { !it.feeReviewLoading && (it.feeReviewPrepared || it.feeReviewError != null) }
+  }
+
   private data class Fixture(
     val vm: TradeViewModel,
     val trading: ReviewedTrading,
@@ -498,13 +572,25 @@ class TradeFeeReviewTest {
     var ownerBalance: ULong? = null
     var requiredReserve: ULong? = null
     var localFeeReady: Boolean? = null
+    var feePreparations = 0
+    var preparationGate: CompletableDeferred<Unit>? = null
+    val preparationStarted = CompletableDeferred<Unit>()
+    val preparationCancelled = CompletableDeferred<Unit>()
     var confirmations = 0
     val consents = mutableListOf<Boolean>()
     val executed = mutableListOf<TradeAction>()
     var terminal: ActionState = ActionState.Committed("hash")
 
-    override suspend fun prepareOrderFees(actions: List<TradeAction>) =
-      OrderFeeReview(
+    override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview {
+      feePreparations++
+      preparationStarted.complete(Unit)
+      try {
+        preparationGate?.await()
+      } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        preparationCancelled.complete(Unit)
+        throw cancelled
+      }
+      return OrderFeeReview(
         "review",
         actions,
         5_000uL,
@@ -518,6 +604,7 @@ class TradeFeeReviewTest {
         requiredReserveOctas = requiredReserve,
         localFeeReady = localFeeReady,
       )
+    }
 
     override suspend fun <T> confirmedOrderFees(
       review: OrderFeeReview,

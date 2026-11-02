@@ -13,11 +13,19 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.Outcome
 import xyz.mcxross.flare.design.OutcomeIcon
 import xyz.mcxross.flare.design.rememberOutcomeReveal
+import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.OrderSide
+
+internal fun TradeUiState.orderReceiptFeeText(chain: VenueChain): String {
+  val fee = (transaction as? ActionState.Committed)?.networkFee ?: return "—"
+  val actual = fee.actual ?: return "—"
+  return if (fee.covered) "Covered by Flare" else chain.feeAmount(actual)
+}
 
 @Composable
 internal fun OrderResult(
@@ -86,6 +94,8 @@ private fun OrderOutcome(
       DetailRow("Order", order)
       DetailRow("Type", type)
       state.orderEstimate(side)?.let { DetailRow("Order value", formatBalance(it.value)) }
+      if (outcome == Outcome.SUCCESS)
+        DetailRow("Fees", state.orderReceiptFeeText(LocalVenue.current.chain))
     }
     Column(revealed, content = links)
   }

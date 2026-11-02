@@ -5,6 +5,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlin.time.Clock
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.data.AccountRepository
 import xyz.mcxross.flare.data.AccountSetupGate
@@ -590,7 +592,7 @@ class TradeViewModel(
       try {
         val input = mutableUiState.value.orderInputIdentity(side)
         val actions = orderActions(mutableUiState.value, side)
-        val review = trading.prepareOrderFees(actions)
+        val review = withContext(Dispatchers.Default) { trading.prepareOrderFees(actions) }
         if (revision == feeReviewRevision) {
           reviewedOrderInput = input
           mutableUiState.update {

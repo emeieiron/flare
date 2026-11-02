@@ -143,7 +143,11 @@ sealed interface TransactionState {
 
   data class Pending(val hash: String) : TransactionState
 
-  data class Committed(val hash: String) : TransactionState
+  data class Committed(
+    val hash: String,
+    val gasChargeOctas: ULong? = null,
+    val storageRefundOctas: ULong? = null,
+  ) : TransactionState
 
   data class Failed(
     val message: String,
@@ -533,7 +537,8 @@ internal class DefaultDecibelTradingService(
           AptosTransactionState.AwaitingAuthorization -> TransactionState.AwaitingAuthorization
           AptosTransactionState.Submitting -> TransactionState.Submitting
           is AptosTransactionState.Pending -> TransactionState.Pending(state.hash)
-          is AptosTransactionState.Committed -> TransactionState.Committed(state.hash)
+          is AptosTransactionState.Committed ->
+            TransactionState.Committed(state.hash, state.gasChargeOctas, state.storageRefundOctas)
           is AptosTransactionState.Failed ->
             TransactionState.Failed(
               state.message,

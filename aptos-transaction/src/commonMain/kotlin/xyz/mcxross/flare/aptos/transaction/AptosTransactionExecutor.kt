@@ -24,7 +24,11 @@ sealed interface AptosTransactionState {
 
   data class Pending(val hash: String) : AptosTransactionState
 
-  data class Committed(val hash: String) : AptosTransactionState
+  data class Committed(
+    val hash: String,
+    val gasChargeOctas: ULong? = null,
+    val storageRefundOctas: ULong? = null,
+  ) : AptosTransactionState
 
   data class Failed(
     val message: String,
@@ -372,7 +376,14 @@ class AptosTransactionExecutor(private val aptos: Aptos) {
             ),
           )
         } else {
-          emit(AptosTransactionState.Committed(response.hash))
+          val fee = response.verifiedFee()
+          emit(
+            AptosTransactionState.Committed(
+              response.hash,
+              fee?.gasChargeOctas,
+              fee?.storageRefundOctas,
+            ),
+          )
         }
       }
     }

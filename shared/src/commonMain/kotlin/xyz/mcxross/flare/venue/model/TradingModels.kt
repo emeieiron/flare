@@ -246,7 +246,13 @@ data class SelfPayOffer(
 )
 
 /** Gas exposure in the chain's smallest fee-token unit, or confirmed sponsor coverage. */
-data class NetworkFee(val estimate: ULong, val maximum: ULong, val covered: Boolean = false)
+data class NetworkFee(
+  val estimate: ULong,
+  val maximum: ULong,
+  val covered: Boolean = false,
+  /** Actual aggregate fee after the order's transactions commit; null until known. */
+  val actual: ULong? = null,
+)
 
 /** Where an action stands, from the first check to its final outcome. */
 sealed interface ActionState {

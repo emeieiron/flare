@@ -98,14 +98,37 @@ private class ConfirmedOrderFees(
   var nextCommand = 0
   var completedCommands = 0
   val phaseFees = mutableMapOf<Int, NetworkFee>()
+  val committedFees = mutableMapOf<Int, Pair<ULong, ULong>?>()
 
   fun totalFee(): NetworkFee {
     val covered = phaseFees.values.all { it.covered }
     val charged = if (covered) phaseFees.values else phaseFees.values.filterNot { it.covered }
+    val paidPhases = phaseFees.filterValues { !it.covered }.keys
+    var charges = 0uL
+    var refunds = 0uL
+    var verified = true
+    for (phase in paidPhases) {
+      val actual = committedFees[phase]
+      if (
+        actual == null ||
+          charges > ULong.MAX_VALUE - actual.first ||
+          refunds > ULong.MAX_VALUE - actual.second
+      ) {
+        verified = false
+        break
+      }
+      charges += actual.first
+      refunds += actual.second
+    }
+    val actual =
+      if (verified && completedCommands == commands.size) {
+        if (charges > refunds) charges - refunds else 0uL
+      } else null
     return NetworkFee(
       charged.fold(0uL) { total, fee -> total + fee.estimate },
       charged.fold(0uL) { total, fee -> total + fee.maximum },
       covered,
+      actual,
     )
   }
 
@@ -185,7 +208,12 @@ class DefaultTradingRepository(
       )
     // Estimate through the unsigned zero-placeholder fee payer, so a temporary 50k gas probe
     // does not demand 0.05 APT before a much smaller signed reserve can be calculated.
-    val first = orderCommandFee(identity, commands.first(), options)
+    val (first, entry) = coroutineScope {
+      val entry =
+        if (commands.size > 1) async { entryFeeBeforeSetup(identity, commands.last(), options) }
+        else null
+      orderCommandFee(identity, commands.first(), options) to entry?.await()
+    }
     val sponsorshipAvailable = gasSponsorship.tradingSponsorshipAvailable()
     val apiBalance = feeBalance(api)
     val ownerBalance = owner?.let { feeBalance(it) }
@@ -226,7 +254,7 @@ class DefaultTradingRepository(
         sponsorshipAvailable = sponsorshipAvailable,
         estimatedFeeOctas =
           (localQuote?.first?.estimate ?: first.estimate.takeIf { sponsorshipAvailable != false })
-            ?.takeIf { commands.size == 1 },
+            ?.let { if (commands.size == 1) it else entry?.estimate?.plus(it) },
         feePayerAddress = payer,
         feePayerBalance = payerBalance,
         ownerPaysFees = ownerPays,
@@ -286,6 +314,23 @@ class DefaultTradingRepository(
       is AptosResult.Failure -> error(result.error.toString())
     }
   }
+
+  /**
+   * The entry's gas does not depend on the pending leverage, so simulating it against current
+   * state prices it closely. Display only: the signed entry is simulated again after setup.
+   */
+  private suspend fun entryFeeBeforeSetup(
+    identity: AptosSimulationIdentity,
+    command: DecibelCommand,
+    options: TransactionOptions,
+  ): NetworkFee? =
+    try {
+      orderCommandFee(identity, command, options)
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      null
+    }
 
   private suspend fun localOrderQuote(
     identity: AptosSimulationIdentity,
@@ -860,7 +905,13 @@ class DefaultTradingRepository(
                       }
                       is TransactionState.Committed -> {
                         hash?.let { journal.remove(it) }
-                        if (orderPlan != null) orderPlan.completedCommands = orderPhase + 1
+                        if (orderPlan != null) {
+                          orderPlan.completedCommands = orderPhase + 1
+                          orderPlan.committedFees[orderPhase] =
+                            state.gasChargeOctas?.let { charge ->
+                              state.storageRefundOctas?.let { refund -> charge to refund }
+                            }
+                        }
                       }
                       is TransactionState.Failed -> {
                         if (state.committed || state.definitelyNotSubmitted) {
