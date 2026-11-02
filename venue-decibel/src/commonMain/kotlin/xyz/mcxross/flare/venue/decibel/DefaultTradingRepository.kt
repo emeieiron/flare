@@ -24,6 +24,7 @@ import xyz.mcxross.flare.core.FlareRuntimeConfig
 import xyz.mcxross.flare.core.toDecimalString
 import xyz.mcxross.flare.data.ExactAssetBalance
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
 import xyz.mcxross.flare.data.SessionRepository
@@ -82,6 +83,21 @@ private class ConfirmedAction : AbstractCoroutineContextElement(ConfirmedAction)
   companion object Key : CoroutineContext.Key<ConfirmedAction>
 }
 
+/** One reviewed order may contain a configuration transaction followed by its entry. */
+private class ConfirmedOrderFees(
+  val review: OrderFeeReview,
+  val commands: List<DecibelCommand>,
+  val profileId: String,
+  val subaccount: String,
+  val generation: Long,
+  val options: TransactionOptions,
+  val allowSelfPay: Boolean,
+) : AbstractCoroutineContextElement(ConfirmedOrderFees) {
+  var nextCommand = 0
+
+  companion object Key : CoroutineContext.Key<ConfirmedOrderFees>
+}
+
 class DefaultTradingRepository(
   database: FlareDatabase,
   private val client: DecibelClient,
@@ -96,6 +112,136 @@ class DefaultTradingRepository(
 ) : DecibelTrading {
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = submissionGate.mutex
+
+  private var orderFeeReview: ConfirmedOrderFees? = null
+  private var orderFeeReviewCounter = 0L
+
+  override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? {
+    require(
+      actions.size in 1..2 &&
+        actions.last() is TradeAction.PlaceOrder &&
+        actions.dropLast(1).all { it is TradeAction.ConfigureMarket },
+    ) {
+      "Review one order and its optional leverage change"
+    }
+    val selected = preferences.values.first()
+    val api = selected.apiWalletAddress ?: return null
+    val subaccount = selected.selectedSubaccount ?: return null
+    val generation = wallets.authorizationGeneration
+    wallets.requireAuthorization(generation)
+    val commands = actions.map { it.toDecibelCommand(client.config.deployment.usdcMetadataAddress) }
+    require(
+      commands.all {
+        it.requiredSigner() == TradingSigner.API &&
+          it.subaccountAddress()?.sameAptosAddress(subaccount) == true
+      },
+    ) {
+      "The reviewed order does not match the selected account"
+    }
+    // A public unsigned probe needs neither a key read nor wallet authentication. Reserve the
+    // bounded maximum rather than relying on a simulation before leverage has been applied.
+    val price = FundingFeeMetadata(aptos).price(AccountAddress.fromString(api))
+    val maximum = 50_000uL * price
+    val sponsorshipAvailable = gasSponsorship.tradingSponsorshipAvailable()
+    val balance =
+      when (
+        val result =
+          aptos.accounts.getBalance(
+            AccountAddress.fromString(api),
+            AccountAsset.coin(APTOS_COIN),
+          )
+      ) {
+        is AptosResult.Success -> result.value
+        is AptosResult.Failure -> null
+      }
+    wallets.requireAuthorization(generation)
+    val current = preferences.values.first()
+    check(
+      current.activeProfileId == selected.activeProfileId &&
+        current.selectedSubaccount == subaccount &&
+        current.apiWalletAddress == api,
+    ) {
+      "The selected account changed. Review the order again."
+    }
+    val review =
+      OrderFeeReview(
+        reviewId = "order-fees:${++orderFeeReviewCounter}",
+        actions = actions.toList(),
+        maximumPerTransactionOctas = maximum,
+        maximumTotalOctas = maximum * commands.size.toULong(),
+        tradingKeyBalance = balance,
+        tradingKeyAddress = api,
+        sponsorshipAvailable = sponsorshipAvailable,
+      )
+    orderFeeReview =
+      ConfirmedOrderFees(
+        review,
+        commands,
+        selected.activeProfileId,
+        subaccount,
+        generation,
+        TransactionOptions(
+          maxGasAmount = 50_000uL,
+          gasUnitPrice = price,
+          expirationTimestampSecs = Clock.System.now().epochSeconds.toULong() + 120uL,
+        ),
+        false,
+      )
+    return review
+  }
+
+  override suspend fun <T> confirmedOrderFees(
+    review: OrderFeeReview,
+    allowSelfPay: Boolean,
+    prompt: VaultPrompt,
+    block: suspend () -> T,
+  ): T {
+    val plan = orderFeeReview
+    check(plan != null && plan.review == review) {
+      "Review network fees again before confirming the order"
+    }
+    orderFeeReview = null // A reviewed permission can be consumed only once.
+    verifyOrderFees(plan)
+    check(review.sponsorshipAvailable != false || allowSelfPay) {
+      "Trading sponsorship is unavailable. Review and allow the APT network fee before confirming."
+    }
+    if (allowSelfPay)
+      check(review.tradingKeyBalance?.let { it >= review.maximumTotalOctas } == true) {
+        "Fund the trading key before allowing APT network fees"
+      }
+    val confirmed =
+      ConfirmedOrderFees(
+        review,
+        plan.commands,
+        plan.profileId,
+        plan.subaccount,
+        plan.generation,
+        plan.options,
+        allowSelfPay,
+      )
+    return confirmedAction(prompt) {
+      verifyOrderFees(confirmed)
+      withContext(confirmed) { block() }
+    }
+  }
+
+  private suspend fun verifyOrderFees(plan: ConfirmedOrderFees) {
+    wallets.requireAuthorization(plan.generation)
+    val selected = preferences.values.first()
+    check(
+      selected.activeProfileId == plan.profileId &&
+        selected.selectedSubaccount == plan.subaccount &&
+        selected.apiWalletAddress == plan.review.tradingKeyAddress,
+    ) {
+      "The selected account changed. Review the order again."
+    }
+    check(
+      Clock.System.now().epochSeconds.toULong() <
+        checkNotNull(plan.options.expirationTimestampSecs),
+    ) {
+      "The network fee review expired. Review the order again."
+    }
+  }
 
   private data class FeeContext(
     val profileId: String,
@@ -322,7 +468,17 @@ class DefaultTradingRepository(
     var preparedHash: String? = null
     try {
       val selected = preferences.values.first()
+      val orderPlan = currentCoroutineContext()[ConfirmedOrderFees]
+      if (orderPlan != null) {
+        verifyOrderFees(orderPlan)
+        check(orderPlan.commands.getOrNull(orderPlan.nextCommand) == command) {
+          "The order changed after network fees were reviewed"
+        }
+        check(feePayment == FeePayment.SPONSORED) { "Use the reviewed order fee choice" }
+        orderPlan.nextCommand++
+      }
       val automatic = feePayment == FeePayment.AUTOMATIC
+      val boundedFallback = automatic || orderPlan?.allowSelfPay == true
       require(!automatic || command.isFundingTransfer()) {
         "Automatic fee fallback is limited to transfers"
       }
@@ -383,9 +539,16 @@ class DefaultTradingRepository(
               ) {
                 "The authenticated Worker session does not match the selected signing wallet"
               }
-              var payment = if (automatic) FeePayment.SPONSORED else feePayment
+              var payment =
+                if (orderPlan?.review?.sponsorshipAvailable == false) {
+                  check(orderPlan.allowSelfPay) {
+                    "Allow the reviewed APT network fee before confirming"
+                  }
+                  FeePayment.SELF_PAY
+                } else if (automatic) FeePayment.SPONSORED else feePayment
               val initialOptions =
-                if (automatic)
+                if (orderPlan != null) orderPlan.options
+                else if (automatic)
                   TransactionOptions(
                     expirationTimestampSecs = Clock.System.now().epochSeconds.toULong() + 60uL,
                   )
@@ -413,9 +576,10 @@ class DefaultTradingRepository(
                       if (payment == FeePayment.SPONSORED) gasSponsorship.submitterFor(command)
                       else null,
                     options =
-                      if (payment == FeePayment.SELF_PAY) fallbackOptions else initialOptions,
+                      if (payment == FeePayment.SELF_PAY) fallbackOptions ?: initialOptions
+                      else initialOptions,
                     onSimulation = { result ->
-                      if (automatic) {
+                      if (automatic || orderPlan != null) {
                         val price = result.gasUnitPrice.toULong()
                         val limit = result.maxGasAmount.toULong()
                         val used = result.gasUsed.toULong()
@@ -423,6 +587,15 @@ class DefaultTradingRepository(
                           "Transfer fees exceed the supported limits"
                         }
                         val currentFee = NetworkFee(used * price, limit * price)
+                        if (orderPlan != null) {
+                          check(
+                            price == orderPlan.options.gasUnitPrice &&
+                              limit == orderPlan.options.maxGasAmount &&
+                              currentFee.maximum <= orderPlan.review.maximumPerTransactionOctas,
+                          ) {
+                            "The order network fee exceeds the reviewed limit"
+                          }
+                        }
                         if (fallbackOptions == null) {
                           fallbackOptions =
                             TransactionOptions(
@@ -441,6 +614,7 @@ class DefaultTradingRepository(
                     },
                     beforeSign = {
                       verifySelection()
+                      if (orderPlan != null) verifyOrderFees(orderPlan)
                       if (automatic && prompt.requireFreshAuthorization && !authorized) {
                         wallets.confirmIdentity(prompt.copy(requireFreshAuthorization = true))
                         authorized = true
@@ -509,9 +683,7 @@ class DefaultTradingRepository(
                     val failure = state as? TransactionState.Failed
                     val eligible =
                       failure?.selfPayEstimateOctas?.let { estimate ->
-                        val required =
-                          if (automatic) failure.selfPayReserveOctas ?: ULong.MAX_VALUE
-                          else estimate
+                        val required = failure.selfPayReserveOctas ?: estimate
                         when (
                           val balance =
                             aptos.accounts.getBalance(
@@ -524,7 +696,7 @@ class DefaultTradingRepository(
                         }
                       }
                     if (
-                      automatic &&
+                      boundedFallback &&
                         payment == FeePayment.SPONSORED &&
                         failure != null &&
                         failure.definitelyNotSubmitted &&
@@ -534,17 +706,13 @@ class DefaultTradingRepository(
                     ) {
                       retrySelfPay = true
                     } else {
-                      val mapped =
-                        (if (failure != null && eligible == false)
-                            failure.copy(selfPayEstimateOctas = null)
-                          else state)
-                          .toActionState()
+                      val mapped = state.toActionState()
                       val networkFee = fee?.copy(covered = payment == FeePayment.SPONSORED)
                       emit(
                         when {
-                          automatic && mapped is ActionState.Pending ->
+                          (automatic || orderPlan != null) && mapped is ActionState.Pending ->
                             mapped.copy(networkFee = networkFee)
-                          automatic && mapped is ActionState.Committed ->
+                          (automatic || orderPlan != null) && mapped is ActionState.Committed ->
                             mapped.copy(networkFee = networkFee)
                           automatic && mapped is ActionState.Failed ->
                             mapped.copy(

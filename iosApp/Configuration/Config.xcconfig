@@ -2,5 +2,5 @@
 // file and names its own app.
 TEAM_ID=
 
-// Exchange versions, shared with Android. Each exchange selects its own version.
+// Exchange versions and build numbers, shared with Android. Each exchange selects its own values.
 #include "../../version.properties"

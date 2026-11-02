@@ -23,6 +23,7 @@ jobs:
     outputs:
       venue: ${{ steps.version.outputs.venue }}
       version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
       variant: ${{ steps.version.outputs.variant }}
     steps:
       - uses: actions/checkout@v4
@@ -34,13 +35,18 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
-            decibel-v*) venue=decibel; variant=Decibel; key=FLARE_DECIBEL_VERSION ;;
-            hyperliquid-v*) venue=hyperliquid; variant=Hyperliquid; key=FLARE_HYPERLIQUID_VERSION ;;
+            decibel-v*) venue=decibel; variant=Decibel; key=FLARE_DECIBEL_VERSION; build_key=FLARE_DECIBEL_BUILD ;;
+            hyperliquid-v*) venue=hyperliquid; variant=Hyperliquid; key=FLARE_HYPERLIQUID_VERSION; build_key=FLARE_HYPERLIQUID_BUILD ;;
             *) echo "::error::Unsupported release tag"; exit 1 ;;
           esac
           version=$(sed -n "s/^${key} *= *//p" version.properties | tr -d '[:blank:]')
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]{1,2}\.[0-9]{1,2}$ ]]; then
             echo "::error::$key must contain one version like 1.2.3 (minor and patch below 100)"; exit 1
+          fi
+          build=$(sed -n "s/^${build_key}[[:blank:]]*=[[:blank:]]*//p" version.properties | sed 's/[[:blank:]]*$//')
+          # Bound the decimal input before arithmetic, including strings too long for a shell integer.
+          if [[ ! "$build" =~ ^[1-9][0-9]{0,9}$ ]] || (( build > 2100000000 )); then
+            echo "::error::$build_key must contain one decimal integer from 1 to 2100000000 without leading zeros"; exit 1
           fi
           if [[ "$GITHUB_REF_NAME" != "$venue-v$version" ]]; then
             echo "::error::Tag does not match $key=$version"; exit 1
@@ -51,6 +57,7 @@ jobs:
           {
             echo "venue=$venue"
             echo "version=$version"
+            echo "build=$build"
             echo "variant=$variant"
           } >> "$GITHUB_OUTPUT"
 
@@ -65,6 +72,7 @@ jobs:
     env:
       VENUE: ${{ needs.prepare.outputs.venue }}
       VERSION_NAME: ${{ needs.prepare.outputs.version }}
+      VERSION_CODE: ${{ needs.prepare.outputs.build }}
       VARIANT: ${{ needs.prepare.outputs.variant }}
       # This dedicated variable must never inherit the historical testnet Worker.
       FLARE_DECIBEL_WORKER_URL: ${{ vars.FLARE_DECIBEL_WORKER_URL }}
@@ -153,6 +161,8 @@ jobs:
           "$tools/aapt2" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
           grep -Fq "versionName='$VERSION_NAME'" "$RUNNER_TEMP/badging.txt" \
             || { echo "::error::APK version mismatch"; exit 1; }
+          grep -Fq "versionCode='$VERSION_CODE'" "$RUNNER_TEMP/badging.txt" \
+            || { echo "::error::APK build number mismatch"; exit 1; }
           grep -Fq "package: name='xyz.mcxross.flare.$VENUE'" "$RUNNER_TEMP/badging.txt" \
             || { echo "::error::APK application ID mismatch"; exit 1; }
           "$tools/aapt2" dump resources "$apk" > "$RUNNER_TEMP/resources.txt"
@@ -186,7 +196,7 @@ jobs:
               ;;
           esac
           mkdir dist
-          cp "$apk" "dist/flare-$VENUE-$VERSION_NAME.apk"
+          cp "$apk" "dist/flare-$VENUE-$VERSION_NAME-build$VERSION_CODE.apk"
           cp "$apk" "dist/flare-$VENUE-android.apk"
           cd dist
           for artifact in *.apk; do sha256sum "$artifact" > "$artifact.sha256"; done
@@ -196,7 +206,7 @@ jobs:
       - name: Save the verified APKs
         uses: actions/upload-artifact@v4
         with:
-          name: flare-${{ needs.prepare.outputs.venue }}-android-${{ needs.prepare.outputs.version }}
+          name: flare-${{ needs.prepare.outputs.venue }}-android-${{ needs.prepare.outputs.version }}-build${{ needs.prepare.outputs.build }}
           path: dist/*
           if-no-files-found: error
           retention-days: 90
@@ -217,9 +227,9 @@ jobs:
 
           Download \`flare-$VENUE-android.apk\` below and open it on your phone. Android asks once to allow installs from your browser.
 
-          Venue: $VARIANT (mainnet). Version: $VERSION_NAME. This release contains only the $VARIANT app.
+          Venue: $VARIANT (mainnet). Version: $VERSION_NAME. **Build number: $VERSION_CODE.** This release contains only the $VARIANT app.
 
-          Source tag: \`${GITHUB_REF_NAME}\`. Build: \`${GITHUB_SHA}\` ([source](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}), [CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
+          Source tag: \`${GITHUB_REF_NAME}\`. Source commit: \`${GITHUB_SHA}\` ([source](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}), [CI run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
 
           ## Verify
 
@@ -228,7 +238,7 @@ jobs:
           - Build provenance: \`gh attestation verify flare-$VENUE-android.apk --repo ${GITHUB_REPOSITORY}\`
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Flare $VARIANT $VERSION_NAME" \
+            --title "Flare $VARIANT $VERSION_NAME (build $VERSION_CODE)" \
             --notes-file notes.md --verify-tag
 
       - name: Verify the published downloads

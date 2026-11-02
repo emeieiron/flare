@@ -28,6 +28,24 @@ data class ExactAssetBalance(val total: String, val available: String)
 
 data class ReconciliationResult(val finalized: Int, val unresolved: Int)
 
+/** Public fee consent; the venue binds [reviewId] to the reviewed account and actions. */
+data class OrderFeeReview(
+  val reviewId: String,
+  val actions: List<TradeAction>,
+  val maximumPerTransactionOctas: ULong,
+  val maximumTotalOctas: ULong,
+  val tradingKeyBalance: ULong?,
+  val tradingKeyAddress: String,
+  /** Deployment policy; null means that availability could not be established. */
+  val sponsorshipAvailable: Boolean? = null,
+) {
+  val canSelfPay: Boolean
+    get() = tradingKeyBalance?.let { it >= maximumTotalOctas } == true
+
+  val fundingDeficit: ULong?
+    get() = tradingKeyBalance?.let { if (it < maximumTotalOctas) maximumTotalOctas - it else 0uL }
+}
+
 /**
  * Sends the person's actions to the exchange and follows them to an outcome. Every action is
  * journaled before it is sent, so an uncertain outcome is reconciled rather than sent twice.
@@ -45,6 +63,17 @@ interface TradingRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
     onPrepared: suspend (String) -> Unit = {},
   ): Flow<ActionState>
+
+  /** Reads a bounded fee budget without requesting wallet authorization or signing. */
+  suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? = null
+
+  /** Authorizes the reviewed order once, including only the explicitly accepted fee fallback. */
+  suspend fun <T> confirmedOrderFees(
+    review: OrderFeeReview,
+    allowSelfPay: Boolean,
+    prompt: VaultPrompt,
+    block: suspend () -> T,
+  ): T = confirmedAction(prompt, block)
 
   suspend fun transactionStatus(reference: String): ActionState
 
@@ -81,10 +110,10 @@ suspend fun TradingRepository.tradingKeyTopUpFor(
   profile: WalletProfile,
   minimumTopUp: ULong,
 ): ULong? {
-  val estimate = failure.selfPay?.estimate ?: return null
+  val offer = failure.selfPay ?: return null
+  val reserve = maxOf(offer.estimate, offer.reserve ?: offer.estimate)
   if (profile.apiWalletAddress == null || profile.ownerAddress == null) return null
   val balance = runSuspendCatching { tradingKeyFeeBalance() }.getOrNull() ?: return null
-  if (balance >= estimate) return null
-  val buffered = if (estimate <= ULong.MAX_VALUE / 3uL) estimate * 3uL else estimate
-  return maxOf(minimumTopUp, buffered)
+  if (balance >= reserve) return null
+  return maxOf(minimumTopUp, reserve - balance)
 }

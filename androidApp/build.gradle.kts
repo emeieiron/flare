@@ -25,7 +25,7 @@ val flareHyperliquidBuilderAddress =
 val releaseKeystore = providers.gradleProperty("flareKeystoreFile")
 val releaseSigned = releaseKeystore.isPresent
 
-// Each exchange's version lives in version.properties at the repository root, which iOS reads too.
+// Each exchange's public version and build number live in version.properties, which iOS reads too.
 val flareVersionProperties =
   providers
     .fileContents(rootProject.layout.projectDirectory.file("version.properties"))
@@ -35,22 +35,24 @@ val flareVersionProperties =
 
 data class FlareVersion(val name: String, val code: Int)
 
-// 1.2.3 builds versionCode 10203. Missing or invalid versions fail the build.
-fun flareVersion(key: String): FlareVersion {
-  val name = flareVersionProperties.getProperty(key).orEmpty().trim()
+// Build numbers increase independently of public versions so replacement releases can update in
+// place.
+fun flareVersion(versionKey: String, buildKey: String): FlareVersion {
+  val name = flareVersionProperties.getProperty(versionKey).orEmpty().trim()
+  require(Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""").matches(name)) {
+    "$versionKey in version.properties must look like 1.2.3 with minor and patch below 100, got '$name'"
+  }
+  val build = flareVersionProperties.getProperty(buildKey).orEmpty().trim()
   val code =
-    Regex("""(\d+)\.(\d{1,2})\.(\d{1,2})""").matchEntire(name)?.destructured?.let {
-      (major, minor, patch) ->
-      major.toInt() * 10000 + minor.toInt() * 100 + patch.toInt()
-    }
+    build.toIntOrNull()?.takeIf { Regex("[1-9][0-9]{0,9}").matches(build) && it in 1..2100000000 }
       ?: error(
-        "$key in version.properties must look like 1.2.3 with minor and patch below 100, got '$name'",
+        "$buildKey in version.properties must be an integer from 1 to 2100000000, got '$build'",
       )
   return FlareVersion(name, code)
 }
 
-val decibelVersion = flareVersion("FLARE_DECIBEL_VERSION")
-val hyperliquidVersion = flareVersion("FLARE_HYPERLIQUID_VERSION")
+val decibelVersion = flareVersion("FLARE_DECIBEL_VERSION", "FLARE_DECIBEL_BUILD")
+val hyperliquidVersion = flareVersion("FLARE_HYPERLIQUID_VERSION", "FLARE_HYPERLIQUID_BUILD")
 
 plugins {
   alias(libs.plugins.androidApplication)

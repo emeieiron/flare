@@ -11,7 +11,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import xyz.mcxross.flare.core.FlareRuntimeConfig
@@ -30,6 +33,39 @@ class WorkerGasSponsorshipRepository(
   private val decibelConfig: DecibelRuntimeConfig,
   private val sessions: SessionRepository,
 ) : GasSponsorshipRepository {
+  override suspend fun tradingSponsorshipAvailable(): Boolean? =
+    try {
+      withTimeoutOrNull(3_000) {
+        val session = sessions.status.value
+        if (session == null || session.expiresAt <= Clock.System.now().toEpochMilliseconds())
+          return@withTimeoutOrNull null
+        // Pin the existing bearer: an availability read must never renew a wallet session or sign.
+        sessions
+          .bind(
+            session,
+            flow {
+              val response =
+                client.get(
+                  "${decibelConfig.workerBaseUrl.trimEnd('/')}/gas/sponsor/trading-availability",
+                ) {
+                  bearerAuth(sessions.accessToken())
+                  header(HttpHeaders.Origin, runtime.appOrigin)
+                }
+              emit(
+                if (response.status.isSuccess())
+                  response.body<SwapSponsorshipAvailability>().available
+                else null,
+              )
+            },
+          )
+          .first()
+      }
+    } catch (cancelled: CancellationException) {
+      throw cancelled
+    } catch (_: Exception) {
+      null
+    }
+
   override suspend fun canSponsorSwap(): Boolean =
     try {
       withTimeoutOrNull(3_000) {

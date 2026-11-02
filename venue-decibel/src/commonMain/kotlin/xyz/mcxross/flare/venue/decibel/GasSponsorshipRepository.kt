@@ -10,6 +10,9 @@ interface GasSponsorshipRepository {
   /** A conservative deployment policy check. It never signs or submits a transaction. */
   suspend fun canSponsorSwap(): Boolean = false
 
+  /** Read-only trading deployment policy; an unavailable answer remains distinct from unknown. */
+  suspend fun tradingSponsorshipAvailable(): Boolean? = null
+
   suspend fun submit(
     request: ExternalFeePayerRequest,
     ownerOnly: Boolean,

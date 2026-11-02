@@ -43,7 +43,9 @@ fun actionFailure(raw: String?, outcome: String): String {
 
 /** Move aborts, status codes, addresses and class names never read as an explanation. */
 private val TechnicalDetail =
-  Regex("""\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|::|0x[0-9a-fA-F]|\b[a-z]+\.[a-z]+\.[A-Za-z]""")
+  Regex(
+    """\b(?:Api|Transport|Validation|Serialization|Unknown)\(|\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|::|0x[0-9a-fA-F]|\b[a-z]+\.[a-z]+\.[A-Za-z]""",
+  )
 
 private fun failureCause(detail: String): String? =
   when {

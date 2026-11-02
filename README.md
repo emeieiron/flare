@@ -19,7 +19,7 @@
 </p>
 
 > [!NOTE]
-> Flare is under active development. Decibel 0.2.1 trades real funds on **Aptos mainnet**. The published Hyperliquid v0.1.0 APK is an older **testnet preview**, not a stable mainnet release; current source builds target Hyperliquid mainnet. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
+> Flare is under active development. Decibel 0.2.0 trades real funds on **Aptos mainnet**. The published Hyperliquid v0.1.0 APK is an older **testnet preview**, not a stable mainnet release; current source builds target Hyperliquid mainnet. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
 
 ## Contents
 
@@ -67,9 +67,13 @@ During a real run, **Confirm transactions** in Settings is off and locked. Its p
 
 **Android:** each exchange is its own app, with independent versions and releases.
 
-- **Decibel 0.2.1 — Aptos mainnet:** download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/download/decibel-v0.2.1/flare-decibel-android.apk) from the [Decibel 0.2.1 release](https://github.com/emeieiron/flare/releases/tag/decibel-v0.2.1). It trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover. The release notes explain how to verify the checksum, signing certificate and build provenance.
+- **Decibel 0.2.0 (build 202) — Aptos mainnet:** download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/download/decibel-v0.2.0/flare-decibel-android.apk) from the [Decibel 0.2.0 release](https://github.com/emeieiron/flare/releases/tag/decibel-v0.2.0). It trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover. The release notes explain how to verify the checksum, signing certificate and build provenance.
 - **Hyperliquid v0.1.0 — historical testnet preview:** download [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/download/v0.1.0/flare-hyperliquid-android.apk) from the [historical v0.1.0 release](https://github.com/emeieiron/flare/releases/tag/v0.1.0). This APK uses testnet and is not a stable mainnet release. The Decibel release does not update Hyperliquid; [build the current source](#build-it-yourself) to use its mainnet implementation.
-- **Already testing Decibel?** Install 0.2.1 as a normal update. Updating from mainnet 0.2.0 retains your wallet, device trading key, and local trading state. Updating from the published testnet v0.1.0 APK retains your wallet and device trading key, clears local testnet trading state on the first mainnet launch, and runs account setup again for mainnet. If you use an older legacy Flare app with a different package ID, install Decibel alongside it and restore your wallet from its recovery phrase or re-import your key; wallet data does not transfer automatically between the two apps.
+- **Already testing Decibel?** Install the current 0.2.0 APK (build 202) as a normal update. Its build number is higher than the earlier mainnet 0.2.0 (build 200) and 0.2.1 (build 201) APKs, so either can update in place while retaining your wallet, device trading key, and local trading state. Updating from the published testnet v0.1.0 APK retains your wallet and device trading key, clears local testnet trading state on the first mainnet launch, and runs account setup again for mainnet. If you use an older legacy Flare app with a different package ID, install Decibel alongside it and restore your wallet from its recovery phrase or re-import your key; wallet data does not transfer automatically between the two apps.
+
+Decibel remains at public version 0.2.0 until stable. Replacement downloads can keep that public version while increasing the build number; check the release notes and checksums to identify the current build.
+
+Decibel reviews network fees before order confirmation. Under the current sponsorship policy, orders use APT held by the device trading key; USDC collateral and APT in the owner wallet do not pay that key's fees. The review shows the maximum total fee and requires explicit consent before one wallet confirmation covers the order and any required leverage change. If the trading key needs funding, Flare presents that transfer as a separate action and refreshes the order review afterward.
 
 **iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
 

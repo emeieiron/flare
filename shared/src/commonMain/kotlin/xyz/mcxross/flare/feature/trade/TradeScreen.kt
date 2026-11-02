@@ -68,6 +68,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.IndicatorChip
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.LocalTransactionExplorer
+import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TradeScreenSkeleton
@@ -437,8 +438,6 @@ fun TradeScreen(
       },
       action = {
         val inputError = state.orderInputError(side)
-        // Once sponsorship fails, retrying it is pointless; the one action left is paying the fee.
-        val selfPayOffered = state.selfPayEstimate != null
         val actionsUnavailable = state.capabilities.unavailableReason(ActionKind.TRADING)
         val twapUnavailable =
           state.capabilities.unavailableReason(ActionKind.TWAP)?.takeIf {
@@ -459,6 +458,8 @@ fun TradeScreen(
                 state.sizeInput.isNotBlank() &&
                 twapUnavailable == null &&
                 !state.orderBusy &&
+                !state.feeReviewLoading &&
+                (stage != TradeStage.REVIEW || !state.orderFeePaymentBlocked) &&
                 (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
           }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
@@ -479,11 +480,14 @@ fun TradeScreen(
               TradeStage.REVIEW ->
                 when {
                   state.orderBusy -> "Placing your order…"
-                  selfPayOffered -> "Pay fee and confirm"
+                  state.feeReviewLoading -> "Checking network fees…"
+                  !state.feeReviewPrepared -> "Check network fees"
+                  state.orderFeeConsentRequired ->
+                    "Pay ${LocalVenue.current.chain.feeToken} and confirm"
                   else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
                 }
               TradeStage.RESULT -> "Done"
-              TradeStage.FAILURE -> "Try again"
+              TradeStage.FAILURE -> "Review order"
             },
             {
               clearFocus()
@@ -494,13 +498,17 @@ fun TradeScreen(
                     state.tradingKeyAddress == null -> onOpenSetup()
                     else -> trading = true
                   }
-                TradeStage.EDIT -> reviewing = true
+                TradeStage.EDIT -> {
+                  reviewing = true
+                  onIntent(TradeIntent.PrepareOrderFees(side))
+                }
                 TradeStage.REVIEW ->
                   onIntent(
-                    if (selfPayOffered) TradeIntent.ConfirmSelfPay else TradeIntent.Submit(side),
+                    if (!state.feeReviewPrepared) TradeIntent.PrepareOrderFees(side)
+                    else TradeIntent.Submit(side),
                   )
                 TradeStage.RESULT -> returnToMarket()
-                TradeStage.FAILURE -> onIntent(TradeIntent.Submit(side))
+                TradeStage.FAILURE -> onIntent(TradeIntent.PrepareOrderFees(side))
               }
             },
             Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),

@@ -17,25 +17,11 @@ internal fun TradeUiState.entryPrice(side: OrderSide): String? =
   else marketDetails.orderBook?.bestBid
 
 /** Entry and attached exit prices remain decimal strings until the market's rules check them. */
-internal fun TradeUiState.orderRequest(side: OrderSide): OrderRequest {
+internal fun TradeUiState.orderInput(side: OrderSide): OrderRequest {
   val market = quote?.market ?: error("Select a market first")
   val isSpot = market.kind == MarketKind.SPOT
   val takeProfit = if (isSpot) null else takeProfitInput.takeIf(String::isNotBlank)
   val stopLoss = if (isSpot) null else stopLossInput.takeIf(String::isNotBlank)
-  if (takeProfit != null || stopLoss != null) {
-    val entry = entryPrice(side) ?: error("An entry price is needed to check your exits")
-    val entryUnits = decimalUnits(entry, "Entry price", market.priceDecimals).getOrThrow()
-    fun checkExit(input: String?, label: String, above: Boolean) {
-      if (input == null) return
-      val units = decimalUnits(input, label, market.priceDecimals).getOrThrow()
-      require(units > 0uL) { "$label must be greater than zero" }
-      require(if (above) units > entryUnits else units < entryUnits) {
-        "$label must be ${if (above) "above" else "below"} the entry price"
-      }
-    }
-    checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
-    checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
-  }
   val activeBuilderFeeBps = builderFeeFor(market.kind == MarketKind.SPOT)
   val activeBuilderAddress = if (activeBuilderFeeBps != null) builderAddress else null
   return OrderRequest(
@@ -53,6 +39,29 @@ internal fun TradeUiState.orderRequest(side: OrderSide): OrderRequest {
     builderFeeBps = activeBuilderFeeBps,
     twap = if (orderType == OrderType.TWAP) twapSchedule() else null,
   )
+}
+
+/** Validates attached exits against the live entry before resolving venue order rules. */
+internal fun TradeUiState.orderRequest(side: OrderSide): OrderRequest {
+  val request = orderInput(side)
+  val market = checkNotNull(quote).market
+  val takeProfit = request.takeProfitTrigger
+  val stopLoss = request.stopLossTrigger
+  if (takeProfit != null || stopLoss != null) {
+    val entry = entryPrice(side) ?: error("An entry price is needed to check your exits")
+    val entryUnits = decimalUnits(entry, "Entry price", market.priceDecimals).getOrThrow()
+    fun checkExit(input: String?, label: String, above: Boolean) {
+      if (input == null) return
+      val units = decimalUnits(input, label, market.priceDecimals).getOrThrow()
+      require(units > 0uL) { "$label must be greater than zero" }
+      require(if (above) units > entryUnits else units < entryUnits) {
+        "$label must be ${if (above) "above" else "below"} the entry price"
+      }
+    }
+    checkExit(takeProfit, "Take profit", side == OrderSide.BUY)
+    checkExit(stopLoss, "Stop loss", side == OrderSide.SELL)
+  }
+  return request
 }
 
 /** The TWAP schedule as entered, falling back to one slice a minute for an hour. */

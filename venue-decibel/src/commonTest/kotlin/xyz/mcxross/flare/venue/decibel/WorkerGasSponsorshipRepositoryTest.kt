@@ -25,7 +25,179 @@ import xyz.mcxross.flare.data.SessionStatus
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.kaptos.model.AptosResult
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class WorkerGasSponsorshipRepositoryTest {
+  @Test
+  fun tradingAvailabilityReadsOnlyTheExistingSessionAndPreservesUnknownAnswers() = runTest {
+    for ((body, status, expected) in
+      listOf(
+        Triple("""{"available":true}""", HttpStatusCode.OK, true),
+        Triple("""{"available":false}""", HttpStatusCode.OK, false),
+        Triple("{}", HttpStatusCode.OK, null),
+        Triple("unavailable", HttpStatusCode.ServiceUnavailable, null),
+      )) {
+      val client =
+        HttpClient(
+          MockEngine(
+            MockEngineConfig().apply {
+              dispatcher = StandardTestDispatcher(testScheduler)
+              addHandler { request ->
+                assertEquals("GET", request.method.value)
+                assertEquals("/gas/sponsor/trading-availability", request.url.encodedPath)
+                assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+                respond(
+                  body,
+                  status,
+                  headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+              }
+            },
+          ),
+        ) {
+          install(ContentNegotiation) { json() }
+        }
+      val session =
+        object : SessionRepository by TestSessionRepository {
+          override val status =
+            MutableStateFlow<SessionStatus?>(
+              SessionStatus(SessionRole.API, "0x1", "0x2", Long.MAX_VALUE),
+            )
+        }
+      try {
+        assertEquals(
+          expected,
+          WorkerGasSponsorshipRepository(
+              client,
+              FlareRuntimeConfig(),
+              DecibelRuntimeConfig(),
+              session,
+            )
+            .tradingSponsorshipAvailable(),
+        )
+      } finally {
+        client.close()
+      }
+    }
+  }
+
+  @Test
+  fun tradingAvailabilityTimesOutAsUnknownWithoutRenewingWalletAuthentication() = runTest {
+    val client =
+      HttpClient(
+        MockEngine(
+          MockEngineConfig().apply {
+            dispatcher = StandardTestDispatcher(testScheduler)
+            addHandler {
+              kotlinx.coroutines.delay(60_000)
+              respond(
+                """{"available":true}""",
+                headers =
+                  headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+              )
+            }
+          },
+        ),
+      ) {
+        install(ContentNegotiation) { json() }
+      }
+    val session =
+      object : SessionRepository by TestSessionRepository {
+        override val status =
+          MutableStateFlow<SessionStatus?>(
+            SessionStatus(SessionRole.API, "0x1", "0x2", Long.MAX_VALUE),
+          )
+      }
+    try {
+      assertEquals(
+        null,
+        WorkerGasSponsorshipRepository(
+            client,
+            FlareRuntimeConfig(),
+            DecibelRuntimeConfig(),
+            session,
+          )
+          .tradingSponsorshipAvailable(),
+      )
+      assertEquals(3_000L, testScheduler.currentTime)
+    } finally {
+      client.close()
+    }
+  }
+
+  @Test
+  fun validAnonymousSessionReadsKnownDisabledPolicyWithoutAuthentication() = runTest {
+    var requests = 0
+    val client =
+      HttpClient(
+        MockEngine(
+          MockEngineConfig().apply {
+            dispatcher = StandardTestDispatcher(testScheduler)
+            addHandler { request ->
+              requests++
+              assertEquals("GET", request.method.value)
+              assertEquals("/gas/sponsor/trading-availability", request.url.encodedPath)
+              assertEquals("Bearer test-token", request.headers[HttpHeaders.Authorization])
+              respond(
+                """{"available":false}""",
+                headers =
+                  headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+              )
+            }
+          },
+        ),
+      ) {
+        install(ContentNegotiation) { json() }
+      }
+    try {
+      assertEquals(
+        false,
+        WorkerGasSponsorshipRepository(
+            client,
+            FlareRuntimeConfig(),
+            DecibelRuntimeConfig(),
+            TestSessionRepository,
+          )
+          .tradingSponsorshipAvailable(),
+      )
+      assertEquals(1, requests)
+    } finally {
+      client.close()
+    }
+  }
+
+  @Test
+  fun tradingAvailabilityWithNoValidSessionDoesNotRequestOrAuthenticate() = runTest {
+    var requests = 0
+    val client =
+      HttpClient(
+        MockEngine {
+          requests++
+          error("No request without an existing valid session")
+        },
+      )
+    try {
+      for (candidate in listOf(null, SessionStatus(SessionRole.ANONYMOUS, expiresAt = 0))) {
+        val session =
+          object : SessionRepository by TestSessionRepository {
+            override val status = MutableStateFlow(candidate)
+          }
+        assertEquals(
+          null,
+          WorkerGasSponsorshipRepository(
+              client,
+              FlareRuntimeConfig(),
+              DecibelRuntimeConfig(),
+              session,
+            )
+            .tradingSponsorshipAvailable(),
+        )
+      }
+      assertEquals(0, requests)
+    } finally {
+      client.close()
+    }
+  }
+
   @Test
   fun availabilityIsReadOnlyAndUnconfirmedSponsorshipSelectsSelfPay() = runTest {
     for ((body, status, expected) in

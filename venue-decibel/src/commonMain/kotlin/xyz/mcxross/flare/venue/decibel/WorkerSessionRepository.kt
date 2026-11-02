@@ -52,7 +52,15 @@ class WorkerSessionRepository(
   override val status: StateFlow<SessionStatus?> = mutableStatus.asStateFlow()
 
   override fun <T> bind(status: SessionStatus, operation: Flow<T>): Flow<T> {
-    val bound = authenticatedSessions.value[status] ?: error("Session renewal is required")
+    val current = session
+    val bound =
+      authenticatedSessions.value[status]
+        ?: current?.takeIf {
+          it.role.toSessionRole() == SessionRole.ANONYMOUS &&
+            it.expiresAt > Clock.System.now().toEpochMilliseconds() &&
+            it.toStatus() == status
+        }
+        ?: error("Session renewal is required")
     return operation.flowOn(SessionBearer(bound.token, bound.expiresAt))
   }
 

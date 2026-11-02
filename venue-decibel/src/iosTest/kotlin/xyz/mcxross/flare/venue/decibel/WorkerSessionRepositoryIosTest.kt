@@ -11,6 +11,7 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -54,6 +55,7 @@ class WorkerSessionRepositoryIosTest {
           "expires_at=$expiresAt",
         )
         .joinToString("\n")
+    var anonymousSessions = 0
     var challenges = 0
     var authentications = 0
     var tokenExpiry = now + 55 * 60_000
@@ -80,10 +82,12 @@ class WorkerSessionRepositoryIosTest {
             """{"token":"owner-token","expiresAt":$tokenExpiry,"role":"owner","walletAddress":"$address"}""",
           )
         }
-        "/v1/session/anonymous" ->
+        "/v1/session/anonymous" -> {
+          anonymousSessions++
           respondJson(
             """{"token":"anonymous-token","expiresAt":${now + 55 * 60_000},"role":"anonymous"}""",
           )
+        }
         "/v1/session/revoke" -> {
           assertEquals("Bearer owner-token", request.headers[HttpHeaders.Authorization])
           sessionRevoked = true
@@ -139,6 +143,23 @@ class WorkerSessionRepositoryIosTest {
     assertEquals("owner-token", pinnedToken)
     assertEquals(SessionRole.ANONYMOUS, repository.status.value?.role)
     repository.authenticateOwner(null, prompt)
+
+    // Binding takes a snapshot of the existing anonymous bearer. A subsequent wallet-session
+    // replacement must not renew or change the token used by the read-only operation.
+    val anonymous = repository.useAnonymous()
+    assertFailsWith<IllegalStateException> {
+      repository.bind(anonymous.copy(expiresAt = anonymous.expiresAt + 1), flow { emit(Unit) })
+    }
+    val anonymousOperation = repository.bind(anonymous, flow { emit(repository.accessToken()) })
+    repository.authenticateOwner(null, prompt)
+    val beforeChallenges = challenges
+    val beforeAuthentications = authentications
+    val beforeAnonymousSessions = anonymousSessions
+    assertEquals("anonymous-token", anonymousOperation.single())
+    assertEquals(SessionRole.OWNER, repository.status.value?.role)
+    assertEquals(beforeChallenges, challenges)
+    assertEquals(beforeAuthentications, authentications)
+    assertEquals(beforeAnonymousSessions, anonymousSessions)
 
     repository.invalidate()
 

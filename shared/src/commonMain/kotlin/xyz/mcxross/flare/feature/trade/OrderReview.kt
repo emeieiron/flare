@@ -17,6 +17,7 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
+import xyz.mcxross.flare.venue.model.TradeAction
 
 /**
  * "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and
@@ -66,6 +67,18 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
     }
     if (state.orderType == OrderType.MARKET) {
       DetailRow("Maximum entry slippage", "${state.slippageBps / 100.0}%")
+      state.feeReview
+        ?.actions
+        ?.filterIsInstance<TradeAction.PlaceOrder>()
+        ?.singleOrNull()
+        ?.order
+        ?.price
+        ?.let { bound ->
+          DetailRow(
+            if (side == OrderSide.BUY) "Maximum buy price" else "Minimum sell price",
+            bound.toDoubleOrNull()?.let(::formatPrice) ?: bound,
+          )
+        }
     }
     if (state.orderType == OrderType.TWAP) {
       DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
