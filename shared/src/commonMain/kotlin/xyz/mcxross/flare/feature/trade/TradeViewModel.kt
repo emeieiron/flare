@@ -125,6 +125,12 @@ data class TradeUiState(
         "Couldn’t prepare network fees. Try again."
       else "Add APT to cover network fees."
 
+  /** The fee estimate retained on a definite sponsorship rejection. */
+  val selfPayEstimate: ULong?
+    get() =
+      if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
+      else null
+
   fun availableDisplay(side: OrderSide): String? {
     val isSpot = quote?.market?.kind == MarketKind.SPOT
     return if (isSpot) {
