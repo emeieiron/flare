@@ -475,15 +475,14 @@ fun SettingsScreen(
         )
         if (
           state.referral.eligibility != ReferralEligibility.INELIGIBLE &&
-            !state.referral.pending &&
             state.referral.eligibility != ReferralEligibility.BOUND
         ) {
           Spacer(Modifier.height(20.dp))
           FlareButton(
-            "Apply code",
+            if (state.referral.pending) "Retry referral" else "Apply code",
             { onIntent(SettingsIntent.RedeemReferralCode) },
             Modifier.fillMaxWidth(),
-            enabled = state.referral.canApply,
+            enabled = state.referral.canApply || state.referral.pending && !state.referral.applying,
             working = state.referral.applying,
           )
         }

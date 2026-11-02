@@ -637,6 +637,166 @@ class OnboardingViewModelTest {
     }
   }
 
+  @Test
+  fun restartedPendingReferralExplicitlyRetriesSavedPairAndDiscoversBoundAccount() = runTest {
+    for (includeAddress in listOf(false, true)) {
+      val preferences = AppPreferences(MemoryPreferences())
+      var redeemed = false
+      var indexed = false
+      var creates = 0
+      val appliedCodes = mutableListOf<String>()
+      val accounts =
+        object : SetupAccounts(preferences) {
+          override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) =
+            emptyList<TradingAccount>()
+
+          override suspend fun subaccounts(owner: String) =
+            if (redeemed && indexed) listed.take(1) else emptyList()
+
+          override suspend fun createSubaccount(
+            prompt: VaultPrompt,
+            feePayment: FeePayment,
+          ): ActionState {
+            creates++
+            error("A pending referral must never create another account")
+          }
+        }
+      val referrals =
+        object : ReferralRepository {
+          override suspend fun program() = ReferralProgram(true, "NEW_SUGGESTION")
+
+          override suspend fun status(owner: String) =
+            ReferralStatus(
+              owner,
+              if (redeemed) ReferralEligibility.BOUND else ReferralEligibility.PENDING,
+              "SAVED",
+            )
+
+          override suspend fun pendingCode(owner: String) = if (redeemed) null else "SAVED"
+
+          override suspend fun validate(code: String) = true
+
+          override suspend fun apply(
+            owner: String,
+            code: String,
+            prompt: VaultPrompt,
+          ): ReferralStatus {
+            appliedCodes += code
+            redeemed = true
+            return ReferralStatus(
+              owner,
+              ReferralEligibility.BOUND,
+              code,
+              if (includeAddress) "0xa1" else null,
+            )
+          }
+        }
+      val vm = viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
+      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+      try {
+        vm.onIntent(OnboardingIntent.ResumeReads)
+        vm.onIntent(OnboardingIntent.ShowImport)
+        vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+        vm.onIntent(OnboardingIntent.ImportCredential)
+        assertTrue(vm.uiState.value.referral.canContinue)
+        assertFalse(vm.uiState.value.referral.editable)
+        assertTrue(appliedCodes.isEmpty())
+        vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+        assertEquals("Your trading account isn’t available yet", vm.uiState.value.error)
+        assertEquals(listOf("SAVED"), appliedCodes)
+        assertEquals(0, creates)
+        assertFalse(accounts.events.contains("select 0xa1"))
+        indexed = true
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(ReferralEligibility.BOUND, vm.uiState.value.referral.eligibility)
+        vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+        assertEquals(listOf("SAVED"), appliedCodes)
+        assertEquals(0, creates)
+        assertTrue(accounts.events.contains("select 0xa1"))
+        assertTrue(accounts.events.contains("prepare"))
+      } finally {
+        vm.onIntent(OnboardingIntent.ClearSensitiveState)
+      }
+    }
+  }
+
+  @Test
+  fun pendingRetryCanRedeemWhenStatusReadFailsButNeverBypassesAuthorizationCancellation() =
+    runTest {
+      for (cancelAuthorization in listOf(false, true)) {
+        val preferences = AppPreferences(MemoryPreferences())
+        var statusReads = 0
+        var redeemed = false
+        var creates = 0
+        val appliedCodes = mutableListOf<String>()
+        val accounts =
+          object : SetupAccounts(preferences) {
+            override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt) =
+              emptyList<TradingAccount>()
+
+            override suspend fun subaccounts(owner: String) =
+              if (redeemed) listed.take(1) else emptyList()
+
+            override suspend fun createSubaccount(
+              prompt: VaultPrompt,
+              feePayment: FeePayment,
+            ): ActionState {
+              creates++
+              error("Pending referrals must not create another account")
+            }
+          }
+        val referrals =
+          object : ReferralRepository {
+            override suspend fun program() = ReferralProgram(true, "NEW_SUGGESTION")
+
+            override suspend fun status(owner: String): ReferralStatus {
+              if (++statusReads > 1) {
+                if (cancelAuthorization)
+                  throw xyz.mcxross.flare.security.WalletVaultException.Cancelled()
+                error("Referral status unavailable")
+              }
+              return ReferralStatus(owner, ReferralEligibility.PENDING, "SAVED")
+            }
+
+            override suspend fun pendingCode(owner: String) = "SAVED"
+
+            override suspend fun validate(code: String) = true
+
+            override suspend fun apply(
+              owner: String,
+              code: String,
+              prompt: VaultPrompt,
+            ): ReferralStatus {
+              appliedCodes += code
+              redeemed = true
+              return ReferralStatus(owner, ReferralEligibility.BOUND, code)
+            }
+          }
+        val vm =
+          viewModel(accounts, VenueSetup(), preferences, SetupWallets(preferences), referrals)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+        try {
+          vm.onIntent(OnboardingIntent.ResumeReads)
+          vm.onIntent(OnboardingIntent.ShowImport)
+          vm.onIntent(OnboardingIntent.ChangeInput(PHRASE))
+          vm.onIntent(OnboardingIntent.ImportCredential)
+          assertTrue(vm.uiState.value.referral.pending)
+          assertTrue(appliedCodes.isEmpty())
+          vm.onIntent(OnboardingIntent.CreateSubaccount)
+
+          assertEquals(if (cancelAuthorization) emptyList() else listOf("SAVED"), appliedCodes)
+          assertEquals(0, creates)
+          assertEquals(!cancelAuthorization, accounts.events.contains("select 0xa1"))
+          assertEquals(!cancelAuthorization, accounts.events.contains("prepare"))
+        } finally {
+          vm.onIntent(OnboardingIntent.ClearSensitiveState)
+        }
+      }
+    }
+
   private fun createAndConfirmBackup(vm: OnboardingViewModel) {
     vm.onIntent(OnboardingIntent.CreateOwner)
     vm.onIntent(OnboardingIntent.ReviewBackup)

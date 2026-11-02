@@ -38,6 +38,7 @@ import xyz.mcxross.flare.feature.referrals.ReferralEligibility
 import xyz.mcxross.flare.feature.referrals.ReferralRepository
 import xyz.mcxross.flare.feature.referrals.ReferralUiState
 import xyz.mcxross.flare.security.VaultPrompt
+import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
 import xyz.mcxross.flare.store.LEGACY_PROFILE_ID
@@ -719,6 +720,7 @@ class OnboardingViewModel(
         referrals != null &&
           (hasReferralIntent ||
             form.pending ||
+            form.eligibility == ReferralEligibility.BOUND ||
             activeProfile()?.tradingAccountOpened == true ||
             form.enabled &&
               form.input.isNotBlank() &&
@@ -800,7 +802,29 @@ class OnboardingViewModel(
     if (activeProfile()?.tradingAccountOpened == true && pending == null) {
       // Once an account exists, a hidden suggested code must never become a new user choice.
     } else if (pending != null || form.pending) {
-      val status = repository.status(owner)
+      val observed = runSuspendCatching {
+        repository.status(owner)
+      }
+        .getOrElse { error ->
+          if (error.isAuthorizationCancelled() || error.isReadAccessFailure()) throw error
+          null
+        }
+      // This is an explicit action. Replaying the saved wallet/code pair is idempotent;
+      // background reads never redeem, and an unresolved attempt never falls through to creation.
+      val status =
+        if (
+          observed != null &&
+            (observed.eligibility == ReferralEligibility.BOUND || observed.tradingAccount != null)
+        )
+          observed
+        else
+          repository.apply(
+            owner,
+            checkNotNull(pending ?: observed?.code ?: form.appliedCode) {
+              "Referral confirmation pending"
+            },
+            setupPrompt.copy(requireFreshAuthorization = !withinConfirmedSetup),
+          )
       check(status.eligibility == ReferralEligibility.BOUND || status.tradingAccount != null) {
         "Referral confirmation pending"
       }
@@ -818,6 +842,8 @@ class OnboardingViewModel(
         "Referral confirmation pending"
       }
       preferred = status.tradingAccount
+    } else if (form.eligibility == ReferralEligibility.BOUND) {
+      preferred = form.tradingAccount
     } else if (form.enabled && form.input.isNotBlank() && form.eligibility == null) {
       error("Referrals unavailable")
     } else if (activeProfile()?.tradingAccountOpened != true) return null

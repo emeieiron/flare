@@ -91,6 +91,54 @@ class DecibelApiTest {
     assertEquals(1, attempts)
   }
 
+  @Test
+  fun supportsWorkerAndLegacyErrorEnvelopesWithoutExposingUnknownBodies() = runTest {
+    val cases =
+      listOf(
+        """{"message":"legacy","error":"worker"}""" to "legacy",
+        """{"error":"Subaccount scope mismatch"}""" to "Subaccount scope mismatch",
+        """{"message":" ","error":"worker"}""" to "worker",
+        """{"message":403,"error":"worker"}""" to "worker",
+        """{"error":{"secret":"never expose"}}""" to "Decibel request failed with HTTP 403",
+        """{"message":null,"error":false}""" to "Decibel request failed with HTTP 403",
+        "<html>sensitive upstream response</html>" to "Decibel request failed with HTTP 403",
+      )
+    for ((body, expected) in cases) {
+      val client = HttpClient(MockEngine { respondJson(body, HttpStatusCode.Forbidden) })
+      try {
+        val failure =
+          assertFailsWith<DecibelApiError> {
+            api(client).get<TestResponse>("delegations") {
+              url.parameters.append("subaccount", "private")
+            }
+          }
+        assertEquals(expected, failure.message)
+        assertEquals(403, failure.statusCode)
+        assertEquals("/api/v1/delegations", failure.endpointPath)
+        assertTrue(!failure.retryable)
+      } finally {
+        client.close()
+      }
+    }
+  }
+
+  @Test
+  fun postErrorsRetainStatusAndAnEndpointWithoutQueryOrFragment() = runTest {
+    val client =
+      HttpClient(MockEngine { respondJson("""{"error":"denied"}""", HttpStatusCode.Forbidden) })
+    try {
+      val failure =
+        assertFailsWith<DecibelApiError> {
+          api(client).post<TestResponse>("/referrals/redeem?private=value#private")
+        }
+      assertEquals("denied", failure.message)
+      assertEquals(403, failure.statusCode)
+      assertEquals("/api/v1/referrals/redeem", failure.endpointPath)
+    } finally {
+      client.close()
+    }
+  }
+
   private fun api(client: HttpClient) =
     DecibelApi(
       client,

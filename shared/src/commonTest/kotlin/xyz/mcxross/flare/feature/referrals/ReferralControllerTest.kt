@@ -168,13 +168,47 @@ class ReferralControllerTest {
 
     assertTrue(controller.state.value.pending)
     assertEquals("PENDING", controller.state.value.input)
-    assertFalse(controller.state.value.canContinue)
+    assertTrue(controller.state.value.canContinue)
+    assertFalse(controller.state.value.editable)
+    controller.change("DIFFERENT")
+    assertEquals("PENDING", controller.state.value.input)
     advanceTimeBy(30_000)
     runCurrent()
     assertEquals(0, repo.applyCalls)
     assertTrue(repo.statusOwners.size >= 2)
 
     controller.apply(VaultPrompt("Apply referral", "Confirm your identity"))
+    assertEquals(1, repo.applyCalls)
+    assertEquals(listOf("PENDING"), repo.appliedCodes)
+  }
+
+  @Test
+  fun uncertainApplyLocksSavedCodeEvenWhenFollowUpReadFails() = runTest {
+    var reads = 0
+    val repo =
+      FakeReferralRepository(
+        suggested = "SAVED",
+        pendingCodeResult = "SAVED",
+        statusResult = {
+          if (++reads == 1) ReferralStatus(it, ReferralEligibility.ELIGIBLE)
+          else error("status unavailable")
+        },
+        applyResult = { _, _, _ -> error("response lost") },
+      )
+    val controller = visibleController(repo)
+    advanceTimeBy(300)
+    runCurrent()
+    kotlin.test.assertFails {
+      controller.apply(VaultPrompt("Apply referral", "Confirm your identity"))
+    }
+    runCurrent()
+
+    assertTrue(controller.state.value.pending)
+    assertTrue(controller.state.value.canContinue)
+    assertFalse(controller.state.value.editable)
+    controller.change("OTHER")
+    assertEquals("SAVED", controller.state.value.input)
+    assertEquals("SAVED", controller.state.value.appliedCode)
     assertEquals(1, repo.applyCalls)
   }
 
@@ -261,6 +295,7 @@ class ReferralControllerTest {
     var programCalls = 0
     var applyCalls = 0
     val statusOwners = mutableListOf<String>()
+    val appliedCodes = mutableListOf<String>()
 
     override suspend fun program(): ReferralProgram {
       programCalls++
@@ -278,6 +313,7 @@ class ReferralControllerTest {
 
     override suspend fun apply(owner: String, code: String, prompt: VaultPrompt): ReferralStatus {
       applyCalls++
+      appliedCodes += code
       return applyResult(owner, code, prompt)
     }
   }

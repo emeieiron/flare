@@ -16,12 +16,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import xyz.mcxross.flare.decibel.DecibelConfig
 
 data class DecibelApiError(
   val statusCode: Int,
   override val message: String,
   val retryable: Boolean,
+  val endpointPath: String? = null,
 ) : Exception(message)
 
 internal class DecibelApi(
@@ -50,6 +53,7 @@ internal class DecibelApi(
           attempt += 1
           lastError =
             DecibelApiError(
+              endpointPath = normalizedDecibelPath(path),
               statusCode = 0,
               message = error.message ?: "Decibel request transport failed",
               retryable = true,
@@ -64,6 +68,7 @@ internal class DecibelApi(
           return json.decodeFromString(body)
         } catch (error: SerializationException) {
           throw DecibelApiError(
+            endpointPath = normalizedDecibelPath(path),
             statusCode = response.status.value,
             message = "Decibel returned an incompatible response for $path: ${error.message}",
             retryable = false,
@@ -74,6 +79,7 @@ internal class DecibelApi(
       val retryable = response.status in DECIBEL_RETRYABLE_STATUSES
       lastError =
         DecibelApiError(
+          endpointPath = normalizedDecibelPath(path),
           statusCode = response.status.value,
           message = decodeDecibelMessage(json, body, response.status),
           retryable = retryable,
@@ -112,6 +118,7 @@ internal class DecibelApi(
           attempt += 1
           lastError =
             DecibelApiError(
+              endpointPath = normalizedDecibelPath(path),
               statusCode = 0,
               message = error.message ?: "Decibel request transport failed",
               retryable = true,
@@ -126,6 +133,7 @@ internal class DecibelApi(
           return json.decodeFromString(body)
         } catch (error: SerializationException) {
           throw DecibelApiError(
+            endpointPath = normalizedDecibelPath(path),
             statusCode = response.status.value,
             message = "Decibel returned an incompatible response for $path: ${error.message}",
             retryable = false,
@@ -136,6 +144,7 @@ internal class DecibelApi(
       val retryable = response.status in DECIBEL_RETRYABLE_STATUSES
       lastError =
         DecibelApiError(
+          endpointPath = normalizedDecibelPath(path),
           statusCode = response.status.value,
           message = decodeDecibelMessage(json, body, response.status),
           retryable = retryable,
@@ -152,9 +161,6 @@ internal class DecibelApi(
     throw checkNotNull(lastError)
   }
 }
-
-@kotlinx.serialization.Serializable
-internal data class ErrorEnvelope(val status: String = "failed", val message: String)
 
 @PublishedApi internal const val DECIBEL_MAX_ATTEMPTS = 3
 
@@ -173,9 +179,18 @@ internal val DECIBEL_RETRYABLE_STATUSES =
 @PublishedApi internal fun retryDelayMs(attempt: Int): Long = 250L shl (attempt - 1).coerceIn(0, 5)
 
 @PublishedApi
+internal fun normalizedDecibelPath(path: String): String =
+  "/api/v1/" + path.substringBefore('?').substringBefore('#').trim('/')
+
+@PublishedApi
 internal fun decodeDecibelMessage(json: Json, body: String, status: HttpStatusCode): String =
   runCatching {
-    val error = json.decodeFromString<ErrorEnvelope>(body)
-    error.message
+    val envelope = json.parseToJsonElement(body) as? JsonObject
+    listOf("message", "error").firstNotNullOfOrNull { key ->
+      (envelope?.get(key) as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.content
+        ?.takeIf { it.isNotBlank() }
+    }
   }
-  .getOrDefault("Decibel request failed with HTTP ${status.value}")
+    .getOrNull() ?: "Decibel request failed with HTTP ${status.value}"

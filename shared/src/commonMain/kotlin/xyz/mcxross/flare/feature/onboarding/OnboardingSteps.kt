@@ -796,7 +796,8 @@ internal fun SubaccountStep(state: OnboardingUiState, onIntent: (OnboardingInten
           SetupActions(state, onIntent) {
             FlareButton(
               when {
-                state.referral.pending -> "Continue"
+                state.referral.pending ->
+                  if (state.referral.tradingAccount == null) "Retry referral" else "Continue"
                 state.error != null -> "Try again"
                 else -> "Create account"
               },
@@ -925,9 +926,10 @@ internal fun OpenAccountStep(state: OnboardingUiState, onIntent: (OnboardingInte
       SetupActions(state, onIntent) {
         FlareButton(
           when {
+            state.referral.pending && !state.accountOpened ->
+              if (state.referral.tradingAccount == null) "Retry referral" else "Continue"
             stalled -> "Try again"
             state.accountOpened -> "Enable trading"
-            state.referral.pending -> "Continue"
             else -> "Open account"
           },
           { onIntent(OnboardingIntent.OpenAccount) },

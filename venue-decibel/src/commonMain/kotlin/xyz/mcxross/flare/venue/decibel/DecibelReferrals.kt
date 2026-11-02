@@ -122,7 +122,8 @@ class DecibelReferrals(
             }
           }
         if (!response.status.isSuccess()) {
-          if (response.status.value in setOf(400, 401, 403, 404, 422, 429))
+          // A rejected retry cannot resolve an earlier attempt with an unknown outcome.
+          if (prior == null && response.status.value in setOf(400, 401, 403, 404, 415, 422, 429))
             intents.save(owner, null)
           error(
             when (response.status.value) {

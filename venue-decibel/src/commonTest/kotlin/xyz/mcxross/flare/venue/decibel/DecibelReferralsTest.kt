@@ -186,6 +186,44 @@ class DecibelReferralsTest {
   }
 
   @Test
+  fun failedRetryPreservesUnknownPairUntilExplicitSameCodeReplaySucceeds() = runTest {
+    fixture { f ->
+      var posts = 0
+      f.engineHandler = { request ->
+        if (request.method.value == "GET") {
+          respondJson("""{"account":"$owner","status":"eligible"}""")
+        } else {
+          posts++
+          when (posts) {
+            1 -> error("connection reset after submission")
+            2 -> respondJson("{}", HttpStatusCode.Forbidden)
+            3 -> respondJson("{}", HttpStatusCode.UnsupportedMediaType)
+            else ->
+              respondJson(
+                """{"account":"$owner","status":"bound","referral_code":"$code","trading_account":"0xa1"}""",
+              )
+          }
+        }
+      }
+
+      kotlin.test.assertFails { f.repository.apply(owner, code, prompt) }
+      assertEquals(ReferralEligibility.PENDING, f.repository.status(owner).eligibility)
+      assertEquals(1, posts)
+      kotlin.test.assertFails { f.repository.apply(owner, code, prompt) }
+      assertEquals(code, f.intents.code(owner))
+      kotlin.test.assertFails { f.repository.apply(owner, code, prompt) }
+      assertEquals(code, f.intents.code(owner))
+      kotlin.test.assertFails { f.repository.apply(owner, "OTHER", prompt) }
+      assertEquals(3, posts)
+      val bound = f.repository.apply(owner, code, prompt)
+      assertEquals(ReferralEligibility.BOUND, bound.eligibility)
+      assertEquals("0xa1", bound.tradingAccount)
+      assertNull(f.intents.code(owner))
+      assertEquals(4, posts)
+    }
+  }
+
+  @Test
   fun boundResponseMarksProfileBeforeClearingIntent() = runTest {
     fixture { f ->
       f.engineHandler = { request ->
@@ -254,7 +292,12 @@ class DecibelReferralsTest {
   @Test
   fun onlyDefinitiveRejectionsClearIntent() = runTest {
     for (status in
-      listOf(HttpStatusCode.BadRequest, HttpStatusCode.Forbidden, HttpStatusCode.TooManyRequests)) {
+      listOf(
+        HttpStatusCode.BadRequest,
+        HttpStatusCode.Forbidden,
+        HttpStatusCode.UnsupportedMediaType,
+        HttpStatusCode.TooManyRequests,
+      )) {
       fixture { f ->
         f.engineHandler = { _ -> respondJson("{}", status) }
         kotlin.test.assertFails { f.repository.apply(owner, code, prompt) }

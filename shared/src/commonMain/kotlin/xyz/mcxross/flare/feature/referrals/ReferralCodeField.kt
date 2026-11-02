@@ -76,7 +76,7 @@ fun ReferralCodeField(
       )
       if (state.pending) {
         Text(
-          "Referral confirmation pending",
+          "Referral confirmation pending. Retry to submit the same code again.",
           style = MaterialTheme.typography.bodySmall,
           color = FlareColors.TextSecondary,
         )

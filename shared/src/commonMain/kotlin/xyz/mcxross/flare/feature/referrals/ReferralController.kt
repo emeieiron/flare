@@ -48,7 +48,7 @@ data class ReferralUiState(
     get() =
       !applying &&
         when {
-          pending -> tradingAccount != null
+          pending -> !appliedCode.isNullOrBlank() || input.isNotBlank()
           !enabled || input.isBlank() -> true
           eligibility == ReferralEligibility.BOUND ||
             eligibility == ReferralEligibility.INELIGIBLE -> true
@@ -197,7 +197,8 @@ class ReferralController(
   }
 
   /**
-   * Explicit user action only; uncertain outcomes stay pending and are reconciled through reads.
+   * Explicit user action only; retries reuse the pending code. Background reconciliation only
+   * reads.
    */
   suspend fun apply(prompt: VaultPrompt): ReferralStatus {
     val source = checkNotNull(repository) { "Referrals unavailable" }
@@ -206,7 +207,7 @@ class ReferralController(
     val contextVersion = contextRevision
     val current = state.value
     check(!current.applying && (current.canApply || current.pending)) { "Check your referral code" }
-    val code = current.input.trim()
+    val code = (if (current.pending) current.appliedCode ?: current.input else current.input).trim()
     validation?.cancel()
     reads?.cancel()
     mutable.update { it.copy(applying = true, error = null) }
@@ -230,9 +231,20 @@ class ReferralController(
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (error: Exception) {
+      val pendingCode = runSuspendCatching { source.pendingCode(wallet) }.getOrNull()
       if (owner == wallet && revision == version && !error.isAuthorizationCancelled())
         mutable.update {
-          it.copy(error = actionFailure(error.message, "Your referral code wasn’t applied."))
+          it.copy(
+            eligibility = if (pendingCode != null) ReferralEligibility.PENDING else it.eligibility,
+            appliedCode = pendingCode ?: it.appliedCode,
+            input = pendingCode ?: it.input,
+            error =
+              actionFailure(
+                error.message,
+                if (pendingCode != null) "Referral confirmation is still pending."
+                else "Your referral code wasn’t applied.",
+              ),
+          )
         }
       throw error
     } finally {

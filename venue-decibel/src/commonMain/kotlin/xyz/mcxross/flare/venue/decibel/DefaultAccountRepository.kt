@@ -120,8 +120,7 @@ class DefaultAccountRepository(
     val account = preferences.values.first().selectedSubaccount ?: error("Select a trading account")
     val onChain = runSuspendCatching { client.subaccounts.delegations(account) }.getOrNull()
     if (onChain is AptosResult.Success) return onChain.value.toTradingKeys()
-    ensureReadSession(account)
-    return client.accounts.delegations(account).toTradingKeys()
+    return readAccount(account) { client.accounts.delegations(account).toTradingKeys() }
   }
 
   override suspend fun revokeDelegation(address: String, prompt: VaultPrompt): ActionState {
@@ -188,8 +187,8 @@ class DefaultAccountRepository(
     val owner =
       wallets.profile.first().ownerAddress
         ?: error("An owner wallet is required to discover subaccounts")
-    sessions.ensureOwner(subaccount = null, prompt = prompt)
-    return subaccounts(owner)
+    val session = sessions.ensureOwner(subaccount = null, prompt = prompt)
+    return sessions.bind(session, flow { emit(subaccounts(owner)) }).first()
   }
 
   override suspend fun subaccounts(owner: String): List<TradingAccount> =
@@ -356,7 +355,7 @@ class DefaultAccountRepository(
         override suspend fun createWallet() = wallets.createApiWallet(prompt)
 
         override suspend fun isDelegated(address: String): Boolean {
-          val delegations = client.accounts.delegations(subaccount)
+          val delegations = readAccount(subaccount) { client.accounts.delegations(subaccount) }
           val now = Clock.System.now().epochSeconds
           return delegations.any {
             it.delegate.sameAptosAddress(address) &&

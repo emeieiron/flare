@@ -79,7 +79,7 @@ xcodebuild -project iosApp/iosApp.xcodeproj -scheme "Flare Hyperliquid" -configu
 Release each exchange independently using [Release Android](.github/workflows/release-android.yml). A tag selects the exchange: `decibel-vX.Y.Z` must match `FLARE_DECIBEL_VERSION`, and `hyperliquid-vX.Y.Z` must match `FLARE_HYPERLIQUID_VERSION`. The workflow tests shared modules and the selected exchange, then signs and publishes only that exchange's APK. The apps retain separate package IDs, `xyz.mcxross.flare.decibel` and `xyz.mcxross.flare.hyperliquid`, so their releases and installed updates remain independent.
 
 1. Bump only the selected exchange's version in `version.properties`, update its release documentation, and merge the change to `main` after verification.
-2. Tag the verified commit on `main` with the matching exchange and version, then push that tag. For Decibel 0.2.0, the tag is `decibel-v0.2.0`; a Decibel-only release leaves Hyperliquid's version unchanged.
+2. Tag the verified commit on `main` with the matching exchange and version, then push that tag. For Decibel 0.2.1, the tag is `decibel-v0.2.1`; a Decibel-only release leaves Hyperliquid's version unchanged.
 3. Review and approve the run in the `android-release` environment. Its deployment tag policy must allow `decibel-v*` and `hyperliquid-v*`. For Decibel, set `FLARE_DECIBEL_WORKER_URL` to the intended HTTPS mainnet Worker before approval and verify the release's network configuration.
 
 Use exchange-specific release links in download documentation. GitHub's global `releases/latest` can point to either exchange and does not identify the newest APK for both. The historical `v0.1.0` Hyperliquid APK remains a testnet preview; it does not establish a mainnet release version.
