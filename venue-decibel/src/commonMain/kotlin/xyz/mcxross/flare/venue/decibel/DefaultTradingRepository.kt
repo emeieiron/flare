@@ -176,7 +176,9 @@ class DefaultTradingRepository(
   private val journal: TransactionJournalDao = database.transactionJournalDao()
   private val submissionMutex = submissionGate.mutex
 
-  private var orderFeeReview: ConfirmedOrderFees? = null
+  /** Reviews awaiting confirmation, by id: each is consumed once, and only the latest few stay. */
+  private val orderFeeReviews = LinkedHashMap<String, ConfirmedOrderFees>()
+  private val orderFeeReviewMutex = Mutex()
   private var orderFeeReviewCounter = 0L
 
   override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? =
@@ -360,7 +362,7 @@ class DefaultTradingRepository(
         requiredReserveOctas = reserve,
         localFeeReady = localQuote != null,
       )
-    orderFeeReview =
+    val plan =
       ConfirmedOrderFees(
         review,
         commands,
@@ -371,6 +373,12 @@ class DefaultTradingRepository(
         firstOptions,
         false,
       )
+    orderFeeReviewMutex.withLock {
+      orderFeeReviews[review.reviewId] = plan
+      while (orderFeeReviews.size > PENDING_FEE_REVIEWS) {
+        orderFeeReviews.remove(orderFeeReviews.keys.first())
+      }
+    }
     return review
   }
 
@@ -514,11 +522,11 @@ class DefaultTradingRepository(
     prompt: VaultPrompt,
     block: suspend () -> T,
   ): T {
-    val plan = orderFeeReview
+    // A reviewed permission can be consumed only once.
+    val plan = orderFeeReviewMutex.withLock { orderFeeReviews.remove(review.reviewId) }
     check(plan != null && plan.review == review) {
       "Review network fees again before confirming the order"
     }
-    orderFeeReview = null // A reviewed permission can be consumed only once.
     verifyOrderFees(plan)
     check(review.sponsorshipAvailable != false || allowSelfPay) {
       "Trading sponsorship is unavailable. Review and allow the APT network fee before confirming."
@@ -1537,6 +1545,8 @@ class DefaultTradingRepository(
     const val SDK_MIN_GAS_AMOUNT = 2_000uL
     const val SPONSOR_REFERENCE_PREFIX = "sponsor:"
     const val WALLET_FEE_UNAVAILABLE = "Add APT to cover network fees."
+    // An order's and a close's reviews, prepared ahead on different screens, both stay usable.
+    const val PENDING_FEE_REVIEWS = 4
   }
 }
 

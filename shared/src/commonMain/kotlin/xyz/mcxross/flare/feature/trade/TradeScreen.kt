@@ -51,6 +51,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -463,6 +464,25 @@ fun TradeScreen(
                   !state.feeReviewLoading &&
                   (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
             }
+        // Once the order settles its fee is reviewed quietly, so the review opens with it ready.
+        val prefetch = stage == TradeStage.EDIT && enabled
+        LaunchedEffect(
+          prefetch,
+          side,
+          state.sizeInput,
+          state.limitPriceInput,
+          state.orderType,
+          state.leverage,
+          state.takeProfitInput,
+          state.stopLossInput,
+          state.twapDurationMinutesInput,
+          state.twapFrequencyMinutesInput,
+        ) {
+          if (prefetch) {
+            delay(FEE_PREFETCH_DELAY_MS)
+            onIntent(TradeIntent.PrefetchOrderFees(side))
+          }
+        }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
           val notice = if (stage == TradeStage.MARKET) actionsUnavailable else twapUnavailable
@@ -481,7 +501,6 @@ fun TradeScreen(
               TradeStage.REVIEW ->
                 when {
                   state.orderBusy -> "Placing your order…"
-                  state.feeReviewLoading -> "Checking fees…"
                   state.orderFeesNeedRetry -> "Retry"
                   else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
                 }
@@ -666,3 +685,6 @@ private fun OrderBookSide(
     }
   }
 }
+
+/** How long an edited order rests before its fee is reviewed in the background. */
+private const val FEE_PREFETCH_DELAY_MS = 500L

@@ -6,8 +6,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import xyz.mcxross.flare.data.*
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
@@ -405,6 +408,96 @@ class TradeFeeReviewTest {
   }
 
   @Test
+  fun aFeeReviewedWhileEditingOpensTheReviewReadyWithoutAnotherRequest() = runTest {
+    val f = fixture()
+    try {
+      f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+      f.vm.uiState.first { it.feeReviewPrepared }
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      val state = f.vm.uiState.value
+      assertFalse(state.feeReviewLoading)
+      assertTrue(state.feeReviewPrepared)
+      assertEquals(1, f.trading.feePreparations)
+      // The other side is another order, so it is reviewed afresh.
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.SELL))
+      f.awaitFees()
+      assertEquals(2, f.trading.feePreparations)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun aQuietReviewStillUnderWayShowsLoadingOnlyOnceTheReviewOpens() = runTest {
+    val f = fixture()
+    try {
+      val gate = CompletableDeferred<Unit>()
+      f.trading.preparationGate = gate
+      f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+      f.trading.preparationStarted.await()
+      assertFalse(f.vm.uiState.value.feeReviewLoading)
+      f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      assertTrue(f.vm.uiState.value.feeReviewLoading)
+      gate.complete(Unit)
+      f.awaitFees()
+      assertTrue(f.vm.uiState.value.feeReviewPrepared)
+      assertEquals(1, f.trading.feePreparations)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun aQuietReviewThatFailsSaysNothingAndIsTriedAgain() = runTest {
+    val f = fixture()
+    try {
+      f.trading.failPreparation = true
+      f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+      // Once the failure lands the same order is reviewed again rather than reused.
+      withContext(Dispatchers.Default) {
+        withTimeout(5_000) {
+          while (f.trading.feePreparations < 2) {
+            f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+            delay(10)
+          }
+        }
+      }
+      assertNull(f.vm.uiState.value.feeReviewError)
+      assertFalse(f.vm.uiState.value.feeReviewLoading)
+      f.trading.failPreparation = false
+      f.prepareFees()
+      assertTrue(f.vm.uiState.value.feeReviewPrepared)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun aQuietReviewThatFailsOnceTheReviewIsOpenOffersRetry() = runTest {
+    val f = fixture()
+    try {
+      val gate = CompletableDeferred<Unit>()
+      f.trading.preparationGate = gate
+      f.trading.failPreparation = true
+      f.vm.onIntent(TradeIntent.PrefetchOrderFees(OrderSide.BUY))
+      f.trading.preparationStarted.await()
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      gate.complete(Unit)
+      f.awaitFees()
+      assertNotNull(f.vm.uiState.value.feeReviewError)
+      assertTrue(f.vm.uiState.value.orderFeesNeedRetry)
+      f.trading.preparationGate = null
+      f.trading.failPreparation = false
+      f.prepareFees()
+      assertTrue(f.vm.uiState.value.feeReviewPrepared)
+      assertEquals(2, f.trading.feePreparations)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
   fun preparationCoalescesTapsIgnoresBookTicksAndCancelsObsoleteInputs() = runTest {
     val f = fixture()
     try {
@@ -573,6 +666,7 @@ class TradeFeeReviewTest {
     var requiredReserve: ULong? = null
     var localFeeReady: Boolean? = null
     var feePreparations = 0
+    var failPreparation = false
     var preparationGate: CompletableDeferred<Unit>? = null
     val preparationStarted = CompletableDeferred<Unit>()
     val preparationCancelled = CompletableDeferred<Unit>()
@@ -590,6 +684,7 @@ class TradeFeeReviewTest {
         preparationCancelled.complete(Unit)
         throw cancelled
       }
+      if (failPreparation) error("Network fees couldn’t be checked.")
       return OrderFeeReview(
         "review",
         actions,

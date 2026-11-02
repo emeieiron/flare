@@ -114,7 +114,11 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
         DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
     }
     if (state.capabilities.sponsoredFees || state.feeReview != null) {
-      DetailRow("Fees", state.orderNetworkFeeText(LocalVenue.current.chain))
+      DetailRow(
+        "Fees",
+        state.orderNetworkFeeText(LocalVenue.current.chain),
+        loading = state.feeReviewLoading,
+      )
     }
     val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
     if (productFees != null && estimate != null) {

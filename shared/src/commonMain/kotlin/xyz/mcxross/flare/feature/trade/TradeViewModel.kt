@@ -176,6 +176,9 @@ sealed interface TradeIntent {
 
   data class PrepareOrderFees(val side: OrderSide) : TradeIntent
 
+  /** Reviews the fee quietly while the order is edited, so its review opens ready. */
+  data class PrefetchOrderFees(val side: OrderSide) : TradeIntent
+
   data class Submit(val side: OrderSide) : TradeIntent
 
   data object DismissOrderReceipt : TradeIntent
@@ -219,6 +222,9 @@ class TradeViewModel(
   private var reviewedOrderInput: OrderInputIdentity? = null
   private var feeReviewJob: Job? = null
   private var feeReviewRevision = 0L
+  /** The input the current or last fee review covers, and when that review finished. */
+  private var feeReviewInput: OrderInputIdentity? = null
+  private var feeReviewAtMs = 0L
   private var feeReviewProfile: String? = null
   private var requestedMarket: String? = null
   private var chartJob: Job? = null
@@ -488,6 +494,7 @@ class TradeViewModel(
           it.copy(limitPriceInput = decimalCharacters(intent.value), orderError = null)
         }
       is TradeIntent.PrepareOrderFees -> prepareOrderFees(intent.side)
+      is TradeIntent.PrefetchOrderFees -> prefetchOrderFees(intent.side)
       is TradeIntent.Submit -> submitOrder(intent.side)
       is TradeIntent.SetLeverage ->
         mutableUiState.update {
@@ -551,6 +558,7 @@ class TradeViewModel(
   private fun invalidateFeeReview() {
     feeReviewRevision++
     reviewedOrderInput = null
+    feeReviewInput = null
     feeReviewJob?.cancel()
     mutableUiState.update {
       it.copy(
@@ -572,25 +580,63 @@ class TradeViewModel(
     )
   }
 
+  private fun prefetchOrderFees(side: OrderSide) {
+    val state = mutableUiState.value
+    if (state.orderBusy || state.feeReviewLoading) return
+    if (feeReviewInput == state.orderInputIdentity(side)) return
+    reviewOrderFees(side, shown = false)
+  }
+
+  /**
+   * Opens the review: with the fee already reviewed for this exact order while it's current, else
+   * once a review now under way lands, else after a new one.
+   */
   private fun prepareOrderFees(side: OrderSide) {
-    if (mutableUiState.value.orderBusy || mutableUiState.value.feeReviewLoading) return
+    val state = mutableUiState.value
+    if (state.orderBusy || state.feeReviewLoading) return
+    if (feeReviewInput == state.orderInputIdentity(side)) {
+      val reviewing = feeReviewJob?.isActive == true
+      // A review that needs a retry, such as one the wallet couldn't pay, is always repeated.
+      val current =
+        state.feeReviewPrepared &&
+          !state.orderFeesNeedRetry &&
+          Clock.System.now().toEpochMilliseconds() - feeReviewAtMs < FEE_REVIEW_REUSE_MS
+      if (reviewing || current) {
+        mutableUiState.update {
+          it.copy(
+            feeReviewLoading = reviewing,
+            orderError = null,
+            lastSide = side,
+            entryNetworkFee = null,
+          )
+        }
+        return
+      }
+    }
+    reviewOrderFees(side, shown = true)
+  }
+
+  private fun reviewOrderFees(side: OrderSide, shown: Boolean) {
     invalidateFeeReview()
     val revision = feeReviewRevision
+    val input = mutableUiState.value.orderInputIdentity(side)
+    feeReviewInput = input
     feeReviewJob = viewModelScope.launch {
-      mutableUiState.update {
-        it.copy(
-          feeReviewLoading = true,
-          orderError = null,
-          lastSide = side,
-          entryNetworkFee = null,
-        )
-      }
+      if (shown)
+        mutableUiState.update {
+          it.copy(
+            feeReviewLoading = true,
+            orderError = null,
+            lastSide = side,
+            entryNetworkFee = null,
+          )
+        }
       try {
-        val input = mutableUiState.value.orderInputIdentity(side)
         val actions = orderActions(mutableUiState.value, side)
         val review = withContext(Dispatchers.Default) { trading.prepareOrderFees(actions) }
         if (revision == feeReviewRevision) {
           reviewedOrderInput = input
+          feeReviewAtMs = Clock.System.now().toEpochMilliseconds()
           mutableUiState.update {
             it.copy(
               feeReview = review,
@@ -601,14 +647,18 @@ class TradeViewModel(
         }
       } catch (error: Exception) {
         if (error is kotlinx.coroutines.CancellationException) throw error
-        if (revision == feeReviewRevision)
-          mutableUiState.update {
-            it.copy(
-              feeReviewLoading = false,
-              feeReviewError =
-                actionFailure(error.message, "Network fees could not be checked. Try again."),
-            )
-          }
+        if (revision == feeReviewRevision) {
+          // A quiet review that fails is simply tried again when the review opens.
+          if (!mutableUiState.value.feeReviewLoading) feeReviewInput = null
+          else
+            mutableUiState.update {
+              it.copy(
+                feeReviewLoading = false,
+                feeReviewError =
+                  actionFailure(error.message, "Network fees could not be checked. Try again."),
+              )
+            }
+        }
       }
     }
   }
@@ -885,3 +935,6 @@ private const val OLDER_CANDLES_ATTEMPTS = 3
 
 /** Enough history to pan through without slowing the chart down as it keeps growing. */
 private const val MAX_CHART_CANDLES = 10_000
+
+/** A fee reviewed while the order was edited stays usable this long once its review opens. */
+private const val FEE_REVIEW_REUSE_MS = 30_000L

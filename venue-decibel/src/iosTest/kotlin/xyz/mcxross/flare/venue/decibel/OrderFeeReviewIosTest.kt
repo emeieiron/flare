@@ -368,6 +368,21 @@ class OrderFeeReviewIosTest {
   }
 
   @Test
+  fun reviewsPreparedOnDifferentScreensAreEachConfirmableOnce() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      val order = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      val close = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      assertNotEquals(order.reviewId, close.reviewId)
+      f.trading.confirmedOrderFees(order, true, VaultPrompt("Order", "Confirm")) {}
+      f.trading.confirmedOrderFees(close, true, VaultPrompt("Close", "Confirm")) {}
+      assertFailsWith<IllegalStateException> {
+        f.trading.confirmedOrderFees(order, true, VaultPrompt("Order", "Confirm")) {}
+      }
+    }
+  }
+
+  @Test
   fun aCloseFeeReviewTakesTwoNetworkRoundTrips() = runTest {
     fixture { f ->
       f.requireConfiguration = false
