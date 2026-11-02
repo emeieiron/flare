@@ -44,7 +44,6 @@ import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
-import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.rememberFlareShimmer
@@ -149,35 +148,6 @@ fun OrdersScreen(
       }
     unavailableNotice?.let {
       UnavailableNotice(it, state.setupNeed, Modifier.padding(bottom = 12.dp))
-    }
-    state.selfPayEstimate?.let { estimate ->
-      val chain = LocalVenue.current.chain
-      ActionNotice(
-        "Flare can’t cover the network fee right now. Your wallet would pay about " +
-          "${chain.feeAmount(estimate)}.",
-        Modifier.padding(bottom = 8.dp),
-      )
-      FlareButton(
-        "Pay the fee and continue",
-        { onIntent(OrdersIntent.ConfirmSelfPay) },
-        Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        enabled = !state.busy,
-        style = FlareButtonStyle.OUTLINE,
-      )
-      if (state.apiWalletNeedsTopUp)
-        state.suggestedTopUp?.let { amount ->
-          ActionNotice(
-            "This device needs ${chain.feeAmount(amount)} to pay the fee itself.",
-            Modifier.padding(bottom = 8.dp),
-          )
-          FlareButton(
-            "Send ${chain.feeToken} from your wallet",
-            { onIntent(OrdersIntent.TopUpApiWallet) },
-            Modifier.fillMaxWidth().padding(bottom = 12.dp),
-            enabled = !state.busy,
-            style = FlareButtonStyle.OUTLINE,
-          )
-        }
     }
     if (state.readAccessError != null && !hasReadData) return@Column
     when (state.section) {

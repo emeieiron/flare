@@ -39,6 +39,8 @@ import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.shortAddress
+import xyz.mcxross.flare.feature.trade.feeText
+import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.venue.model.ActionKind
 import xyz.mcxross.flare.venue.model.Position
 
@@ -50,6 +52,11 @@ fun PositionRoute(market: String, onBack: () -> Unit, viewModel: PortfolioViewMo
   LaunchedEffect(lifecycleOwner, viewModel) {
     lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
       viewModel.refreshWhileVisible()
+    }
+  }
+  LaunchedEffect(lifecycleOwner, viewModel, market) {
+    lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      viewModel.followPositionBook(market)
     }
   }
   // Loads this position's saved exits into the editor, and lets them go on the way out.
@@ -164,7 +171,6 @@ private fun PositionDetails(
   )
   if (state.closingMarket == null) {
     state.actionError?.let { ActionNotice(it, Modifier.padding(top = 12.dp), NoticeTone.ALERT) }
-    PositionFeeRecovery(state, onIntent)
   }
 }
 
@@ -193,7 +199,8 @@ fun ClosePositionSheet(
   val pnl = mark?.let { price ->
     position.size.toDoubleOrNull()?.let { (price - position.entryPrice) * it }
   }
-  val feeEstimate = state.selfPayEstimate(state.positionTransaction)?.takeIf { closing }
+  LaunchedEffect(position.marketId) { onIntent(PortfolioIntent.PrepareClose(position.marketId)) }
+  val review = state.closeReview
   FlareConfirmSheet(
     title = "Close this position?",
     message =
@@ -201,67 +208,24 @@ fun ClosePositionSheet(
         "the market price" +
         (mark?.let { ", about ${formatPrice(it)} each" } ?: "") +
         ".",
-    confirmLabel = if (feeEstimate != null) "Pay the fee and close" else "Close position",
-    onConfirm = {
-      onIntent(
-        if (feeEstimate != null) PortfolioIntent.ConfirmPositionSelfPay
-        else PortfolioIntent.ClosePosition(position.marketId),
-      )
-    },
+    confirmLabel = "Close position",
+    onConfirm = { onIntent(PortfolioIntent.ClosePosition(position.marketId)) },
     onDismiss = {
       onIntent(PortfolioIntent.CancelClose)
       onDismiss()
     },
-    dismissLabel = "Keep it open",
+    dismissLabel = null,
     working = state.busy && closing,
-    error = state.actionError?.takeIf { closing },
+    error = state.actionError?.takeIf { closing } ?: review?.paymentError,
   ) {
-    pnl?.let {
-      Column(Modifier.padding(top = 8.dp)) { DetailRow("Estimated P&L", formatSignedBalance(it)) }
+    Column(Modifier.padding(top = 8.dp)) {
+      pnl?.let { DetailRow("Estimated P&L", formatSignedBalance(it)) }
+      if (state.capabilities.sponsoredFees || review != null)
+        DetailRow(
+          "Fees",
+          review?.feeText(LocalVenue.current.chain) ?: "—",
+          loading = review == null && state.closeReviewLoading,
+        )
     }
-    if (closing) PositionFeeRecovery(state, onIntent, offerSelfPay = false)
   }
-}
-
-/**
- * What to do when Flare can't cover a position transaction's network fee: pay it from the wallet,
- * or send this device enough of the fee token to pay it. The close sheet offers self-pay on its own
- * button.
- */
-@Composable
-private fun PositionFeeRecovery(
-  state: PortfolioUiState,
-  onIntent: (PortfolioIntent) -> Unit,
-  offerSelfPay: Boolean = true,
-) {
-  val estimate = state.selfPayEstimate(state.positionTransaction) ?: return
-  val chain = LocalVenue.current.chain
-  ActionNotice(
-    "Flare can’t cover the network fee right now. Your wallet would pay about " +
-      "${chain.feeAmount(estimate)}.",
-    Modifier.padding(top = 12.dp),
-  )
-  if (offerSelfPay) {
-    FlareButton(
-      "Pay the fee and continue",
-      { onIntent(PortfolioIntent.ConfirmPositionSelfPay) },
-      Modifier.fillMaxWidth().padding(top = 8.dp),
-      enabled = !state.busy,
-      style = FlareButtonStyle.OUTLINE,
-    )
-  }
-  if (state.apiWalletNeedsTopUp)
-    state.suggestedTopUp?.let { amount ->
-      ActionNotice(
-        "This device needs ${chain.feeAmount(amount)} to pay the fee itself.",
-        Modifier.padding(top = 12.dp),
-      )
-      FlareButton(
-        "Send ${chain.feeToken} from your wallet",
-        { onIntent(PortfolioIntent.TopUpApiWallet) },
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        enabled = !state.busy,
-        style = FlareButtonStyle.OUTLINE,
-      )
-    }
 }

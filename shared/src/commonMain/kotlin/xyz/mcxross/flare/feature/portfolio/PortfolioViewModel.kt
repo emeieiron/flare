@@ -2,6 +2,8 @@ package xyz.mcxross.flare.feature.portfolio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlin.time.Clock
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import xyz.mcxross.flare.core.decimalUnits
 import xyz.mcxross.flare.core.runSuspendCatching
@@ -31,6 +34,7 @@ import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.FeePayment
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.RewardsRepository
 import xyz.mcxross.flare.data.SetupNeed
@@ -40,14 +44,15 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.data.failureMessage
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.gatedBy
-import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.feature.funding.FeeResolver
+import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
@@ -140,13 +145,13 @@ data class PortfolioUiState(
   val takeProfitInput: String = "",
   val stopLossInput: String = "",
   val positionTransaction: ActionState? = null,
-  /** The position a close is running for, or waiting on a fee decision for. */
+  /** The position a close is running for. */
   val closingMarket: String? = null,
   /** Set once a close lands, until the screen that asked for it has reacted. */
   val closedMarket: String? = null,
-  val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUp: ULong? = null,
-  val topUpTransaction: ActionState? = null,
+  /** The network fee of the close being confirmed; null until reviewed or where none applies. */
+  val closeReview: OrderFeeReview? = null,
+  val closeReviewLoading: Boolean = false,
   val chartPoints: List<SeriesPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
@@ -252,13 +257,6 @@ data class PortfolioUiState(
       FundingMode.TO_PERPS -> spotUsdc
     }
 
-  /**
-   * What the wallet would pay for [transaction]'s network fee once the venue's sponsor declined it;
-   * null when it wasn't declined, or the venue has no sponsored fees.
-   */
-  fun selfPayEstimate(transaction: ActionState?): ULong? =
-    if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
-    else null
 }
 
 sealed interface PortfolioIntent {
@@ -304,6 +302,9 @@ sealed interface PortfolioIntent {
 
   data object DismissPositionManagement : PortfolioIntent
 
+  /** Reviews the network fee of closing [market] while its confirmation is open. */
+  data class PrepareClose(val market: String) : PortfolioIntent
+
   /** Sells or buys back the whole position in [market] at the market price. */
   data class ClosePosition(val market: String) : PortfolioIntent
 
@@ -318,10 +319,6 @@ sealed interface PortfolioIntent {
   data class ChangeStopLoss(val value: String) : PortfolioIntent
 
   data object SubmitTpSl : PortfolioIntent
-
-  data object ConfirmPositionSelfPay : PortfolioIntent
-
-  data object TopUpApiWallet : PortfolioIntent
 
   data class OpenVaultAction(val vault: VaultSummary, val mode: VaultActionMode) : PortfolioIntent
 
@@ -373,7 +370,10 @@ class PortfolioViewModel(
   private var collateralKey: Pair<String, String?>? = null
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
-  private var lastPositionAction: TradeAction? = null
+  private var closeReviewJob: Job? = null
+  private var closeReviewMarket: String? = null
+  private var reviewedClose: ReviewedClose? = null
+  private val liveBookMarket = MutableStateFlow<String?>(null)
   private var fundingContext: FundingSwapContext? = null
   private var fundingWarmJob: Job? = null
   private var fundingRefreshJob: Job? = null
@@ -771,8 +771,12 @@ class PortfolioViewModel(
             actionError = null,
           )
         }
+        // The close's fee is usually ready by the time its confirmation opens.
+        prepareClose(intent.market)
       }
-      PortfolioIntent.DismissPositionManagement ->
+      PortfolioIntent.DismissPositionManagement -> {
+        closeReviewJob?.cancel()
+        reviewedClose = null
         local.update {
           it.copy(
             managedPositionMarket = null,
@@ -780,13 +784,17 @@ class PortfolioViewModel(
             stopLossInput = "",
             positionTransaction = null,
             actionError = null,
+            closeReview = null,
+            closeReviewLoading = false,
           )
         }
+      }
+      is PortfolioIntent.PrepareClose -> showCloseFee(intent.market)
       is PortfolioIntent.ClosePosition -> {
         local.update {
           it.copy(closingMarket = intent.market, closedMarket = null, positionTransaction = null)
         }
-        closePosition(intent.market, FeePayment.SPONSORED)
+        closePosition(intent.market)
       }
       PortfolioIntent.CancelClose ->
         if (!local.value.busy) {
@@ -803,10 +811,7 @@ class PortfolioViewModel(
         local.update {
           it.copy(stopLossInput = decimalCharacters(intent.value), positionTransaction = null)
         }
-      PortfolioIntent.SubmitTpSl -> setTpSl(FeePayment.SPONSORED)
-      PortfolioIntent.ConfirmPositionSelfPay ->
-        lastPositionAction?.let { executePositionAction(it, FeePayment.SELF_PAY) }
-      PortfolioIntent.TopUpApiWallet -> topUpApiWallet()
+      PortfolioIntent.SubmitTpSl -> setTpSl()
       is PortfolioIntent.OpenVaultAction ->
         local.update {
           it.copy(
@@ -841,38 +846,122 @@ class PortfolioViewModel(
     }
   }
 
-  private fun closePosition(market: String, feePayment: FeePayment) =
-    launchAction("Your position stayed open.") {
-      val position =
-        uiState.value.account.positions.firstOrNull { it.marketId == market }
-          ?: error("This position is no longer open")
-      val quote = marketQuote(position.marketId)
-      marketDetails.refresh(position.marketId)
-      val details = marketDetails.details.value
-      require(!details.stale && details.orderBook != null) {
-        "A live order book is required to close a position"
+  private class ReviewedClose(
+    val market: String,
+    val action: TradeAction.PlaceOrder,
+    val review: OrderFeeReview,
+    val atMs: Long,
+  ) {
+    fun fresh() = Clock.System.now().toEpochMilliseconds() - atMs < CLOSE_REVIEW_MS
+  }
+
+  /** Shows the close's fee: the one already reviewed while it's current, else a fresh review. */
+  private fun showCloseFee(market: String) {
+    val reviewed = reviewedClose
+    if (reviewed != null && reviewed.market == market && reviewed.fresh()) {
+      local.update { it.copy(closeReview = reviewed.review, closeReviewLoading = false) }
+    } else if (closeReviewJob?.isActive != true || closeReviewMarket != market) {
+      prepareClose(market)
+    }
+  }
+
+  /** The close's fee shows before it's confirmed; a review that fails just leaves the row empty. */
+  private fun prepareClose(market: String) {
+    closeReviewJob?.cancel()
+    closeReviewMarket = market
+    reviewedClose = null
+    local.update {
+      it.copy(closeReview = null, closeReviewLoading = capabilities.sponsoredFees)
+    }
+    if (!capabilities.sponsoredFees) return
+    closeReviewJob =
+      viewModelScope.launch {
+        val reviewed = runSuspendCatching { reviewClose(market) }.getOrNull()
+        reviewedClose = reviewed
+        local.update { it.copy(closeReview = reviewed?.review, closeReviewLoading = false) }
       }
-      val slippage = preferences.values.first().slippageBps
-      val order =
-        OrderRequest(
-          marketId = position.marketId,
-          side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
-          type = OrderType.MARKET,
-          size = position.absoluteSize,
-          reduceOnly = true,
-          slippageBps = slippage,
-        )
-      val checked =
-        (quote.market.rules.check(order, details.orderBook) as? OrderCheck.Valid)?.order
-          ?: error("The exact position size cannot be aligned to the current market precision")
-      val subaccount = checkNotNull(uiState.value.account.account)
-      executePositionActionInternal(
-        TradeAction.PlaceOrder(subaccount, quote.market, checked),
-        feePayment,
-      )
+  }
+
+  private suspend fun reviewClose(market: String): ReviewedClose? {
+    val review =
+      withContext(Dispatchers.Default) { trading.prepareOrderFees { listOf(closeOrder(market)) } }
+        ?: return null
+    val action = review.actions.single() as TradeAction.PlaceOrder
+    return ReviewedClose(market, action, review, Clock.System.now().toEpochMilliseconds())
+  }
+
+  /**
+   * Closes with the reviewed order while its price is still current, else reviews again first.
+   * Flare covers the fee when it can; otherwise the wallet pays without asking again.
+   */
+  private fun closePosition(market: String) =
+    launchAction("Your position stayed open.") {
+      // A review already under way is about to be current, so it's awaited, not repeated.
+      if (closeReviewMarket == market) closeReviewJob?.join() else closeReviewJob?.cancel()
+      val reviewed =
+        reviewedClose?.takeIf { it.market == market && it.fresh() }
+          ?: if (capabilities.sponsoredFees) {
+            local.update { it.copy(closeReviewLoading = true) }
+            try {
+              runSuspendCatching { reviewClose(market) }.getOrNull()
+            } finally {
+              local.update { it.copy(closeReviewLoading = false) }
+            }
+          } else null
+      reviewedClose = null
+      if (reviewed == null) {
+        executePositionActionInternal(closeOrder(market), FeePayment.WALLET_FALLBACK)
+        return@launchAction
+      }
+      val review = reviewed.review
+      local.update { it.copy(closeReview = review) }
+      review.paymentError?.let { error(it) }
+      trading.confirmedOrderFees(
+        review,
+        review.canSelfPay,
+        VaultPrompt("Close position", "Confirm your identity"),
+      ) {
+        executePositionActionInternal(reviewed.action, FeePayment.SPONSORED)
+      }
     }
 
-  private fun setTpSl(feePayment: FeePayment) =
+  /** The whole position in [market], sold or bought back at the market within the slippage limit. */
+  private suspend fun closeOrder(market: String): TradeAction.PlaceOrder {
+    val position =
+      uiState.value.account.positions.firstOrNull { it.marketId == market }
+        ?: error("This position is no longer open")
+    val quote = marketQuote(position.marketId)
+    // A book the position screen keeps live is already current; any other is read now.
+    val current = marketDetails.details.value
+    if (
+      liveBookMarket.value != market ||
+        current.market != market ||
+        current.stale ||
+        current.orderBook == null
+    )
+      marketDetails.refresh(position.marketId)
+    val details = marketDetails.details.value
+    require(!details.stale && details.orderBook != null) {
+      "A live order book is required to close a position"
+    }
+    val slippage = preferences.values.first().slippageBps
+    val order =
+      OrderRequest(
+        marketId = position.marketId,
+        side = if (position.isLong) OrderSide.SELL else OrderSide.BUY,
+        type = OrderType.MARKET,
+        size = position.absoluteSize,
+        reduceOnly = true,
+        slippageBps = slippage,
+      )
+    val checked =
+      (quote.market.rules.check(order, details.orderBook) as? OrderCheck.Valid)?.order
+        ?: error("The exact position size cannot be aligned to the current market precision")
+    val subaccount = checkNotNull(uiState.value.account.account)
+    return TradeAction.PlaceOrder(subaccount, quote.market, checked)
+  }
+
+  private fun setTpSl() =
     launchAction("Your exits weren’t changed.") {
       local.update { it.copy(closingMarket = null) }
       val position = managedPosition()
@@ -897,13 +986,8 @@ class PortfolioViewModel(
           stopLossTrigger = stopLoss,
           stopLossLimit = stopLoss,
         ),
-        feePayment,
+        FeePayment.WALLET_FALLBACK,
       )
-    }
-
-  private fun executePositionAction(action: TradeAction, feePayment: FeePayment) =
-    launchAction("Your position wasn’t updated.") {
-      executePositionActionInternal(action, feePayment)
     }
 
   private suspend fun executePositionActionInternal(
@@ -911,8 +995,6 @@ class PortfolioViewModel(
     feePayment: FeePayment,
   ) {
     accounts.refresh()
-    lastPositionAction = action
-    local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
     trading
       .execute(
         action = action,
@@ -929,41 +1011,10 @@ class PortfolioViewModel(
         }
         accounts.refresh()
       }
-      is ActionState.Failed -> {
-        if (terminal.selfPay == null) error(terminal.message)
-        // Venues without a fee token to send never offer a top-up.
-        if (capabilities.networkFeeTopUp) {
-          trading
-            .tradingKeyTopUpFor(terminal, wallets.profile.first(), chain.minimumFeeTopUp)
-            ?.let { topUp ->
-              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
-            }
-        }
-      }
+      is ActionState.Failed -> error(terminal.failureMessage())
       else -> Unit
     }
   }
-
-  private fun topUpApiWallet() =
-    launchAction("The network fee wasn’t covered.") {
-      val amount = local.value.suggestedTopUp ?: error("No network-fee top-up is required")
-      trading
-        .topUpTradingKey(
-          amount,
-          VaultPrompt(
-            "Cover network fees",
-            "Confirm your identity",
-            requireFreshAuthorization = true,
-          ),
-        )
-        .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
-      when (val terminal = local.value.topUpTransaction) {
-        is ActionState.Committed ->
-          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
-        is ActionState.Failed -> error(terminal.message)
-        else -> Unit
-      }
-    }
 
   private suspend fun marketQuote(market: String) =
     (markets.catalog.value.quotes.firstOrNull { it.market.id == market }
@@ -1146,6 +1197,17 @@ class PortfolioViewModel(
   }
 
   /** Retry only reads, and only while the route is visible. Mutations never enter this loop. */
+  /** Keeps [market]'s book live while its position is on screen, so closing needn't wait for it. */
+  suspend fun followPositionBook(market: String) {
+    try {
+      liveBookMarket.value = market
+      marketDetails.refresh(market)
+      marketDetails.connectLive(market)
+    } finally {
+      liveBookMarket.compareAndSet(market, null)
+    }
+  }
+
   suspend fun refreshWhileVisible() {
     fundingSwaps.setVisible(true)
     fundingFees.setVisible(true)
@@ -1459,3 +1521,6 @@ private fun changedExit(input: String, current: Double?): String? {
     return null
   return entered
 }
+
+/** A reviewed close keeps its price bound this long before confirming reviews it again. */
+private const val CLOSE_REVIEW_MS = 30_000L

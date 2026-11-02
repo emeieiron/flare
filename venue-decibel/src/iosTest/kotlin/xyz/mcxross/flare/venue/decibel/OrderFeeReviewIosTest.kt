@@ -199,7 +199,7 @@ class OrderFeeReviewIosTest {
       assertTrue(review.canSelfPay)
       assertEquals(7_000uL, review.estimatedFeeOctas)
       assertEquals(10_000_000uL, review.maximumTotalOctas)
-      assertEquals(4, f.simulated.size)
+      assertEquals(3, f.simulated.size)
       assertEquals(1, f.reviewEntrySimulations)
       assertFalse("authorize" in f.events)
       assertFalse("sign" in f.events)
@@ -367,6 +367,79 @@ class OrderFeeReviewIosTest {
     }
   }
 
+  @Test
+  fun aCloseFeeReviewTakesTwoNetworkRoundTrips() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      f.sponsorshipAvailable = false
+      f.networkDelayMs = 100
+      val started = testScheduler.currentTime
+      val review = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      val elapsed = testScheduler.currentTime - started
+      println("close fee review: ${elapsed}ms of simulated network time")
+      assertEquals(5_000uL, review.estimatedFeeOctas)
+      assertTrue(review.canSelfPay)
+      assertTrue(elapsed <= 200, "took ${elapsed}ms")
+    }
+  }
+
+  @Test
+  fun aDeclinedTradingFeeIsPaidByTheOwnerWithinASimulatedBudget() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      val states = f.walletFallback()
+      assertIs<ActionState.Committed>(states.last())
+      val signed = f.submitted.single()
+      val auth = assertIs<TransactionAuthenticator.FeePayer>(signed.authenticator)
+      assertEquals(AccountAddress.ONE, auth.feePayerAddress)
+      assertEquals(2_000uL, signed.rawTxn.maxGasAmount)
+      assertEquals(1, f.events.count { it == "sponsor" })
+      assertEquals(1, f.events.count { it == "authorize" })
+    }
+  }
+
+  @Test
+  fun theTradingKeyPaysOnlyWhenTheOwnerCannot() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      f.ownerBalance = "0"
+      f.apiBalance = "400000"
+      assertIs<ActionState.Committed>(f.walletFallback().last())
+      val signed = f.submitted.single()
+      assertIs<TransactionAuthenticator.Ed25519>(signed.authenticator)
+      assertEquals(2_000uL, signed.rawTxn.maxGasAmount)
+    }
+  }
+
+  @Test
+  fun aFeeNobodyCanPayIsNamedOnceAndNothingIsSent() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      f.ownerBalance = "0"
+      val failed = assertIs<ActionState.Failed>(f.walletFallback().last())
+      assertEquals("Add APT to cover network fees.", failed.message)
+      assertNull(failed.selfPay)
+      assertTrue(failed.definitelyNotSubmitted)
+      assertTrue(f.submitted.isEmpty())
+    }
+  }
+
+  @Test
+  fun sponsoredOnlyActionsNeverFallBackToTheWallet() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      val failed =
+        assertIs<ActionState.Failed>(
+          f.trading
+            .execute(ACTIONS.last(), VaultPrompt("Auto trading", "Foreground authorization"))
+            .toList()
+            .last(),
+        )
+      assertNotNull(failed.selfPay)
+      assertTrue(f.submitted.isEmpty())
+    }
+  }
+
   private suspend fun fixture(block: suspend (OrderFeeFixture) -> Unit) {
     val f = OrderFeeFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try {
@@ -451,6 +524,7 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
   var sequenceReads = 0
   var checkParallelMetadata = false
   var metadataDelayMs = 0L
+  var networkDelayMs = 0L
   val gasStarted = CompletableDeferred<Unit>()
   val sequenceStarted = CompletableDeferred<Unit>()
   var sponsorError: AptosError? = AptosError.Api("not accepted", errorCode = "gas_station_http_404")
@@ -471,6 +545,7 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
         MockEngineConfig().apply {
           this.dispatcher = dispatcher
           addHandler { request ->
+            delay(networkDelayMs)
             val path = request.url.encodedPath
             val body =
               when {
@@ -787,6 +862,15 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
       states
     }
   }
+
+  suspend fun walletFallback(): List<ActionState> =
+    trading
+      .execute(
+        ACTIONS.last(),
+        VaultPrompt("Close position", "Confirm your identity"),
+        FeePayment.WALLET_FALLBACK,
+      )
+      .toList()
 
   private fun response(
     hash: String,

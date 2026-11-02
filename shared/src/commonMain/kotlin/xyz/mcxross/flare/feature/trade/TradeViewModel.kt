@@ -115,17 +115,13 @@ data class TradeUiState(
   val twapFrequencyMinutesInput: String = "1",
 ) {
   val orderFeePaymentBlocked: Boolean
-    get() = feeReview?.let { it.sponsorshipAvailable == false && !it.canSelfPay } == true
+    get() = orderFeePaymentError != null
 
   val orderFeesNeedRetry: Boolean
     get() = orderFeePaymentBlocked || feeReviewError != null
 
   val orderFeePaymentError: String?
-    get() =
-      if (!orderFeePaymentBlocked) null
-      else if (feeReview?.localFeeReady == false || feeReview?.feePayerBalance == null)
-        "Couldn’t prepare network fees. Try again."
-      else "Add APT to cover network fees."
+    get() = feeReview?.paymentError
 
   /** The fee estimate retained on a definite sponsorship rejection. */
   val selfPayEstimate: ULong?

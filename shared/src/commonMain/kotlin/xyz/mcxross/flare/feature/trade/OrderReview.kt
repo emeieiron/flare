@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
+import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
@@ -28,11 +29,23 @@ internal fun TradeUiState.orderNetworkFeeText(chain: VenueChain): String {
   // Entry-stage fees already aggregate all preceding configuration phases.
   if (entryFee != null)
     return if (entryFee.covered) "Covered by Flare" else "≈ ${chain.feeAmount(entryFee.estimate)}"
-  if (review == null) return "—"
-  if (review.sponsorshipAvailable != false) return "Covered by Flare"
-  return review.estimatedFeeOctas?.let { "≈ ${chain.feeAmount(it)}" }
-    ?: "Up to ${chain.feeAmount(review.maximumTotalOctas)}"
+  return review?.feeText(chain) ?: "—"
 }
+
+/** One reviewed fee: covered by Flare, or what the wallet would pay. */
+internal fun OrderFeeReview.feeText(chain: VenueChain): String {
+  if (sponsorshipAvailable != false) return "Covered by Flare"
+  return estimatedFeeOctas?.let { "≈ ${chain.feeAmount(it)}" }
+    ?: "Up to ${chain.feeAmount(maximumTotalOctas)}"
+}
+
+/** Null unless Flare can't cover the fee and the wallet can't pay it either. */
+internal val OrderFeeReview.paymentError: String?
+  get() =
+    if (sponsorshipAvailable != false || canSelfPay) null
+    else if (localFeeReady == false || feePayerBalance == null)
+      "Couldn’t prepare network fees. Try again."
+    else "Add APT to cover network fees."
 
 /**
  * "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and

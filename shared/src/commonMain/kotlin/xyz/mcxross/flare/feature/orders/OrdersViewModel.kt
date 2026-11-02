@@ -36,7 +36,7 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.data.gatedBy
-import xyz.mcxross.flare.data.tradingKeyTopUpFor
+import xyz.mcxross.flare.data.failureMessage
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
@@ -75,24 +75,9 @@ data class OrdersUiState(
   val error: String? = null,
   val readUnavailable: Boolean = false,
   val readAccessError: String? = null,
-  val lastCancelMarket: String? = null,
   val lastCancelOrderId: String? = null,
-  val lastCancelIsTpSl: Boolean = false,
-  val lastCancelTwapMarket: String? = null,
   val lastCancelTwapId: String? = null,
-  val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUp: ULong? = null,
-  val topUpTransaction: ActionState? = null,
-) {
-  /**
-   * What the wallet would pay for the last action's network fee once the venue's sponsor declined
-   * it; null when it wasn't declined, or the venue has no sponsored fees.
-   */
-  val selfPayEstimate: ULong?
-    get() =
-      if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
-      else null
-}
+)
 
 sealed interface OrdersIntent {
   data class SelectSection(val section: OrdersSection) : OrdersIntent
@@ -104,10 +89,6 @@ sealed interface OrdersIntent {
   data class CancelTwap(val market: String, val twapId: String) : OrdersIntent
 
   data object CancelAll : OrdersIntent
-
-  data object ConfirmSelfPay : OrdersIntent
-
-  data object TopUpApiWallet : OrdersIntent
 
   data object RefreshTwaps : OrdersIntent
 
@@ -123,7 +104,6 @@ class OrdersViewModel(
   private val setupGate: AccountSetupGate? = null,
 ) : ViewModel() {
   private val capabilities = venue.capabilities
-  private val minimumFeeTopUp = venue.chain.minimumFeeTopUp
   private val local = MutableStateFlow(OrdersUiState(capabilities = capabilities))
 
   init {
@@ -257,28 +237,9 @@ class OrdersViewModel(
         }
       }
       OrdersIntent.LoadMore -> loadMore()
-      is OrdersIntent.Cancel ->
-        cancel(intent.market, intent.orderId, intent.isTpSl, FeePayment.SPONSORED)
-      is OrdersIntent.CancelTwap -> cancelTwap(intent.market, intent.twapId, FeePayment.SPONSORED)
+      is OrdersIntent.Cancel -> cancel(intent.market, intent.orderId, intent.isTpSl)
+      is OrdersIntent.CancelTwap -> cancelTwap(intent.market, intent.twapId)
       OrdersIntent.CancelAll -> cancelAll()
-      OrdersIntent.ConfirmSelfPay -> {
-        val state = local.value
-        if (state.lastCancelMarket != null && state.lastCancelOrderId != null) {
-          cancel(
-            state.lastCancelMarket,
-            state.lastCancelOrderId,
-            state.lastCancelIsTpSl,
-            FeePayment.SELF_PAY,
-          )
-        } else if (state.lastCancelTwapMarket != null && state.lastCancelTwapId != null) {
-          cancelTwap(
-            state.lastCancelTwapMarket,
-            state.lastCancelTwapId,
-            FeePayment.SELF_PAY,
-          )
-        }
-      }
-      OrdersIntent.TopUpApiWallet -> topUpApiWallet()
       OrdersIntent.RefreshTwaps -> refreshTwaps()
     }
   }
@@ -297,19 +258,11 @@ class OrdersViewModel(
       accounts.loadMoreHistory(kind)
     }
 
-  private fun cancel(market: String, orderId: String, isTpSl: Boolean, feePayment: FeePayment) =
+  private fun cancel(market: String, orderId: String, isTpSl: Boolean) =
     launchAction("Your order is still open.") {
       accounts.refresh()
       val subaccount = checkNotNull(uiState.value.account.account)
-      local.update {
-        it.copy(
-          lastCancelMarket = market,
-          lastCancelOrderId = orderId,
-          lastCancelIsTpSl = isTpSl,
-          apiWalletNeedsTopUp = false,
-          suggestedTopUp = null,
-        )
-      }
+      local.update { it.copy(lastCancelOrderId = orderId) }
       val isSpot =
         markets.catalog.value.quotes.firstOrNull { it.market.id == market }?.market?.kind ==
           MarketKind.SPOT
@@ -326,7 +279,7 @@ class OrdersViewModel(
             )
           },
           VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity"),
-          feePayment,
+          FeePayment.WALLET_FALLBACK,
         )
         .collect { state -> local.update { it.copy(transaction = state) } }
       when (val state = local.value.transaction) {
@@ -334,71 +287,27 @@ class OrdersViewModel(
           accounts.refresh()
           accounts.refreshHistory()
         }
-        is ActionState.Failed -> {
-          if (state.selfPay == null) error(state.message)
-          if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp
-              ->
-              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
-            }
-          }
-        }
+        is ActionState.Failed -> error(state.failureMessage())
         else -> Unit
       }
     }
 
-  private fun topUpApiWallet() =
-    launchAction("The network fee wasn’t covered.") {
-      val amount = local.value.suggestedTopUp ?: error("No network-fee top-up is required")
-      trading
-        .topUpTradingKey(
-          amount,
-          VaultPrompt(
-            "Cover network fees",
-            "Confirm your identity",
-            requireFreshAuthorization = true,
-          ),
-        )
-        .collect { transaction -> local.update { it.copy(topUpTransaction = transaction) } }
-      when (val terminal = local.value.topUpTransaction) {
-        is ActionState.Committed ->
-          local.update { it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null) }
-        is ActionState.Failed -> error(terminal.message)
-        else -> Unit
-      }
-    }
-
-  private fun cancelTwap(market: String, twapId: String, feePayment: FeePayment) =
+  private fun cancelTwap(market: String, twapId: String) =
     launchAction("Your TWAP order wasn’t cancelled.") {
       val subaccount = checkNotNull(uiState.value.account.account)
-      local.update {
-        it.copy(
-          lastCancelTwapMarket = market,
-          lastCancelTwapId = twapId,
-          apiWalletNeedsTopUp = false,
-          suggestedTopUp = null,
-        )
-      }
+      local.update { it.copy(lastCancelTwapId = twapId) }
       trading
         .execute(
           TradeAction.CancelTwapOrder(subaccount, market, twapId),
           VaultPrompt("Cancel TWAP order", "Confirm your identity"),
-          feePayment,
+          FeePayment.WALLET_FALLBACK,
         )
         .collect { state -> local.update { it.copy(transaction = state) } }
       when (val state = local.value.transaction) {
         is ActionState.Committed -> {
           refreshTwaps()
         }
-        is ActionState.Failed -> {
-          if (state.selfPay == null) error(state.message)
-          if (capabilities.networkFeeTopUp) {
-            trading.tradingKeyTopUpFor(state, uiState.value.profile, minimumFeeTopUp)?.let { topUp
-              ->
-              local.update { it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp) }
-            }
-          }
-        }
+        is ActionState.Failed -> error(state.failureMessage())
         else -> Unit
       }
     }
@@ -417,12 +326,12 @@ class OrdersViewModel(
               openOrders.map { OpenOrderRef(it.marketId, it.orderId) },
             ),
             VaultPrompt("Cancel all orders", "Confirm your identity"),
-            FeePayment.SPONSORED,
+            FeePayment.WALLET_FALLBACK,
           )
           .collect { state -> local.update { it.copy(transaction = state) } }
         accounts.refresh()
         accounts.refreshHistory()
-        (local.value.transaction as? ActionState.Failed)?.let { error(it.message) }
+        (local.value.transaction as? ActionState.Failed)?.let { error(it.failureMessage()) }
         return@launchAction
       }
       trading.confirmedAction(VaultPrompt("Cancel all orders", "Confirm your identity")) {
@@ -447,7 +356,7 @@ class OrdersViewModel(
             .execute(
               action,
               VaultPrompt("Cancel order", "Confirm your identity"),
-              FeePayment.SPONSORED,
+              FeePayment.WALLET_FALLBACK,
             )
             .collect { state -> local.update { it.copy(transaction = state) } }
         }

@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -41,6 +42,7 @@ import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.FeePayment
+import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketDetailsRepository
@@ -65,6 +67,8 @@ import xyz.mcxross.flare.data.WalletRepository
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
+import xyz.mcxross.flare.feature.trade.feeText
+import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.VenueCapabilities
@@ -82,6 +86,8 @@ import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
+import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
@@ -300,8 +306,27 @@ class PortfolioViewModelTest {
   private class FakeTradingRepository(
     private val spotBalances: Map<String, Double> = emptyMap(),
     private val outcome: ActionState? = null,
+    private val review: OrderFeeReview? = null,
   ) : TradingRepository {
     val executed = mutableListOf<TradeAction>()
+    val feePayments = mutableListOf<FeePayment>()
+    val reviewed = mutableListOf<List<TradeAction>>()
+    val confirmed = mutableListOf<Boolean>()
+
+    override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? {
+      reviewed += actions
+      return review?.copy(actions = actions)
+    }
+
+    override suspend fun <T> confirmedOrderFees(
+      review: OrderFeeReview,
+      allowSelfPay: Boolean,
+      prompt: VaultPrompt,
+      block: suspend () -> T,
+    ): T {
+      confirmed += allowSelfPay
+      return block()
+    }
 
     override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
 
@@ -316,6 +341,7 @@ class PortfolioViewModelTest {
       onPrepared: suspend (String) -> Unit,
     ): Flow<ActionState> {
       executed += action
+      feePayments += feePayment
       return outcome?.let { flowOf(it) } ?: emptyFlow()
     }
 
@@ -340,7 +366,18 @@ class PortfolioViewModelTest {
   }
 
   private class FakeMarketDetailsRepository : MarketDetailsRepository {
-    override val details: StateFlow<MarketDetails> = MutableStateFlow(MarketDetails(stale = false))
+    override val details: StateFlow<MarketDetails> =
+      MutableStateFlow(
+        MarketDetails(
+          stale = false,
+          orderBook =
+            OrderBook(
+              "0xbtc_perp",
+              listOf(OrderBookLevel("69990", "1")),
+              listOf(OrderBookLevel("70010", "1")),
+            ),
+        ),
+      )
 
     override suspend fun refresh(marketAddress: String) {}
 
@@ -1070,9 +1107,6 @@ class PortfolioViewModelTest {
     assertFalse(state.vaultsAvailable || state.rewardsAvailable)
     assertFalse(state.rewardsLoaded)
     assertFalse(state.vaultsLoaded)
-    assertNull(
-      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),
-    )
 
     // Without in-app deposits, a transfer can only go out to the wallet.
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
@@ -1226,36 +1260,159 @@ class PortfolioViewModelTest {
     assertTrue(state.vaultsLoaded)
     assertEquals("Amps", state.rewardPointsName)
     assertEquals("Trade to unlock your code.", state.referralGate)
-    assertEquals(
-      5_000uL,
-      state.selfPayEstimate(ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(5_000uL))),
-    )
     vm.onIntent(PortfolioIntent.OpenFunding(FundingMode.DEPOSIT))
     assertEquals(FundingMode.DEPOSIT, vm.uiState.value.fundingMode)
   }
 
   @Test
-  fun aNetworkFeeTopUpIsOfferedOnlyWhereTheVenueHasOne() = runTest {
-    suspend fun topUpOffered(capabilities: VenueCapabilities): Boolean {
-      val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
-      val accounts =
-        FakeAccountRepository(
-          AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
-        )
-      // Flare couldn't sponsor the fee, and the device holds less than the wallet would pay.
-      val failure = ActionState.Failed("Not sponsored", selfPay = SelfPayOffer(200_000_000uL))
-      val vm = portfolio(accounts, capabilities, FakeTradingRepository(outcome = failure))
-      backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
-      vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
-      vm.onIntent(PortfolioIntent.ChangeTakeProfit("80000"))
-      vm.onIntent(PortfolioIntent.SubmitTpSl)
-      val state = vm.uiState.value
-      assertIs<ActionState.Failed>(state.positionTransaction)
-      return state.apiWalletNeedsTopUp
-    }
+  fun exitsLetTheWalletCoverADeclinedFeeAndOnlyNameAMissingOne() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    // Flare declined the fee and the wallet couldn't pay it either.
+    val failure = ActionState.Failed("gas_station_http_404", selfPay = SelfPayOffer(200_000_000uL))
+    val trading = FakeTradingRepository(outcome = failure)
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+    vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
+    vm.onIntent(PortfolioIntent.ChangeTakeProfit("80000"))
+    vm.onIntent(PortfolioIntent.SubmitTpSl)
+    assertEquals(listOf(FeePayment.WALLET_FALLBACK), trading.feePayments)
+    assertEquals("Add APT to cover network fees.", vm.uiState.value.actionError)
+  }
 
-    assertTrue(topUpOffered(VenueCapabilities.All))
-    assertFalse(topUpOffered(VenueCapabilities.All.copy(networkFeeTopUp = false)))
+  @Test
+  fun closeShowsItsReviewedFeeAndConfirmsTheReviewedOrderOnce() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    val review =
+      OrderFeeReview(
+        reviewId = "close",
+        actions = emptyList(),
+        maximumPerTransactionOctas = 5_000_000uL,
+        maximumTotalOctas = 5_000_000uL,
+        tradingKeyBalance = 0uL,
+        tradingKeyAddress = "0xapi",
+        sponsorshipAvailable = false,
+        estimatedFeeOctas = 28_400uL,
+        feePayerAddress = "0xowner",
+        feePayerBalance = 1_000_000uL,
+        ownerPaysFees = true,
+        requiredReserveOctas = 200_000uL,
+        localFeeReady = true,
+      )
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"), review = review)
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.PrepareClose("0xbtc_perp"))
+    val ready = vm.uiState.first { it.closeReview != null }
+    assertFalse(ready.closeReviewLoading)
+    val shown = assertNotNull(ready.closeReview)
+    assertEquals("≈ 0.000284 APT", shown.feeText(testVenue().chain))
+    assertNull(shown.paymentError)
+    val close = assertIs<TradeAction.PlaceOrder>(trading.reviewed.single().single())
+    assertTrue(close.order.reduceOnly)
+
+    vm.onIntent(PortfolioIntent.ClosePosition("0xbtc_perp"))
+    vm.uiState.first { it.closedMarket != null }
+    assertEquals(listOf<TradeAction>(close), trading.executed)
+    assertEquals(listOf(FeePayment.SPONSORED), trading.feePayments)
+    assertEquals(listOf(true), trading.confirmed)
+    assertEquals(1, trading.reviewed.size)
+    assertEquals("0xbtc_perp", vm.uiState.value.closedMarket)
+  }
+
+  @Test
+  fun aPositionsCloseFeeIsReadyBeforeItsConfirmationOpens() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    val review =
+      OrderFeeReview(
+        reviewId = "close",
+        actions = emptyList(),
+        maximumPerTransactionOctas = 5_000_000uL,
+        maximumTotalOctas = 5_000_000uL,
+        tradingKeyBalance = 0uL,
+        tradingKeyAddress = "0xapi",
+        sponsorshipAvailable = true,
+      )
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"), review = review)
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.ManagePosition("0xbtc_perp"))
+    vm.uiState.first { it.closeReview != null }
+    vm.onIntent(PortfolioIntent.PrepareClose("0xbtc_perp"))
+    assertEquals("Covered by Flare", vm.uiState.value.closeReview?.feeText(testVenue().chain))
+    assertFalse(vm.uiState.value.closeReviewLoading)
+    vm.onIntent(PortfolioIntent.ClosePosition("0xbtc_perp"))
+    vm.uiState.first { it.closedMarket != null }
+    // Reviewed once, on the position screen; confirmed once, with Flare covering the fee.
+    assertEquals(1, trading.reviewed.size)
+    assertEquals(listOf(false), trading.confirmed)
+  }
+
+  @Test
+  fun aCloseNobodyCanPayForSaysSoInOneLineAndSendsNothing() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    val review =
+      OrderFeeReview(
+        reviewId = "close",
+        actions = emptyList(),
+        maximumPerTransactionOctas = 5_000_000uL,
+        maximumTotalOctas = 5_000_000uL,
+        tradingKeyBalance = 0uL,
+        tradingKeyAddress = "0xapi",
+        sponsorshipAvailable = false,
+        feePayerAddress = "0xowner",
+        feePayerBalance = 0uL,
+        ownerPaysFees = true,
+        requiredReserveOctas = 200_000uL,
+        localFeeReady = true,
+      )
+    val trading = FakeTradingRepository(review = review)
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.PrepareClose("0xbtc_perp"))
+    val shown = vm.uiState.first { it.closeReview != null }
+    assertEquals("Add APT to cover network fees.", shown.closeReview?.paymentError)
+    vm.onIntent(PortfolioIntent.ClosePosition("0xbtc_perp"))
+    vm.uiState.first { it.actionError != null }
+    assertTrue(trading.executed.isEmpty())
+    assertEquals("Add APT to cover network fees.", vm.uiState.value.actionError)
+  }
+
+  @Test
+  fun aCloseWithoutAFeeReviewLetsTheWalletCoverADeclinedFee() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    val trading = FakeTradingRepository(outcome = ActionState.Committed("0xhash"))
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.ClosePosition("0xbtc_perp"))
+    vm.uiState.first { it.closedMarket != null }
+    assertNull(vm.uiState.value.closeReview)
+    assertEquals(listOf(FeePayment.WALLET_FALLBACK), trading.feePayments)
+    assertTrue(trading.confirmed.isEmpty())
+    assertEquals("0xbtc_perp", vm.uiState.value.closedMarket)
   }
 
   @Test

@@ -2,7 +2,6 @@ package xyz.mcxross.flare.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
-import xyz.mcxross.flare.core.runSuspendCatching
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradeAction
@@ -13,6 +12,8 @@ enum class FeePayment {
   SELF_PAY,
   /** Transfers may retry a definite sponsor rejection within the same authorization. */
   AUTOMATIC,
+  /** Trading actions: a definite sponsor rejection is paid by the wallet without asking again. */
+  WALLET_FALLBACK,
 }
 
 data class PendingTransaction(
@@ -81,6 +82,10 @@ interface TradingRepository {
   /** Reads a bounded fee budget without requesting wallet authorization or signing. */
   suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? = null
 
+  /** As [prepareOrderFees], reading the account while [actions] are still being worked out. */
+  suspend fun prepareOrderFees(actions: suspend () -> List<TradeAction>): OrderFeeReview? =
+    prepareOrderFees(actions())
+
   /** Authorizes the reviewed order once, including only the explicitly accepted fee fallback. */
   suspend fun <T> confirmedOrderFees(
     review: OrderFeeReview,
@@ -114,20 +119,6 @@ interface TradingRepository {
   suspend fun <T> confirmedAction(prompt: VaultPrompt, block: suspend () -> T): T = block()
 }
 
-/**
- * Sponsorship can fall back to self-payment only when the signing key can pay the fee itself.
- * Returns the amount of fee token to send the device trading key, at least [minimumTopUp], or null
- * when no top-up applies.
- */
-suspend fun TradingRepository.tradingKeyTopUpFor(
-  failure: ActionState.Failed,
-  profile: WalletProfile,
-  minimumTopUp: ULong,
-): ULong? {
-  val offer = failure.selfPay ?: return null
-  val reserve = maxOf(offer.estimate, offer.reserve ?: offer.estimate)
-  if (profile.apiWalletAddress == null || profile.ownerAddress == null) return null
-  val balance = runSuspendCatching { tradingKeyFeeBalance() }.getOrNull() ?: return null
-  if (balance >= reserve) return null
-  return maxOf(minimumTopUp, reserve - balance)
-}
+/** A declined fee only fails an action when the wallet can't pay it either. */
+fun ActionState.Failed.failureMessage(): String =
+  if (selfPay != null) "Add APT to cover network fees." else message

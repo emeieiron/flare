@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.venue.VenueDescriptor
 import xyz.mcxross.flare.venue.VenueExplorer
 
@@ -34,6 +35,8 @@ fun DetailRow(
   value: String,
   modifier: Modifier = Modifier,
   valueColor: Color = Color.Unspecified,
+  /** Shimmers in place of [value] while it is still being read. */
+  loading: Boolean = false,
 ) {
   Row(
     modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -45,7 +48,16 @@ fun DetailRow(
       style = MaterialTheme.typography.bodyMedium,
       color = FlareColors.TextSecondary,
     )
-    Text(value, style = MaterialTheme.typography.bodyMedium, color = valueColor)
+    if (loading) {
+      val shimmer = rememberFlareShimmer()
+      val reducedMotion = rememberReducedMotion()
+      FlareSkeletonBox(
+        Modifier.width(120.dp)
+          .height(20.dp)
+          .then(if (reducedMotion) Modifier else Modifier.shimmer(shimmer))
+          .semantics { contentDescription = "Loading $label" },
+      )
+    } else Text(value, style = MaterialTheme.typography.bodyMedium, color = valueColor)
   }
   HorizontalDivider(color = FlareColors.BorderSubtle)
 }
@@ -320,7 +332,8 @@ fun FlareConfirmSheet(
   confirmLabel: String,
   onConfirm: () -> Unit,
   onDismiss: () -> Unit,
-  dismissLabel: String = "Cancel",
+  /** Null leaves dismissal to the sheet itself: a swipe down or a tap outside. */
+  dismissLabel: String? = "Cancel",
   destructive: Boolean = true,
   working: Boolean = false,
   error: String? = null,
@@ -337,16 +350,17 @@ fun FlareConfirmSheet(
       style = if (destructive) FlareButtonStyle.DESTRUCTIVE else FlareButtonStyle.PRIMARY,
       working = working,
     )
-    TextButton(
-      onDismiss,
-      Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 4.dp),
-      enabled = !working,
-    ) {
-      Text(
-        dismissLabel,
-        color = if (working) FlareColors.TextDisabled else FlareColors.TextSecondary,
-        style = MaterialTheme.typography.labelLarge,
-      )
-    }
+    if (dismissLabel != null)
+      TextButton(
+        onDismiss,
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(top = 4.dp),
+        enabled = !working,
+      ) {
+        Text(
+          dismissLabel,
+          color = if (working) FlareColors.TextDisabled else FlareColors.TextSecondary,
+          style = MaterialTheme.typography.labelLarge,
+        )
+      }
   }
 }
