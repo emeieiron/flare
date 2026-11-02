@@ -68,7 +68,6 @@ import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.IndicatorChip
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.LocalTransactionExplorer
-import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SectionLabel
 import xyz.mcxross.flare.design.TradeScreenSkeleton
@@ -403,7 +402,7 @@ fun TradeScreen(
                       { exitsOpen = it },
                       editorHeight,
                     )
-                  TradeStage.REVIEW -> OrderReviewStatus(state, side, onIntent, editorHeight)
+                  TradeStage.REVIEW -> OrderReviewStatus(state, side, editorHeight)
                   TradeStage.FAILURE ->
                     OrderFailure(state, side, editorHeight) {
                       clearFocus()
@@ -448,20 +447,22 @@ fun TradeScreen(
           state.setupNeed?.takeIf { stage == TradeStage.MARKET && actionsUnavailable == it.reason }
         val finishSetup = LocalFinishSetup.current
         val enabled =
-          when (stage) {
-            TradeStage.MARKET ->
-              !state.orderBusy && (actionsUnavailable == null || setupNeed != null)
-            TradeStage.RESULT -> !state.orderBusy
-            else ->
-              state.tradingEnabled &&
-                inputError == null &&
-                state.sizeInput.isNotBlank() &&
-                twapUnavailable == null &&
-                !state.orderBusy &&
-                !state.feeReviewLoading &&
-                (stage != TradeStage.REVIEW || !state.orderFeePaymentBlocked) &&
-                (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
-          }
+          if (stage == TradeStage.REVIEW && state.orderFeesNeedRetry)
+            !state.orderBusy && !state.feeReviewLoading
+          else
+            when (stage) {
+              TradeStage.MARKET ->
+                !state.orderBusy && (actionsUnavailable == null || setupNeed != null)
+              TradeStage.RESULT -> !state.orderBusy
+              else ->
+                state.tradingEnabled &&
+                  inputError == null &&
+                  state.sizeInput.isNotBlank() &&
+                  twapUnavailable == null &&
+                  !state.orderBusy &&
+                  !state.feeReviewLoading &&
+                  (state.orderType != OrderType.LIMIT || state.limitPriceInput.isNotBlank())
+            }
         Column(Modifier.fillMaxWidth().background(FlareColors.Canvas)) {
           HorizontalDivider(color = FlareColors.BorderSubtle)
           val notice = if (stage == TradeStage.MARKET) actionsUnavailable else twapUnavailable
@@ -480,10 +481,8 @@ fun TradeScreen(
               TradeStage.REVIEW ->
                 when {
                   state.orderBusy -> "Placing your order…"
-                  state.feeReviewLoading -> "Checking network fees…"
-                  !state.feeReviewPrepared -> "Check network fees"
-                  state.orderFeeConsentRequired ->
-                    "Pay ${LocalVenue.current.chain.feeToken} and confirm"
+                  state.feeReviewLoading -> "Checking fees…"
+                  state.orderFeesNeedRetry -> "Retry"
                   else -> "Confirm ${if (side == OrderSide.BUY) "buy" else "sell"}"
                 }
               TradeStage.RESULT -> "Done"
@@ -504,7 +503,8 @@ fun TradeScreen(
                 }
                 TradeStage.REVIEW ->
                   onIntent(
-                    if (!state.feeReviewPrepared) TradeIntent.PrepareOrderFees(side)
+                    if (!state.feeReviewPrepared || state.orderFeesNeedRetry)
+                      TradeIntent.PrepareOrderFees(side)
                     else TradeIntent.Submit(side),
                   )
                 TradeStage.RESULT -> returnToMarket()

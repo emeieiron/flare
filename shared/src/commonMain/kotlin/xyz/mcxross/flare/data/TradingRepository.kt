@@ -38,12 +38,26 @@ data class OrderFeeReview(
   val tradingKeyAddress: String,
   /** Deployment policy; null means that availability could not be established. */
   val sponsorshipAvailable: Boolean? = null,
+  /** Null while a prerequisite transaction prevents a truthful complete-order estimate. */
+  val estimatedFeeOctas: ULong? = null,
+  val feePayerAddress: String = tradingKeyAddress,
+  val feePayerBalance: ULong? = tradingKeyBalance,
+  val ownerPaysFees: Boolean = false,
+  /** Buffered signed gas reserve for the first phase; later phases are checked after simulation. */
+  val requiredReserveOctas: ULong? = null,
+  /** False when a local payer's exact transaction could not be simulated successfully. */
+  val localFeeReady: Boolean? = null,
 ) {
   val canSelfPay: Boolean
-    get() = tradingKeyBalance?.let { it >= maximumTotalOctas } == true
+    get() =
+      localFeeReady != false &&
+        feePayerBalance?.let { it >= (requiredReserveOctas ?: maximumTotalOctas) } == true
 
   val fundingDeficit: ULong?
-    get() = tradingKeyBalance?.let { if (it < maximumTotalOctas) maximumTotalOctas - it else 0uL }
+    get() = feePayerBalance?.let {
+      val required = requiredReserveOctas ?: maximumTotalOctas
+      if (it < required) required - it else 0uL
+    }
 }
 
 /**

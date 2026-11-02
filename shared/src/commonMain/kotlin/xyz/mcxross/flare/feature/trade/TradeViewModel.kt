@@ -35,7 +35,6 @@ import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.mergeCandles
-import xyz.mcxross.flare.data.tradingKeyTopUpFor
 import xyz.mcxross.flare.data.withLiveCandle
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
@@ -48,6 +47,7 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.Candle
 import xyz.mcxross.flare.venue.model.ChartTimeframe
 import xyz.mcxross.flare.venue.model.MarketKind
+import xyz.mcxross.flare.venue.model.NetworkFee
 import xyz.mcxross.flare.venue.model.OrderRequest
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
@@ -95,16 +95,12 @@ data class TradeUiState(
   val feeReviewPrepared: Boolean = false,
   val feeReviewLoading: Boolean = false,
   val feeReviewError: String? = null,
-  val allowFeeSelfPay: Boolean = false,
+  val entryNetworkFee: NetworkFee? = null,
   val orderError: String? = null,
   val transaction: ActionState? = null,
   val tradingKeyAddress: String? = null,
-  val ownerWalletAvailable: Boolean = false,
   val tradingAccountAddress: String? = null,
   val lastSide: OrderSide? = null,
-  val apiWalletNeedsTopUp: Boolean = false,
-  val suggestedTopUp: ULong? = null,
-  val topUpTransaction: ActionState? = null,
   val quoteBalance: Double? = null,
   val baseBalance: Double? = null,
   val fees: TradingFees? = null,
@@ -116,20 +112,18 @@ data class TradeUiState(
   val twapDurationMinutesInput: String = "60",
   val twapFrequencyMinutesInput: String = "1",
 ) {
-  val orderFeeConsentRequired: Boolean
-    get() = feeReview?.sponsorshipAvailable == false
-
   val orderFeePaymentBlocked: Boolean
-    get() = orderFeeConsentRequired && (feeReview?.canSelfPay != true || !allowFeeSelfPay)
+    get() = feeReview?.let { it.sponsorshipAvailable == false && !it.canSelfPay } == true
 
-  /**
-   * What the wallet would pay for the order's network fee once the venue's sponsor declined it;
-   * null when it wasn't declined, or the venue has no sponsored fees.
-   */
-  val selfPayEstimate: ULong?
+  val orderFeesNeedRetry: Boolean
+    get() = orderFeePaymentBlocked || feeReviewError != null
+
+  val orderFeePaymentError: String?
     get() =
-      if (capabilities.sponsoredFees) (transaction as? ActionState.Failed)?.selfPay?.estimate
-      else null
+      if (!orderFeePaymentBlocked) null
+      else if (feeReview?.localFeeReady == false || feeReview?.feePayerBalance == null)
+        "Couldn’t prepare network fees. Try again."
+      else "Add APT to cover network fees."
 
   fun availableDisplay(side: OrderSide): String? {
     val isSpot = quote?.market?.kind == MarketKind.SPOT
@@ -178,15 +172,9 @@ sealed interface TradeIntent {
 
   data class PrepareOrderFees(val side: OrderSide) : TradeIntent
 
-  data class AllowFeeSelfPay(val allowed: Boolean) : TradeIntent
-
   data class Submit(val side: OrderSide) : TradeIntent
 
   data object DismissOrderReceipt : TradeIntent
-
-  data object ConfirmSelfPay : TradeIntent
-
-  data object TopUpApiWallet : TradeIntent
 }
 
 class TradeViewModel(
@@ -202,7 +190,6 @@ class TradeViewModel(
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val defaultBuilderAddress = venue.builderAddress
-  private val minimumFeeTopUp = venue.chain.minimumFeeTopUp
   private val mutableUiState = MutableStateFlow(TradeUiState(capabilities = capabilities))
   val uiState: StateFlow<TradeUiState> = mutableUiState.asStateFlow()
 
@@ -281,7 +268,6 @@ class TradeViewModel(
           state
             .copy(
               tradingKeyAddress = profile.apiWalletAddress,
-              ownerWalletAvailable = profile.ownerAddress != null,
             )
             .withTradingEnabled()
         }
@@ -498,13 +484,6 @@ class TradeViewModel(
           it.copy(limitPriceInput = decimalCharacters(intent.value), orderError = null)
         }
       is TradeIntent.PrepareOrderFees -> prepareOrderFees(intent.side)
-      is TradeIntent.AllowFeeSelfPay ->
-        mutableUiState.update {
-          it.copy(
-            allowFeeSelfPay = intent.allowed && it.feeReview?.canSelfPay == true,
-            feeReviewError = null,
-          )
-        }
       is TradeIntent.Submit -> submitOrder(intent.side)
       is TradeIntent.SetLeverage ->
         mutableUiState.update {
@@ -535,8 +514,6 @@ class TradeViewModel(
         mutableUiState.update {
           it.copy(twapFrequencyMinutesInput = decimalCharacters(intent.value), orderError = null)
         }
-      TradeIntent.ConfirmSelfPay -> mutableUiState.value.lastSide?.let { prepareOrderFees(it) }
-      TradeIntent.TopUpApiWallet -> topUpApiWallet()
       TradeIntent.DismissOrderReceipt ->
         mutableUiState.update {
           if (it.orderBusy || it.transaction !is ActionState.Committed) it
@@ -577,7 +554,6 @@ class TradeViewModel(
         feeReviewPrepared = false,
         feeReviewLoading = false,
         feeReviewError = null,
-        allowFeeSelfPay = false,
       )
     }
   }
@@ -597,7 +573,14 @@ class TradeViewModel(
     invalidateFeeReview()
     val revision = feeReviewRevision
     feeReviewJob = viewModelScope.launch {
-      mutableUiState.update { it.copy(feeReviewLoading = true, orderError = null, lastSide = side) }
+      mutableUiState.update {
+        it.copy(
+          feeReviewLoading = true,
+          orderError = null,
+          lastSide = side,
+          entryNetworkFee = null,
+        )
+      }
       try {
         val input = mutableUiState.value.orderInputIdentity(side)
         val actions = orderActions(mutableUiState.value, side)
@@ -609,8 +592,6 @@ class TradeViewModel(
               feeReview = review,
               feeReviewPrepared = true,
               feeReviewLoading = false,
-              suggestedTopUp = review?.fundingDeficit?.takeIf { deficit -> deficit > 0uL },
-              apiWalletNeedsTopUp = review?.canSelfPay == false && review.tradingKeyBalance != null,
             )
           }
         }
@@ -634,7 +615,10 @@ class TradeViewModel(
       prepareOrderFees(side)
       return
     }
-    if (mutableUiState.value.orderFeePaymentBlocked) return
+    if (mutableUiState.value.orderFeePaymentBlocked) {
+      prepareOrderFees(side)
+      return
+    }
     viewModelScope.launch {
       mutableUiState.update {
         it.copy(
@@ -642,9 +626,8 @@ class TradeViewModel(
           orderError = null,
           transaction = null,
           lastSide = side,
-          apiWalletNeedsTopUp = false,
-          suggestedTopUp = null,
           leverageTransaction = null,
+          entryNetworkFee = null,
         )
       }
       try {
@@ -703,32 +686,35 @@ class TradeViewModel(
               },
               onState = { stage, transaction ->
                 mutableUiState.update {
-                  if (stage == OrderStage.LEVERAGE) it.copy(leverageTransaction = transaction)
-                  else it.copy(transaction = transaction)
+                  val fee =
+                    when (transaction) {
+                      is ActionState.FeeEstimated -> transaction.fee
+                      is ActionState.Pending -> transaction.networkFee
+                      is ActionState.Committed -> transaction.networkFee
+                      else -> null
+                    }
+                  if (stage == OrderStage.LEVERAGE)
+                    it.copy(
+                      leverageTransaction = transaction,
+                    )
+                  else
+                    it.copy(
+                      transaction = transaction,
+                      entryNetworkFee = fee ?: it.entryNetworkFee,
+                    )
                 }
               },
             )
           }
           val terminal =
             if (review != null) {
-              trading.confirmedOrderFees(review, state.allowFeeSelfPay, prompt, place)
+              trading.confirmedOrderFees(review, review.canSelfPay, prompt, place)
             } else trading.confirmedAction(prompt, place)
           // A reviewed plan is single-use; a new attempt must review a fresh budget.
           invalidateFeeReview()
           when (val transaction = terminal) {
             is ActionState.Committed -> accounts.refresh()
-            is ActionState.Failed -> {
-              if (transaction.selfPay != null && capabilities.networkFeeTopUp) {
-                trading
-                  .tradingKeyTopUpFor(transaction, wallets.profile.first(), minimumFeeTopUp)
-                  ?.let { topUp ->
-                    mutableUiState.update {
-                      it.copy(apiWalletNeedsTopUp = true, suggestedTopUp = topUp)
-                    }
-                  }
-              }
-              error(transaction.message)
-            }
+            is ActionState.Failed -> error(transaction.message)
             else -> Unit
           }
         }
@@ -739,50 +725,6 @@ class TradeViewModel(
               mutableUiState.update {
                 it.copy(orderError = actionFailure(error.message, "Your order wasn’t placed."))
               }
-            }
-          }
-      } finally {
-        mutableUiState.update { it.copy(orderBusy = false) }
-      }
-    }
-  }
-
-  private fun topUpApiWallet() {
-    if (mutableUiState.value.orderBusy || !mutableUiState.value.ownerWalletAvailable) return
-    viewModelScope.launch {
-      mutableUiState.update {
-        it.copy(orderBusy = true, orderError = null, topUpTransaction = null)
-      }
-      try {
-        runSuspendCatching {
-          val amount =
-            mutableUiState.value.suggestedTopUp ?: error("No network-fee top-up is required")
-          trading
-            .topUpTradingKey(
-              amount,
-              VaultPrompt(
-                "Cover network fees",
-                "Confirm your identity",
-                requireFreshAuthorization = true,
-              ),
-            )
-            .collect { transaction ->
-              mutableUiState.update { it.copy(topUpTransaction = transaction) }
-            }
-          when (val terminal = mutableUiState.value.topUpTransaction) {
-            is ActionState.Committed ->
-              mutableUiState
-                .update {
-                  it.copy(apiWalletNeedsTopUp = false, suggestedTopUp = null)
-                }
-                .also { invalidateFeeReview() }
-            is ActionState.Failed -> error(terminal.message)
-            else -> Unit
-          }
-        }
-          .onFailure { error ->
-            mutableUiState.update {
-              it.copy(orderError = actionFailure(error.message, "The network fee wasn’t covered."))
             }
           }
       } finally {

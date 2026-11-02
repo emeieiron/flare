@@ -24,7 +24,7 @@ class TradeFeeReviewTest {
   @AfterTest fun tearDown() = Dispatchers.resetMain()
 
   @Test
-  fun reviewingIsUnsignedAndConsentCoversBothPhasesInOneConfirmation() = runTest {
+  fun reviewingIsUnsignedAndFeesAreAutomaticWithinOneConfirmation() = runTest {
     val f = fixture()
     try {
       f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
@@ -33,7 +33,6 @@ class TradeFeeReviewTest {
       assertEquals(10_000uL, review.maximumTotalOctas)
       assertEquals(0, f.trading.confirmations)
       assertTrue(f.trading.executed.isEmpty())
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
       assertEquals(listOf(true), f.trading.consents)
@@ -55,8 +54,6 @@ class TradeFeeReviewTest {
         val review = assertNotNull(f.vm.uiState.value.feeReview, f.vm.uiState.value.toString())
         assertFalse(review.canSelfPay)
         assertEquals(balance?.let { 9_000uL }, review.fundingDeficit)
-        f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
-        assertFalse(f.vm.uiState.value.allowFeeSelfPay)
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
         assertEquals(1, f.trading.confirmations)
         assertEquals(listOf(false), f.trading.consents)
@@ -71,17 +68,13 @@ class TradeFeeReviewTest {
     val f = fixture()
     try {
       f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       f.vm.onIntent(TradeIntent.SetSize("0.002"))
       assertNull(f.vm.uiState.value.feeReview)
-      assertFalse(f.vm.uiState.value.allowFeeSelfPay)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(0, f.trading.confirmations)
       assertNotNull(f.vm.uiState.value.feeReview, f.vm.uiState.value.toString())
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       f.preferences.setSelectedSubaccount("0xother")
       assertNull(f.vm.uiState.value.feeReview)
-      assertFalse(f.vm.uiState.value.allowFeeSelfPay)
     } finally {
       f.vm.viewModelScope.cancel()
     }
@@ -94,7 +87,6 @@ class TradeFeeReviewTest {
       f.trading.terminal =
         ActionState.Failed("Sponsor response was lost", reference = "sponsor:unknown")
       f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
       assertEquals(1, f.trading.executed.size)
@@ -107,23 +99,111 @@ class TradeFeeReviewTest {
   }
 
   @Test
-  fun knownUnavailableSponsorshipRequiresFundedExplicitConsentBeforeOneConfirmation() = runTest {
+  fun knownUnavailableSponsorshipUsesFundedFeesWithinOneConfirmation() = runTest {
     val f = fixture()
     try {
       f.trading.sponsorshipAvailable = false
       f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
-      assertTrue(f.vm.uiState.value.orderFeeConsentRequired)
-      assertTrue(f.vm.uiState.value.orderFeePaymentBlocked)
-      assertFalse(f.vm.uiState.value.allowFeeSelfPay)
-      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
-      assertEquals(0, f.trading.confirmations)
-      assertTrue(f.trading.executed.isEmpty())
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       assertFalse(f.vm.uiState.value.orderFeePaymentBlocked)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
       assertEquals(listOf(true), f.trading.consents)
       assertEquals(2, f.trading.executed.size)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun ownerFeePayerNeedsNoTradingWalletTopUpOrExtraConfirmation() = runTest {
+    val f = fixture()
+    try {
+      f.trading.sponsorshipAvailable = false
+      f.trading.balance = 0uL
+      f.trading.ownerBalance = 2_000uL
+      f.trading.requiredReserve = 1_000uL
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      val review = assertNotNull(f.vm.uiState.value.feeReview)
+      assertTrue(review.ownerPaysFees)
+      assertEquals(0uL, review.tradingKeyBalance)
+      assertEquals(2_000uL, review.feePayerBalance)
+      assertTrue(review.canSelfPay)
+      assertFalse(f.vm.uiState.value.orderFeePaymentBlocked)
+      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
+      assertEquals(1, f.trading.confirmations)
+      assertEquals(listOf(true), f.trading.consents)
+      assertEquals(review.actions, f.trading.executed)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun aFailedPayerFeeReviewCanRetryAfterExternalFundingWithoutAuthorization() = runTest {
+    val f = fixture()
+    try {
+      f.trading.sponsorshipAvailable = false
+      f.trading.ownerBalance = 500uL
+      f.trading.requiredReserve = 1_000uL
+      f.trading.localFeeReady = false
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      assertTrue(f.vm.uiState.value.orderFeesNeedRetry)
+      assertNotNull(f.vm.uiState.value.orderFeePaymentError)
+      assertEquals(0, f.trading.confirmations)
+      f.trading.ownerBalance = 2_000uL
+      f.trading.localFeeReady = true
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      assertFalse(f.vm.uiState.value.orderFeesNeedRetry)
+      assertEquals(2_000uL, f.vm.uiState.value.feeReview?.feePayerBalance)
+      assertEquals(0, f.trading.confirmations)
+      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
+      assertEquals(1, f.trading.confirmations)
+      assertEquals(2, f.trading.executed.size)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun anUnvalidatedLocalFeeRouteNeverAuthorizesEvenWithEnoughReportedBalance() = runTest {
+    val f = fixture()
+    try {
+      f.trading.sponsorshipAvailable = false
+      f.trading.localFeeReady = false
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      assertTrue(f.vm.uiState.value.orderFeePaymentBlocked)
+      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
+      assertEquals(0, f.trading.confirmations)
+      assertTrue(f.trading.executed.isEmpty())
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun theFeesRowUsesEstimatesAndAggregatedEntryFeesWithoutDoubleCounting() = runTest {
+    val f = fixture()
+    try {
+      f.trading.sponsorshipAvailable = false
+      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
+      val state = f.vm.uiState.value
+      val review = assertNotNull(state.feeReview)
+      val chain = testVenue().chain
+      assertEquals("Up to 0.0001 APT", state.orderNetworkFeeText(chain))
+      val singleEntry =
+        review.copy(
+          actions = review.actions.filterIsInstance<TradeAction.PlaceOrder>(),
+          estimatedFeeOctas = 400uL,
+        )
+      assertEquals("≈ 0.000004 APT", state.copy(feeReview = singleEntry).orderNetworkFeeText(chain))
+      assertEquals(
+        "≈ 0.000007 APT",
+        state.copy(entryNetworkFee = NetworkFee(700uL, 1_000uL)).orderNetworkFeeText(chain),
+      )
+      assertEquals(
+        "Covered by Flare",
+        state.copy(feeReview = review.copy(sponsorshipAvailable = true)).orderNetworkFeeText(chain),
+      )
     } finally {
       f.vm.viewModelScope.cancel()
     }
@@ -141,35 +221,12 @@ class TradeFeeReviewTest {
         assertEquals(balance, review.tradingKeyBalance)
         assertEquals("0xapi", review.tradingKeyAddress)
         assertTrue(f.vm.uiState.value.orderFeePaymentBlocked)
-        assertFalse(f.vm.uiState.value.ownerWalletAvailable)
-        f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
-        f.vm.onIntent(TradeIntent.TopUpApiWallet)
         assertEquals(0, f.trading.confirmations)
-        assertEquals(0, f.trading.topUps)
         assertTrue(f.trading.executed.isEmpty())
       } finally {
         f.vm.viewModelScope.cancel()
       }
-    }
-  }
-
-  @Test
-  fun explicitOwnerFundingIsSeparateAndRequiresANewOrderReview() = runTest {
-    val f = fixture()
-    try {
-      f.trading.sponsorshipAvailable = false
-      f.trading.balance = 0uL
-      f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
-      assertEquals(10_000uL, f.vm.uiState.value.suggestedTopUp)
-      f.vm.onIntent(TradeIntent.TopUpApiWallet)
-      assertEquals(1, f.trading.topUps)
-      assertEquals(0, f.trading.confirmations)
-      assertTrue(f.trading.executed.isEmpty())
-      assertFalse(f.vm.uiState.value.feeReviewPrepared)
-      assertFalse(f.vm.uiState.value.allowFeeSelfPay)
-    } finally {
-      f.vm.viewModelScope.cancel()
     }
   }
 
@@ -228,7 +285,6 @@ class TradeFeeReviewTest {
             positions = listOf(Position("0xmarket", "0.001", 1, 70_000.0, isolated = false)),
           )
         f.vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
-        f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
         val gate = CompletableDeferred<Unit>()
         f.accounts.refreshGate = gate
         f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
@@ -303,10 +359,8 @@ class TradeFeeReviewTest {
         "70361",
         reviewed.actions.filterIsInstance<TradeAction.PlaceOrder>().single().order.price,
       )
-      f.vm.onIntent(TradeIntent.AllowFeeSelfPay(true))
       f.details.value = book("70011")
       assertEquals("70362", f.vm.uiState.value.checkedOrder(OrderSide.BUY).price)
-      assertTrue(f.vm.uiState.value.allowFeeSelfPay)
       f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
       assertEquals(1, f.trading.confirmations)
       assertEquals(reviewed.actions, f.trading.executed)
@@ -441,7 +495,9 @@ class TradeFeeReviewTest {
   private class ReviewedTrading : TradingRepository by SetupTrading {
     var balance: ULong? = 20_000uL
     var sponsorshipAvailable: Boolean? = null
-    var topUps = 0
+    var ownerBalance: ULong? = null
+    var requiredReserve: ULong? = null
+    var localFeeReady: Boolean? = null
     var confirmations = 0
     val consents = mutableListOf<Boolean>()
     val executed = mutableListOf<TradeAction>()
@@ -456,13 +512,12 @@ class TradeFeeReviewTest {
         balance,
         "0xapi",
         sponsorshipAvailable,
+        feePayerAddress = if (ownerBalance != null) "0xowner" else "0xapi",
+        feePayerBalance = ownerBalance ?: balance,
+        ownerPaysFees = ownerBalance != null,
+        requiredReserveOctas = requiredReserve,
+        localFeeReady = localFeeReady,
       )
-
-    override fun topUpTradingKey(amount: ULong, prompt: VaultPrompt): Flow<ActionState> {
-      topUps++
-      assertTrue(prompt.requireFreshAuthorization)
-      return flowOf(ActionState.Committed("funding"))
-    }
 
     override suspend fun <T> confirmedOrderFees(
       review: OrderFeeReview,

@@ -26,7 +26,13 @@ import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.*
 import xyz.mcxross.flare.venue.model.*
 import xyz.mcxross.kaptos.*
+import xyz.mcxross.kaptos.account.Account
+import xyz.mcxross.kaptos.core.crypto.Ed25519PublicKey
+import xyz.mcxross.kaptos.core.crypto.Ed25519Signature
+import xyz.mcxross.kaptos.core.crypto.Signature
 import xyz.mcxross.kaptos.model.*
+import xyz.mcxross.kaptos.transaction.authenticator.AccountAuthenticator
+import xyz.mcxross.kaptos.transaction.authenticator.TransactionAuthenticator
 import xyz.mcxross.kaptos.transaction.instances.RawTransaction
 import xyz.mcxross.kaptos.transaction.instances.SignedTransaction
 import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
@@ -34,191 +40,280 @@ import xyz.mcxross.kaptos.transport.ktor.asAptosTransport
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class OrderFeeReviewIosTest {
   @Test
-  fun knownUnavailableSponsorshipPaysDirectlyWithOneConfirmationAndNoGasStationCalls() = runTest {
+  fun ownerAtTheSupportedSdkMinimumUsesActualOwnerEstimateBeforeConfirmation() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      f.zeroGasOverride = 5uL
+      f.realOwnerGasOverride = 10uL
+      f.ownerBalance = "200000"
+      f.sponsorshipAvailable = false
+      val review = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      assertTrue(review.ownerPaysFees)
+      assertEquals(true, review.localFeeReady)
+      assertEquals(1_000uL, review.estimatedFeeOctas)
+      assertEquals(200_000uL, review.requiredReserveOctas)
+      assertTrue(review.canSelfPay)
+      assertFalse("authorize" in f.events)
+      assertFalse("sign" in f.events)
+      val states = f.order(listOf(ACTIONS.last()))
+      assertIs<ActionState.Committed>(states.last())
+      assertEquals(2_000uL, f.submitted.single().rawTxn.maxGasAmount)
+      assertEquals(1, f.events.count { it == "authorize" })
+    }
+  }
+
+  @Test
+  fun ownerBelowTheSupportedSdkMinimumCannotAuthenticateWithAnUnsupportedBudget() = runTest {
+    fixture { f ->
+      f.requireConfiguration = false
+      f.zeroGasOverride = 5uL
+      f.realOwnerGasOverride = 10uL
+      f.ownerBalance = "199999"
+      f.sponsorshipAvailable = false
+      val review = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      assertEquals(false, review.localFeeReady)
+      assertFalse(review.canSelfPay)
+      assertNull(review.estimatedFeeOctas)
+      assertFailsWith<IllegalStateException> {
+        f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {}
+      }
+      assertFalse("authorize" in f.events)
+      assertFalse("sign" in f.events)
+    }
+  }
+
+  @Test
+  fun mixedSponsorshipShowsOnlyTheEntryFeePaidByTheOwner() = runTest {
+    fixture { f ->
+      f.onSponsor = {
+        f.sponsorError =
+          if (f.events.count { it == "sponsor" } == 1) null
+          else AptosError.Api("not accepted", errorCode = "gas_station_http_404")
+      }
+      val states = f.order()
+      val fee = assertNotNull(assertIs<ActionState.Committed>(states.last()).networkFee)
+      assertFalse(fee.covered)
+      assertEquals(5_000uL, fee.estimate)
+      assertEquals(200_000uL, fee.maximum)
+      assertEquals(1, f.submitted.size)
+      assertEquals(1, f.events.count { it == "authorize" })
+      assertEquals(4, f.events.count { it == "sign" })
+    }
+  }
+
+  @Test
+  fun ownerPaysForZeroAptTradingKeyWithOneConfirmationAndNoTransfer() = runTest {
     fixture { f ->
       f.sponsorshipAvailable = false
       val before = Clock.System.now().epochSeconds.toULong()
       val states = f.order()
       val after = Clock.System.now().epochSeconds.toULong()
-      assertEquals(2, f.simulatedTransactions.size)
-      assertEquals(2, f.submittedTransactions.size)
-      val first = f.simulatedTransactions.first()
-      assertEquals(50_000uL, first.maxGasAmount)
-      assertEquals(100uL, first.gasUnitPrice)
-      assertTrue(first.expirationTimestampSecs in (before + 120uL)..(after + 120uL))
-      assertTrue(
-        (f.simulatedTransactions + f.submittedTransactions).all {
-          it.maxGasAmount == first.maxGasAmount &&
-            it.gasUnitPrice == first.gasUnitPrice &&
-            it.expirationTimestampSecs == first.expirationTimestampSecs
-        },
-      )
-      assertEquals(1, f.gasReads)
       assertEquals(2, states.count { it is ActionState.Committed })
       assertEquals(1, f.events.count { it == "authorize" })
-      assertEquals(2, f.events.count { it == "sign" })
-      assertEquals(2, f.events.count { it == "submit" })
+      assertEquals(4, f.events.count { it == "sign" })
       assertFalse("sponsor" in f.events)
       assertEquals(0, f.freshKeyReads)
+      assertEquals(2, f.submitted.size)
+      f.submitted.forEach { signed ->
+        assertEquals(AccountAddress.fromString("0x3"), signed.rawTxn.sender)
+        val auth = assertIs<TransactionAuthenticator.FeePayer>(signed.authenticator)
+        assertEquals(AccountAddress.ONE, auth.feePayerAddress)
+        assertEquals(
+          Ed25519PublicKey(ByteArray(32) { 0x33 }).toString(),
+          assertIs<AccountAuthenticator.Ed25519>(auth.sender).publicKey.toString(),
+        )
+        assertEquals(
+          Ed25519PublicKey(ByteArray(32) { 0x11 }).toString(),
+          assertIs<AccountAuthenticator.Ed25519>(auth.feePayer).publicKey.toString(),
+        )
+        assertEquals(2_000uL, signed.rawTxn.maxGasAmount)
+        assertEquals(100uL, signed.rawTxn.gasUnitPrice)
+        assertTrue(signed.rawTxn.expirationTimestampSecs in (before + 120uL)..(after + 120uL))
+        assertTrue(
+          (signed.rawTxn.payload as TransactionPayload.EntryFunction).call.function.toString() in
+            setOf("configure_user_settings_for_market", "place_order_to_subaccount"),
+        )
+      }
+      assertEquals(listOf(0uL, 1uL), f.submitted.map { it.rawTxn.sequenceNumber })
+      assertEquals(1, f.gasReads)
       assertTrue(
-        states.filterIsInstance<ActionState.Committed>().all { it.networkFee?.covered == false },
+        f.simulated.first().authenticator.let {
+          it is TransactionAuthenticator.FeePayer && it.feePayerAddress == AccountAddress.ZERO
+        },
       )
+      assertEquals(50_000uL, f.simulated.first().rawTxn.maxGasAmount)
+      assertTrue(f.ownerBalance.toULong() < 5_000_000uL)
+      assertEquals(7_000uL, assertIs<ActionState.Committed>(states.last()).networkFee?.estimate)
+      assertTrue(f.journal.pending().isEmpty())
     }
   }
 
   @Test
-  fun knownUnavailableSponsorshipRequiresFundedExplicitFeeConsentBeforeAuthentication() = runTest {
-    fixture { f ->
-      f.sponsorshipAvailable = false
-      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      assertEquals(false, review.sponsorshipAvailable)
-      assertFailsWith<IllegalStateException> {
-        f.trading.confirmedOrderFees(review, false, VaultPrompt("Order", "Confirm")) {}
-      }
-      assertTrue(f.events.isEmpty())
-      f.balance = "0"
-      val unfunded = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      assertFailsWith<IllegalStateException> {
-        f.trading.confirmedOrderFees(unfunded, true, VaultPrompt("Order", "Confirm")) {}
-      }
-      assertTrue(f.events.isEmpty())
-    }
-  }
-
-  @Test
-  fun availableSponsorshipAllowsSponsorOnlyConfirmation() = runTest {
-    fixture { f ->
-      f.sponsorshipAvailable = true
-      f.sponsorError = null
-      f.balance = "0"
-      val states = f.order(allowSelfPay = false)
-      assertEquals(2, states.count { it is ActionState.Committed })
-      assertEquals(1, f.events.count { it == "authorize" })
-      assertEquals(2, f.events.count { it == "sponsor" })
-      assertFalse("submit" in f.events)
-    }
-  }
-
-  @Test
-  fun reviewReadsPublicMetadataWithoutKeysOrConfirmation() = runTest {
-    fixture { f ->
-      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      assertEquals(5_000_000uL, review.maximumPerTransactionOctas)
-      assertEquals(10_000_000uL, review.maximumTotalOctas)
-      assertEquals(100_000_000uL, review.tradingKeyBalance)
-      assertEquals(0, f.wallets.ownerReads)
-      assertTrue(f.events.isEmpty())
-    }
-  }
-
-  @Test
-  fun leverageAndOrderFallbackUseOneWalletConfirmation() = runTest {
+  fun definiteSponsorRejectionFallsBackToOwnerWithoutAnotherConfirmation() = runTest {
     fixture { f ->
       val states = f.order()
       assertEquals(2, states.count { it is ActionState.Committed })
       assertEquals(1, f.events.count { it == "authorize" })
-      assertEquals(4, f.events.count { it == "sign" })
-      assertEquals(2, f.events.count { it == "submit" })
+      assertEquals(6, f.events.count { it == "sign" })
+      assertEquals(2, f.events.count { it == "sponsor" })
+      assertTrue(f.submitted.all { it.authenticator is TransactionAuthenticator.FeePayer })
       assertEquals(0, f.freshKeyReads)
       assertTrue(f.journal.pending().isEmpty())
     }
   }
 
   @Test
-  fun sponsorOnlyNeedsNoAptAndNeverSubmitsDirectly() = runTest {
+  fun reviewUsesCachedIdentitiesAndDoesNotSimulateEntryBeforeConfigurationCommits() = runTest {
     fixture { f ->
-      f.balance = "0"
-      val states = f.order(allowSelfPay = false)
-      assertTrue(states.last() is ActionState.Failed)
-      assertFalse("submit" in f.events)
-      assertEquals(1, f.events.count { it == "authorize" })
-    }
-  }
-
-  @Test
-  fun unknownBalanceRemainsUnknownAndSponsorshipCanSucceed() = runTest {
-    fixture { f ->
-      f.balanceUnknown = true
-      f.sponsorError = null
       val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      assertNull(review.tradingKeyBalance)
-      val result =
-        f.trading.confirmedOrderFees(review, false, VaultPrompt("Order", "Confirm")) {
-          f.trading.execute(ACTIONS.first(), VaultPrompt("Order", "Confirm")).last()
-        }
-      assertIs<ActionState.Committed>(result)
-      assertEquals(1, f.events.count { it == "authorize" })
+      assertEquals("0x1", review.feePayerAddress)
+      assertTrue(review.ownerPaysFees)
+      assertEquals(0uL, review.tradingKeyBalance)
+      assertEquals(400_000uL, review.feePayerBalance)
+      assertEquals(200_000uL, review.requiredReserveOctas)
+      assertTrue(review.canSelfPay)
+      assertNull(review.estimatedFeeOctas)
+      assertEquals(10_000_000uL, review.maximumTotalOctas)
+      assertEquals(3, f.simulated.size)
+      assertFalse("authorize" in f.events)
+      assertFalse("sign" in f.events)
+      assertEquals(0, f.freshKeyReads)
     }
   }
 
   @Test
-  fun fundedSponsorOnlyReviewNeverFallsBackWithoutConsent() = runTest {
+  fun singleEntryReviewShowsActualSimulationEstimate() = runTest {
     fixture { f ->
-      val states = f.order(allowSelfPay = false)
-      assertIs<ActionState.Failed>(states.last())
-      assertFalse("submit" in f.events)
-      assertEquals(1, f.events.count { it == "authorize" })
+      f.requireConfiguration = false
+      val review = assertNotNull(f.trading.prepareOrderFees(listOf(ACTIONS.last())))
+      assertEquals(5_000uL, review.estimatedFeeOctas)
+      assertEquals(200_000uL, review.requiredReserveOctas)
+      assertTrue(review.canSelfPay)
     }
   }
 
   @Test
-  fun insufficientBalanceRetainsReserveForAnExplicitTopUp() = runTest {
-    fixture { f ->
-      f.balance = "0"
-      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      val result =
-        f.trading.confirmedOrderFees(review, false, VaultPrompt("Order", "Confirm")) {
-          f.trading.execute(ACTIONS.first(), VaultPrompt("Order", "Confirm")).last()
-        }
-      assertEquals(5_000_000uL, assertIs<ActionState.Failed>(result).selfPay?.reserve)
-      assertFalse("submit" in f.events)
-    }
-  }
-
-  @Test
-  fun apiOnlyProfileCanReviewAndSponsorAnOrder() = runTest {
+  fun apiOnlyProfilePaysItselfWithoutOwnerKeyOrTransfer() = runTest {
     fixture { f ->
       f.preferences.registerProfile(
-        AccountProfile("api", apiWalletAddress = "0x1", selectedSubaccount = "0x2"),
+        AccountProfile("api", apiWalletAddress = "0x3", selectedSubaccount = "0x2"),
       )
-      f.sponsorError = null
+      f.apiBalance = "400000"
+      f.sponsorshipAvailable = false
       val states = f.order()
       assertEquals(2, states.count { it is ActionState.Committed })
+      assertTrue(f.submitted.all { it.authenticator is TransactionAuthenticator.Ed25519 })
+      assertEquals(2, f.events.count { it == "sign" })
       assertEquals(1, f.events.count { it == "authorize" })
-      assertFalse("submit" in f.events)
+      assertEquals(0, f.wallets.ownerReads)
     }
   }
 
   @Test
-  fun unknownSubmissionDoesNotRetryAndKeepsJournal() = runTest {
+  fun fundedApiRemainsUsableWhenOwnerCannotPay() = runTest {
+    fixture { f ->
+      f.ownerBalance = "0"
+      f.apiBalance = "400000"
+      f.sponsorshipAvailable = false
+      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
+      assertFalse(review.ownerPaysFees)
+      assertEquals("0x3", review.feePayerAddress)
+      assertTrue(review.canSelfPay)
+      assertEquals(2, f.order().count { it is ActionState.Committed })
+      assertTrue(f.submitted.all { it.authenticator is TransactionAuthenticator.Ed25519 })
+    }
+  }
+
+  @Test
+  fun insufficientOrUnknownPayerBalanceNeverAuthenticatesForDirectPayment() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      for (unknown in listOf(false, true)) {
+        f.ownerBalance = "0"
+        f.balanceUnknown = unknown
+        val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
+        assertFalse(review.canSelfPay)
+        if (unknown) assertNull(review.feePayerBalance)
+        assertFailsWith<IllegalStateException> {
+          f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {}
+        }
+      }
+      assertFalse("authorize" in f.events)
+      assertFalse("sign" in f.events)
+    }
+  }
+
+  @Test
+  fun unknownBalancesStillAllowSuccessfulSponsorship() = runTest {
+    fixture { f ->
+      f.balanceUnknown = true
+      f.sponsorshipAvailable = true
+      f.sponsorError = null
+      val states = f.order(allowSelfPay = false)
+      assertEquals(2, states.count { it is ActionState.Committed })
+      assertTrue(f.submitted.isEmpty())
+      assertEquals(1, f.events.count { it == "authorize" })
+    }
+  }
+
+  @Test
+  fun unknownSponsorOutcomeNeverSubmitsAnotherFormatOrStartsEntry() = runTest {
     fixture { f ->
       f.sponsorError = AptosError.Transport("response lost")
-      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      val result =
-        f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {
-          f.trading.execute(ACTIONS.first(), VaultPrompt("Order", "Confirm")).last()
-        }
-      assertFalse(assertIs<ActionState.Failed>(result).definitelyNotSubmitted)
-      assertFalse("submit" in f.events)
+      val states = f.order()
+      assertFalse(assertIs<ActionState.Failed>(states.last()).definitelyNotSubmitted)
       assertEquals(1, f.events.count { it == "sign" })
+      assertTrue(f.submitted.isEmpty())
+      assertEquals("RECONCILE_REQUIRED", f.journal.pending().single().state)
+      assertEquals(0, f.entrySimulations)
+    }
+  }
+
+  @Test
+  fun entryIsRebuiltAndSimulatedAfterConfigurationAndFailureDoesNotReplayIt() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      f.failEntrySimulation = true
+      val states = f.order()
+      assertEquals(1, states.count { it is ActionState.Committed })
+      assertIs<ActionState.Failed>(states.last())
+      assertEquals(1, f.submitted.size)
+      assertEquals(1uL, f.sequence)
+      assertEquals(2, f.events.count { it == "sign" })
+      assertEquals(1, f.events.count { it == "authorize" })
+      assertTrue(f.journal.pending().isEmpty())
+    }
+  }
+
+  @Test
+  fun freshRealPayerSimulationRejectsLostFundsBeforeCryptographicSigning() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      f.wallets.onConfirm = { f.ownerBalance = "0" }
+      val states = f.order()
+      assertIs<ActionState.Failed>(states.last())
+      assertEquals(1, f.events.count { it == "authorize" })
+      assertFalse("sign" in f.events)
+      assertTrue(f.submitted.isEmpty())
+    }
+  }
+
+  @Test
+  fun unknownLocalSubmissionRemainsJournaledAndDoesNotRepeatConfiguration() = runTest {
+    fixture { f ->
+      f.sponsorshipAvailable = false
+      f.loseSubmitResponse = true
+      val states = f.order()
+      assertIs<ActionState.Failed>(states.last())
+      assertEquals(1, f.submitted.size)
+      assertEquals(2, f.events.count { it == "sign" })
+      assertEquals(0, f.entrySimulations)
       assertEquals("RECONCILE_REQUIRED", f.journal.pending().single().state)
     }
   }
 
   @Test
-  fun insufficientAggregateReserveCannotAuthorizeFallback() = runTest {
-    fixture { f ->
-      f.balance = "5000000"
-      val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
-      assertFailsWith<IllegalStateException> {
-        f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {}
-      }
-      assertTrue(f.events.isEmpty())
-    }
-  }
-
-  @Test
-  fun changedOrderAndReusedReviewCannotSign() = runTest {
+  fun changedOrderAndConsumedReviewCannotSign() = runTest {
     fixture { f ->
       val review = assertNotNull(f.trading.prepareOrderFees(ACTIONS))
       f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {
@@ -227,7 +322,7 @@ class OrderFeeReviewIosTest {
           f.trading.execute(changed, VaultPrompt("Order", "Confirm")).last(),
         )
       }
-      assertEquals(0, f.events.count { it == "sign" })
+      assertFalse("sign" in f.events)
       assertFailsWith<IllegalStateException> {
         f.trading.confirmedOrderFees(review, true, VaultPrompt("Order", "Confirm")) {}
       }
@@ -288,6 +383,19 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
   val prepared = mutableListOf<String>()
   val simulatedTransactions = mutableListOf<RawTransaction>()
   val submittedTransactions = mutableListOf<RawTransaction>()
+  val simulated = mutableListOf<SignedTransaction>()
+  val submitted = mutableListOf<SignedTransaction>()
+  var sequence = 0uL
+  var ownerBalance = "400000"
+  var apiBalance = "0"
+  var requireConfiguration = true
+  var configurationCommitted = false
+  var failEntrySimulation = false
+  var loseSubmitResponse = false
+  var entrySimulations = 0
+  var zeroGasOverride: ULong? = null
+  var realOwnerGasOverride: ULong? = null
+  private val pendingRaw = mutableMapOf<String, RawTransaction>()
   val wallets = SwapTestWallet(events)
   val journal = SwapTestJournal()
   var sponsorshipAvailable: Boolean? = null
@@ -325,41 +433,99 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
                   gasStarted.complete(Unit)
                   if (checkParallelMetadata) sequenceStarted.await()
                   delay(metadataDelayMs)
-                  """{"gas_estimate":${if (++gasReads == 1) 100 else 900}}"""
+                  """{"gas_estimate":100}""".also { gasReads++ }
                 }
                 path.contains("/balance/") ->
-                  if (balanceUnknown) error("balance unavailable") else "\"$balance\""
+                  if (balanceUnknown) error("balance unavailable")
+                  else {
+                    val address =
+                      AccountAddress.fromString(
+                        path.substringAfter("/accounts/").substringBefore('/'),
+                      )
+                    "\"${if (address == AccountAddress.ONE) ownerBalance else apiBalance}\""
+                  }
                 path.contains("/accounts/") -> {
                   sequenceReads++
                   sequenceStarted.complete(Unit)
                   if (checkParallelMetadata) gasStarted.await()
                   delay(metadataDelayMs)
-                  """{"sequence_number":"0","authentication_key":"0x1"}"""
+                  """{"sequence_number":"$sequence","authentication_key":"0x3"}"""
                 }
                 path.endsWith("/transactions/simulate") -> {
                   events += "simulate"
-                  simulatedTransactions +=
+                  val signed =
                     SignedTransaction.fromBcs(
-                        (request.body as OutgoingContent.ByteArrayContent).bytes(),
-                      )
-                      .rawTxn
-                  "[${response(HASH)}]"
+                      (request.body as OutgoingContent.ByteArrayContent).bytes(),
+                    )
+                  simulated += signed
+                  simulatedTransactions += signed.rawTxn
+                  val raw = signed.rawTxn
+                  val entry =
+                    (raw.payload as TransactionPayload.EntryFunction).call.function.toString() ==
+                      "place_order_to_subaccount"
+                  if (entry) {
+                    entrySimulations++
+                    check(!requireConfiguration || configurationCommitted) {
+                      "Entry simulated before leverage was applied"
+                    }
+                  }
+                  val payer =
+                    (signed.authenticator as? TransactionAuthenticator.FeePayer)?.feePayerAddress
+                      ?: raw.sender
+                  val reserveFits =
+                    payer == AccountAddress.ZERO ||
+                      raw.maxGasAmount * raw.gasUnitPrice <=
+                        (if (payer == AccountAddress.ONE) ownerBalance else apiBalance).toULong()
+                  val gas =
+                    when (payer) {
+                      AccountAddress.ZERO -> zeroGasOverride
+                      AccountAddress.ONE -> realOwnerGasOverride
+                      else -> null
+                    } ?: if (entry) 50uL else 20uL
+                  val success =
+                    reserveFits && gas <= raw.maxGasAmount && !(entry && failEntrySimulation)
+                  "[${response(HASH, raw, gas, success)}]"
                 }
                 path.endsWith("/transactions") && request.method == HttpMethod.Post -> {
                   events += "submit"
-                  submittedTransactions +=
+                  val signed =
                     SignedTransaction.fromBcs(
-                        (request.body as OutgoingContent.ByteArrayContent).bytes(),
-                      )
-                      .rawTxn
+                      (request.body as OutgoingContent.ByteArrayContent).bytes(),
+                    )
+                  submitted += signed
+                  submittedTransactions += signed.rawTxn
                   val row = journal.pending().single()
                   assertEquals("SUBMITTING", row.state)
                   assertFalse(row.hash.startsWith("sponsor:"))
-                  response(row.hash).replace("user_transaction", "pending_transaction")
+                  pendingRaw[row.hash] = signed.rawTxn
+                  if (loseSubmitResponse) error("Submit response lost")
+                  response(row.hash, signed.rawTxn)
+                    .replace("user_transaction", "pending_transaction")
                 }
                 path.contains("/transactions/by_hash/") -> {
                   events += "confirm"
-                  response(path.substringAfterLast('/'))
+                  val hash = path.substringAfterLast('/')
+                  val raw = pendingRaw[hash]
+                  sequence++
+                  configurationCommitted = true
+                  if (raw != null) {
+                    val signed = submitted.first { it.rawTxn == raw }
+                    val payer =
+                      (signed.authenticator as? TransactionAuthenticator.FeePayer)?.feePayerAddress
+                        ?: raw.sender
+                    val entry =
+                      (raw.payload as TransactionPayload.EntryFunction).call.function.toString() ==
+                        "place_order_to_subaccount"
+                    val gas =
+                      if (payer == AccountAddress.ONE)
+                        realOwnerGasOverride ?: (if (entry) 50uL else 20uL)
+                      else if (entry) 50uL else 20uL
+                    val cost = gas * raw.gasUnitPrice
+                    if (payer == AccountAddress.ONE)
+                      ownerBalance = (ownerBalance.toULong() - cost).toString()
+                    else apiBalance = (apiBalance.toULong() - cost).toString()
+                  }
+                  response(hash, raw)
                 }
                 else -> error("Unexpected path $path")
               }
@@ -404,7 +570,7 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
       override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
         sessionRestores++
         delay(sessionRestoreDelayMs)
-        return SessionStatus(SessionRole.API, "0x1", subaccount, Long.MAX_VALUE)
+        return SessionStatus(SessionRole.API, "0x3", subaccount, Long.MAX_VALUE)
       }
 
       override suspend fun useAnonymous(): SessionStatus = error("Not used")
@@ -439,7 +605,31 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
           block: suspend (xyz.mcxross.kaptos.account.Account) -> T,
         ): T {
           if (prompt.requireFreshAuthorization) freshKeyReads++
-          return wallets.withOwnerAccount(prompt, block)
+          return block(
+            object : Account() {
+              override val publicKey = Ed25519PublicKey(ByteArray(32) { 0x33 })
+              override val accountAddress = AccountAddress.fromString("0x3")
+              override val signingScheme = SigningScheme.Ed25519
+              override val isPrivateKeyCleared = true
+
+              override fun clearPrivateKey() = Unit
+
+              override fun sign(message: HexInput): Signature = error("Not used")
+
+              override fun signTransactionSignature(tx: UnsignedTransaction): Signature =
+                error("Not used")
+
+              override fun verifySignature(message: HexInput, signature: Signature) = true
+
+              override fun signWithAuthenticator(message: HexInput): AccountAuthenticator {
+                events += "sign"
+                return AccountAuthenticator.Ed25519(
+                  publicKey,
+                  Ed25519Signature(ByteArray(64) { 0x44 }),
+                )
+              }
+            },
+          )
         }
 
         override suspend fun <T> withOwnerAccount(
@@ -461,7 +651,7 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
     preferences.registerProfile(
       AccountProfile("owner", ownerAddress = "0x1", selectedSubaccount = "0x2"),
     )
-    preferences.setApiWallet("0x1")
+    preferences.setApiWallet("0x3")
     val fn =
       MoveFunction(
         "deposit_to_subaccount_at",
@@ -535,14 +725,23 @@ private class OrderFeeFixture(dispatcher: CoroutineDispatcher) {
       allowSelfPay,
       VaultPrompt("Confirm order", "Confirm your identity"),
     ) {
-      actions.flatMap {
-        trading.execute(it, VaultPrompt("Order", "Confirm your identity")).toList()
+      val states = mutableListOf<ActionState>()
+      for (action in actions) {
+        val phase = trading.execute(action, VaultPrompt("Order", "Confirm your identity")).toList()
+        states += phase
+        if (phase.last() !is ActionState.Committed) break
       }
+      states
     }
   }
 
-  private fun response(hash: String) =
-    """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"2","success":true,"vm_status":"Executed successfully","accumulator_root_hash":"0x0","sender":"0x1","sequence_number":"0","max_gas_amount":"50000","gas_unit_price":"100","expiration_timestamp_secs":"9999999999","events":[],"timestamp":"0"}"""
+  private fun response(
+    hash: String,
+    raw: RawTransaction? = null,
+    gas: ULong = 20uL,
+    success: Boolean = true,
+  ) =
+    """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"$gas","success":$success,"vm_status":"${if (success) "Executed successfully" else "Insufficient gas reserve or unapplied leverage"}","accumulator_root_hash":"0x0","sender":"${raw?.sender ?: "0x3"}","sequence_number":"${raw?.sequenceNumber ?: sequence}","max_gas_amount":"${raw?.maxGasAmount ?: 1000uL}","gas_unit_price":"${raw?.gasUnitPrice ?: 100uL}","expiration_timestamp_secs":"${raw?.expirationTimestampSecs ?: 9999999999uL}","events":[],"timestamp":"0"}"""
 }
 
 private class OrderFeeDatabase(private val journal: TransactionJournalDao) : FlareDatabase() {

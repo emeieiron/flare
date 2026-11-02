@@ -14,10 +14,25 @@ import xyz.mcxross.flare.data.formatPercent
 import xyz.mcxross.flare.data.formatPrice
 import xyz.mcxross.flare.design.DetailRow
 import xyz.mcxross.flare.design.FlareColors
+import xyz.mcxross.flare.design.LocalVenue
+import xyz.mcxross.flare.venue.VenueChain
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.OrderSide
 import xyz.mcxross.flare.venue.model.OrderType
 import xyz.mcxross.flare.venue.model.TradeAction
+
+/** The order review shows one network-fee value, using estimates only when available. */
+internal fun TradeUiState.orderNetworkFeeText(chain: VenueChain): String {
+  val review = feeReview
+  val entryFee = entryNetworkFee
+  // Entry-stage fees already aggregate all preceding configuration phases.
+  if (entryFee != null)
+    return if (entryFee.covered) "Covered by Flare" else "≈ ${chain.feeAmount(entryFee.estimate)}"
+  if (review == null) return "—"
+  if (review.sponsorshipAvailable != false) return "Covered by Flare"
+  return review.estimatedFeeOctas?.let { "≈ ${chain.feeAmount(it)}" }
+    ?: "Up to ${chain.feeAmount(review.maximumTotalOctas)}"
+}
 
 /**
  * "Buy 0.01 BTC" and "Market · Long · 1× cross": the order in two lines, shared by review and
@@ -84,6 +99,9 @@ internal fun ReviewDetails(state: TradeUiState, side: OrderSide) {
       DetailRow("TWAP duration", "${state.twapDurationMinutesInput} min")
       if (state.capabilities.twapInterval)
         DetailRow("Slice interval", "${state.twapFrequencyMinutesInput} min")
+    }
+    if (state.capabilities.sponsoredFees || state.feeReview != null) {
+      DetailRow("Fees", state.orderNetworkFeeText(LocalVenue.current.chain))
     }
     val productFees = if (isSpot) state.fees?.spot else state.fees?.perp
     if (productFees != null && estimate != null) {

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,13 +43,11 @@ import androidx.compose.ui.unit.dp
 import com.valentinilk.shimmer.shimmer
 import xyz.mcxross.flare.data.formatBalance
 import xyz.mcxross.flare.design.ActionNotice
-import xyz.mcxross.flare.design.ActionRow
 import xyz.mcxross.flare.design.ExitPriceFields
 import xyz.mcxross.flare.design.FlareChip
 import xyz.mcxross.flare.design.FlareColors
 import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareSkeletonBox
-import xyz.mcxross.flare.design.LocalVenue
 import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.venue.model.MarketKind
@@ -272,79 +269,13 @@ internal fun SpacedGroups(minHeight: Dp, content: @Composable () -> Unit) {
 internal fun OrderReviewStatus(
   state: TradeUiState,
   side: OrderSide,
-  onIntent: (TradeIntent) -> Unit,
   minHeight: Dp,
 ) {
   val inputError = state.orderInputError(side)
-  val chain = LocalVenue.current.chain
   SpacedGroups(minHeight) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      inputError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
-      if (state.feeReviewLoading) ActionNotice("Checking network fees…")
-      state.feeReviewError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
-      state.feeReview?.let { review ->
-        val sponsorUnavailable = review.sponsorshipAvailable == false
-        if (sponsorUnavailable)
-          ActionNotice(
-            "Flare cannot cover trading fees right now. This order requires " +
-              "${chain.feeToken} in this device’s trading wallet.",
-          )
-        val sponsorAlternative =
-          if (sponsorUnavailable) "" else " You can still try Flare-covered fees."
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Checkbox(
-            checked = state.allowFeeSelfPay,
-            onCheckedChange = { onIntent(TradeIntent.AllowFeeSelfPay(it)) },
-            enabled = review.canSelfPay && !state.orderBusy,
-          )
-          Text(
-            (if (sponsorUnavailable) "Pay up to "
-            else "If Flare cannot cover network fees, pay up to ") +
-              "${chain.feeAmount(review.maximumTotalOctas)} from this device’s trading wallet.",
-            style = MaterialTheme.typography.bodySmall,
-            color = FlareColors.TextSecondary,
-          )
-        }
-        when {
-          review.tradingKeyBalance == null ->
-            ActionNotice(
-              "The trading wallet’s ${chain.feeToken} balance could not be checked. " +
-                "Retry to enable fee payment." +
-                sponsorAlternative,
-            )
-          !review.canSelfPay -> {
-            ActionNotice(
-              "The network requires up to ${chain.feeAmount(review.maximumTotalOctas)} " +
-                "for this order. Send ${chain.feeAmount(checkNotNull(review.fundingDeficit))} " +
-                "to the trading wallet to enable fee payment: ${review.tradingKeyAddress}." +
-                sponsorAlternative,
-            )
-            if (
-              state.capabilities.networkFeeTopUp &&
-                state.ownerWalletAvailable &&
-                state.suggestedTopUp != null
-            )
-              ActionRow(
-                "Fund trading wallet",
-                subtitle =
-                  "Send ${chain.feeAmount(state.suggestedTopUp)} from your owner wallet. " +
-                    "This transfer requires its own confirmation and its network fee is paid from the owner wallet.",
-                enabled = !state.orderBusy,
-                onClick = { onIntent(TradeIntent.TopUpApiWallet) },
-              )
-          }
-        }
-      }
-      if (
-        !state.orderBusy &&
-          !state.feeReviewLoading &&
-          (state.feeReviewError != null || state.feeReview != null)
-      )
-        ActionRow(
-          "Refresh network fees",
-          enabled = true,
-          onClick = { onIntent(TradeIntent.PrepareOrderFees(side)) },
-        )
+    inputError?.let { ActionNotice(it, tone = NoticeTone.ALERT) }
+    (state.feeReviewError ?: state.orderFeePaymentError)?.let {
+      ActionNotice(it, tone = NoticeTone.ALERT)
     }
     ReviewHeading(state, side)
     ReviewDetails(state, side)

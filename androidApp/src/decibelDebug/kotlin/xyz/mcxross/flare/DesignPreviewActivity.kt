@@ -276,8 +276,7 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                     trade.copy(twapDurationMinutesInput = intent.value)
                   is TradeIntent.SetTwapFrequencyMinutes ->
                     trade.copy(twapFrequencyMinutesInput = intent.value)
-                  TradeIntent.ConfirmSelfPay ->
-                    trade.copy(transaction = ActionState.Committed("preview-only"))
+                  is TradeIntent.PrepareOrderFees -> trade.copy(feeReviewPrepared = true)
                   TradeIntent.DismissOrderReceipt ->
                     trade.copy(transaction = null, sizeInput = "", orderError = null)
                   is TradeIntent.Submit ->
@@ -292,8 +291,6 @@ private fun PreviewScreens(initialScreen: String, showLabel: Boolean) {
                               "Sponsorship unavailable",
                               selfPay = SelfPayOffer(2_400uL),
                             ),
-                          apiWalletNeedsTopUp = true,
-                          suggestedTopUp = 50_000uL,
                         )
                       else -> trade.copy(orderError = "Preview only. No order was placed.")
                     }
