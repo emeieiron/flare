@@ -2,6 +2,7 @@ package xyz.mcxross.flare.decibel.api
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
@@ -11,6 +12,10 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import xyz.mcxross.flare.decibel.DecibelDeployment
@@ -86,16 +91,59 @@ class SubaccountServiceTest {
     assertEquals(1_736_326_800L, delegations.last().expirationTimeSeconds)
   }
 
+  @Test
+  fun createdSubaccountComesFromDecibelsOwnEvent() = runTest {
+    val decibel = DecibelDeployment.Mainnet.packageAddress
+    val other = "0x" + "bb".repeat(32)
+    val transaction =
+      userTransaction(
+        event("0x1::object::TransferEvent", """{"object":"$other"}"""),
+        event("0x99::dex_accounts::SubaccountCreatedEvent", """{"subaccount":"$other"}"""),
+        event(
+          "$decibel::dex_accounts::SubaccountCreatedEvent",
+          """{"__variant__":"V1","is_primary":false,"owner":"0x7a","seed":{"vec":[]},"subaccount":"$address"}""",
+        ),
+      )
+    val created = service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
+        .createdSubaccount(HASH)
+    assertEquals(address, assertIs<AptosResult.Success<String?>>(created).value)
+  }
+
+  @Test
+  fun aTransactionWithoutTheEventNamesNoAccount() = runTest {
+    val transaction = userTransaction(event("0x1::object::TransferEvent", """{"object":"$address"}"""))
+    val created = service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
+        .createdSubaccount(HASH)
+    assertEquals(null, assertIs<AptosResult.Success<String?>>(created).value)
+  }
+
+  private fun event(type: String, data: String) =
+    """{"guid":{"creation_number":"0","account_address":"0x0"},"sequence_number":"0","type":"$type","data":$data}"""
+
+  private fun userTransaction(vararg events: String) =
+    """{"type":"user_transaction","version":"1","hash":"$HASH","state_change_hash":"$HASH","event_root_hash":"$HASH","state_checkpoint_hash":null,"gas_used":"2","success":true,"vm_status":"Executed successfully","accumulator_root_hash":"$HASH","sender":"0x1","sequence_number":"0","max_gas_amount":"2000000","gas_unit_price":"100","expiration_timestamp_secs":"9999999999","events":[${events.joinToString(",")}],"timestamp":"1"}"""
+
   private suspend fun status(body: String, code: HttpStatusCode = HttpStatusCode.OK) =
     assertIs<AptosResult.Success<SubaccountStatus>>(service(body, code).status(address)).value
 
-  private fun service(body: String, code: HttpStatusCode): SubaccountService {
+  private fun service(
+    body: String,
+    code: HttpStatusCode,
+    expectedPath: (String) -> Boolean = { it == "/v1/view" },
+    // A transaction wait times out in virtual time unless the engine runs on the test's scheduler.
+    dispatcher: CoroutineDispatcher? = null,
+  ): SubaccountService {
     val http =
       HttpClient(
-        MockEngine { request ->
-          assertEquals("/v1/view", request.url.encodedPath)
-          respond(body, code, headersOf(HttpHeaders.ContentType, "application/json"))
-        },
+        MockEngine(
+          MockEngineConfig().apply {
+            dispatcher?.let { this.dispatcher = it }
+            addHandler { request ->
+              assertTrue(expectedPath(request.url.encodedPath), request.url.encodedPath)
+              respond(body, code, headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+          },
+        ),
       ) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
       }
@@ -110,3 +158,8 @@ class SubaccountServiceTest {
     return DefaultSubaccountService(aptos, DecibelDeployment.Mainnet)
   }
 }
+
+private val HASH = "0x" + "ab".repeat(32)
+private val VIEW_OR_TRANSACTION: (String) -> Boolean = { it.startsWith("/v1/transactions/") }
+
+private suspend fun testDispatcher() = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher

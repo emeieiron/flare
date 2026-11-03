@@ -91,6 +91,9 @@ interface AccountRepository {
     feePayment: FeePayment = FeePayment.SPONSORED,
   ): ActionState
 
+  /** The account [created] opened, read from its transaction; null when that can't be told. */
+  suspend fun createdSubaccount(created: ActionState.Committed): String? = null
+
   /**
    * Opens the trading account of a wallet Flare created and returns its address. It happens exactly
    * once: an earlier attempt that went through is found and reused, never repeated, and a new

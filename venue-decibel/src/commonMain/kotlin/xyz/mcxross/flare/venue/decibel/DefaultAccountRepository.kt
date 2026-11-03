@@ -205,7 +205,21 @@ class DefaultAccountRepository(
     require(subaccount.isNotBlank()) { "Select a trading account" }
     preferences.setSelectedSubaccount(subaccount)
     trading.reconcilePending()
-    restoreTrading(prompt)
+    // What follows needs the account's session, not its overview and history, which load behind it.
+    // An account opened moments ago can take a few seconds to be recognized as the wallet's.
+    var attempt = 0
+    while (true) {
+      try {
+        ensureReadSession(subaccount)
+        break
+      } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+      } catch (error: Exception) {
+        if (++attempt == SELECTION_ATTEMPTS) throw error
+        delay(1_000L shl (attempt - 1))
+      }
+    }
+    scope.launch { runSuspendCatching { restoreTrading(prompt) } }
   }
 
   /**
@@ -227,7 +241,7 @@ class DefaultAccountRepository(
   ): ActionState {
     val saved = preferences.values.first()
     val owner = saved.ownerAddress ?: error("An owner key is required")
-    sessions.authenticateOwner(null, prompt.copy(requireFreshAuthorization = false))
+    sessions.ensureOwner(null, prompt.copy(requireFreshAuthorization = false))
     val reference = saved.profiles.first { it.id == saved.activeProfileId }.creationReference
     if (reference != null) {
       // An earlier attempt may have gone through after its journal entry settled, so the chain has
@@ -301,9 +315,17 @@ class DefaultAccountRepository(
     if (!profile.tradingAccountOpened) {
       val result = createSubaccount(prompt, FeePayment.SPONSORED)
       if (result !is ActionState.Committed) throw SetupTransactionException(result)
+      createdSubaccount(result)?.let {
+        return it
+      }
     }
     return awaitSubaccount(owner)
   }
+
+  override suspend fun createdSubaccount(created: ActionState.Committed): String? =
+    (runSuspendCatching { client.subaccounts.createdSubaccount(created.reference) }.getOrNull()
+        as? AptosResult.Success)
+      ?.value
 
   /**
    * Decibel lists a new account a moment after it's opened; this waits, patiently, for it to
@@ -360,7 +382,12 @@ class DefaultAccountRepository(
         override suspend fun createWallet() = wallets.createApiWallet(prompt)
 
         override suspend fun isDelegated(address: String): Boolean {
-          val delegations = readAccount(subaccount) { client.accounts.delegations(subaccount) }
+          // The indexed listing can lag a new account; the chain can't.
+          val onChain =
+            runSuspendCatching { client.subaccounts.delegations(subaccount) }.getOrNull()
+          val delegations =
+            (onChain as? AptosResult.Success)?.value
+              ?: readAccount(subaccount) { client.accounts.delegations(subaccount) }
           val now = Clock.System.now().epochSeconds
           return delegations.any {
             it.delegate.sameAptosAddress(address) &&
@@ -1409,6 +1436,7 @@ private fun <T> Page<T>.hasMore(offset: Int): Boolean {
 }
 
 private const val OPENED_ACCOUNT_CHECKS = 8
+private const val SELECTION_ATTEMPTS = 4
 
 /**
  * Marks the setup steps a person confirmed as one action; see [AccountRepository.confirmedSetup].

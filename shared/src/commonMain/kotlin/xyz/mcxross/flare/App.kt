@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
@@ -61,6 +63,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -106,6 +109,7 @@ import xyz.mcxross.flare.feature.orders.OrdersRoute
 import xyz.mcxross.flare.feature.portfolio.PortfolioRoute
 import xyz.mcxross.flare.feature.portfolio.PositionRoute
 import xyz.mcxross.flare.feature.settings.AccountRoute
+import xyz.mcxross.flare.feature.settings.LocalWalletViewModels
 import xyz.mcxross.flare.feature.settings.SettingsRoute
 import xyz.mcxross.flare.feature.trade.TradeRoute
 import xyz.mcxross.flare.security.ForegroundWalletVault
@@ -335,9 +339,19 @@ private fun FlareAppFlow() {
         // being set up from inside the shell becomes active along the way, and must not reset it.
         val shellAccount =
           persisted?.profiles?.firstOrNull { it.id == lastCompletedProfileId }?.selectedSubaccount
-        key(lastCompletedProfileId, shellAccount) {
-          savedScreens.SaveableStateProvider("shell:$lastCompletedProfileId:$shellAccount") {
-            FlareShell()
+        // Changing the wallet's trading account keeps the person on the tab they were on.
+        val shownTab = remember { mutableStateOf(lastCompletedProfileId to 0) }
+        val walletViewModels = remember(lastCompletedProfileId) { WalletViewModels() }
+        DisposableEffect(walletViewModels) { onDispose { walletViewModels.viewModelStore.clear() } }
+        CompositionLocalProvider(LocalWalletViewModels provides walletViewModels) {
+          key(lastCompletedProfileId, shellAccount) {
+            savedScreens.SaveableStateProvider("shell:$lastCompletedProfileId:$shellAccount") {
+              val (tabWallet, tab) = shownTab.value
+              FlareShell(
+                initialTab = if (tabWallet == lastCompletedProfileId) tab else 0,
+                onTabShown = { shownTab.value = lastCompletedProfileId to it },
+              )
+            }
           }
         }
       }
@@ -346,6 +360,11 @@ private fun FlareAppFlow() {
     }
     LaunchCurtain(stage, finishedSetup, locked = unlockError != null, onUnlock = { retry++ })
   }
+}
+
+/** View models that outlive a trading-account switch; cleared once the wallet changes. */
+private class WalletViewModels : ViewModelStoreOwner {
+  override val viewModelStore = ViewModelStore()
 }
 
 /**
@@ -447,7 +466,7 @@ private fun LaunchCurtain(
 }
 
 @Composable
-private fun FlareShell() {
+private fun FlareShell(initialTab: Int, onTabShown: (Int) -> Unit) {
   val navController = rememberNavController()
   val backStack by navController.currentBackStackEntryAsState()
   val destination = backStack?.destination
@@ -488,6 +507,13 @@ private fun FlareShell() {
       launchSingleTop = true
       restoreState = true
     }
+  }
+
+  LaunchedEffect(selectedIndex) { onTabShown(selectedIndex) }
+  LaunchedEffect(Unit) {
+    if (initialTab == 0) return@LaunchedEffect
+    navController.currentBackStackEntryFlow.first()
+    navigateTo(initialTab)
   }
 
   // A tap on the tab already shown takes it back to its first page.

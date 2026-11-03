@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,9 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
@@ -104,6 +107,12 @@ import xyz.mcxross.flare.venue.model.TradingAccount
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
 
+/**
+ * The wallet's view models, kept above the shell: selecting or creating a trading account starts
+ * the shell over, and the Account screen mustn't lose what it was doing for that account.
+ */
+internal val LocalWalletViewModels = staticCompositionLocalOf<ViewModelStoreOwner?> { null }
+
 @Composable
 fun AccountRoute(
   onOpenSettings: () -> Unit,
@@ -113,7 +122,11 @@ fun AccountRoute(
   modifier: Modifier = Modifier,
   openReceive: Boolean = false,
   onReceiveOpened: () -> Unit = {},
-  viewModel: SettingsViewModel = koinViewModel(),
+  viewModel: SettingsViewModel =
+    koinViewModel(
+      viewModelStoreOwner =
+        LocalWalletViewModels.current ?: checkNotNull(LocalViewModelStoreOwner.current),
+    ),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val catalog: AssetCatalogRepository = koinInject()

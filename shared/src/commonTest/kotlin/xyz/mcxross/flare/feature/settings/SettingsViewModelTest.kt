@@ -194,12 +194,28 @@ class SettingsViewModelTest {
 
     override suspend fun selectTradingAccount(subaccount: String, prompt: VaultPrompt) {
       selections++
+      selected += subaccount
     }
+
+    val selected = mutableListOf<String>()
+    var createdAddress: String? = null
+    var prepares = 0
+    var prepareError: Exception? = null
+    var confirmedSetups = 0
+    val approvedProducts = mutableListOf<MarketKind>()
 
     override suspend fun createSubaccount(
       prompt: VaultPrompt,
       feePayment: FeePayment,
     ): ActionState = ActionState.Committed("0xsub")
+
+    override suspend fun createdSubaccount(created: ActionState.Committed): String? =
+      createdAddress
+
+    override suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T {
+      confirmedSetups++
+      return block()
+    }
 
     override suspend fun openTradingAccount(prompt: VaultPrompt): String = "0xsub"
 
@@ -208,7 +224,10 @@ class SettingsViewModelTest {
       feePayment: FeePayment,
     ): ActionState = ActionState.Committed("0xdel")
 
-    override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {}
+    override suspend fun prepareTradingWallet(prompt: VaultPrompt, feePayment: FeePayment) {
+      prepares++
+      prepareError?.let { throw it }
+    }
 
     override fun depositUsdc(
       amount: String,
@@ -247,6 +266,7 @@ class SettingsViewModelTest {
       product: MarketKind,
     ): ActionState {
       approvals += feePayment
+      approvedProducts += product
       return approveResult(feePayment)
     }
 
@@ -461,6 +481,75 @@ class SettingsViewModelTest {
     assertNull(vm.uiState.value.rewards)
     assertEquals(0, accounts.rewardReads)
     assertEquals(0, accounts.subaccountReads)
+  }
+
+  @Test
+  fun aNewTradingAccountIsReadyWithoutWaitingForTheListing() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.createdAddress = "0xnew"
+    val vm = creatingAccounts(accounts, builderApproved = true)
+
+    vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
+
+    assertEquals(0L, testScheduler.currentTime)
+    assertEquals(1, accounts.confirmedSetups)
+    assertEquals(listOf("0xnew"), accounts.selected)
+    assertEquals(1, accounts.prepares)
+    assertEquals(listOf(MarketKind.PERP), accounts.approvedProducts)
+    assertNull(vm.uiState.value.error)
+    assertFalse(vm.uiState.value.creatingSubaccount)
+  }
+
+  @Test
+  fun aNewTradingAccountThatCantTradeYetSaysSo() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.createdAddress = "0xnew"
+    accounts.prepareError = IllegalStateException("Trading is enabled on-chain, but not confirmed yet.")
+    val vm = creatingAccounts(accounts, builderApproved = false)
+
+    vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
+
+    assertEquals(listOf("0xnew"), accounts.selected)
+    assertTrue(vm.uiState.value.error.orEmpty().contains("not confirmed yet"))
+    assertTrue(accounts.approvedProducts.isEmpty())
+  }
+
+  @Test
+  fun withoutTheTransactionTheListingIsCheckedOnlyUntilTheAccountAppears() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.tradingAccounts = listOf(TradingAccount("0xold", "0xowner"))
+    val vm = creatingAccounts(accounts, builderApproved = false)
+
+    vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
+    accounts.tradingAccounts = listOf(TradingAccount("0xold", "0xowner"), TradingAccount("0xnew", "0xowner"))
+    advanceTimeBy(1_501)
+    runCurrent()
+    assertEquals(listOf("0xnew"), accounts.selected)
+    val reads = accounts.subaccountReads
+    advanceTimeBy(30_000)
+    runCurrent()
+    assertEquals(reads, accounts.subaccountReads)
+  }
+
+  private suspend fun kotlinx.coroutines.test.TestScope.creatingAccounts(
+    accounts: FakeAccountRepository,
+    builderApproved: Boolean,
+  ): SettingsViewModel {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
+    preferences.setBuilderSupport("0xbuilder", builderFeeBps = 5, builderApproved = builderApproved)
+    val vm =
+      SettingsViewModel(
+        preferences,
+        FakeWalletRepository(),
+        accounts,
+        null,
+        accounts,
+        testVenue(),
+        AddressCredentials,
+      )
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect {} }
+    return vm
   }
 
   @Test

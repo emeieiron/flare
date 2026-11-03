@@ -458,28 +458,18 @@ class SettingsViewModel(
               .map { it.address }
               .toSet()
             val prompt = VaultPrompt("Create trading subaccount", "Confirm your identity")
-            val result = accounts.createSubaccount(prompt)
-            check(result is ActionState.Committed) {
-              (result as? ActionState.Failed)?.message
-                ?: "Subaccount transaction failed. Try again."
-            }
-            var newAddress: String? = null
-            repeat(10) {
-              delay(1500)
-              val after = runSuspendCatching {
-                accounts.subaccounts(owner)
+            // One confirmation covers opening the account, enabling trading and builder support.
+            accounts.confirmedSetup(prompt) {
+              val result = accounts.createSubaccount(prompt)
+              check(result is ActionState.Committed) {
+                (result as? ActionState.Failed)?.message
+                  ?: "Subaccount transaction failed. Try again."
               }
-                .getOrDefault(emptyList())
-              val created = after.firstOrNull { it.address !in before }
-              if (created != null) {
-                newAddress = created.address
-                return@repeat
-              }
-            }
-            val targetAddress = newAddress ?: accounts.subaccounts(owner).lastOrNull()?.address
-            if (targetAddress != null) {
-              accounts.selectTradingAccount(targetAddress, prompt)
-              runSuspendCatching { accounts.prepareTradingWallet(prompt) }
+              val created =
+                accounts.createdSubaccount(result) ?: awaitNewSubaccount(owner, before)
+              accounts.selectTradingAccount(created, prompt)
+              accounts.prepareTradingWallet(prompt)
+              approveBuilderSupport(current, prompt)
             }
             loadSubaccounts()
           } finally {
@@ -617,6 +607,38 @@ class SettingsViewModel(
   private fun hideSecret() {
     secretClearJob?.cancel()
     local.update { it.copy(revealedSecretLabel = null, revealedSecret = null) }
+  }
+
+  /** Polls the exchange's listing for the account that wasn't there [before]. */
+  private suspend fun awaitNewSubaccount(owner: String, before: Set<String>): String {
+    repeat(NEW_ACCOUNT_CHECKS) {
+      delay(NEW_ACCOUNT_CHECK_MS)
+      runSuspendCatching { accounts.subaccounts(owner) }
+        .getOrNull()
+        ?.firstOrNull { it.address !in before }
+        ?.let {
+          return it.address
+        }
+    }
+    error("Your trading account is open but isn’t showing yet. Select it once it appears.")
+  }
+
+  /** Builder support is approved per trading account, so a new one gets what the wallet has. */
+  private suspend fun approveBuilderSupport(settings: FlarePreferences, prompt: VaultPrompt) {
+    val builder = settings.builderAddress ?: local.value.defaultBuilderAddress
+    if (builder.isBlank()) return
+    for ((product, approved, rate) in
+      listOf(
+        Triple(MarketKind.PERP, settings.builderApproved, settings.builderFeeBps),
+        Triple(MarketKind.SPOT, settings.spotBuilderApproved, settings.spotBuilderFeeBps),
+      )) {
+      if (!approved || rate <= 0) continue
+      val result =
+        accounts.approveBuilderFee(builder, maxBuilderFeeBps.toUInt(), prompt, product = product)
+      check(result is ActionState.Committed) {
+        "Your trading account is ready, but builder support wasn’t turned on for it."
+      }
+    }
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
@@ -959,5 +981,7 @@ class SettingsViewModel(
   private companion object {
     const val WALLET_BALANCE_REFRESH_MS = 15_000L
     const val SECRET_REVEAL_MS = 60_000L
+    const val NEW_ACCOUNT_CHECKS = 10
+    const val NEW_ACCOUNT_CHECK_MS = 1_500L
   }
 }

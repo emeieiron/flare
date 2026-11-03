@@ -89,6 +89,18 @@ class AccountSessionScopeIosTest {
   }
 
   @Test
+  fun selectingAnAccountDoesNotWaitForItsReads() = runTest {
+    fixture { f ->
+      val reads = CompletableDeferred<Unit>()
+      f.accountReads = reads
+      // Returns while the overview read is still held open.
+      f.accounts.selectTradingAccount(ACCOUNT, PROMPT)
+      assertEquals(ACCOUNT, f.preferences.values.first().selectedSubaccount)
+      reads.complete(Unit)
+    }
+  }
+
+  @Test
   fun discoveryPinsOwnerScopeEvenWhenAnApiSessionBecomesTheDefault() = runTest {
     fixture { f ->
       f.beforeNextToken = {
