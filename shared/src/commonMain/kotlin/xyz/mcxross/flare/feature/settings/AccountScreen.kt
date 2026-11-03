@@ -1,6 +1,18 @@
 package xyz.mcxross.flare.feature.settings
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -33,6 +45,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,6 +73,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import com.valentinilk.shimmer.shimmer
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
@@ -82,6 +96,7 @@ import xyz.mcxross.flare.design.FlareIcons
 import xyz.mcxross.flare.design.FlareQrCode
 import xyz.mcxross.flare.design.FlareSegmentedControl
 import xyz.mcxross.flare.design.FlareSheet
+import xyz.mcxross.flare.design.FlareSkeletonBox
 import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.LocalTransactionExplorer
 import xyz.mcxross.flare.design.LocalVenue
@@ -92,8 +107,10 @@ import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.design.emphasizedAddress
 import xyz.mcxross.flare.design.fullBleed
+import xyz.mcxross.flare.design.rememberFlareShimmer
 import xyz.mcxross.flare.design.rememberOutcomeReveal
 import xyz.mcxross.flare.design.rememberPreparedFlareQrCodePainter
+import xyz.mcxross.flare.design.rememberReducedMotion
 import xyz.mcxross.flare.design.resolveAssetIdentity
 import xyz.mcxross.flare.design.shortAddress
 import xyz.mcxross.flare.feature.onboarding.LocalCredentialParser
@@ -106,6 +123,26 @@ import xyz.mcxross.flare.venue.model.ActionState
 import xyz.mcxross.flare.venue.model.TradingAccount
 
 private const val COPIED_CONFIRMATION_MS = 1_500L
+
+/** Rows standing in for the trading accounts, sized like them, until the first read comes back. */
+@Composable
+private fun TradingAccountsSkeleton() {
+  val shimmer = rememberFlareShimmer()
+  Column(Modifier.fillMaxWidth().shimmer(shimmer)) {
+    repeat(2) {
+      Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        FlareSkeletonBox(Modifier.padding(top = 2.dp).size(24.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.height(40.dp).padding(top = 4.dp)) {
+          FlareSkeletonBox(Modifier.height(16.dp).width(136.dp))
+          Spacer(Modifier.height(6.dp))
+          FlareSkeletonBox(Modifier.height(12.dp).width(104.dp))
+        }
+      }
+      HorizontalDivider(color = FlareColors.BorderSubtle)
+    }
+  }
+}
 
 /**
  * The wallet's view models, kept above the shell: selecting or creating a trading account starts
@@ -314,78 +351,134 @@ fun AccountScreen(
         Modifier.padding(top = 32.dp, bottom = 12.dp),
         style = MaterialTheme.typography.titleMedium,
       )
-      subaccounts.forEachIndexed { index, account ->
-        val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
-        Row(
-          Modifier.fillMaxWidth()
-            .combinedClickable(
-              enabled = !state.busy,
-              role = Role.RadioButton,
-              onClickLabel = "Select trading account",
-              onClick = { onIntent(SettingsIntent.SelectSubaccount(active.id, account.address)) },
-              onLongClickLabel = "Rename trading account",
-              onLongClick = {
-                onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
-              },
-            )
-            .semantics { this.selected = selected }
-            .padding(vertical = 12.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Icon(
-            FlareIcons.AccountBranch,
-            null,
-            modifier = Modifier.align(Alignment.Top).padding(top = 2.dp).size(24.dp),
-            tint = FlareColors.BorderStrong,
-          )
-          Spacer(Modifier.width(12.dp))
-          Column(Modifier.weight(1f)) {
-            Text(
-              active.tradingAccountDisplayName(account.address, account.label, index),
-              style = MaterialTheme.typography.bodyLarge,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              shortAddress(account.address),
-              style = MaterialTheme.typography.bodySmall,
-              color = FlareColors.TextSecondary,
-            )
+      val subaccountsLoading =
+        state.capabilities.subaccounts &&
+          !state.subaccountsLoaded &&
+          active.ownerAddress?.let { it !in state.subaccountsByOwner } == true
+      val reduceMotion = rememberReducedMotion()
+      // The skeleton gives way to the accounts, and an account added later grows into place.
+      AnimatedContent(
+        subaccountsLoading,
+        transitionSpec = {
+          if (reduceMotion) EnterTransition.None togetherWith ExitTransition.None
+          else fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+        },
+        label = "tradingAccounts",
+      ) { loading ->
+        if (loading) TradingAccountsSkeleton()
+        else
+          Column {
+            val shownFirst = remember { subaccounts.map { it.address }.toSet() }
+            subaccounts.forEachIndexed { index, account ->
+              key(account.address) {
+                val selected = account.address.equals(active.selectedSubaccount, ignoreCase = true)
+                val entrance = remember {
+                  MutableTransitionState(reduceMotion || account.address in shownFirst).apply {
+                    targetState = true
+                  }
+                }
+                AnimatedVisibility(entrance, enter = expandVertically() + fadeIn()) {
+                  Column {
+                    Row(
+                      Modifier.fillMaxWidth()
+                        .combinedClickable(
+                          enabled = !state.busy,
+                          role = Role.RadioButton,
+                          onClickLabel = "Select trading account",
+                          onClick = {
+                            onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
+                          },
+                          onLongClickLabel = "Rename trading account",
+                          onLongClick = {
+                            onIntent(
+                              SettingsIntent.RenameTradingAccount(active.id, account.address),
+                            )
+                          },
+                        )
+                        .semantics { this.selected = selected }
+                        .padding(vertical = 12.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Icon(
+                        FlareIcons.AccountBranch,
+                        null,
+                        modifier = Modifier.align(Alignment.Top).padding(top = 2.dp).size(24.dp),
+                        tint = FlareColors.BorderStrong,
+                      )
+                      Spacer(Modifier.width(12.dp))
+                      Column(Modifier.weight(1f)) {
+                        Text(
+                          active.tradingAccountDisplayName(account.address, account.label, index),
+                          style = MaterialTheme.typography.bodyLarge,
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                          shortAddress(account.address),
+                          style = MaterialTheme.typography.bodySmall,
+                          color = FlareColors.TextSecondary,
+                        )
+                      }
+                      AnimatedVisibility(
+                        selected,
+                        enter =
+                          if (reduceMotion) EnterTransition.None
+                          else fadeIn() + expandHorizontally(),
+                        exit =
+                          if (reduceMotion) ExitTransition.None
+                          else fadeOut() + shrinkHorizontally(),
+                      ) {
+                        Icon(
+                          FlareIcons.CheckCircle,
+                          "Selected",
+                          tint = FlareColors.TextPrimary,
+                          modifier = Modifier.size(20.dp),
+                        )
+                      }
+                      IconButton(
+                        onClick = {
+                          detailTitle = "Trading account address"
+                          detailAddress = account.address
+                        },
+                        modifier =
+                          Modifier.semantics {
+                            contentDescription = "Show trading account address"
+                          },
+                      ) {
+                        Icon(
+                          FlareIcons.Copy,
+                          null,
+                          tint = FlareColors.TextSecondary,
+                          modifier = Modifier.size(18.dp),
+                        )
+                      }
+                      AccountActionsMenu("Trading account", !state.busy) {
+                        onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
+                      }
+                    }
+                    HorizontalDivider(color = FlareColors.BorderSubtle)
+                  }
+                }
+              }
+            }
           }
-          if (selected)
-            Icon(
-              FlareIcons.CheckCircle,
-              "Selected",
-              tint = FlareColors.TextPrimary,
-              modifier = Modifier.size(20.dp),
-            )
-          IconButton(
-            onClick = {
-              detailTitle = "Trading account address"
-              detailAddress = account.address
-            },
-            modifier = Modifier.semantics { contentDescription = "Show trading account address" },
-          ) {
-            Icon(
-              FlareIcons.Copy,
-              null,
-              tint = FlareColors.TextSecondary,
-              modifier = Modifier.size(18.dp),
-            )
-          }
-          AccountActionsMenu("Trading account", !state.busy) {
-            onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
-          }
-        }
-        HorizontalDivider(color = FlareColors.BorderSubtle)
       }
       if (active.ownerAddress != null && state.capabilities.createSubaccounts) {
-        ActionRow(
-          if (state.creatingSubaccount) "Creating trading account…" else "Add trading account",
-          icon = FlareIcons.Add,
-          enabled = !state.busy && !state.creatingSubaccount,
-          onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) },
-        )
+        AnimatedContent(
+          state.creatingSubaccount,
+          transitionSpec = {
+            if (reduceMotion) EnterTransition.None togetherWith ExitTransition.None
+            else fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+          },
+          label = "addTradingAccount",
+        ) { creating ->
+          ActionRow(
+            if (creating) "Creating trading account…" else "Add trading account",
+            icon = FlareIcons.Add,
+            enabled = !state.busy && !creating,
+            onClick = { onIntent(SettingsIntent.CreateSubaccountForActiveProfile) },
+          )
+        }
       }
     }
     Spacer(Modifier.height(32.dp))

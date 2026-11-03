@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +64,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -337,18 +337,26 @@ private fun FlareAppFlow() {
       LaunchStage.READY -> {
         // The shell starts over only when a finished wallet or its account changes. A wallet still
         // being set up from inside the shell becomes active along the way, and must not reset it.
-        val shellAccount =
+        val selectedAccount =
           persisted?.profiles?.firstOrNull { it.id == lastCompletedProfileId }?.selectedSubaccount
-        // Changing the wallet's trading account keeps the person on the tab they were on.
-        val shownTab = remember { mutableStateOf(lastCompletedProfileId to 0) }
+        // It starts over on the tab the person is on. An account chosen or opened from the Account
+        // tab waits until they leave it, so the screen they're using isn't replaced under them.
+        val shownTab = remember { mutableStateOf(lastCompletedProfileId to MARKETS_TAB) }
+        val currentTab =
+          shownTab.value.let { (wallet, tab) ->
+            if (wallet == lastCompletedProfileId) tab else MARKETS_TAB
+          }
+        val heldAccount = remember(lastCompletedProfileId) { mutableStateOf(selectedAccount) }
+        val shellAccount = if (currentTab == ACCOUNT_TAB) heldAccount.value else selectedAccount
+        SideEffect { heldAccount.value = shellAccount }
         val walletViewModels = remember(lastCompletedProfileId) { WalletViewModels() }
         DisposableEffect(walletViewModels) { onDispose { walletViewModels.viewModelStore.clear() } }
         CompositionLocalProvider(LocalWalletViewModels provides walletViewModels) {
           key(lastCompletedProfileId, shellAccount) {
             savedScreens.SaveableStateProvider("shell:$lastCompletedProfileId:$shellAccount") {
-              val (tabWallet, tab) = shownTab.value
               FlareShell(
-                initialTab = if (tabWallet == lastCompletedProfileId) tab else 0,
+                startTab = currentTab,
+                accountChanged = shellAccount != selectedAccount,
                 onTabShown = { shownTab.value = lastCompletedProfileId to it },
               )
             }
@@ -361,6 +369,17 @@ private fun FlareAppFlow() {
     LaunchCurtain(stage, finishedSetup, locked = unlockError != null, onUnlock = { retry++ })
   }
 }
+
+private const val MARKETS_TAB = 0
+private const val ACCOUNT_TAB = 3
+
+private fun tabRoute(index: Int): Any =
+  when (index) {
+    MARKETS_TAB -> MarketsDestination
+    1 -> PortfolioDestination
+    2 -> OrdersDestination
+    else -> AccountDestination
+  }
 
 /** View models that outlive a trading-account switch; cleared once the wallet changes. */
 private class WalletViewModels : ViewModelStoreOwner {
@@ -466,19 +485,22 @@ private fun LaunchCurtain(
 }
 
 @Composable
-private fun FlareShell(initialTab: Int, onTabShown: (Int) -> Unit) {
+private fun FlareShell(startTab: Int, accountChanged: Boolean, onTabShown: (Int) -> Unit) {
+  // Fixed for this shell: a changed start would replace the navigation graph under it.
+  val firstTab = remember { startTab }
   val navController = rememberNavController()
   val backStack by navController.currentBackStackEntryAsState()
   val destination = backStack?.destination
   val isDetailDestination = destination?.isDetailPage() == true
   val selectedIndex =
     when {
-      destination?.hasRoute<PortfolioDestination>() == true -> 1
-      destination?.hasRoute<OrdersDestination>() == true -> 2
-      destination?.hasRoute<AccountDestination>() == true ||
-        destination?.hasRoute<SettingsDestination>() == true ||
-        destination?.hasRoute<AccountSetupDestination>() == true -> 3
-      else -> 0
+      destination == null -> firstTab
+      destination.hasRoute<PortfolioDestination>() -> 1
+      destination.hasRoute<OrdersDestination>() -> 2
+      destination.hasRoute<AccountDestination>() ||
+        destination.hasRoute<SettingsDestination>() ||
+        destination.hasRoute<AccountSetupDestination>() -> ACCOUNT_TAB
+      else -> MARKETS_TAB
     }
   val navigationItems = remember {
     listOf(
@@ -495,25 +517,17 @@ private fun FlareShell(initialTab: Int, onTabShown: (Int) -> Unit) {
    * Markets' own state and restore it straight back.
    */
   fun navigateTo(index: Int) {
-    val route: Any =
-      when (index) {
-        0 -> MarketsDestination
-        1 -> PortfolioDestination
-        2 -> OrdersDestination
-        else -> AccountDestination
-      }
-    navController.navigate(route) {
+    // The trading account changed on the Account tab: leaving it starts the shell over there.
+    if (accountChanged && index != ACCOUNT_TAB) return onTabShown(index)
+    navController.navigate(tabRoute(index)) {
       popUpTo(navController.graph.startDestinationId) { saveState = true }
       launchSingleTop = true
       restoreState = true
     }
   }
 
-  LaunchedEffect(selectedIndex) { onTabShown(selectedIndex) }
-  LaunchedEffect(Unit) {
-    if (initialTab == 0) return@LaunchedEffect
-    navController.currentBackStackEntryFlow.first()
-    navigateTo(initialTab)
+  LaunchedEffect(selectedIndex, destination != null) {
+    if (destination != null) onTabShown(selectedIndex)
   }
 
   // A tap on the tab already shown takes it back to its first page.
@@ -522,14 +536,7 @@ private fun FlareShell(initialTab: Int, onTabShown: (Int) -> Unit) {
 
   fun onTabSelected(index: Int) {
     if (index != selectedIndex) return navigateTo(index)
-    val root: Any =
-      when (index) {
-        0 -> MarketsDestination
-        1 -> PortfolioDestination
-        2 -> OrdersDestination
-        else -> AccountDestination
-      }
-    navController.popBackStack(root, inclusive = false)
+    navController.popBackStack(tabRoute(index), inclusive = false)
     tabReselections.tryEmit(index)
   }
 
@@ -568,7 +575,7 @@ private fun FlareShell(initialTab: Int, onTabShown: (Int) -> Unit) {
       // its own as it slides over, so another full-screen layer here would only be overdraw.
       NavHost(
         navController = navController,
-        startDestination = MarketsDestination,
+        startDestination = tabRoute(firstTab),
         modifier =
           Modifier.fillMaxSize()
             .padding(contentPadding)

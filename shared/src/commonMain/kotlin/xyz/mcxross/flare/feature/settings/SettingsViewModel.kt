@@ -81,6 +81,10 @@ data class SettingsUiState(
   val delegations: List<TradingKey> = emptyList(),
   val delegationsLoaded: Boolean = false,
   val subaccountsByOwner: Map<String, List<TradingAccount>> = emptyMap(),
+  /** False until the first read of the trading accounts has come back. */
+  val subaccountsLoaded: Boolean = false,
+  /** Accounts opened here that the exchange may not list yet. */
+  val openedSubaccounts: Set<String> = emptySet(),
   val creatingSubaccount: Boolean = false,
   val referral: ReferralUiState = ReferralUiState(),
   val referralManaged: Boolean = false,
@@ -467,6 +471,7 @@ class SettingsViewModel(
               }
               val created =
                 accounts.createdSubaccount(result) ?: awaitNewSubaccount(owner, before)
+              showOpenedSubaccount(owner, created)
               accounts.selectTradingAccount(created, prompt)
               accounts.prepareTradingWallet(prompt)
               approveBuilderSupport(current, prompt)
@@ -963,20 +968,37 @@ class SettingsViewModel(
     // Venues without trading accounts show the selected account alone.
     if (!capabilities.subaccounts) return
     viewModelScope.launch {
-      val profiles = preferences.values.first().profiles
-      val map = mutableMapOf<String, List<TradingAccount>>()
-      for (p in profiles) {
-        val owner = p.ownerAddress ?: continue
-        runSuspendCatching {
-          accounts.subaccounts(owner)
+      val owners = preferences.values.first().profiles.mapNotNull { it.ownerAddress }.distinct()
+      val read =
+        owners.associateWith { runSuspendCatching { accounts.subaccounts(it) }.getOrNull() }
+      local.update { state ->
+        val shown = state.subaccountsByOwner.toMutableMap()
+        for ((owner, listed) in read) {
+          // A read that failed leaves the list as it was rather than emptying it.
+          listed ?: continue
+          val unlisted =
+            shown[owner].orEmpty().filter { account ->
+              state.openedSubaccounts.any { credentials.sameAddress(it, account.address) } &&
+                listed.none { credentials.sameAddress(it.address, account.address) }
+            }
+          shown[owner] = listed + unlisted
         }
-          .onSuccess { list ->
-            map[owner] = list
-          }
+        state.copy(subaccountsByOwner = shown, subaccountsLoaded = true)
       }
-      local.update { it.copy(subaccountsByOwner = map) }
     }
   }
+
+  /** Shows an account the moment it's opened, with the others, before the exchange lists it. */
+  private fun showOpenedSubaccount(owner: String, address: String) =
+    local.update { state ->
+      val shown = state.subaccountsByOwner[owner].orEmpty()
+      if (shown.any { credentials.sameAddress(it.address, address) }) return@update state
+      state.copy(
+        subaccountsByOwner =
+          state.subaccountsByOwner + (owner to shown + TradingAccount(address, owner)),
+        openedSubaccounts = state.openedSubaccounts + address,
+      )
+    }
 
   private companion object {
     const val WALLET_BALANCE_REFRESH_MS = 15_000L

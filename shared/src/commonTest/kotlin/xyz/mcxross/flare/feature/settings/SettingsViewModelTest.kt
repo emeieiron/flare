@@ -187,8 +187,11 @@ class SettingsViewModelTest {
     override suspend fun discoverOwnerSubaccounts(prompt: VaultPrompt): List<TradingAccount> =
       emptyList()
 
+    var subaccountsError: Exception? = null
+
     override suspend fun subaccounts(owner: String): List<TradingAccount> {
       subaccountReads++
+      subaccountsError?.let { throw it }
       return tradingAccounts
     }
 
@@ -498,6 +501,45 @@ class SettingsViewModelTest {
     assertEquals(listOf(MarketKind.PERP), accounts.approvedProducts)
     assertNull(vm.uiState.value.error)
     assertFalse(vm.uiState.value.creatingSubaccount)
+  }
+
+  @Test
+  fun aNewTradingAccountJoinsTheOthersBeforeTheExchangeListsIt() = runTest {
+    val accounts = FakeAccountRepository()
+    val first = TradingAccount("0xfirst", "0xowner")
+    val second = TradingAccount("0xsecond", "0xowner")
+    accounts.tradingAccounts = listOf(first, second)
+    accounts.createdAddress = "0xnew"
+    val vm = creatingAccounts(accounts, builderApproved = false)
+    assertTrue(vm.uiState.value.subaccountsLoaded)
+
+    vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
+    assertEquals(
+      listOf("0xfirst", "0xsecond", "0xnew"),
+      vm.uiState.value.subaccountsByOwner["0xowner"]?.map { it.address },
+    )
+
+    accounts.tradingAccounts = listOf(first, second, TradingAccount("0xnew", "0xowner"))
+    vm.onIntent(SettingsIntent.LoadSubaccounts)
+    assertEquals(
+      listOf("0xfirst", "0xsecond", "0xnew"),
+      vm.uiState.value.subaccountsByOwner["0xowner"]?.map { it.address },
+    )
+  }
+
+  @Test
+  fun aFailedReloadKeepsTheTradingAccountsShown() = runTest {
+    val accounts = FakeAccountRepository()
+    accounts.tradingAccounts = listOf(TradingAccount("0xfirst", "0xowner"))
+    val vm = creatingAccounts(accounts, builderApproved = false)
+
+    accounts.subaccountsError = IllegalStateException("Decibel is unavailable")
+    vm.onIntent(SettingsIntent.LoadSubaccounts)
+
+    assertEquals(
+      listOf("0xfirst"),
+      vm.uiState.value.subaccountsByOwner["0xowner"]?.map { it.address },
+    )
   }
 
   @Test

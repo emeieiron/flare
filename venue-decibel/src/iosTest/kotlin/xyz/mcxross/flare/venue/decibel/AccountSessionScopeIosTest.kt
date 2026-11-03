@@ -89,6 +89,17 @@ class AccountSessionScopeIosTest {
   }
 
   @Test
+  fun tradingAccountsComeOldestFirstSoTheirNumbersHold() = runTest {
+    fixture { f ->
+      val newest = "0x" + "77".repeat(32)
+      f.listed = listOf(newest, ACCOUNT)
+      f.sessions.ensureOwner(null, PROMPT)
+      val owner = f.preferences.values.first().ownerAddress!!
+      assertEquals(listOf(ACCOUNT, newest), f.accounts.subaccounts(owner).map { it.address })
+    }
+  }
+
+  @Test
   fun selectingAnAccountDoesNotWaitForItsReads() = runTest {
     fixture { f ->
       val reads = CompletableDeferred<Unit>()
@@ -173,7 +184,9 @@ class AccountSessionScopeIosTest {
                     headers = headersOf(HttpHeaders.ContentType, "application/json"),
                   )
                 }
-                """[{"subaccount_address":"$ACCOUNT","primary_account_address":"$owner","is_primary":true}]"""
+                f.listed.joinToString(",", "[", "]") {
+                  """{"subaccount_address":"$it","primary_account_address":"$owner","is_primary":${it == ACCOUNT}}"""
+                }
               }
               "account_overviews" -> {
                 f.accountReads?.await()
@@ -250,6 +263,8 @@ private class ScopeFixture {
   val discoveryBearers = mutableListOf<String>()
   var apiAuthentications = 0
   var accountReads: CompletableDeferred<Unit>? = null
+  /** What Decibel lists for the wallet, newest first as it does. */
+  var listed = listOf(ACCOUNT)
 }
 
 private class ScopeTrading : DecibelTrading {

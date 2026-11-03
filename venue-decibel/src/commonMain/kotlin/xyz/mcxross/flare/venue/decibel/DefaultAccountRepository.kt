@@ -191,8 +191,13 @@ class DefaultAccountRepository(
     return sessions.bind(session, flow { emit(subaccounts(owner)) }).first()
   }
 
+  // Decibel lists the newest first. Oldest first keeps each account's number when another opens.
   override suspend fun subaccounts(owner: String): List<TradingAccount> =
-    client.accounts.subaccounts(owner).filter(Subaccount::isActive).map { it.toTradingAccount() }
+    client.accounts
+      .subaccounts(owner)
+      .filter(Subaccount::isActive)
+      .asReversed()
+      .map { it.toTradingAccount() }
 
   override suspend fun tradingAccountStatus(address: String): TradingAccountStatus? =
     runSuspendCatching {
