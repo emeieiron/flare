@@ -23,6 +23,12 @@ Flare handles private keys and leveraged trading. A small patch can have financi
 
 Follow the prerequisites and setup steps in [README.md](README.md).
 
+### Integration configuration
+
+Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet, shows live markets and the account, and trades perps and spot (market, limit and TWAP orders, TP/SL, cancels, leverage) with an agent key on the device, for the wallet's account or a sub-account it already has. It withdraws to Arbitrum, sends USDC to other Hyperliquid accounts and between perps and spot, deposits into and redeems from vaults such as HLP, and shows the fee tier and referral standing. It trades Hyperliquid mainnet, and offers Flare's builder fee only when built with `-PflareHyperliquidBuilderAddress=0x…` (on iOS, `FLARE_HYPERLIQUID_BUILDER_ADDRESS` in `Hyperliquid.xcconfig`).
+
+See the [swap module documentation](aptos-swap/README.md) for swap integration details.
+
 ### Developing with Local Kaptos Builds
 
 For unpublished dependency work, publish FastKrypto and then Kaptos to Maven Local:

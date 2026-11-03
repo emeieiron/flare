@@ -1,159 +1,121 @@
 <p align="center">
-  <img src="assets/preview.webp" width="100%" alt="Flare on five phones: the portfolio, live markets, the welcome screen, a Bitcoin chart and an order ticket">
+  <img src="assets/preview.webp" width="100%" alt="Flare mobile app">
 </p>
 
 <h1 align="center">Flare</h1>
 
-<p align="center">
-  <b>A clearer way to trade.</b><br>
-  An open-source app for trading perps and spot on <a href="https://decibel.trade">Decibel</a> and <a href="https://hyperliquid.xyz">Hyperliquid</a>, on Android and iOS.<br>
-  Use it just as it comes, or make it entirely your own.
-</p>
+Flare is an open-source foundation for building your own onchain mobile app
+on Android and iOS.
 
-<p align="center">
-  <a href="https://github.com/emeieiron/flare/releases">Download</a>
-  &nbsp;·&nbsp;
-  <a href="https://flare.mcxross.xyz">Website</a>
-  &nbsp;·&nbsp;
-  <a href="#build-it-yourself">Build it yourself</a>
-</p>
+Start with the included trading app, customize its interface and workflows,
+or use its architecture and design system for a different application.
 
-> [!NOTE]
-> Flare is under active development. Decibel 0.2.0 trades real funds on **Aptos mainnet**. The published Hyperliquid v0.1.0 APK is an older **testnet preview**, not a stable mainnet release; current source builds target Hyperliquid mainnet. Start small and [share feedback](https://github.com/emeieiron/flare/issues).
+[Download](#current-integrations) · [Website](https://flare.mcxross.xyz) · [Build](#build)
 
-## Contents
+## Make it your own
 
-- [Made to be yours](#made-to-be-yours)
-- [Features](#features)
-- [Get Flare](#get-flare)
-- [Tech stack](#tech-stack)
-- [Architecture](#architecture)
-- [Agent skills](#agent-skills)
-- [Build it yourself](#build-it-yourself)
-- [Security](#security)
-- [Contributing & license](#contributing--license)
+Flare brings together wallet management, market data, charts, order entry,
+portfolio tracking and transaction handling. Its protocol SDKs are separate
+from the UI, and exchange integrations implement shared application interfaces.
 
-## Made to be yours
+You can change the app's design, add strategies, integrate another trading
+venue, or reuse individual modules. Additional protocols and chains require
+their own integration and signing logic.
 
-Flare is a complete app with thoughtful defaults, and a personal app waiting to happen. Every line is here to **inspect**, **fork** and **modify** until it fits the way you trade. Its architecture and design system double as a blueprint for Web3 mobile apps on any chain.
+The repository includes guidance for developers and coding agents:
 
-## Features
+- [Architecture](skills/flare-architecture/SKILL.md): module boundaries,
+  application state, wallet integration and transaction handling.
+- [Design system](skills/flare-design-system/SKILL.md): themes, components,
+  charts, financial formatting and interaction patterns.
 
-- **Markets**: Crypto, equities and commodities, in perps and spot, with live prices, a watchlist and search.
-- **Charts**: Live candles or a clean line, RSI and MACD, and panning through history.
-- **Strategies**: Independent MACD crossover, RSI reversal and momentum pullback signals, with optional Jev confluence, paper simulation and explicitly authorized real auto trading.
-- **Orders**: Market, limit and TWAP, with leverage and attached take profit and stop loss.
-- **Portfolio**: Account value, P&L, positions, holdings, DLP vaults, Amps rewards, transfers, deposits and withdrawals.
-- **Self-custody**: Create a BIP-39 wallet or import a phrase, an Ed25519 or Secp256k1 key, or an AIP-80 key. Keys stay on the device behind biometrics or passcode. Trades sign with a delegated key that can't withdraw.
-- **One-confirmation setup**: Flare opens your trading account and enables trading in a single step. An interrupted setup resumes where it left off.
-- **Sponsored fees**: Flare's gas station pays network fees. If it can't, Flare asks before your wallet pays.
-- **Offline resilience**: Transactions are simulated before approval, journaled before sending and reconciled on restart.
+Built with Kotlin Multiplatform and Compose Multiplatform.
+See [DESIGN.md](DESIGN.md) for interface decisions and
+[CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 
-### Strategy signals
+## Included app
 
-Open a market, choose its chart timeframe, then tap **Strategies** and **Evaluate signals**. The sheet shows closed-candle signals and indicator evidence; refresh when a result expires. Signals use independent market reads and do not place orders. To trade, return to the market's **Trade** button, enter an amount and review the order.
+The trading app provides:
 
-Strategies work without an API key. To add optional confluence, open **Settings → Jev confluence**, save your Jev API key and explicitly enable it. The key stays in the device's secure vault; indicator requests go directly to Jev. If Jev is unavailable, independent signals remain visible without model approval. Model confidence and choice probabilities describe the model's answer, not a trade's likelihood of success. Calendar-month timeframes are unavailable because these strategies require fixed candle intervals.
+- Live markets, watchlists, search and charts with RSI and MACD.
+- Market, limit and TWAP orders, leverage, take profit and stop loss.
+- Portfolio balances, P&L, positions, vaults, rewards and transfers.
+- Wallet creation and import, device authorization and delegated trading keys.
+- Strategy signals, paper simulation and explicitly authorized real auto trading.
 
-### Auto trading
+Features depend on the integration. Strategies run without an API key;
+Jev confluence is optional. See the [strategy guide](docs/strategies.md)
+for configuration, execution limits and simulation assumptions.
 
-From **Strategies → Auto trading**, pick **Simulation** or **Real** and a strategy, then set order size, maximum position, order-value budget, attempts, duration, cooldown, slippage, leverage and the minimum Jev confidence under **Run limits**. The run decides once per newly closed candle in the market’s chart timeframe, and never twice on the same candle. Simulation fills against the live order book at 1× leverage with a 5 bps fee, excluding funding, network fees and liquidation.
+## Current integrations
 
-With Jev confluence on, Jev is asked only when the strategy proposes a trade; an unavailable or low-confidence answer vetoes that trade. **Real** needs a review of the account and limits and one authorization. Each attempt reserves its worst-case order value before it’s sent through the market’s order rules and the transaction journal; a pending or uncertain order stays counted and is never resent. An opposite signal first reduces the open position with a reduce-only order.
+Each integration has its own Android app and independent releases.
+Each app build includes one trading venue.
 
-During a real run, **Confirm transactions** in Settings is off and locked. Its previous setting comes back when the run pauses or ends, when Flare leaves the foreground, or on the next launch if the app was closed mid-run. **Pause** stops new orders and leaves positions open; resuming keeps the run’s limits, counters and reservations. Duration counts from the first start. Use **Reset for a new run** to clear them before changing configuration. The order-value budget excludes fees and is not a loss cap.
+| Integration | Android release | Network |
+| --- | --- | --- |
+| Decibel | [0.2.0, build 203](https://github.com/emeieiron/flare/releases/tag/decibel-v0.2.0) | Aptos mainnet |
+| Hyperliquid | [v0.1.0 preview](https://github.com/emeieiron/flare/releases/tag/v0.1.0) | Testnet |
 
-## Get Flare
+The published Hyperliquid APK is an older testnet preview.
+Current source builds target Hyperliquid mainnet.
 
-**Android:** each exchange is its own app, with independent versions and releases.
+Flare is under active development. Mainnet builds trade real funds.
+For Decibel, deposits use USDC on Aptos; keep APT available for fees
+that sponsorship does not cover.
 
-- **Decibel 0.2.0 (build 203) — Aptos mainnet:** download [`flare-decibel-android.apk`](https://github.com/emeieiron/flare/releases/download/decibel-v0.2.0/flare-decibel-android.apk) from the [Decibel 0.2.0 release](https://github.com/emeieiron/flare/releases/tag/decibel-v0.2.0). It trades real funds. Deposit USDC on Aptos and keep a little APT for the fees Flare's gas station cannot cover. The release notes explain how to verify the checksum, signing certificate and build provenance.
-- **Hyperliquid v0.1.0 — historical testnet preview:** download [`flare-hyperliquid-android.apk`](https://github.com/emeieiron/flare/releases/download/v0.1.0/flare-hyperliquid-android.apk) from the [historical v0.1.0 release](https://github.com/emeieiron/flare/releases/tag/v0.1.0). This APK uses testnet and is not a stable mainnet release. The Decibel release does not update Hyperliquid; [build the current source](#build-it-yourself) to use its mainnet implementation.
-- **Already testing Decibel?** Install the current 0.2.0 APK (build 203) as a normal update. Its build number is higher than the earlier mainnet 0.2.0 (builds 200 and 202) and 0.2.1 (build 201) APKs, so those can update in place while retaining your wallet, device trading key, and local trading state. Updating from the published testnet v0.1.0 APK retains your wallet and device trading key, clears local testnet trading state on the first mainnet launch, and runs account setup again for mainnet. If you use an older legacy Flare app with a different package ID, install Decibel alongside it and restore your wallet from its recovery phrase or re-import your key; wallet data does not transfer automatically between the two apps.
+Release notes include download verification details.
+See the [installation guide](docs/installation.md) for updates,
+wallet migration and fee behavior.
 
-Decibel remains at public version 0.2.0 until stable. Replacement downloads can keep that public version while increasing the build number; check the release notes and checksums to identify the current build.
+For iOS, build from source.
 
-Decibel shows network fees in one row before order confirmation. Flare-covered fees fall back automatically to APT payment within the same confirmation. When this device holds the owner key, the owner wallet can pay directly; devices holding only a trading key use that key's APT. The fee row shows an estimate when available or a maximum when the order requires a preceding leverage change.
+## Build
 
-**iOS:** [build it yourself](#build-it-yourself) for now. App Store and Google Play listings will follow.
+Requires JDK 21+, Android SDK 37, and Xcode 16+ for iOS.
 
-## Tech stack
+### Android
 
-| Layer | Technology |
-| :--- | :--- |
-| **UI** | Compose Multiplatform, Vico charts, MVVM |
-| **Platforms** | Android, iOS (SwiftUI shell hosting the shared UI) |
-| **Blockchain** | [Kaptos](https://github.com/mcxross/kaptos) (Aptos), FastKrypto (Hyperliquid signing) |
-| **State & DI** | Koin, Coroutines & Flow |
-| **Storage** | Room, DataStore, Android Keystore, iOS Keychain |
-| **Networking** | Ktor HTTP & WebSockets, Decibel Worker proxy |
-
-## Architecture
-
-```
-flare/
-├── androidApp/        # Android app: one product flavor per exchange
-├── iosApp/            # SwiftUI shell: one scheme per exchange
-├── ios-decibel/       # The iOS framework for the Decibel build
-├── ios-hyperliquid/   # The iOS framework for the Hyperliquid build
-├── venue-decibel/     # Decibel behind Flare's venue seam
-├── venue-hyperliquid/ # Hyperliquid behind Flare's venue seam
-├── shared/            # Screens, ViewModels, storage and the neutral venue interfaces
-├── decibel/           # Headless Decibel protocol SDK
-├── aptos-swap/        # Headless APT → USDC quotes and route validation
-├── aptos-transaction/ # Transaction execution shared by Aptos integrations
-├── hyperliquid/       # Headless Hyperliquid protocol SDK
-├── baselineprofile/   # Startup and journey baseline profiles
-└── skills/            # Agent skills distilled from Flare
-```
-
-```
-androidApp (decibel flavor)    iosApp ("Flare Decibel" scheme, via :ios-decibel)
-              └───────────────┬───────────────┘
-                        :venue-decibel  ───►  :shared
-                              │
-                          :decibel  ───►  Kaptos (Aptos)
-
-androidApp (hyperliquid flavor)    iosApp ("Flare Hyperliquid" scheme, via :ios-hyperliquid)
-              └─────────────────┬─────────────────┘
-                        :venue-hyperliquid  ───►  :shared
-                              │
-                        :hyperliquid  ───►  FastKrypto (keys, signing)
-```
-
-Each build links one exchange. A `:venue-*` module implements `:shared`'s neutral interfaces with its exchange's SDK; `:shared` never depends on an exchange SDK.
-
-The Decibel build also binds independent [swap infrastructure](aptos-swap/README.md), with owner signing, payload validation and durable recovery. Funding screens do not invoke it yet; the companion worker keeps swaps disabled until configured.
-
-## Agent skills
-
-[`skills/`](skills) teaches coding agents to build Web3 mobile apps the way Flare is built, on any chain:
-
-- **[`flare-architecture`](skills/flare-architecture/SKILL.md)**: structure, MVVM, chain SDKs, transaction safety, signing, onboarding.
-- **[`flare-design-system`](skills/flare-design-system/SKILL.md)**: themes, custom components, signing screens, formatting, charts, motion.
-
-## Build it yourself
-
-**Prerequisites:** JDK 21+, Android SDK 37, Xcode 16+ (for iOS), and the companion [`decibel-worker`](https://github.com/emeieiron/decibel-worker).
+From the Flare repository:
 
 ```sh
-# 1. Start the worker proxy
-git clone https://github.com/emeieiron/decibel-worker
-cd decibel-worker && npm ci && cp .dev.vars.example .dev.vars && npm run dev
-
-# 2. Run Android against that local worker. Without -PflareWorkerUrl a build talks to the
-#    deployed mainnet worker and trades real funds.
-./gradlew :androidApp:installDecibelDebug -PflareWorkerUrl=http://10.0.2.2:8787
+./gradlew :androidApp:installDecibelDebug
+# or
+./gradlew :androidApp:installHyperliquidDebug
 ```
 
-Each exchange is a product flavor: `assembleDecibelDebug` builds an APK, `assembleDecibelRelease` a release build. The Hyperliquid build (`installHyperliquidDebug`) needs no worker; it sets up a wallet, shows live markets and the account, and trades perps and spot (market, limit and TWAP orders, TP/SL, cancels, leverage) with an agent key on the device, for the wallet's account or a sub-account it already has. It withdraws to Arbitrum, sends USDC to other Hyperliquid accounts and between perps and spot, deposits into and redeems from vaults such as HLP, and shows the fee tier and referral standing. It trades Hyperliquid mainnet, and offers Flare's builder fee only when built with `-PflareHyperliquidBuilderAddress=0x…` (on iOS, `FLARE_HYPERLIQUID_BUILDER_ADDRESS` in `Hyperliquid.xcconfig`).
+Both builds target mainnet. Decibel uses the deployed
+[worker proxy](https://github.com/emeieiron/decibel-worker) by default;
+Hyperliquid needs no worker.
 
-For iOS, open `iosApp/iosApp.xcodeproj` in Xcode and run the `Flare Decibel` or `Flare Hyperliquid` scheme.
+To use a local Decibel worker, follow its setup instructions, then run
+from the Flare repository:
+
+```sh
+./gradlew :androidApp:installDecibelDebug \
+  -PflareWorkerUrl=http://10.0.2.2:8787
+```
+
+`10.0.2.2` reaches the development host from the Android emulator.
+Using a local worker does not switch Decibel to testnet.
+
+### iOS
+
+Open `iosApp/iosApp.xcodeproj` in Xcode and run the
+`Flare Decibel` or `Flare Hyperliquid` scheme.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for checks, dependency setup,
+release builds and integration configuration.
 
 ## Security
 
-Keys never leave the device's secure hardware and are excluded from backups. Node and gas credentials stay on a stateless worker proxy, never on devices. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+Wallet secrets remain on the device, protected by Android Keystore
+or iOS Keychain and excluded from backups. Delegated trading keys
+cannot withdraw funds. Decibel node and gas credentials stay on the worker.
 
-## Contributing & license
+Follow the [security reporting guidance](CONTRIBUTING.md#security-reports)
+for vulnerabilities.
 
-Contributions and feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Flare is licensed under [Apache 2.0](LICENSE).
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [Apache 2.0](LICENSE).
