@@ -191,6 +191,26 @@ class AutomaticTransferIosTest {
     }
   }
 
+  @Test
+  fun delegatingToThisDevicesTradingKeyLeavesItsSignInToSetup() = runTest {
+    // Setup signs the device's trading key in right after delegating to it; another key's
+    // delegation still switches back to the device's trading session.
+    for ((key, restores) in listOf("0x3" to 0, "0x4" to 1)) {
+      fixture { f ->
+        f.preferences.setApiWallet("0x3")
+        f.sponsorError = null
+        val states =
+          f.run(
+            DecibelCommand.DelegateTrading("0x2", key),
+            VaultPrompt("Enable trading", "Confirm your identity"),
+            FeePayment.SPONSORED,
+          )
+        assertIs<ActionState.Committed>(states.last())
+        assertEquals(restores, f.sessionRestores, key)
+      }
+    }
+  }
+
   private suspend fun fixture(block: suspend (TransferFixture) -> Unit) {
     val f = TransferFixture(coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
     try {
@@ -369,7 +389,18 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
             DecibelDeployment.Mainnet.packageAddress,
             "dex_accounts_entry",
             emptyList(),
-            listOf(fn),
+            listOf(
+              fn,
+              MoveFunction(
+                "delegate_all_trading_to_for_subaccount",
+                MoveVisibility.PUBLIC,
+                true,
+                false,
+                emptyList(),
+                listOf("&signer", "address", "address", "0x1::option::Option<u64>"),
+                emptyList(),
+              ),
+            ),
             emptyList(),
           ),
         ),
@@ -377,15 +408,13 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
     )
   }
 
-  suspend fun run(command: DecibelCommand = COMMAND) =
-    trading
-      .executeCommand(
-        command,
-        VaultPrompt("Transfer", "Confirm your identity", requireFreshAuthorization = true),
-        FeePayment.AUTOMATIC,
-        onPrepared = { prepared += it },
-      )
-      .toList()
+  suspend fun run(
+    command: DecibelCommand = COMMAND,
+    prompt: VaultPrompt =
+      VaultPrompt("Transfer", "Confirm your identity", requireFreshAuthorization = true),
+    feePayment: FeePayment = FeePayment.AUTOMATIC,
+  ) =
+    trading.executeCommand(command, prompt, feePayment, onPrepared = { prepared += it }).toList()
 
   private fun response(hash: String) =
     """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"2","success":true,"vm_status":"Executed successfully","accumulator_root_hash":"0x0","sender":"0x1","sequence_number":"0","max_gas_amount":"50000","gas_unit_price":"100","expiration_timestamp_secs":"9999999999","events":[],"timestamp":"0"}"""

@@ -859,7 +859,9 @@ class DefaultTradingRepository(
             prompt.copy(requireFreshAuthorization = false),
           )
         } else {
-          sessions.authenticateOwner(
+          // A prompt that asks for fresh authorization signs in again; otherwise the owner session
+          // this visit already holds is reused.
+          sessions.ensureOwner(
             subaccount,
             if (automatic) prompt.copy(requireFreshAuthorization = false) else prompt,
           )
@@ -1171,7 +1173,13 @@ class DefaultTradingRepository(
           wallets.requireAuthorization(wallets.authorizationGeneration)
           val saved = preferences.values.first()
           val selected = saved.selectedSubaccount
-          if (saved.apiWalletAddress != null && selected != null) {
+          val tradingKey = saved.apiWalletAddress
+          // Setup signs this device's trading key in right after delegating to it, to confirm it.
+          val delegatedToTradingKey =
+            command is DecibelCommand.DelegateTrading &&
+              tradingKey != null &&
+              command.delegate.sameAptosAddress(tradingKey)
+          if (tradingKey != null && selected != null && !delegatedToTradingKey) {
             sessions.ensureTrading(selected, prompt.copy(requireFreshAuthorization = false))
           }
         } catch (cancelled: CancellationException) {

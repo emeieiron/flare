@@ -15,6 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.flow
@@ -165,6 +166,117 @@ class WorkerSessionRepositoryIosTest {
 
     assertTrue(sessionRevoked)
     assertNull(repository.status.value)
+  }
+
+  @Test
+  fun ownerAndTradingSessionsAreHeldSideBySide() = runTest {
+    val preferences = testPreferences()
+    val wallets = DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), preferences)
+    val prompt = VaultPrompt("Test", "Authorize")
+    val owner =
+      wallets
+        .importOwner(
+          "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon " +
+            "abandon about",
+          prompt,
+        )
+        .canonicalAddress()
+    wallets.createApiWallet(prompt)
+    val subaccount = "0x" + "22".repeat(32)
+    var wallet = ""
+    var authentications = 0
+    val engine = MockEngine { request ->
+      when (request.url.encodedPath) {
+        "/v1/auth/challenge" -> {
+          val body = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
+          wallet = body.getValue("walletAddress").jsonPrimitive.content.canonicalAddress()
+          val expiresAt = Clock.System.now().toEpochMilliseconds() + 5 * 60_000
+          respondJson(
+            """{"challenge":"FLARE_AUTH_V1\nwallet_address=$wallet","expiresAt":$expiresAt}""",
+          )
+        }
+        "/v1/auth/session" -> {
+          authentications++
+          val role = if (wallet == owner) "owner" else "api"
+          val expiresAt = Clock.System.now().toEpochMilliseconds() + 55 * 60_000
+          respondJson(
+            """{"token":"$role-token","expiresAt":$expiresAt,"role":"$role",""" +
+              """"walletAddress":"$wallet","subaccount":"$subaccount"}""",
+          )
+        }
+        else -> error("Unexpected path ${request.url.encodedPath}")
+      }
+    }
+    val repository =
+      WorkerSessionRepository(
+        client = HttpClient(engine) { install(ContentNegotiation) { json(Json) } },
+        runtime = FlareRuntimeConfig(Network.MAINNET),
+        decibelConfig = DecibelRuntimeConfig("http://127.0.0.1:8787"),
+        preferences = preferences,
+        wallets = wallets,
+      )
+
+    val ownerSession = repository.ensureOwner(subaccount, prompt)
+    val tradingSession = repository.authenticateApi(subaccount, prompt)
+    assertEquals(2, authentications)
+
+    // Moving between the owner and the trading key reuses what this visit already signed.
+    assertEquals(ownerSession, repository.ensureOwner(subaccount, prompt))
+    assertEquals("owner-token", repository.accessToken())
+    assertEquals(tradingSession, repository.ensureTrading(subaccount, prompt))
+    assertEquals("api-token", repository.accessToken())
+    assertEquals(2, authentications)
+
+    repository.ensureOwner(subaccount, prompt.copy(requireFreshAuthorization = true))
+    assertEquals(3, authentications)
+  }
+
+  @Test
+  fun aTradingSessionRequestedMidSignInReusesIt() = runTest {
+    val preferences = testPreferences()
+    val wallets = DefaultWalletRepository(ForegroundWalletVault(IosTestMemoryVault()), preferences)
+    val prompt = VaultPrompt("Test", "Authorize")
+    val trading = wallets.createApiWallet(prompt).canonicalAddress()
+    val subaccount = "0x" + "22".repeat(32)
+    val signing = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    var authentications = 0
+    val engine = MockEngine { request ->
+      when (request.url.encodedPath) {
+        "/v1/auth/challenge" -> {
+          val expiresAt = Clock.System.now().toEpochMilliseconds() + 5 * 60_000
+          respondJson("""{"challenge":"FLARE_AUTH_V1\ntest","expiresAt":$expiresAt}""")
+        }
+        "/v1/auth/session" -> {
+          authentications++
+          signing.complete(Unit)
+          release.await()
+          val expiresAt = Clock.System.now().toEpochMilliseconds() + 55 * 60_000
+          respondJson(
+            """{"token":"api-token","expiresAt":$expiresAt,"role":"api",""" +
+              """"walletAddress":"$trading","subaccount":"$subaccount"}""",
+          )
+        }
+        else -> error("Unexpected path ${request.url.encodedPath}")
+      }
+    }
+    val repository =
+      WorkerSessionRepository(
+        client = HttpClient(engine) { install(ContentNegotiation) { json(Json) } },
+        runtime = FlareRuntimeConfig(Network.MAINNET),
+        decibelConfig = DecibelRuntimeConfig("http://127.0.0.1:8787"),
+        preferences = preferences,
+        wallets = wallets,
+      )
+
+    val verifying = async { repository.authenticateApi(subaccount, prompt) }
+    signing.await()
+    val reading = async { repository.ensureTrading(subaccount, prompt) }
+    testScheduler.runCurrent()
+    release.complete(Unit)
+
+    assertEquals(verifying.await(), reading.await())
+    assertEquals(1, authentications)
   }
 
   private fun io.ktor.client.engine.mock.MockRequestHandleScope.respondJson(value: String) =

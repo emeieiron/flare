@@ -34,7 +34,7 @@ interface SessionRepository {
 
   suspend fun authenticateOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus
 
-  /** Reuses an owner session for reads; fresh authorization remains explicit. */
+  /** Reuses an owner session this visit holds; a prompt asking for fresh authorization signs in. */
   suspend fun ensureOwner(subaccount: String?, prompt: VaultPrompt): SessionStatus =
     authenticateOwner(subaccount, prompt)
 

@@ -208,11 +208,16 @@ class DefaultAccountRepository(
     restoreTrading(prompt)
   }
 
-  /** Confirms the device trading key can act for [subaccount] before setup reports success. */
+  /**
+   * Confirms the device trading key can act for [subaccount] before setup reports success. The
+   * account reads that follow don't prove anything about the key, so setup doesn't wait for them.
+   */
   private suspend fun verifyTradingKey(subaccount: String, prompt: VaultPrompt) {
     sessions.authenticateApi(subaccount = subaccount, prompt = prompt)
-    refresh()
-    refreshHistory()
+    scope.launch {
+      refresh()
+      refreshHistory()
+    }
     startLive()
   }
 
@@ -689,7 +694,7 @@ class DefaultAccountRepository(
           current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
       )
         current
-      else sessions.authenticateOwner(subaccount, prompt.copy(requireFreshAuthorization = false))
+      else sessions.ensureOwner(subaccount, prompt.copy(requireFreshAuthorization = false))
     return sessions.bind(status, flow { emit(trading.transactionStatus(reference)) }).first()
   }
 
@@ -1202,7 +1207,7 @@ class DefaultAccountRepository(
       )
         current
       else
-        sessions.authenticateOwner(
+        sessions.ensureOwner(
           account,
           VaultPrompt("Open Flare", "Confirm your identity", requireFreshAuthorization = false),
         )

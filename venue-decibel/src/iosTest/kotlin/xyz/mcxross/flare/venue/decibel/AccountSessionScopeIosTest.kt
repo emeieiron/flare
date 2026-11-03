@@ -11,6 +11,7 @@ import io.ktor.http.content.TextContent
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.test.*
 import kotlin.time.Clock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.runTest
@@ -71,6 +72,19 @@ class AccountSessionScopeIosTest {
       f.accounts.prepareTradingWallet(PROMPT)
       assertEquals(listOf("api:$ACCOUNT"), f.delegationBearers)
       assertEquals(2, f.apiAuthentications)
+    }
+  }
+
+  @Test
+  fun confirmingTheTradingKeyDoesNotWaitForAccountReads() = runTest {
+    fixture { f ->
+      f.sessions.ensureOwner(ACCOUNT, PROMPT)
+      val reads = CompletableDeferred<Unit>()
+      f.accountReads = reads
+      // Returns while the overview read is still held open.
+      f.accounts.prepareTradingWallet(PROMPT)
+      assertEquals(1, f.apiAuthentications)
+      reads.complete(Unit)
     }
   }
 
@@ -149,6 +163,10 @@ class AccountSessionScopeIosTest {
                 }
                 """[{"subaccount_address":"$ACCOUNT","primary_account_address":"$owner","is_primary":true}]"""
               }
+              "account_overviews" -> {
+                f.accountReads?.await()
+                "{}"
+              }
               "account_positions" -> "[]"
               "open_orders",
               "order_history",
@@ -219,6 +237,7 @@ private class ScopeFixture {
   val delegationBearers = mutableListOf<String>()
   val discoveryBearers = mutableListOf<String>()
   var apiAuthentications = 0
+  var accountReads: CompletableDeferred<Unit>? = null
 }
 
 private class ScopeTrading : DecibelTrading {

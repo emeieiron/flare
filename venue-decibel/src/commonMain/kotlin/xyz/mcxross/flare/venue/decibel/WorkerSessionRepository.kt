@@ -134,22 +134,15 @@ class WorkerSessionRepository(
       val owner =
         wallets.profile.first().ownerAddress ?: error("Use a device that holds the owner key")
       val cached =
-        authenticatedSessions.value.entries.lastOrNull { (status, _) ->
-          authenticatedGeneration == generation &&
-            authenticatedProfileId == selected.activeProfileId &&
-            !prompt.requireFreshAuthorization &&
-            status.role == SessionRole.OWNER &&
-            status.walletAddress?.sameAptosAddress(owner) == true &&
-            (if (subaccount == null) status.subaccount == null
-            else status.subaccount?.sameAptosAddress(subaccount) == true) &&
-            status.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
-        }
+        if (
+          prompt.requireFreshAuthorization ||
+            authenticatedGeneration != generation ||
+            authenticatedProfileId != selected.activeProfileId
+        )
+          null
+        else useCached(SessionRole.OWNER, owner, subaccount)
       val result =
-        cached?.let { (status, value) ->
-          session = value
-          mutableStatus.value = status
-          status
-        }
+        cached
           ?: wallets.withOwnerAccount(prompt) { account ->
             authenticate(account, subaccount, SessionRole.OWNER)
           }
@@ -162,29 +155,44 @@ class WorkerSessionRepository(
     }
 
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
-    mutex.withLock {
-      require(subaccount.isNotBlank()) { "A trading session must be bound to a trading account" }
-      wallets.withApiAccount(prompt) { account ->
-        authenticate(account, subaccount, SessionRole.API)
-      }
+    mutex.withLock { signInTradingKey(subaccount, prompt) }
+
+  private suspend fun signInTradingKey(subaccount: String, prompt: VaultPrompt): SessionStatus {
+    require(subaccount.isNotBlank()) { "A trading session must be bound to a trading account" }
+    return wallets.withApiAccount(prompt) { account ->
+      authenticate(account, subaccount, SessionRole.API)
     }
+  }
 
   override suspend fun verifyApiCredential(
     account: Account,
     subaccount: String,
   ): SessionStatus = mutex.withLock { authenticate(account, subaccount, SessionRole.API) }
 
-  override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus {
-    val address = wallets.profile.first().apiWalletAddress ?: error("Complete trading setup")
-    val current = status.value
-    if (
-      current?.role == SessionRole.API &&
-        current.walletAddress?.sameAptosAddress(address) == true &&
-        current.subaccount?.sameAptosAddress(subaccount) == true &&
-        current.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
-    )
-      return current
-    return authenticateApi(subaccount, prompt)
+  // Checked and signed under one lock, so a caller arriving while the trading key signs in reuses
+  // that session instead of signing in again.
+  override suspend fun ensureTrading(subaccount: String, prompt: VaultPrompt): SessionStatus =
+    mutex.withLock {
+      val address = wallets.profile.first().apiWalletAddress ?: error("Complete trading setup")
+      useCached(SessionRole.API, address, subaccount) ?: signInTradingKey(subaccount, prompt)
+    }
+
+  /**
+   * Switches back to a session this visit already holds, so moving between the owner and the
+   * trading key doesn't sign in again.
+   */
+  private fun useCached(role: SessionRole, address: String, subaccount: String?): SessionStatus? {
+    val (status, value) =
+      authenticatedSessions.value.entries.lastOrNull { (status, _) ->
+        status.role == role &&
+          status.walletAddress?.sameAptosAddress(address) == true &&
+          (if (subaccount == null) status.subaccount == null
+          else status.subaccount?.sameAptosAddress(subaccount) == true) &&
+          status.expiresAt > Clock.System.now().toEpochMilliseconds() + SESSION_RENEWAL_MARGIN_MS
+      } ?: return null
+    session = value
+    mutableStatus.value = status
+    return status
   }
 
   override suspend fun useAnonymous(): SessionStatus = mutex.withLock {
