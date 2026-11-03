@@ -446,6 +446,10 @@ class SettingsViewModel(
           val prompt = VaultPrompt("Select trading subaccount", "Confirm your identity")
           accounts.selectTradingAccount(intent.subaccountAddress, prompt)
           runSuspendCatching { accounts.prepareTradingWallet(prompt) }
+          if (preferences.values.first().ownerAddress != null) {
+            runSuspendCatching { accounts.refreshBuilderApprovals() }
+            approveBuilderSupport(prompt)
+          }
           loadSubaccounts()
         }
       SettingsIntent.CreateSubaccountForActiveProfile ->
@@ -474,7 +478,7 @@ class SettingsViewModel(
               showOpenedSubaccount(owner, created)
               accounts.selectTradingAccount(created, prompt)
               accounts.prepareTradingWallet(prompt)
-              approveBuilderSupport(current, prompt)
+              approveBuilderSupport(prompt)
             }
             loadSubaccounts()
           } finally {
@@ -628,16 +632,22 @@ class SettingsViewModel(
     error("Your trading account is open but isn’t showing yet. Select it once it appears.")
   }
 
-  /** Builder support is approved per trading account, so a new one gets what the wallet has. */
-  private suspend fun approveBuilderSupport(settings: FlarePreferences, prompt: VaultPrompt) {
-    val builder = settings.builderAddress ?: local.value.defaultBuilderAddress
-    if (builder.isBlank()) return
-    for ((product, approved, rate) in
-      listOf(
-        Triple(MarketKind.PERP, settings.builderApproved, settings.builderFeeBps),
-        Triple(MarketKind.SPOT, settings.spotBuilderApproved, settings.spotBuilderFeeBps),
-      )) {
-      if (!approved || rate <= 0) continue
+  /**
+   * Builder support is the person's choice for the wallet, but a venue may approve it per trading
+   * account: the selected account gets it for each product the wallet has it on for.
+   */
+  private suspend fun approveBuilderSupport(prompt: VaultPrompt) {
+    for (product in listOf(MarketKind.PERP, MarketKind.SPOT)) {
+      // Read each time: where one approval covers both products, the first one already did.
+      val settings = preferences.values.first()
+      val builder = settings.builderAddress ?: local.value.defaultBuilderAddress
+      if (builder.isBlank()) return
+      val spot = product == MarketKind.SPOT
+      val wanted =
+        if (spot) settings.spotBuilderOptedIn && !settings.spotBuilderApproved
+        else settings.builderOptedIn && !settings.builderApproved
+      val rate = if (spot) settings.spotBuilderFeeBps else settings.builderFeeBps
+      if (!wanted || rate <= 0) continue
       val result =
         accounts.approveBuilderFee(builder, maxBuilderFeeBps.toUInt(), prompt, product = product)
       check(result is ActionState.Committed) {

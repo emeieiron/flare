@@ -178,13 +178,13 @@ class AccountProfilesTest {
     val saved1 = preferences.values.first()
     assertEquals("0xbuilder1", saved1.builderAddress)
     assertEquals(5, saved1.builderFeeBps)
-    assertTrue(saved1.builderApproved)
+    assertTrue(saved1.builderOptedIn)
 
     preferences.registerProfile(AccountProfile("second", ownerAddress = "0x2"))
     preferences.activateProfile("second")
     val saved2 = preferences.values.first()
     assertNull(saved2.builderAddress)
-    assertFalse(saved2.builderApproved)
+    assertFalse(saved2.builderOptedIn)
 
     preferences.activateProfile("first")
     preferences.setBuilderFeeBps(10)
@@ -192,10 +192,40 @@ class AccountProfilesTest {
     val updated1 = preferences.values.first()
     assertEquals("0xcustom", updated1.builderAddress)
     assertEquals(10, updated1.builderFeeBps)
-    assertTrue(updated1.builderApproved)
+    assertTrue(updated1.builderOptedIn)
 
     preferences.setBuilderApproved(false)
+    assertFalse(preferences.values.first().builderOptedIn)
+  }
+
+  @Test
+  fun theBuilderFeeGoesOnlyOnAccountsThatApproveIt() = runTest {
+    val preferences = AppPreferences(MemoryPreferences())
+    preferences.registerProfile(
+      AccountProfile("first", ownerAddress = "0x1", selectedSubaccount = "0xa"),
+    )
+    preferences.setBuilderSupport("0xbuilder", 5, true)
     assertFalse(preferences.values.first().builderApproved)
+
+    preferences.setBuilderApproval("0xA", 1_000, spot = false)
+    assertTrue(preferences.values.first().builderApproved)
+
+    // Another account of the same wallet hasn't approved it, or allows less than the rate.
+    preferences.setSelectedSubaccount("0xb")
+    assertFalse(preferences.values.first().builderApproved)
+    preferences.setBuilderApproval("0xb", 300, spot = false)
+    assertFalse(preferences.values.first().builderApproved)
+
+    preferences.setSelectedSubaccount("0xa")
+    assertFalse(preferences.values.first().spotBuilderApproved)
+    preferences.setSpotBuilderApproved(true, "0xbuilder")
+    preferences.setBuilderApproval("0xa", 1_000, spot = true)
+    assertTrue(preferences.values.first().spotBuilderApproved)
+
+    // Turning support off for the wallet stops the fee on every account.
+    preferences.setBuilderApproved(false)
+    assertFalse(preferences.values.first().builderApproved)
+    assertTrue(preferences.values.first().spotBuilderApproved)
   }
 
   @Test

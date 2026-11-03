@@ -7,6 +7,8 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlin.test.Test
@@ -117,6 +119,20 @@ class SubaccountServiceTest {
     assertEquals(null, assertIs<AptosResult.Success<String?>>(created).value)
   }
 
+  @Test
+  fun builderApprovalReadsEachRegistry() = runTest {
+    val builder = "0x" + "d5".repeat(32)
+    var requested = ""
+    val service = service("""[{"vec":["1000"]}]""", HttpStatusCode.OK, onBody = { requested = it })
+    val approved = service.approvedBuilderFee(address, builder, spot = false)
+    assertEquals(1_000L, assertIs<AptosResult.Success<Long?>>(approved).value)
+    assertTrue(requested.contains("::builder_code_registry::get_approved_max_fee"), requested)
+
+    val none =
+      service("""[{"vec":[]}]""", HttpStatusCode.OK).approvedBuilderFee(address, builder, true)
+    assertEquals(null, assertIs<AptosResult.Success<Long?>>(none).value)
+  }
+
   private fun event(type: String, data: String) =
     """{"guid":{"creation_number":"0","account_address":"0x0"},"sequence_number":"0","type":"$type","data":$data}"""
 
@@ -132,6 +148,7 @@ class SubaccountServiceTest {
     expectedPath: (String) -> Boolean = { it == "/v1/view" },
     // A transaction wait times out in virtual time unless the engine runs on the test's scheduler.
     dispatcher: CoroutineDispatcher? = null,
+    onBody: (String) -> Unit = {},
   ): SubaccountService {
     val http =
       HttpClient(
@@ -140,6 +157,13 @@ class SubaccountServiceTest {
             dispatcher?.let { this.dispatcher = it }
             addHandler { request ->
               assertTrue(expectedPath(request.url.encodedPath), request.url.encodedPath)
+              onBody(
+                when (val content = request.body) {
+                  is TextContent -> content.text
+                  is OutgoingContent.ByteArrayContent -> content.bytes().decodeToString()
+                  else -> ""
+                },
+              )
               respond(body, code, headersOf(HttpHeaders.ContentType, "application/json"))
             }
           },

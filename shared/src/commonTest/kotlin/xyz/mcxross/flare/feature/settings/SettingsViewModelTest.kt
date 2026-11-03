@@ -270,8 +270,12 @@ class SettingsViewModelTest {
     ): ActionState {
       approvals += feePayment
       approvedProducts += product
+      onApprove()
       return approveResult(feePayment)
     }
+
+    var onApprove: suspend () -> Unit = {}
+    lateinit var preferences: AppPreferences
 
     val approvals = mutableListOf<FeePayment>()
     var approveResult: (FeePayment) -> ActionState = { ActionState.Committed("0x") }
@@ -528,6 +532,42 @@ class SettingsViewModelTest {
   }
 
   @Test
+  fun selectingAnAccountAppliesTheWalletsBuilderChoice() = runTest {
+    // Opted in, and the chosen account hasn't approved Flare yet: it does now.
+    val optedIn = FakeAccountRepository()
+    creatingAccounts(optedIn, builderApproved = true)
+      .onIntent(SettingsIntent.SelectSubaccount("owner", "0xother"))
+    assertEquals(listOf(MarketKind.PERP), optedIn.approvedProducts)
+
+    // Opted out: choosing an account never turns the fee on.
+    val optedOut = FakeAccountRepository()
+    creatingAccounts(optedOut, builderApproved = false)
+      .onIntent(SettingsIntent.SelectSubaccount("owner", "0xother"))
+    assertTrue(optedOut.approvedProducts.isEmpty())
+  }
+
+  @Test
+  fun oneApprovalIsEnoughWhereItCoversBothProducts() = runTest {
+    val accounts = FakeAccountRepository()
+    val vm = creatingAccounts(accounts, builderApproved = true, spotOptedIn = true)
+    // A venue approving per wallet, for perpetuals and spot at once.
+    accounts.onApprove = {
+      accounts.preferences.setBuilderApproval("0xowner", 1_000, spot = false)
+      accounts.preferences.setBuilderApproval("0xowner", 1_000, spot = true)
+    }
+    vm.onIntent(SettingsIntent.SelectSubaccount("owner", "0xother"))
+    assertEquals(listOf(MarketKind.PERP), accounts.approvedProducts)
+  }
+
+  @Test
+  fun anAccountThatAlreadyApprovesTheBuilderIsLeftAlone() = runTest {
+    val accounts = FakeAccountRepository()
+    val vm = creatingAccounts(accounts, builderApproved = true, selected = "0xa")
+    vm.onIntent(SettingsIntent.SelectSubaccount("owner", "0xa"))
+    assertTrue(accounts.approvedProducts.isEmpty())
+  }
+
+  @Test
   fun aFailedReloadKeepsTheTradingAccountsShown() = runTest {
     val accounts = FakeAccountRepository()
     accounts.tradingAccounts = listOf(TradingAccount("0xfirst", "0xowner"))
@@ -576,10 +616,17 @@ class SettingsViewModelTest {
   private suspend fun kotlinx.coroutines.test.TestScope.creatingAccounts(
     accounts: FakeAccountRepository,
     builderApproved: Boolean,
+    selected: String? = null,
+    spotOptedIn: Boolean = false,
   ): SettingsViewModel {
     val preferences = AppPreferences(MemoryPreferences())
-    preferences.registerProfile(AccountProfile("owner", ownerAddress = "0xowner"))
+    accounts.preferences = preferences
+    preferences.registerProfile(
+      AccountProfile("owner", ownerAddress = "0xowner", selectedSubaccount = selected),
+    )
     preferences.setBuilderSupport("0xbuilder", builderFeeBps = 5, builderApproved = builderApproved)
+    selected?.let { preferences.setBuilderApproval(it, 1_000, spot = false) }
+    if (spotOptedIn) preferences.setSpotBuilderApproved(true, "0xbuilder")
     val vm =
       SettingsViewModel(
         preferences,

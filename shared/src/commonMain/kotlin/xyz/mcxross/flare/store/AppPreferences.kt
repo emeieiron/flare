@@ -49,12 +49,19 @@ data class AccountProfile(
   val onboardingComplete: Boolean = false,
   val builderAddress: String? = null,
   /**
-   * Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry.
+   * Perpetuals rate, and whether the person turned builder support on for this wallet; spot has its
+   * own, for venues that keep a separate spot approval.
    */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
   val spotBuilderFeeBps: Int = 5,
   val spotBuilderApproved: Boolean = false,
+  /**
+   * The most each account allows the builder, in hundredths of a basis point, by [accountNameKey].
+   * Venues approve per trading account or per wallet; one that approves per wallet records it here.
+   */
+  val builderApprovals: Map<String, Long> = emptyMap(),
+  val spotBuilderApprovals: Map<String, Long> = emptyMap(),
   /**
    * Flare generated this wallet on this device, so it has no trading account until Flare opens one,
    * and no APT to pay network fees with.
@@ -105,12 +112,16 @@ data class FlarePreferences(
   val selectedSubaccount: String? = null,
   val builderAddress: String? = null,
   /**
-   * Perpetuals rate and approval; spot has its own, since Decibel keeps a separate spot registry.
+   * Perpetuals rate, and whether the selected trading account carries the builder fee: turned on
+   * for the wallet and approved for that account. Spot has its own, in a separate registry.
    */
   val builderFeeBps: Int = 5,
   val builderApproved: Boolean = false,
   val spotBuilderFeeBps: Int = 5,
   val spotBuilderApproved: Boolean = false,
+  /** Whether the person turned builder support on for the wallet, which new accounts follow. */
+  val builderOptedIn: Boolean = false,
+  val spotBuilderOptedIn: Boolean = false,
 )
 
 /**
@@ -152,9 +163,11 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         onboardingComplete = active?.onboardingComplete ?: false,
         builderAddress = active?.builderAddress,
         builderFeeBps = active?.builderFeeBps ?: 5,
-        builderApproved = active?.builderApproved ?: false,
+        builderApproved = active?.carriesBuilderFee(spot = false) ?: false,
         spotBuilderFeeBps = active?.spotBuilderFeeBps ?: 5,
-        spotBuilderApproved = active?.spotBuilderApproved ?: false,
+        spotBuilderApproved = active?.carriesBuilderFee(spot = true) ?: false,
+        builderOptedIn = active?.builderApproved ?: false,
+        spotBuilderOptedIn = active?.spotBuilderApproved ?: false,
       )
     }
 
@@ -398,6 +411,15 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
       it.copy(spotBuilderApproved = approved, builderAddress = builderAddress)
     }
 
+  /** Records what the chain approves for [account]; zero or less means it approves nothing. */
+  suspend fun setBuilderApproval(account: String, maxFee: Long, spot: Boolean) =
+    updateActiveProfile {
+      val key = accountNameKey(account)
+      val approvals = if (spot) it.spotBuilderApprovals else it.builderApprovals
+      val updated = if (maxFee > 0) approvals + (key to maxFee) else approvals - key
+      if (spot) it.copy(spotBuilderApprovals = updated) else it.copy(builderApprovals = updated)
+    }
+
   suspend fun setCreationReference(profileId: String, reference: String?) =
     updateProfile(profileId) { it.copy(creationReference = reference) }
 
@@ -579,3 +601,14 @@ fun createPreferencesDataStore(producePath: () -> String): DataStore<Preferences
   PreferenceDataStoreFactory.createWithPath(produceFile = { producePath().toPath() })
 
 internal const val PreferencesFileName = "flare.preferences_pb"
+
+/** The selected account carries the fee only once it allows at least the wallet's rate. */
+private fun AccountProfile.carriesBuilderFee(spot: Boolean): Boolean {
+  val on = if (spot) spotBuilderApproved else builderApproved
+  val rate = if (spot) spotBuilderFeeBps else builderFeeBps
+  val approvals = if (spot) spotBuilderApprovals else builderApprovals
+  val allowed =
+    selectedSubaccount?.let { approvals[accountNameKey(it)] }
+      ?: ownerAddress?.let { approvals[accountNameKey(it)] }
+  return on && allowed != null && allowed >= maxOf(rate, 1) * 100L
+}

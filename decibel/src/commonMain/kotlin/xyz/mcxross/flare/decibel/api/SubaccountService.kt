@@ -35,6 +35,17 @@ interface SubaccountService {
   /** The trading account [transactionHash] opened, read from the transaction rather than an index. */
   suspend fun createdSubaccount(transactionHash: String): AptosResult<String?> =
     AptosResult.Failure(AptosError.Validation("Created accounts are not available"))
+
+  /**
+   * The most [builder] may charge [subaccount], in hundredths of a basis point, or null when the
+   * account hasn't approved it. Spot keeps its own registry.
+   */
+  suspend fun approvedBuilderFee(
+    subaccount: String,
+    builder: String,
+    spot: Boolean,
+  ): AptosResult<Long?> =
+    AptosResult.Failure(AptosError.Validation("Builder approvals are not available"))
 }
 
 internal class DefaultSubaccountService(
@@ -87,6 +98,36 @@ internal class DefaultSubaccountService(
         } catch (error: IllegalArgumentException) {
           AptosResult.Failure(AptosError.Serialization(error.message ?: "Unexpected view result"))
         }
+      is AptosResult.Failure -> result
+    }
+  }
+
+  override suspend fun approvedBuilderFee(
+    subaccount: String,
+    builder: String,
+    spot: Boolean,
+  ): AptosResult<Long?> {
+    val (account, builderAccount) =
+      try {
+        AccountAddress.fromString(subaccount.trim()).toString() to
+          AccountAddress.fromString(builder.trim()).toString()
+      } catch (error: Exception) {
+        return AptosResult.Failure(AptosError.Validation(error.message ?: "Invalid address"))
+      }
+    val registry = if (spot) "spot_builder_code_registry" else "builder_code_registry"
+    return when (
+      val result =
+        aptos.views.callRaw(
+          function = "${deployment.packageAddress}::$registry::get_approved_max_fee",
+          arguments = listOf(JsonPrimitive(account), JsonPrimitive(builderAccount)),
+        )
+    ) {
+      is AptosResult.Success -> {
+        val option = result.value.values.firstOrNull() as? JsonObject
+        val vec = option?.get("vec")?.jsonArray
+        if (vec == null) AptosResult.Failure(AptosError.Serialization("Unexpected view result"))
+        else AptosResult.Success(vec.firstOrNull()?.jsonPrimitive?.contentOrNull?.toLongOrNull())
+      }
       is AptosResult.Failure -> result
     }
   }

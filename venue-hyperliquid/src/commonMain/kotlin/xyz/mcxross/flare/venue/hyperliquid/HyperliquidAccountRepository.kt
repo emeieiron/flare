@@ -477,6 +477,8 @@ class HyperliquidAccountRepository(
     setup.syncBuilderApproval(builderAddress)
   }
 
+  override suspend fun refreshBuilderApprovals() = setup.syncBuilderApproval(builderAddress)
+
   override suspend fun portfolioChart(
     range: PortfolioChartRange,
     metric: PortfolioMetric,

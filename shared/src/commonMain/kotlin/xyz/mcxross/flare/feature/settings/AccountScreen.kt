@@ -388,7 +388,7 @@ fun AccountScreen(
                           onClick = {
                             onIntent(SettingsIntent.SelectSubaccount(active.id, account.address))
                           },
-                          onLongClickLabel = "Rename trading account",
+                          onLongClickLabel = "Rename or copy trading account",
                           onLongClick = {
                             onIntent(
                               SettingsIntent.RenameTradingAccount(active.id, account.address),
@@ -434,26 +434,6 @@ fun AccountScreen(
                           tint = FlareColors.TextPrimary,
                           modifier = Modifier.size(20.dp),
                         )
-                      }
-                      IconButton(
-                        onClick = {
-                          detailTitle = "Trading account address"
-                          detailAddress = account.address
-                        },
-                        modifier =
-                          Modifier.semantics {
-                            contentDescription = "Show trading account address"
-                          },
-                      ) {
-                        Icon(
-                          FlareIcons.Copy,
-                          null,
-                          tint = FlareColors.TextSecondary,
-                          modifier = Modifier.size(18.dp),
-                        )
-                      }
-                      AccountActionsMenu("Trading account", !state.busy) {
-                        onIntent(SettingsIntent.RenameTradingAccount(active.id, account.address))
                       }
                     }
                     HorizontalDivider(color = FlareColors.BorderSubtle)

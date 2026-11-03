@@ -410,7 +410,8 @@ fun SettingsScreen(
         "Support Flare with a small share of each order. Perpetuals and spot each have their own " +
           (if (venue.setup.separateSpotBuilderApproval) "rate and on-chain approval"
           else "rate, under one on-chain approval") +
-          ", capped at ${builderRateLabel(venue.maxBuilderFeeBps)} by ${venue.displayName}.",
+          ", capped at ${builderRateLabel(venue.maxBuilderFeeBps)} by ${venue.displayName}. " +
+          "It applies to every trading account in this wallet.",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )

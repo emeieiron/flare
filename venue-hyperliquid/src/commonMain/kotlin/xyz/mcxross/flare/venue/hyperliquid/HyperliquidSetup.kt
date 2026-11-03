@@ -181,6 +181,7 @@ class HyperliquidSetup(
         )
       }
     if (result is ActionState.Committed) {
+      recordApproval(owner, tenths)
       preferences.setBuilderSupport(builder, feeBps.toInt(), builderApproved = true)
       preferences.setSpotBuilderApproved(true, builder)
     }
@@ -197,10 +198,17 @@ class HyperliquidSetup(
         JournaledAction.RevokeBuilderFee(owner, builder, nonce + HyperliquidActions.NONCE_WINDOW_MS)
       }
     if (result is ActionState.Committed) {
+      recordApproval(owner, 0)
       preferences.setBuilderApproved(false)
       preferences.setSpotBuilderApproved(false, builder)
     }
     return result
+  }
+
+  /** Hyperliquid approves per user, for perpetuals and spot alike, in tenths of a basis point. */
+  private suspend fun recordApproval(owner: String, tenths: Int) {
+    preferences.setBuilderApproval(owner, tenths * 10L, spot = false)
+    preferences.setBuilderApproval(owner, tenths * 10L, spot = true)
   }
 
   /** Brings the saved builder approval in line with what Hyperliquid has, quietly. */
@@ -208,9 +216,11 @@ class HyperliquidSetup(
     val saved = preferences.values.first()
     val owner = saved.ownerAddress ?: return
     val builder = saved.builderAddress ?: defaultBuilder?.takeIf(String::isNotBlank) ?: return
-    val approved =
-      runSuspendCatching { client.info.maxBuilderFee(owner, builder) > 0 }.getOrNull() ?: return
-    if (saved.builderApproved != approved || saved.spotBuilderApproved != approved) {
+    val tenths =
+      runSuspendCatching { client.info.maxBuilderFee(owner, builder) }.getOrNull() ?: return
+    val approved = tenths > 0
+    recordApproval(owner, tenths)
+    if (saved.builderOptedIn != approved || saved.spotBuilderOptedIn != approved) {
       preferences.setBuilderSupport(builder, saved.builderFeeBps, builderApproved = approved)
       preferences.setSpotBuilderApproved(approved, builder)
     }

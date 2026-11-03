@@ -97,6 +97,7 @@ class DefaultAccountRepository(
   private val mutableSnapshot = MutableStateFlow(AccountSnapshot())
   private val mutableHistory = MutableStateFlow(AccountHistorySnapshot())
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+  private val resolvedBuilders = MutableStateFlow<Map<String, String>>(emptyMap())
   private val accountRefresh = RefreshCoordinator<String>()
   private val readSessionMutex = Mutex()
   private val historyMutex = Mutex()
@@ -161,6 +162,7 @@ class DefaultAccountRepository(
       refresh()
       refreshHistory()
       startLive()
+      runSuspendCatching { refreshBuilderApprovals() }
     } catch (error: Exception) {
       if (error is kotlinx.coroutines.CancellationException) throw error
       val message =
@@ -419,14 +421,36 @@ class DefaultAccountRepository(
   private suspend fun resolveBuilderAddress(builderAddress: String): String {
     val trimmed = builderAddress.trim()
     if (trimmed.isBlank()) return trimmed
-    return runCatching {
+    resolvedBuilders.value[trimmed]?.let {
+      return it
+    }
+    return runSuspendCatching {
         val subaccounts = client.accounts.subaccounts(trimmed)
         subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
           ?: subaccounts.firstOrNull { it.isActive }?.address
           ?: subaccounts.firstOrNull()?.address
           ?: trimmed
       }
-      .getOrDefault(trimmed)
+      .getOrNull()
+      ?.also { resolved -> resolvedBuilders.update { it + (trimmed to resolved) } } ?: trimmed
+  }
+
+  /**
+   * Reads what the selected account approves for each product the wallet has builder support on
+   * for, so the fee only goes on orders the account will accept.
+   */
+  override suspend fun refreshBuilderApprovals() {
+    val saved = preferences.values.first()
+    val account = saved.selectedSubaccount ?: return
+    val builder = saved.builderAddress?.let { resolveBuilderAddress(it) } ?: return
+    val products = listOf(false to saved.builderOptedIn, true to saved.spotBuilderOptedIn)
+    for ((spot, optedIn) in products) {
+      if (!optedIn) continue
+      val read =
+        runSuspendCatching { client.subaccounts.approvedBuilderFee(account, builder, spot) }
+          .getOrNull() as? AptosResult.Success ?: continue
+      preferences.setBuilderApproval(account, read.value ?: 0L, spot)
+    }
   }
 
   override suspend fun approveBuilderFee(
@@ -456,6 +480,7 @@ class DefaultAccountRepository(
       )
       .collect { state -> terminal = state }
     if (terminal is ActionState.Committed) {
+      preferences.setBuilderApproval(subaccount, units.toLong(), spot = product == MarketKind.SPOT)
       when (product) {
         MarketKind.PERP ->
           preferences.setBuilderSupport(
@@ -494,6 +519,7 @@ class DefaultAccountRepository(
     // The rate stays: it still applies to the other product, and returns if this one is approved
     // again.
     if (terminal is ActionState.Committed) {
+      preferences.setBuilderApproval(subaccount, 0L, spot = product == MarketKind.SPOT)
       when (product) {
         MarketKind.PERP -> preferences.setBuilderApproved(false)
         MarketKind.SPOT -> preferences.setSpotBuilderApproved(false, resolvedBuilder)

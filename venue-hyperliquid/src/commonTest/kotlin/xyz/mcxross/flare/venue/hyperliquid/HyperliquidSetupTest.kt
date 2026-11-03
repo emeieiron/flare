@@ -361,8 +361,14 @@ class HyperliquidSetupTest {
       harness.setup.approveBuilderFee(builder, 11u, prompt)
     }
 
-    // The saved approval follows what Hyperliquid reports.
+    // The saved approval follows what Hyperliquid reports, and only one that covers the rate
+    // counts.
     fee = 50
+    harness.setup.syncBuilderApproval(builder)
+    saved = harness.preferences.values.first()
+    assertTrue(saved.builderOptedIn)
+    assertFalse(saved.builderApproved)
+    fee = 100
     harness.setup.syncBuilderApproval(builder)
     assertTrue(harness.preferences.values.first().builderApproved)
   }
