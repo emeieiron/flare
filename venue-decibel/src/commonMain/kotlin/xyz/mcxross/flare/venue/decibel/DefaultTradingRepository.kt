@@ -799,10 +799,9 @@ class DefaultTradingRepository(
     feePayment: FeePayment,
     onPrepared: suspend (String) -> Unit,
   ): Flow<ActionState> = flow {
-    if (!submissionMutex.tryLock()) {
-      emit(ActionState.Failed("Another transaction is already being authorized"))
-      return@flow
-    }
+    // An action the person confirmed while an earlier one is still settling waits its turn: the
+    // next transaction's sequence number exists only once that one lands.
+    submissionMutex.lock()
 
     var preparedHash: String? = null
     try {

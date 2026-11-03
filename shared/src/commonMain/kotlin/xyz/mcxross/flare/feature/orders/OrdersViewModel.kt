@@ -79,6 +79,9 @@ data class OrdersUiState(
   val readAccessError: String? = null,
   val lastCancelOrderId: String? = null,
   val lastCancelTwapId: String? = null,
+  /** Cancels on their way; those orders leave the list until the network settles them. */
+  val cancellingOrders: Set<String> = emptySet(),
+  val cancellingTwaps: Set<String> = emptySet(),
 )
 
 sealed interface OrdersIntent {
@@ -107,8 +110,21 @@ class OrdersViewModel(
 ) : ViewModel() {
   private val capabilities = venue.capabilities
   private val local = MutableStateFlow(OrdersUiState(capabilities = capabilities))
+  private var actionAttempt = 0L
 
   init {
+    viewModelScope.launch {
+      // A cancelled order leaves the hidden set once the list itself no longer has it.
+      accounts.snapshot.collect { snapshot ->
+        local.update {
+          it.copy(
+            cancellingOrders = it.cancellingOrders.filterTo(mutableSetOf()) { id ->
+              snapshot.openOrders.any { order -> order.orderId == id }
+            },
+          )
+        }
+      }
+    }
     setupGate?.let { gate ->
       viewModelScope.launch {
         gate.need.collect { need ->
@@ -131,7 +147,15 @@ class OrdersViewModel(
         profile,
         account,
         history ->
-        state.copy(profile = profile, account = account, history = history)
+        state.copy(
+          profile = profile,
+          account =
+            account.copy(
+              openOrders = account.openOrders.filterNot { it.orderId in state.cancellingOrders },
+            ),
+          history = history,
+          activeTwaps = state.activeTwaps.filterNot { it.id in state.cancellingTwaps },
+        )
       }
       .combine(markets.catalog) { state, catalog ->
         state.copy(
@@ -268,6 +292,7 @@ class OrdersViewModel(
           MarketKind.SPOT
       val prompt =
         VaultPrompt(if (isTpSl) "Cancel TP/SL" else "Cancel order", "Confirm your identity")
+      var terminal: ActionState? = null
       confirmedWithAccountRead(prompt) {
         val subaccount = checkNotNull(uiState.value.account.account)
         trading
@@ -285,35 +310,31 @@ class OrdersViewModel(
             prompt,
             FeePayment.WALLET_FALLBACK,
           )
-          .collect { state -> local.update { it.copy(transaction = state) } }
+          .collect { state ->
+            terminal = state
+            onSent(state) { it.copy(cancellingOrders = it.cancellingOrders + orderId) }
+          }
       }
-      when (val state = local.value.transaction) {
-        is ActionState.Committed -> {
-          accounts.refresh()
-          accounts.refreshHistory()
-        }
-        is ActionState.Failed -> error(state.failureMessage())
-        else -> Unit
-      }
+      settle(terminal) { it.copy(cancellingOrders = it.cancellingOrders - orderId) }
     }
 
   private fun cancelTwap(market: String, twapId: String) =
     launchAction("Your TWAP order wasn’t cancelled.") {
       val subaccount = checkNotNull(uiState.value.account.account)
       local.update { it.copy(lastCancelTwapId = twapId) }
+      var terminal: ActionState? = null
       trading
         .execute(
           TradeAction.CancelTwapOrder(subaccount, market, twapId),
           VaultPrompt("Cancel TWAP order", "Confirm your identity"),
           FeePayment.WALLET_FALLBACK,
         )
-        .collect { state -> local.update { it.copy(transaction = state) } }
-      when (val state = local.value.transaction) {
-        is ActionState.Committed -> {
-          refreshTwaps()
+        .collect { state ->
+          terminal = state
+          onSent(state) { it.copy(cancellingTwaps = it.cancellingTwaps + twapId) }
         }
-        is ActionState.Failed -> error(state.failureMessage())
-        else -> Unit
+      settle(terminal, refreshOrders = false) {
+        it.copy(cancellingTwaps = it.cancellingTwaps - twapId)
       }
     }
 
@@ -326,6 +347,7 @@ class OrdersViewModel(
         if (openOrders.isEmpty()) return@confirmedWithAccountRead
         val subaccount = checkNotNull(uiState.value.account.account)
         if (capabilities.batchCancel) {
+          val ids = openOrders.map { it.orderId }.toSet()
           trading
             .execute(
               TradeAction.CancelOrders(
@@ -335,8 +357,12 @@ class OrdersViewModel(
               VaultPrompt("Cancel all orders", "Confirm your identity"),
               FeePayment.WALLET_FALLBACK,
             )
-            .collect { state -> local.update { it.copy(transaction = state) } }
-          batchFailure = local.value.transaction as? ActionState.Failed
+            .collect { state ->
+              if (state is ActionState.Failed) batchFailure = state
+              onSent(state) { it.copy(cancellingOrders = it.cancellingOrders + ids) }
+            }
+          if (batchFailure != null)
+            local.update { it.copy(cancellingOrders = it.cancellingOrders - ids) }
           return@confirmedWithAccountRead
         }
         for (order in openOrders) {
@@ -356,19 +382,58 @@ class OrdersViewModel(
                 if (isSpot) MarketKind.SPOT else MarketKind.PERP,
               )
             }
+          var failed = false
           trading
             .execute(
               action,
               VaultPrompt("Cancel order", "Confirm your identity"),
               FeePayment.WALLET_FALLBACK,
             )
-            .collect { state -> local.update { it.copy(transaction = state) } }
+            .collect { state ->
+              failed = state is ActionState.Failed
+              onSent(state) { it.copy(cancellingOrders = it.cancellingOrders + order.orderId) }
+            }
+          if (failed)
+            local.update { it.copy(cancellingOrders = it.cancellingOrders - order.orderId) }
         }
       }
       accounts.refresh()
       accounts.refreshHistory()
       batchFailure?.let { error(it.failureMessage()) }
     }
+
+  /** Once a cancel is sent the list drops it and the screen is free again. */
+  private fun onSent(state: ActionState, hide: (OrdersUiState) -> OrdersUiState) {
+    if (state is ActionState.Pending) local.update { hide(it).copy(busy = false) }
+  }
+
+  /**
+   * A failed cancel's row comes straight back. A landed one stays hidden until the refreshed list
+   * drops it, or [SETTLE_TIMEOUT_MS] passes, so a lagging list never shows it again in between.
+   */
+  private suspend fun settle(
+    terminal: ActionState?,
+    refreshOrders: Boolean = true,
+    restore: (OrdersUiState) -> OrdersUiState,
+  ) {
+    when (terminal) {
+      is ActionState.Committed -> {
+        viewModelScope.launch {
+          delay(SETTLE_TIMEOUT_MS)
+          local.update(restore)
+        }
+        if (refreshOrders) {
+          accounts.refresh()
+          accounts.refreshHistory()
+        } else refreshTwaps()
+      }
+      is ActionState.Failed -> {
+        local.update(restore)
+        error(terminal.failureMessage())
+      }
+      else -> local.update(restore)
+    }
+  }
 
   /**
    * Asks for confirmation at once and re-reads the account meanwhile; [block] runs, and so signs,
@@ -388,13 +453,23 @@ class OrdersViewModel(
     viewModelScope.launch {
       val active = runCatching { accounts.activeTwaps() }.getOrDefault(emptyList())
       val history = runCatching { accounts.twapHistory() }.getOrDefault(emptyList())
-      local.update { it.copy(activeTwaps = active, twapHistory = history) }
+      local.update {
+        it.copy(
+          activeTwaps = active,
+          twapHistory = history,
+          cancellingTwaps = it.cancellingTwaps.filterTo(mutableSetOf()) { id ->
+            active.any { twap -> twap.id == id }
+          },
+        )
+      }
     }
   }
 
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy) return
+    // A cancel sent and settling may already have freed the screen for the next one.
+    val attempt = ++actionAttempt
     viewModelScope.launch {
       local.update { it.copy(busy = true, error = null) }
       try {
@@ -404,8 +479,11 @@ class OrdersViewModel(
               local.update { it.copy(error = actionFailure(error.message, outcome)) }
           }
       } finally {
-        local.update { it.copy(busy = false) }
+        if (attempt == actionAttempt) local.update { it.copy(busy = false) }
       }
     }
   }
 }
+
+/** How long a landed cancel's row stays hidden while the order list catches up. */
+private const val SETTLE_TIMEOUT_MS = 20_000L

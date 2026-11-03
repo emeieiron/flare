@@ -186,10 +186,9 @@ fun TradeScreen(
     ) {
       mutableStateOf(false)
     }
-  val committed = state.transaction as? ActionState.Committed
   val stage =
     when {
-      committed != null -> TradeStage.RESULT
+      state.orderSent -> TradeStage.RESULT
       state.orderBusy -> TradeStage.REVIEW
       reviewing && state.orderError != null -> TradeStage.FAILURE
       reviewing -> TradeStage.REVIEW
@@ -205,7 +204,7 @@ fun TradeScreen(
   }
   val returnToMarket = {
     clearFocus()
-    if (committed != null) onIntent(TradeIntent.DismissOrderReceipt)
+    if (state.orderSent) onIntent(TradeIntent.DismissOrderReceipt)
     reviewing = false
     trading = false
   }
@@ -384,6 +383,10 @@ fun TradeScreen(
                     )
                     if (state.error != null && !state.stale)
                       ActionNotice(state.error, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                    // An order that failed after its receipt was dismissed says so here, once.
+                    state.orderError?.let {
+                      ActionNotice(it, Modifier.padding(top = 16.dp), NoticeTone.ALERT)
+                    }
                     onOpenStrategies?.let { open ->
                       ActionRow(
                         "Strategies",
@@ -409,27 +412,28 @@ fun TradeScreen(
                       clearFocus()
                       reviewing = false
                     }
-                  TradeStage.RESULT ->
-                    if (committed != null) {
-                      val explorer = LocalTransactionExplorer.current
-                      val browser = LocalUriHandler.current
-                      OrderResult(
-                        state,
-                        side,
-                        editorHeight,
-                        onOpenActivity =
-                          onOpenActivity?.let { open ->
-                            {
-                              returnToMarket()
-                              open()
-                            }
-                          },
-                        onViewTransaction =
-                          explorer.url(committed.reference)?.let { url ->
-                            { runCatching { browser.openUri(url) } }
-                          },
-                      )
-                    }
+                  TradeStage.RESULT -> {
+                    val explorer = LocalTransactionExplorer.current
+                    val browser = LocalUriHandler.current
+                    // The link appears once the network has the transaction to show.
+                    val committed = state.transaction as? ActionState.Committed
+                    OrderResult(
+                      state,
+                      side,
+                      editorHeight,
+                      onOpenActivity =
+                        onOpenActivity?.let { open ->
+                          {
+                            returnToMarket()
+                            open()
+                          }
+                        },
+                      onViewTransaction =
+                        committed?.let { explorer.url(it.reference) }?.let { url ->
+                          { runCatching { browser.openUri(url) } }
+                        },
+                    )
+                  }
                 }
               }
             }

@@ -41,6 +41,13 @@ fun actionFailure(raw: String?, outcome: String): String {
   }
 }
 
+/**
+ * As [actionFailure], for an outcome that lands after its screen has gone: the sentence always
+ * names what didn't happen, since nothing around it does any more.
+ */
+fun lateActionFailure(raw: String?, outcome: String): String =
+  actionFailure(raw, outcome).let { if (it.startsWith(outcome)) it else "$outcome $it" }
+
 /** Move aborts, status codes, addresses and class names never read as an explanation. */
 private val TechnicalDetail =
   Regex(

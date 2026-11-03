@@ -93,7 +93,10 @@ fun PositionScreen(
           "Close position",
           { confirmClose = true },
           Modifier.fillMaxWidth().padding(top = 32.dp),
-          enabled = !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
+          enabled =
+            !state.busy &&
+              position.marketId !in state.closingPositions &&
+              state.capabilities.unavailableReason(ActionKind.TRADING) == null,
           style = FlareButtonStyle.SELL,
         )
       } else Text("This position is no longer open", color = FlareColors.TextSecondary)
@@ -160,7 +163,7 @@ private fun PositionDetails(
     "Save exits",
     { onIntent(PortfolioIntent.SubmitTpSl) },
     Modifier.fillMaxWidth().padding(top = 16.dp),
-    enabled = exitsChanged && !state.busy,
+    enabled = exitsChanged && !state.busy && !state.exitsSettling,
     working = savingExits,
   )
   Text(

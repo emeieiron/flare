@@ -42,8 +42,13 @@ internal fun OrderResult(
     Outcome.SUCCESS,
     title = "Order submitted",
     message =
-      (state.transaction as? ActionState.Committed)?.detail?.let { "$it Follow it in Activity." }
-        ?: "Your order is confirmed on-chain. Follow its status and fills in Activity.",
+      when (val transaction = state.transaction) {
+        is ActionState.Committed ->
+          transaction.detail?.let { "$it Follow it in Activity." }
+            ?: "Your order is confirmed on-chain. Follow its status and fills in Activity."
+        // Sent and still settling: nothing is claimed until the network confirms it.
+        else -> "Follow its status and fills in Activity."
+      },
   ) {
     onOpenActivity?.let { ActionRow("View Activity", onClick = it) }
     onViewTransaction?.let { ActionRow("View transaction", onClick = it) }
@@ -95,7 +100,11 @@ private fun OrderOutcome(
       DetailRow("Type", type)
       state.orderEstimate(side)?.let { DetailRow("Order value", formatBalance(it.value)) }
       if (outcome == Outcome.SUCCESS)
-        DetailRow("Fees", state.orderReceiptFeeText(LocalVenue.current.chain))
+        DetailRow(
+          "Fees",
+          state.orderReceiptFeeText(LocalVenue.current.chain),
+          loading = state.transaction is ActionState.Pending,
+        )
     }
     Column(revealed, content = links)
   }

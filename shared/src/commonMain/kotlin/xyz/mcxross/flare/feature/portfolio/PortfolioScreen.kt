@@ -81,6 +81,7 @@ import xyz.mcxross.flare.design.FlareTopBar
 import xyz.mcxross.flare.design.InstrumentBadge
 import xyz.mcxross.flare.design.LocalFinishSetup
 import xyz.mcxross.flare.design.LocalVenue
+import xyz.mcxross.flare.design.NoticeTone
 import xyz.mcxross.flare.design.SwipeAction
 import xyz.mcxross.flare.design.UnavailableNotice
 import xyz.mcxross.flare.design.rememberFlareShimmer
@@ -220,6 +221,17 @@ fun PortfolioScreen(
             }
             return@LazyColumn
           }
+          if (
+            state.positionNotice != null &&
+              (displayedPage == PortfolioPage.OVERVIEW || displayedPage == PortfolioPage.POSITIONS)
+          )
+            item {
+              ActionNotice(
+                state.positionNotice,
+                Modifier.padding(bottom = 12.dp),
+                NoticeTone.ALERT,
+              )
+            }
           when (displayedPage) {
             PortfolioPage.OVERVIEW ->
               item {
@@ -248,17 +260,21 @@ fun PortfolioScreen(
               if (positions.isEmpty()) item { PositionsEmptyState(state) }
               else if (visible.isEmpty()) item { QuietPortfolioMessage("No matching positions") }
               items(visible, key = { it.marketId }) { position ->
+                val closing = position.marketId in state.closingPositions
                 SwipeAction(
                   "Close",
                   { closeTarget = position.marketId },
                   enabled =
-                    !state.busy && state.capabilities.unavailableReason(ActionKind.TRADING) == null,
+                    !state.busy &&
+                      !closing &&
+                      state.capabilities.unavailableReason(ActionKind.TRADING) == null,
                 ) {
                   PositionRow(
                     position,
                     state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
                     state.markPrices[position.marketId],
                     !state.busy,
+                    closing,
                     { onPositionClick(position.marketId) },
                   )
                 }
@@ -547,7 +563,8 @@ private fun PortfolioOverview(
       PreviewValue(
         state.marketSymbols[position.marketId] ?: shortAddress(position.marketId),
         pnl?.let(::formatSignedBalance) ?: "—",
-        "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))}",
+        if (position.marketId in state.closingPositions) "Closing…"
+        else "${if (position.isLong) "Long" else "Short"} ${formatQuantity(abs(size ?: 0.0))}",
         valueColor =
           when {
             pnl == null || abs(pnl) < FLAT_PNL -> FlareColors.TextSecondary
@@ -1116,6 +1133,7 @@ private fun PositionRow(
   symbol: String,
   markPrice: Double?,
   enabled: Boolean,
+  closing: Boolean,
   onClick: () -> Unit,
 ) {
   val size = position.size.toDoubleOrNull()
@@ -1131,8 +1149,10 @@ private fun PositionRow(
     Column(Modifier.weight(1f)) {
       Text(symbol, style = MaterialTheme.typography.labelLarge)
       Text(
-        "${if (position.isLong) "Long" else "Short"} ${formatQuantity(size?.let(::abs) ?: 0.0)} · " +
-          "${position.leverage}× · entry ${formatPrice(position.entryPrice)}",
+        if (closing) "Closing…"
+        else
+          "${if (position.isLong) "Long" else "Short"} ${formatQuantity(size?.let(::abs) ?: 0.0)} · " +
+            "${position.leverage}× · entry ${formatPrice(position.entryPrice)}",
         color = FlareColors.TextSecondary,
         style = MaterialTheme.typography.labelSmall,
       )

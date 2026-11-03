@@ -307,6 +307,8 @@ class PortfolioViewModelTest {
     private val spotBalances: Map<String, Double> = emptyMap(),
     private val outcome: ActionState? = null,
     private val review: OrderFeeReview? = null,
+    /** When set, the action is sent at once and lands with [outcome] once this completes. */
+    private val settle: CompletableDeferred<Unit>? = null,
   ) : TradingRepository {
     val executed = mutableListOf<TradeAction>()
     val feePayments = mutableListOf<FeePayment>()
@@ -348,6 +350,12 @@ class PortfolioViewModelTest {
     ): Flow<ActionState> {
       executed += action
       feePayments += feePayment
+      if (settle != null)
+        return flow {
+          emit(ActionState.Pending("0xpending"))
+          settle.await()
+          outcome?.let { emit(it) }
+        }
       return outcome?.let { flowOf(it) } ?: emptyFlow()
     }
 
@@ -1313,6 +1321,29 @@ class PortfolioViewModelTest {
     refreshGate.complete(Unit)
     runCurrent()
     assertIs<TradeAction.SetPositionTpSl>(trading.executed.single())
+  }
+
+  @Test
+  fun aCloseLeavesItsSheetOnceSentAndSaysSoIfItLaterFails() = runTest {
+    val position = Position("0xbtc_perp", "0.1", 10, 68_000.0, isolated = false)
+    val accounts =
+      FakeAccountRepository(
+        AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
+      )
+    val settle = CompletableDeferred<Unit>()
+    val trading = FakeTradingRepository(outcome = ActionState.Failed("Order rejected"), settle = settle)
+    val vm = portfolio(accounts, trading = trading)
+    backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
+
+    vm.onIntent(PortfolioIntent.ClosePosition("0xbtc_perp"))
+    val sent = vm.uiState.first { it.closedMarket != null }
+    assertEquals(setOf("0xbtc_perp"), sent.closingPositions)
+    assertFalse(sent.busy)
+    vm.onIntent(PortfolioIntent.CloseHandled)
+    settle.complete(Unit)
+    val failed = vm.uiState.first { it.positionNotice != null }
+    assertEquals("Your position stayed open. Order rejected", failed.positionNotice)
+    assertTrue(failed.closingPositions.isEmpty())
   }
 
   @Test

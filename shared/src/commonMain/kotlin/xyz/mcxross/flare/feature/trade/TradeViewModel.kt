@@ -41,6 +41,7 @@ import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.mergeCandles
 import xyz.mcxross.flare.data.withLiveCandle
 import xyz.mcxross.flare.design.actionFailure
+import xyz.mcxross.flare.design.lateActionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
 import xyz.mcxross.flare.store.AppPreferences
@@ -116,6 +117,10 @@ data class TradeUiState(
   val twapDurationMinutesInput: String = "60",
   val twapFrequencyMinutesInput: String = "1",
 ) {
+  /** The order is on its way or landed: its receipt shows while it settles. */
+  val orderSent: Boolean
+    get() = transaction is ActionState.Pending || transaction is ActionState.Committed
+
   val orderFeePaymentBlocked: Boolean
     get() = orderFeePaymentError != null
 
@@ -227,6 +232,9 @@ class TradeViewModel(
   /** The input the current or last fee review covers, and when that review finished. */
   private var feeReviewInput: OrderInputIdentity? = null
   private var feeReviewAtMs = 0L
+  /** Each submission; an order sent and still settling never overwrites a later one. */
+  private var orderAttempt = 0L
+  private var dismissedAttempt = 0L
   private var feeReviewProfile: String? = null
   private var requestedMarket: String? = null
   private var chartJob: Job? = null
@@ -527,9 +535,11 @@ class TradeViewModel(
         mutableUiState.update {
           it.copy(twapFrequencyMinutesInput = decimalCharacters(intent.value), orderError = null)
         }
-      TradeIntent.DismissOrderReceipt ->
+      TradeIntent.DismissOrderReceipt -> {
+        val sent = mutableUiState.value.let { !it.orderBusy && it.orderSent }
+        if (sent) dismissedAttempt = orderAttempt
         mutableUiState.update {
-          if (it.orderBusy || it.transaction !is ActionState.Committed) it
+          if (!sent) it
           else
             it.copy(
               sizeInput = "",
@@ -541,6 +551,7 @@ class TradeViewModel(
               orderError = null,
             )
         }
+      }
     }
   }
 
@@ -675,6 +686,9 @@ class TradeViewModel(
       prepareOrderFees(side)
       return
     }
+    val attempt = ++orderAttempt
+    // The receipt shows once the order is sent; until it settles, its outcome lands only there.
+    fun showing() = attempt == orderAttempt && attempt != dismissedAttempt
     viewModelScope.launch {
       mutableUiState.update {
         it.copy(
@@ -750,24 +764,30 @@ class TradeViewModel(
                   )
                 },
                 onState = { stage, transaction ->
-                  mutableUiState.update {
-                    val fee =
-                      when (transaction) {
-                        is ActionState.FeeEstimated -> transaction.fee
-                        is ActionState.Pending -> transaction.networkFee
-                        is ActionState.Committed -> transaction.networkFee
-                        else -> null
-                      }
-                    if (stage == OrderStage.LEVERAGE)
-                      it.copy(
-                        leverageTransaction = transaction,
-                      )
-                    else
-                      it.copy(
-                        transaction = transaction,
-                        entryNetworkFee = fee ?: it.entryNetworkFee,
-                      )
-                  }
+                  val sent = stage == OrderStage.ENTRY && transaction is ActionState.Pending
+                  // A failure is reported with its reason below, in the same update.
+                  if (showing() && transaction !is ActionState.Failed)
+                    mutableUiState.update {
+                      val fee =
+                        when (transaction) {
+                          is ActionState.FeeEstimated -> transaction.fee
+                          is ActionState.Pending -> transaction.networkFee
+                          is ActionState.Committed -> transaction.networkFee
+                          else -> null
+                        }
+                      if (stage == OrderStage.LEVERAGE)
+                        it.copy(
+                          leverageTransaction = transaction,
+                        )
+                      else
+                        it.copy(
+                          transaction = transaction,
+                          entryNetworkFee = fee ?: it.entryNetworkFee,
+                          // Sent: the person can carry on while it settles.
+                          orderBusy = it.orderBusy && !sent,
+                        )
+                    }
+                  if (sent && attempt == orderAttempt) invalidateFeeReview()
                 },
               )
             }
@@ -776,7 +796,7 @@ class TradeViewModel(
                 trading.confirmedOrderFees(review, review.canSelfPay, prompt, place)
               } else trading.confirmedAction(prompt, place)
             // A reviewed plan is single-use; a new attempt must review a fresh budget.
-            invalidateFeeReview()
+            if (attempt == orderAttempt) invalidateFeeReview()
             when (val transaction = terminal) {
               is ActionState.Committed -> accounts.refresh()
               is ActionState.Failed -> error(transaction.message)
@@ -786,15 +806,24 @@ class TradeViewModel(
         }
           .onFailure { error ->
             // A cancelled or failed authorization cannot reuse a single-use fee plan.
-            invalidateFeeReview()
+            if (attempt == orderAttempt) invalidateFeeReview()
             if (!error.isAuthorizationCancelled()) {
               mutableUiState.update {
-                it.copy(orderError = actionFailure(error.message, "Your order wasn’t placed."))
+                if (showing())
+                  it.copy(
+                    orderError = actionFailure(error.message, "Your order wasn’t placed."),
+                    transaction = null,
+                  )
+                // Its receipt is gone, so one line says so wherever the person is now.
+                else
+                  it.copy(
+                    orderError = lateActionFailure(error.message, "Your last order wasn’t placed."),
+                  )
               }
             }
           }
       } finally {
-        mutableUiState.update { it.copy(orderBusy = false) }
+        if (attempt == orderAttempt) mutableUiState.update { it.copy(orderBusy = false) }
       }
     }
   }

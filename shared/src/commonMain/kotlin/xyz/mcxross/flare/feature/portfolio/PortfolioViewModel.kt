@@ -55,6 +55,7 @@ import xyz.mcxross.flare.data.formatQuantity
 import xyz.mcxross.flare.data.formatTokenBalance
 import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.design.actionFailure
+import xyz.mcxross.flare.design.lateActionFailure
 import xyz.mcxross.flare.feature.funding.FeeResolver
 import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.security.VaultPrompt
@@ -156,6 +157,12 @@ data class PortfolioUiState(
   /** The network fee of the close being confirmed; null until reviewed or where none applies. */
   val closeReview: OrderFeeReview? = null,
   val closeReviewLoading: Boolean = false,
+  /** Positions whose close is on its way; each row says so until the network settles it. */
+  val closingPositions: Set<String> = emptySet(),
+  /** A close that failed after its sheet had gone, said once above the positions. */
+  val positionNotice: String? = null,
+  /** Exits sent and still settling; saving again waits for them. */
+  val exitsSettling: Boolean = false,
   val chartPoints: List<SeriesPoint> = emptyList(),
   val chartRange: PortfolioChartRange = PortfolioChartRange.DAY_1,
   val chartMetric: PortfolioMetric = PortfolioMetric.EQUITY,
@@ -375,6 +382,7 @@ class PortfolioViewModel(
   private var chartKey: Pair<PortfolioChartRange, PortfolioMetric>? = null
   private val balanceMutex = Mutex()
   private var closeReviewJob: Job? = null
+  private var actionAttempt = 0L
   private var closeReviewMarket: String? = null
   private var reviewedClose: ReviewedClose? = null
   private val liveBookMarket = MutableStateFlow<String?>(null)
@@ -417,6 +425,23 @@ class PortfolioViewModel(
     )
 
   init {
+    viewModelScope.launch {
+      // What's still settling clears once the account itself shows the outcome.
+      accounts.snapshot.collect { snapshot ->
+        local.update { state ->
+          val managed = snapshot.positions.firstOrNull { it.marketId == state.managedPositionMarket }
+          state.copy(
+            closingPositions = state.closingPositions.filterTo(mutableSetOf()) { market ->
+              snapshot.positions.any { it.marketId == market }
+            },
+            exitsSettling =
+              state.exitsSettling &&
+                managed != null &&
+                exitChanges(state.takeProfitInput, state.stopLossInput, managed).any,
+          )
+        }
+      }
+    }
     setupGate?.let { gate ->
       viewModelScope.launch {
         gate.need.collect { need ->
@@ -793,10 +818,18 @@ class PortfolioViewModel(
           )
         }
       }
-      is PortfolioIntent.PrepareClose -> showCloseFee(intent.market)
+      is PortfolioIntent.PrepareClose -> {
+        local.update { it.copy(positionNotice = null) }
+        showCloseFee(intent.market)
+      }
       is PortfolioIntent.ClosePosition -> {
         local.update {
-          it.copy(closingMarket = intent.market, closedMarket = null, positionTransaction = null)
+          it.copy(
+            closingMarket = intent.market,
+            closedMarket = null,
+            positionTransaction = null,
+            positionNotice = null,
+          )
         }
         closePosition(intent.market)
       }
@@ -1014,31 +1047,80 @@ class PortfolioViewModel(
     runSuspendCatching { accounts.refresh() }
   }
 
-  /** Nothing signs until [accountRead] lands; a failed read stops the action there. */
+  /**
+   * Nothing signs until [accountRead] lands; a failed read stops the action there. Once the
+   * action is sent the person carries on: a close leaves its sheet, and exits stop the spinner.
+   */
   private suspend fun executePositionActionInternal(
     action: TradeAction,
     feePayment: FeePayment,
     accountRead: Deferred<Result<Unit>>,
   ) {
     accountRead.await().getOrThrow()
+    val closing = local.value.closingMarket.takeIf { action is TradeAction.PlaceOrder }
+    val exits = action is TradeAction.SetPositionTpSl
+    var sent = false
+    var terminal: ActionState? = null
     trading
       .execute(
         action = action,
         prompt = VaultPrompt("Manage position", "Confirm your identity"),
         feePayment = feePayment,
       )
-      .collect { transaction -> local.update { it.copy(positionTransaction = transaction) } }
-    when (val terminal = local.value.positionTransaction) {
-      is ActionState.Committed -> {
-        local.value.closingMarket?.let { market ->
-          if (action is TradeAction.PlaceOrder) {
-            local.update { it.copy(closingMarket = null, closedMarket = market) }
+      .collect { transaction ->
+        terminal = transaction
+        if (!sent) local.update { it.copy(positionTransaction = transaction) }
+        if (!sent && transaction is ActionState.Pending) {
+          sent = true
+          local.update {
+            when {
+              closing != null ->
+                it.copy(
+                  closingMarket = null,
+                  closedMarket = closing,
+                  closingPositions = it.closingPositions + closing,
+                  busy = false,
+                )
+              exits -> it.copy(exitsSettling = true, busy = false)
+              else -> it.copy(busy = false)
+            }
           }
+        }
+      }
+    fun settled() =
+      local.update {
+        it.copy(
+          closingPositions = closing?.let { market -> it.closingPositions - market }
+            ?: it.closingPositions,
+          exitsSettling = it.exitsSettling && !exits,
+        )
+      }
+    when (val outcome = terminal) {
+      is ActionState.Committed -> {
+        if (closing != null && !sent)
+          local.update { it.copy(closingMarket = null, closedMarket = closing) }
+        // Landed: "Closing…" and settling exits clear once the account shows it, or in time.
+        viewModelScope.launch {
+          delay(SETTLE_TIMEOUT_MS)
+          settled()
         }
         accounts.refresh()
       }
-      is ActionState.Failed -> error(terminal.failureMessage())
-      else -> Unit
+      is ActionState.Failed -> {
+        settled()
+        // The close's sheet has gone, so the positions say what happened.
+        if (sent && closing != null) {
+          local.update {
+            it.copy(
+              positionNotice =
+                lateActionFailure(outcome.failureMessage(), "Your position stayed open."),
+            )
+          }
+          return
+        }
+        error(outcome.failureMessage())
+      }
+      else -> settled()
     }
   }
 
@@ -1344,6 +1426,8 @@ class PortfolioViewModel(
   /** [outcome] states what did not happen, so a failure reads as a result instead of a log line. */
   private fun launchAction(outcome: String, block: suspend () -> Unit) {
     if (local.value.busy || fundingSwaps.state.value.working) return
+    // An action sent and settling may already have freed the screen for the next one.
+    val attempt = ++actionAttempt
     viewModelScope.launch {
       local.update { it.copy(busy = true, actionError = null) }
       try {
@@ -1353,7 +1437,7 @@ class PortfolioViewModel(
               local.update { it.copy(actionError = actionFailure(error.message, outcome)) }
           }
       } finally {
-        local.update { it.copy(busy = false) }
+        if (attempt == actionAttempt) local.update { it.copy(busy = false) }
       }
     }
   }
@@ -1550,3 +1634,6 @@ private fun changedExit(input: String, current: Double?): String? {
 
 /** A reviewed close keeps its price bound this long before confirming reviews it again. */
 private const val CLOSE_REVIEW_MS = 30_000L
+
+/** How long a landed close or exit change shows as settling while the account catches up. */
+private const val SETTLE_TIMEOUT_MS = 20_000L

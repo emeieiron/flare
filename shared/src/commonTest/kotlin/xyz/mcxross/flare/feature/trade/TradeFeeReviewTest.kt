@@ -498,6 +498,46 @@ class TradeFeeReviewTest {
   }
 
   @Test
+  fun anOrderShowsItsReceiptOnceSentAndFillsInWhenItLands() = runTest {
+    val f = fixture()
+    try {
+      f.prepareFees()
+      val settle = CompletableDeferred<Unit>()
+      f.trading.entrySettle = settle
+      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
+      val sent = f.vm.uiState.first { it.orderSent }
+      assertIs<ActionState.Pending>(sent.transaction)
+      assertFalse(sent.orderBusy)
+      settle.complete(Unit)
+      f.vm.uiState.first { it.transaction is ActionState.Committed }
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
+  fun anOrderThatFailsAfterItsReceiptWasDismissedSaysSoOnce() = runTest {
+    val f = fixture()
+    try {
+      f.prepareFees()
+      val settle = CompletableDeferred<Unit>()
+      f.trading.entrySettle = settle
+      f.trading.entryTerminal = ActionState.Failed("Order rejected")
+      f.vm.onIntent(TradeIntent.Submit(OrderSide.BUY))
+      f.vm.uiState.first { it.orderSent }
+      f.vm.onIntent(TradeIntent.DismissOrderReceipt)
+      assertFalse(f.vm.uiState.value.orderSent)
+      assertEquals("", f.vm.uiState.value.sizeInput)
+      settle.complete(Unit)
+      val failed = f.vm.uiState.first { it.orderError != null }
+      assertEquals("Your last order wasn’t placed. Order rejected", failed.orderError)
+      assertFalse(failed.orderSent)
+    } finally {
+      f.vm.viewModelScope.cancel()
+    }
+  }
+
+  @Test
   fun preparationCoalescesTapsIgnoresBookTicksAndCancelsObsoleteInputs() = runTest {
     val f = fixture()
     try {
@@ -674,6 +714,9 @@ class TradeFeeReviewTest {
     val consents = mutableListOf<Boolean>()
     val executed = mutableListOf<TradeAction>()
     var terminal: ActionState = ActionState.Committed("hash")
+    /** When set, the order is sent at once and lands with [entryTerminal] once this completes. */
+    var entrySettle: CompletableDeferred<Unit>? = null
+    var entryTerminal: ActionState? = null
 
     override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview {
       feePreparations++
@@ -720,6 +763,13 @@ class TradeFeeReviewTest {
     ): Flow<ActionState> {
       executed += action
       assertEquals(FeePayment.SPONSORED, feePayment)
+      val settle = entrySettle
+      if (action is TradeAction.PlaceOrder && settle != null)
+        return flow {
+          emit(ActionState.Pending("hash"))
+          settle.await()
+          emit(entryTerminal ?: terminal)
+        }
       return flowOf(terminal)
     }
   }
