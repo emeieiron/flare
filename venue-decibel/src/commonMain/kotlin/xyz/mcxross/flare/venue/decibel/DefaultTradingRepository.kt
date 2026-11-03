@@ -94,7 +94,8 @@ private class SimulatedFeePayer(identity: AptosSimulationIdentity) : Transaction
   override val accountAddress: AccountAddress = identity.address
   override val publicKey: PublicKey = identity.publicKey
 
-  private fun refused() = AptosResult.Failure(AptosError.Validation("A simulated fee payer can't sign"))
+  private fun refused() =
+    AptosResult.Failure(AptosError.Validation("A simulated fee payer can't sign"))
 
   override suspend fun signBytes(message: ByteArray): AptosResult<Signature> = refused()
 
@@ -182,7 +183,9 @@ class DefaultTradingRepository(
   private var orderFeeReviewCounter = 0L
 
   override suspend fun prepareOrderFees(actions: List<TradeAction>): OrderFeeReview? =
-    prepareOrderFees { actions }
+    prepareOrderFees {
+      actions
+    }
 
   override suspend fun prepareOrderFees(
     actions: suspend () -> List<TradeAction>,
@@ -423,8 +426,8 @@ class DefaultTradingRepository(
   }
 
   /**
-   * The entry's gas does not depend on the pending leverage, so simulating it against current
-   * state prices it closely. Display only: the signed entry is simulated again after setup.
+   * The entry's gas does not depend on the pending leverage, so simulating it against current state
+   * prices it closely. Display only: the signed entry is simulated again after setup.
    */
   private suspend fun entryFeeBeforeSetup(
     identity: AptosSimulationIdentity,
@@ -439,7 +442,11 @@ class DefaultTradingRepository(
       null
     }
 
-  private class WalletFee(val address: String, val ownerPays: Boolean, val options: TransactionOptions)
+  private class WalletFee(
+    val address: String,
+    val ownerPays: Boolean,
+    val options: TransactionOptions,
+  )
 
   /**
    * Who pays when Flare can't: the owner's wallet, else the trading key, each only within a budget
@@ -1079,20 +1086,25 @@ class DefaultTradingRepository(
                       val failure = state as? TransactionState.Failed
                       // The wallet fallback checks its payer by simulating the exact transaction.
                       val eligible =
-                        failure?.selfPayEstimateOctas?.takeUnless { walletFallback }?.let { estimate ->
-                          val required = failure.selfPayReserveOctas ?: estimate
-                          when (
-                            val balance =
-                              aptos.accounts.getBalance(
-                                orderPlan?.review?.feePayerAddress?.let(AccountAddress::fromString)
-                                  ?: account.accountAddress,
-                                AccountAsset.coin(APTOS_COIN),
-                              )
-                          ) {
-                            is AptosResult.Success -> balance.value >= required
-                            is AptosResult.Failure -> false
+                        failure
+                          ?.selfPayEstimateOctas
+                          ?.takeUnless { walletFallback }
+                          ?.let { estimate ->
+                            val required = failure.selfPayReserveOctas ?: estimate
+                            when (
+                              val balance =
+                                aptos.accounts.getBalance(
+                                  orderPlan
+                                    ?.review
+                                    ?.feePayerAddress
+                                    ?.let(AccountAddress::fromString) ?: account.accountAddress,
+                                  AccountAsset.coin(APTOS_COIN),
+                                )
+                            ) {
+                              is AptosResult.Success -> balance.value >= required
+                              is AptosResult.Failure -> false
+                            }
                           }
-                        }
                       if (
                         boundedFallback &&
                           payment == FeePayment.SPONSORED &&
@@ -1129,7 +1141,8 @@ class DefaultTradingRepository(
                     }
                 val payer = walletQuote
                 if (payer?.ownerPays == true)
-                  wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { owner ->
+                  wallets.withOwnerAccount(prompt.copy(requireFreshAuthorization = false)) { owner
+                    ->
                     check(owner.accountAddress.toString().sameAptosAddress(payer.address)) {
                       "The fee-paying wallet changed"
                     }

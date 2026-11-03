@@ -37,8 +37,8 @@ import xyz.mcxross.flare.data.SetupNeed
 import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
-import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.data.failureMessage
+import xyz.mcxross.flare.data.gatedBy
 import xyz.mcxross.flare.design.actionFailure
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.security.isAuthorizationCancelled
@@ -118,9 +118,10 @@ class OrdersViewModel(
       accounts.snapshot.collect { snapshot ->
         local.update {
           it.copy(
-            cancellingOrders = it.cancellingOrders.filterTo(mutableSetOf()) { id ->
-              snapshot.openOrders.any { order -> order.orderId == id }
-            },
+            cancellingOrders =
+              it.cancellingOrders.filterTo(mutableSetOf()) { id ->
+                snapshot.openOrders.any { order -> order.orderId == id }
+              },
           )
         }
       }
@@ -457,9 +458,10 @@ class OrdersViewModel(
         it.copy(
           activeTwaps = active,
           twapHistory = history,
-          cancellingTwaps = it.cancellingTwaps.filterTo(mutableSetOf()) { id ->
-            active.any { twap -> twap.id == id }
-          },
+          cancellingTwaps =
+            it.cancellingTwaps.filterTo(mutableSetOf()) { id ->
+              active.any { twap -> twap.id == id }
+            },
         )
       }
     }

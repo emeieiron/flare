@@ -413,8 +413,7 @@ private class TransferFixture(dispatcher: CoroutineDispatcher) {
     prompt: VaultPrompt =
       VaultPrompt("Transfer", "Confirm your identity", requireFreshAuthorization = true),
     feePayment: FeePayment = FeePayment.AUTOMATIC,
-  ) =
-    trading.executeCommand(command, prompt, feePayment, onPrepared = { prepared += it }).toList()
+  ) = trading.executeCommand(command, prompt, feePayment, onPrepared = { prepared += it }).toList()
 
   private fun response(hash: String) =
     """{"type":"user_transaction","version":"1","hash":"$hash","state_change_hash":"0x0","event_root_hash":"0x0","state_checkpoint_hash":null,"gas_used":"2","success":true,"vm_status":"Executed successfully","accumulator_root_hash":"0x0","sender":"0x1","sequence_number":"0","max_gas_amount":"50000","gas_unit_price":"100","expiration_timestamp_secs":"9999999999","events":[],"timestamp":"0"}"""

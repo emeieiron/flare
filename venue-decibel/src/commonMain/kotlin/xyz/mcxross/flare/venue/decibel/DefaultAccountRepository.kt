@@ -195,11 +195,9 @@ class DefaultAccountRepository(
 
   // Decibel lists the newest first. Oldest first keeps each account's number when another opens.
   override suspend fun subaccounts(owner: String): List<TradingAccount> =
-    client.accounts
-      .subaccounts(owner)
-      .filter(Subaccount::isActive)
-      .asReversed()
-      .map { it.toTradingAccount() }
+    client.accounts.subaccounts(owner).filter(Subaccount::isActive).asReversed().map {
+      it.toTradingAccount()
+    }
 
   override suspend fun tradingAccountStatus(address: String): TradingAccountStatus? =
     runSuspendCatching {
@@ -390,8 +388,10 @@ class DefaultAccountRepository(
 
         override suspend fun isDelegated(address: String): Boolean {
           // The indexed listing can lag a new account; the chain can't.
-          val onChain =
-            runSuspendCatching { client.subaccounts.delegations(subaccount) }.getOrNull()
+          val onChain = runSuspendCatching {
+            client.subaccounts.delegations(subaccount)
+          }
+            .getOrNull()
           val delegations =
             (onChain as? AptosResult.Success)?.value
               ?: readAccount(subaccount) { client.accounts.delegations(subaccount) }
@@ -425,12 +425,12 @@ class DefaultAccountRepository(
       return it
     }
     return runSuspendCatching {
-        val subaccounts = client.accounts.subaccounts(trimmed)
-        subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
-          ?: subaccounts.firstOrNull { it.isActive }?.address
-          ?: subaccounts.firstOrNull()?.address
-          ?: trimmed
-      }
+      val subaccounts = client.accounts.subaccounts(trimmed)
+      subaccounts.firstOrNull { it.isPrimary && it.isActive }?.address
+        ?: subaccounts.firstOrNull { it.isActive }?.address
+        ?: subaccounts.firstOrNull()?.address
+        ?: trimmed
+    }
       .getOrNull()
       ?.also { resolved -> resolvedBuilders.update { it + (trimmed to resolved) } } ?: trimmed
   }

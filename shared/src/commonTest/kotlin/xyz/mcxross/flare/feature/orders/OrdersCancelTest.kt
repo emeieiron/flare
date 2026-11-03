@@ -102,8 +102,7 @@ class OrdersCancelTest {
   private class SettlingTrading(private val outcome: ActionState) : TradingRepository {
     val settle = CompletableDeferred<Unit>()
 
-    override val pendingTransactions: Flow<List<PendingTransaction>> =
-      MutableStateFlow(emptyList())
+    override val pendingTransactions: Flow<List<PendingTransaction>> = MutableStateFlow(emptyList())
 
     override fun execute(
       action: TradeAction,

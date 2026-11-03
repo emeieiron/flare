@@ -212,8 +212,7 @@ class SettingsViewModelTest {
       feePayment: FeePayment,
     ): ActionState = ActionState.Committed("0xsub")
 
-    override suspend fun createdSubaccount(created: ActionState.Committed): String? =
-      createdAddress
+    override suspend fun createdSubaccount(created: ActionState.Committed): String? = createdAddress
 
     override suspend fun <T> confirmedSetup(prompt: VaultPrompt, block: suspend () -> T): T {
       confirmedSetups++
@@ -586,7 +585,8 @@ class SettingsViewModelTest {
   fun aNewTradingAccountThatCantTradeYetSaysSo() = runTest {
     val accounts = FakeAccountRepository()
     accounts.createdAddress = "0xnew"
-    accounts.prepareError = IllegalStateException("Trading is enabled on-chain, but not confirmed yet.")
+    accounts.prepareError =
+      IllegalStateException("Trading is enabled on-chain, but not confirmed yet.")
     val vm = creatingAccounts(accounts, builderApproved = false)
 
     vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
@@ -603,7 +603,8 @@ class SettingsViewModelTest {
     val vm = creatingAccounts(accounts, builderApproved = false)
 
     vm.onIntent(SettingsIntent.CreateSubaccountForActiveProfile)
-    accounts.tradingAccounts = listOf(TradingAccount("0xold", "0xowner"), TradingAccount("0xnew", "0xowner"))
+    accounts.tradingAccounts =
+      listOf(TradingAccount("0xold", "0xowner"), TradingAccount("0xnew", "0xowner"))
     advanceTimeBy(1_501)
     runCurrent()
     assertEquals(listOf("0xnew"), accounts.selected)

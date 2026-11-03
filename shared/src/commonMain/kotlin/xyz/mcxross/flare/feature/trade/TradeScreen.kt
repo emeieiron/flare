@@ -429,9 +429,11 @@ fun TradeScreen(
                           }
                         },
                       onViewTransaction =
-                        committed?.let { explorer.url(it.reference) }?.let { url ->
-                          { runCatching { browser.openUri(url) } }
-                        },
+                        committed
+                          ?.let { explorer.url(it.reference) }
+                          ?.let { url ->
+                            { runCatching { browser.openUri(url) } }
+                          },
                     )
                   }
                 }

@@ -155,7 +155,9 @@ class WorkerSessionRepository(
     }
 
   override suspend fun authenticateApi(subaccount: String, prompt: VaultPrompt): SessionStatus =
-    mutex.withLock { signInTradingKey(subaccount, prompt) }
+    mutex.withLock {
+      signInTradingKey(subaccount, prompt)
+    }
 
   private suspend fun signInTradingKey(subaccount: String, prompt: VaultPrompt): SessionStatus {
     require(subaccount.isNotBlank()) { "A trading session must be bound to a trading account" }

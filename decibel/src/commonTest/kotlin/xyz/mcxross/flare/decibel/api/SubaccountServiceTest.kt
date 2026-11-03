@@ -11,12 +11,12 @@ import io.ktor.http.content.OutgoingContent
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.coroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
-import kotlin.coroutines.ContinuationInterceptor
-import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -106,15 +106,18 @@ class SubaccountServiceTest {
           """{"__variant__":"V1","is_primary":false,"owner":"0x7a","seed":{"vec":[]},"subaccount":"$address"}""",
         ),
       )
-    val created = service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
+    val created =
+      service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
         .createdSubaccount(HASH)
     assertEquals(address, assertIs<AptosResult.Success<String?>>(created).value)
   }
 
   @Test
   fun aTransactionWithoutTheEventNamesNoAccount() = runTest {
-    val transaction = userTransaction(event("0x1::object::TransferEvent", """{"object":"$address"}"""))
-    val created = service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
+    val transaction =
+      userTransaction(event("0x1::object::TransferEvent", """{"object":"$address"}"""))
+    val created =
+      service(transaction, HttpStatusCode.OK, VIEW_OR_TRANSACTION, testDispatcher())
         .createdSubaccount(HASH)
     assertEquals(null, assertIs<AptosResult.Success<String?>>(created).value)
   }
@@ -186,4 +189,5 @@ class SubaccountServiceTest {
 private val HASH = "0x" + "ab".repeat(32)
 private val VIEW_OR_TRANSACTION: (String) -> Boolean = { it.startsWith("/v1/transactions/") }
 
-private suspend fun testDispatcher() = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+private suspend fun testDispatcher() =
+  coroutineContext[ContinuationInterceptor] as CoroutineDispatcher

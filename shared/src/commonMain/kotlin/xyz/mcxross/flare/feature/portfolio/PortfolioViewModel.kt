@@ -267,7 +267,6 @@ data class PortfolioUiState(
       FundingMode.TO_SPOT -> account.overview?.withdrawable ?: 0.0
       FundingMode.TO_PERPS -> spotUsdc
     }
-
 }
 
 sealed interface PortfolioIntent {
@@ -429,11 +428,13 @@ class PortfolioViewModel(
       // What's still settling clears once the account itself shows the outcome.
       accounts.snapshot.collect { snapshot ->
         local.update { state ->
-          val managed = snapshot.positions.firstOrNull { it.marketId == state.managedPositionMarket }
+          val managed =
+            snapshot.positions.firstOrNull { it.marketId == state.managedPositionMarket }
           state.copy(
-            closingPositions = state.closingPositions.filterTo(mutableSetOf()) { market ->
-              snapshot.positions.any { it.marketId == market }
-            },
+            closingPositions =
+              state.closingPositions.filterTo(mutableSetOf()) { market ->
+                snapshot.positions.any { it.marketId == market }
+              },
             exitsSettling =
               state.exitsSettling &&
                 managed != null &&
@@ -911,12 +912,11 @@ class PortfolioViewModel(
       it.copy(closeReview = null, closeReviewLoading = capabilities.sponsoredFees)
     }
     if (!capabilities.sponsoredFees) return
-    closeReviewJob =
-      viewModelScope.launch {
-        val reviewed = runSuspendCatching { reviewClose(market) }.getOrNull()
-        reviewedClose = reviewed
-        local.update { it.copy(closeReview = reviewed?.review, closeReviewLoading = false) }
-      }
+    closeReviewJob = viewModelScope.launch {
+      val reviewed = runSuspendCatching { reviewClose(market) }.getOrNull()
+      reviewedClose = reviewed
+      local.update { it.copy(closeReview = reviewed?.review, closeReviewLoading = false) }
+    }
   }
 
   private suspend fun reviewClose(market: String): ReviewedClose? {
@@ -971,7 +971,9 @@ class PortfolioViewModel(
       }
     }
 
-  /** The whole position in [market], sold or bought back at the market within the slippage limit. */
+  /**
+   * The whole position in [market], sold or bought back at the market within the slippage limit.
+   */
   private suspend fun closeOrder(market: String): TradeAction.PlaceOrder {
     val position =
       uiState.value.account.positions.firstOrNull { it.marketId == market }
@@ -1048,8 +1050,8 @@ class PortfolioViewModel(
   }
 
   /**
-   * Nothing signs until [accountRead] lands; a failed read stops the action there. Once the
-   * action is sent the person carries on: a close leaves its sheet, and exits stop the spinner.
+   * Nothing signs until [accountRead] lands; a failed read stops the action there. Once the action
+   * is sent the person carries on: a close leaves its sheet, and exits stop the spinner.
    */
   private suspend fun executePositionActionInternal(
     action: TradeAction,
@@ -1087,14 +1089,13 @@ class PortfolioViewModel(
           }
         }
       }
-    fun settled() =
-      local.update {
-        it.copy(
-          closingPositions = closing?.let { market -> it.closingPositions - market }
-            ?: it.closingPositions,
-          exitsSettling = it.exitsSettling && !exits,
-        )
-      }
+    fun settled() = local.update {
+      it.copy(
+        closingPositions =
+          closing?.let { market -> it.closingPositions - market } ?: it.closingPositions,
+        exitsSettling = it.exitsSettling && !exits,
+      )
+    }
     when (val outcome = terminal) {
       is ActionState.Committed -> {
         if (closing != null && !sent)

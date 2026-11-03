@@ -32,7 +32,9 @@ interface SubaccountService {
   suspend fun delegations(subaccount: String): AptosResult<List<Delegation>> =
     AptosResult.Failure(AptosError.Validation("Delegations are not available"))
 
-  /** The trading account [transactionHash] opened, read from the transaction rather than an index. */
+  /**
+   * The trading account [transactionHash] opened, read from the transaction rather than an index.
+   */
   suspend fun createdSubaccount(transactionHash: String): AptosResult<String?> =
     AptosResult.Failure(AptosError.Validation("Created accounts are not available"))
 

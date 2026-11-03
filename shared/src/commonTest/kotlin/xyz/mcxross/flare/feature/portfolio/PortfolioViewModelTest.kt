@@ -42,12 +42,12 @@ import xyz.mcxross.flare.data.AccountSnapshot
 import xyz.mcxross.flare.data.AssetCatalogRepository
 import xyz.mcxross.flare.data.AssetMetadata
 import xyz.mcxross.flare.data.FeePayment
-import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.MarketCatalog
 import xyz.mcxross.flare.data.MarketDetails
 import xyz.mcxross.flare.data.MarketDetailsRepository
 import xyz.mcxross.flare.data.MarketQuote
 import xyz.mcxross.flare.data.MarketsRepository
+import xyz.mcxross.flare.data.OrderFeeReview
 import xyz.mcxross.flare.data.OwnerBackup
 import xyz.mcxross.flare.data.PendingTransaction
 import xyz.mcxross.flare.data.ReconciliationResult
@@ -64,11 +64,11 @@ import xyz.mcxross.flare.data.TradingRepository
 import xyz.mcxross.flare.data.VaultsRepository
 import xyz.mcxross.flare.data.WalletProfile
 import xyz.mcxross.flare.data.WalletRepository
+import xyz.mcxross.flare.feature.trade.feeText
+import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.security.VaultPrompt
 import xyz.mcxross.flare.store.AccountProfile
 import xyz.mcxross.flare.store.AppPreferences
-import xyz.mcxross.flare.feature.trade.feeText
-import xyz.mcxross.flare.feature.trade.paymentError
 import xyz.mcxross.flare.testVenue
 import xyz.mcxross.flare.testing.AcceptingOrderRules
 import xyz.mcxross.flare.venue.VenueCapabilities
@@ -79,6 +79,8 @@ import xyz.mcxross.flare.venue.model.Balances
 import xyz.mcxross.flare.venue.model.Market
 import xyz.mcxross.flare.venue.model.MarketKind
 import xyz.mcxross.flare.venue.model.NetworkFee
+import xyz.mcxross.flare.venue.model.OrderBook
+import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.PortfolioChartRange
 import xyz.mcxross.flare.venue.model.PortfolioMetric
 import xyz.mcxross.flare.venue.model.Position
@@ -86,8 +88,6 @@ import xyz.mcxross.flare.venue.model.RewardPart
 import xyz.mcxross.flare.venue.model.RewardPoints
 import xyz.mcxross.flare.venue.model.RewardTier
 import xyz.mcxross.flare.venue.model.Rewards
-import xyz.mcxross.flare.venue.model.OrderBook
-import xyz.mcxross.flare.venue.model.OrderBookLevel
 import xyz.mcxross.flare.venue.model.SelfPayOffer
 import xyz.mcxross.flare.venue.model.SeriesPoint
 import xyz.mcxross.flare.venue.model.SpotBalance
@@ -1331,7 +1331,8 @@ class PortfolioViewModelTest {
         AccountSnapshot(account = "0xsubaccount", positions = listOf(position), stale = false),
       )
     val settle = CompletableDeferred<Unit>()
-    val trading = FakeTradingRepository(outcome = ActionState.Failed("Order rejected"), settle = settle)
+    val trading =
+      FakeTradingRepository(outcome = ActionState.Failed("Order rejected"), settle = settle)
     val vm = portfolio(accounts, trading = trading)
     backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.collect() }
 

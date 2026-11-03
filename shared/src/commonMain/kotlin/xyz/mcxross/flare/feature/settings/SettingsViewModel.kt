@@ -473,8 +473,7 @@ class SettingsViewModel(
                 (result as? ActionState.Failed)?.message
                   ?: "Subaccount transaction failed. Try again."
               }
-              val created =
-                accounts.createdSubaccount(result) ?: awaitNewSubaccount(owner, before)
+              val created = accounts.createdSubaccount(result) ?: awaitNewSubaccount(owner, before)
               showOpenedSubaccount(owner, created)
               accounts.selectTradingAccount(created, prompt)
               accounts.prepareTradingWallet(prompt)
@@ -979,8 +978,9 @@ class SettingsViewModel(
     if (!capabilities.subaccounts) return
     viewModelScope.launch {
       val owners = preferences.values.first().profiles.mapNotNull { it.ownerAddress }.distinct()
-      val read =
-        owners.associateWith { runSuspendCatching { accounts.subaccounts(it) }.getOrNull() }
+      val read = owners.associateWith {
+        runSuspendCatching { accounts.subaccounts(it) }.getOrNull()
+      }
       local.update { state ->
         val shown = state.subaccountsByOwner.toMutableMap()
         for ((owner, listed) in read) {
@@ -999,16 +999,15 @@ class SettingsViewModel(
   }
 
   /** Shows an account the moment it's opened, with the others, before the exchange lists it. */
-  private fun showOpenedSubaccount(owner: String, address: String) =
-    local.update { state ->
-      val shown = state.subaccountsByOwner[owner].orEmpty()
-      if (shown.any { credentials.sameAddress(it.address, address) }) return@update state
-      state.copy(
-        subaccountsByOwner =
-          state.subaccountsByOwner + (owner to shown + TradingAccount(address, owner)),
-        openedSubaccounts = state.openedSubaccounts + address,
-      )
-    }
+  private fun showOpenedSubaccount(owner: String, address: String) = local.update { state ->
+    val shown = state.subaccountsByOwner[owner].orEmpty()
+    if (shown.any { credentials.sameAddress(it.address, address) }) return@update state
+    state.copy(
+      subaccountsByOwner =
+        state.subaccountsByOwner + (owner to shown + TradingAccount(address, owner)),
+      openedSubaccounts = state.openedSubaccounts + address,
+    )
+  }
 
   private companion object {
     const val WALLET_BALANCE_REFRESH_MS = 15_000L
