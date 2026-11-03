@@ -5,9 +5,10 @@ import kotlin.test.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.job
 import kotlinx.coroutines.test.*
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -43,7 +44,7 @@ class TradeFeeReviewTest {
       assertIs<ActionState.Committed>(f.vm.uiState.value.transaction)
       assertFalse(f.vm.uiState.value.feeReviewPrepared)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -61,7 +62,7 @@ class TradeFeeReviewTest {
         assertEquals(1, f.trading.confirmations)
         assertEquals(listOf(false), f.trading.consents)
       } finally {
-        f.vm.viewModelScope.cancel()
+        f.close()
       }
     }
   }
@@ -80,7 +81,7 @@ class TradeFeeReviewTest {
       f.preferences.setSelectedSubaccount("0xother")
       assertNull(f.vm.uiState.value.feeReview)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -98,7 +99,7 @@ class TradeFeeReviewTest {
       assertNotNull(f.vm.uiState.value.orderError)
       assertFalse(f.vm.uiState.value.feeReviewPrepared)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -114,7 +115,7 @@ class TradeFeeReviewTest {
       assertEquals(listOf(true), f.trading.consents)
       assertEquals(2, f.trading.executed.size)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -138,7 +139,7 @@ class TradeFeeReviewTest {
       assertEquals(listOf(true), f.trading.consents)
       assertEquals(review.actions, f.trading.executed)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -164,7 +165,7 @@ class TradeFeeReviewTest {
       assertEquals(1, f.trading.confirmations)
       assertEquals(2, f.trading.executed.size)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -180,7 +181,7 @@ class TradeFeeReviewTest {
       assertEquals(0, f.trading.confirmations)
       assertTrue(f.trading.executed.isEmpty())
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -213,7 +214,7 @@ class TradeFeeReviewTest {
         state.copy(feeReview = review.copy(sponsorshipAvailable = true)).orderNetworkFeeText(chain),
       )
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -233,7 +234,7 @@ class TradeFeeReviewTest {
         assertEquals(0, f.trading.confirmations)
         assertTrue(f.trading.executed.isEmpty())
       } finally {
-        f.vm.viewModelScope.cancel()
+        f.close()
       }
     }
   }
@@ -273,7 +274,7 @@ class TradeFeeReviewTest {
           assertNull(f.vm.uiState.value.orderError)
         }
       } finally {
-        f.vm.viewModelScope.cancel()
+        f.close()
       }
     }
   }
@@ -307,7 +308,7 @@ class TradeFeeReviewTest {
         )
         assertFalse(f.vm.uiState.value.feeReviewPrepared)
       } finally {
-        f.vm.viewModelScope.cancel()
+        f.close()
       }
     }
   }
@@ -340,7 +341,7 @@ class TradeFeeReviewTest {
       assertTrue(assertNotNull(f.vm.uiState.value.orderError).contains("live order book"))
       assertFalse(f.vm.uiState.value.feeReviewPrepared)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -374,7 +375,7 @@ class TradeFeeReviewTest {
       assertEquals(reviewed.actions, f.trading.executed)
       assertNull(f.vm.uiState.value.orderError)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -423,7 +424,7 @@ class TradeFeeReviewTest {
       f.awaitFees()
       assertEquals(2, f.trading.feePreparations)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -444,7 +445,7 @@ class TradeFeeReviewTest {
       assertTrue(f.vm.uiState.value.feeReviewPrepared)
       assertEquals(1, f.trading.feePreparations)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -469,7 +470,7 @@ class TradeFeeReviewTest {
       f.prepareFees()
       assertTrue(f.vm.uiState.value.feeReviewPrepared)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -493,7 +494,7 @@ class TradeFeeReviewTest {
       assertTrue(f.vm.uiState.value.feeReviewPrepared)
       assertEquals(2, f.trading.feePreparations)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -511,7 +512,7 @@ class TradeFeeReviewTest {
       settle.complete(Unit)
       f.vm.uiState.first { it.transaction is ActionState.Committed }
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -533,7 +534,7 @@ class TradeFeeReviewTest {
       assertEquals("Your last order wasn’t placed. Order rejected", failed.orderError)
       assertFalse(failed.orderSent)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -576,7 +577,7 @@ class TradeFeeReviewTest {
       assertEquals(2, f.trading.feePreparations)
       assertEquals(0, f.trading.confirmations)
     } finally {
-      f.vm.viewModelScope.cancel()
+      f.close()
     }
   }
 
@@ -677,6 +678,12 @@ class TradeFeeReviewTest {
     vm.onIntent(TradeIntent.PrepareOrderFees(OrderSide.BUY))
     awaitFees()
   }
+
+  /**
+   * Cancels the view model and waits for all of its work, including a fee review still unwinding on
+   * another thread, so none of it resumes after the test has reset Main.
+   */
+  private suspend fun Fixture.close() = vm.viewModelScope.coroutineContext.job.cancelAndJoin()
 
   private suspend fun Fixture.awaitFees() {
     vm.uiState.first { !it.feeReviewLoading && (it.feeReviewPrepared || it.feeReviewError != null) }
