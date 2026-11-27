@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>FlareHyperliquidBuilderAddress</key>
 	<string>$(FLARE_HYPERLIQUID_BUILDER_ADDRESS)</string>
 	<key>FlareWorkerURL</key>
 	<string>$(FLARE_WORKER_URL)</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Flare uses Face ID to unlock wallet signing keys.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
@@ -17,7 +17,5 @@
 		<key>UIImageRespectsSafeAreaInsets</key>
 		<false/>
 	</dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
 </dict>
 </plist>
